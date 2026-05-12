@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "Naliss Umyuk",
+    "slug": "naliss-umyu-hub",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "naliss",
+    "sdkVersion": "55.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/6d1bcc1c-20b2-4de4-a5e4-4b7f26e34eb8",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ng.umyu.students.naliss",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow NALISS to access your camera for profile photos",
+        "NSPhotoLibraryUsageDescription": "Allow NALISS to access your photos for profile pictures and material uploads",
+        "NSMicrophoneUsageDescription": "Allow NALISS to access your microphone for audio messages",
+        "NSPhotoLibraryAddUsageDescription": "Allow NALISS to save files to your photo library"
+      }
+    },
+    "android": {
+      "package": "com.naliss.umyuk",
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow NALISS to access your photos for profile pictures and file uploads.",
+          "cameraPermission": "Allow NALISS to access your camera for profile photos."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#064e3b"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "9eb7911b-09b9-4238-a5c9-7979713f409c"
+      }
+    },
+    "owner": "naliss"
+  }
+}

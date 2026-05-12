@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "531769681844",
+    "project_id": "naliss-umyu-hub",
+    "storage_bucket": "naliss-umyu-hub.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:531769681844:android:14aa2e406a4e0bc1efb4e1",
+        "android_client_info": {
+          "package_name": "com.naliss.umyuk"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3dNGO3JrBpFGHtpn7ntO6ktpdjAT6W0o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

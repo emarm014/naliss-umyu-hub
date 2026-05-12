@@ -26,9 +26,16 @@ export function ErrorBoundary({ error, retry }: Props) {
       // Reset core stores
       useAuthStore.getState().signOut();
       useSignupStore.getState().reset();
-      
-      // Force reload the app
-      require('expo-updates').reloadAsync();
+
+      // Force reload the app (best-effort — expo-updates may not be installed)
+      try {
+        const Updates = require('expo-updates');
+        if (Updates?.reloadAsync) {
+          await Updates.reloadAsync();
+        }
+      } catch {
+        // expo-updates not available — fallback to retry
+      }
     } catch {
       // Fallback
       retry();

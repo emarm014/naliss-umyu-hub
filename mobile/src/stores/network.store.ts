@@ -16,6 +16,7 @@ interface NetworkState {
   incrementPendingSync: () => void;
   decrementPendingSync: () => void;
   resetPendingSync: () => void;
+  clearWasOffline: () => void;
 }
 
 // Callbacks to run when coming back online
@@ -89,6 +90,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   incrementPendingSync: () => set((state) => ({ pendingSyncCount: state.pendingSyncCount + 1 })),
   decrementPendingSync: () => set((state) => ({ pendingSyncCount: Math.max(0, state.pendingSyncCount - 1) })),
   resetPendingSync: () => set({ pendingSyncCount: 0 }),
+  clearWasOffline: () => set({ wasOffline: false }),
 }));
 
 export const useNetworkStatus = () => {

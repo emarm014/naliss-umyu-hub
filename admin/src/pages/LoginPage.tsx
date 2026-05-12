@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { NalissLogo } from '../components/NalissLogo';
 import { Lock, Mail, AlertCircle, WifiOff } from 'lucide-react';
 
@@ -26,6 +26,11 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isSupabaseConfigured) {
+      setError('Application configuration is missing. Please contact the administrator.');
+      return;
+    }
 
     if (!navigator.onLine) {
       setError('No internet connection. Please check your network and try again.');

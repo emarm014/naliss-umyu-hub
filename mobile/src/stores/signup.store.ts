@@ -78,7 +78,8 @@ export const useSignupStore = create<SignupState>()(
       setProvider: (provider: 'email' | 'google') => set({ provider }),
 
       setCredentials: (email, password) => set((state) => ({
-        provider: 'email',
+        // Preserve existing provider (e.g. 'google') — never override it silently
+        provider: state.provider,
         email: email ?? state.email,
         // Only update password if explicitly provided — never wipe it with undefined
         ...(password !== undefined ? { password } : {}),

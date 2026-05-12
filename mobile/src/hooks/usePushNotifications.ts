@@ -126,7 +126,10 @@ async function registerForPushNotificationsAsync() {
 
   // Ensure we are on a physical device (expo-notifications limitation on simulators)
   // Note: We use Constants.isDevice or check the platform
-  if (Constants.isDevice) {
+  // Constants.isDevice was removed in newer Expo SDKs — treat undefined as true
+  // so standalone builds still request tokens. Simulators will fail gracefully.
+  const isDevice = Constants.isDevice !== false;
+  if (isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     

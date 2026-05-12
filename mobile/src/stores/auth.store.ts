@@ -69,8 +69,13 @@ export const useAuthStore = create<AuthState>()(
           set({ profile: (data as any) as Profile, lastFetch: Date.now() });
         } catch (err: any) {
           // On network failure, keep the cached profile — don't clear it
-          if (!err.message?.includes('fetch') && !err.message?.includes('network')) {
-            // silent — cached profile stays
+          const isNetworkError = err.message?.includes('fetch') ||
+            err.message?.includes('network') ||
+            err.message?.includes('timeout') ||
+            err.name === 'AbortError';
+          if (!isNetworkError) {
+            // Real DB error — surface it so the UI can react
+            set({ error: err.message || 'Failed to load profile' });
           }
         }
       },

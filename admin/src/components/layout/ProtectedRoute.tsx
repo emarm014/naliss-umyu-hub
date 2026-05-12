@@ -19,15 +19,16 @@ export default function ProtectedRoute() {
   }
 
   // Moderator landing: redirect from super_admin-only routes to first accessible page
+  // NOTE: /lecturers and /executives are super_admin-only — never redirect moderators there
   if (profile?.role === 'moderator' && location.pathname === '/') {
     if (permissions?.can_manage_announcements) {
       return <Navigate to="/announcements" replace />;
     } else if (permissions?.can_manage_materials) {
       return <Navigate to="/materials" replace />;
-    } else if (permissions?.can_manage_lecturers) {
-      return <Navigate to="/lecturers" replace />;
-    } else if (permissions?.can_manage_executives) {
-      return <Navigate to="/executives" replace />;
+    } else if (permissions?.can_manage_events) {
+      return <Navigate to="/events" replace />;
+    } else if (permissions?.can_manage_past_questions) {
+      return <Navigate to="/past-questions" replace />;
     } else {
       return <Navigate to="/groups" replace />;
     }

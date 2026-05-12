@@ -59,9 +59,9 @@ export default function AnnouncementsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actioningId, setActioningId] = useState<string | null>(null); // tracks which card is mid-action
 
-  const { permissions } = useAuthStore();
+  const { profile, permissions } = useAuthStore();
   const { announcements: allAnnouncements, isSyncing, error: storeError, syncAll, removeAnnouncement, refreshAnalytics } = useAdminDataStore();
-  const assignedLevel = permissions?.assigned_level || null;
+  const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
 
   const location = useLocation();
   const [predefinedAsset, setPredefinedAsset] = useState<any>(null);
@@ -809,7 +809,7 @@ function AnnouncementFormModal({
                         className="peer hidden"
                       />
                       <div className="w-6 h-6 bg-white border-2 border-gray-200 rounded-lg peer-checked:bg-primary-600 peer-checked:border-primary-600 transition-all flex items-center justify-center">
-                          <CheckCircle2 className="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" />
+                          {formData.is_published && <CheckCircle2 className="w-4 h-4 text-white transition-opacity" />}
                       </div>
                   </div>
                   <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover:text-primary-600 transition-colors">Commit to Feed</span>
@@ -823,7 +823,7 @@ function AnnouncementFormModal({
                         className="peer hidden"
                       />
                       <div className="w-6 h-6 bg-white border-2 border-gray-200 rounded-lg peer-checked:bg-primary-600 peer-checked:border-primary-600 transition-all flex items-center justify-center">
-                          <CheckCircle2 className="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" />
+                          {formData.is_pinned && <CheckCircle2 className="w-4 h-4 text-white transition-opacity" />}
                       </div>
                   </div>
                   <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover:text-primary-600 transition-colors">Strategic Pin</span>

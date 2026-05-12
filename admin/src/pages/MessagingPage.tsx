@@ -289,20 +289,20 @@ export default function MessagingPage() {
       {/* Moderation Pulse */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Open Reports', val: stats.openReports, icon: AlertTriangle, color: 'red', sub: 'PENDING' },
-          { label: 'Red Flags', val: stats.flaggedToday, icon: Flag, color: 'amber', sub: 'TODAY' },
-          { label: 'Muted Registry', val: stats.mutedUsers, icon: Ban, color: 'slate', sub: 'RESTRICTED' },
-          { label: 'Safety Score', val: `${stats.safetyScore}%`, icon: Shield, color: 'emerald', sub: 'OPTIMAL' },
+          { label: 'Open Reports', val: stats.openReports, icon: AlertTriangle, cardBg: 'bg-red-50', iconColor: 'text-red-600', subColor: 'text-red-400', hoverBorder: 'hover:border-red-200' },
+          { label: 'Red Flags', val: stats.flaggedToday, icon: Flag, cardBg: 'bg-amber-50', iconColor: 'text-amber-600', subColor: 'text-amber-400', hoverBorder: 'hover:border-amber-200' },
+          { label: 'Muted Registry', val: stats.mutedUsers, icon: Ban, cardBg: 'bg-slate-50', iconColor: 'text-slate-600', subColor: 'text-slate-400', hoverBorder: 'hover:border-slate-200' },
+          { label: 'Safety Score', val: `${stats.safetyScore}%`, icon: Shield, cardBg: 'bg-emerald-50', iconColor: 'text-emerald-600', subColor: 'text-emerald-400', hoverBorder: 'hover:border-emerald-200' },
         ].map((s, i) => (
-          <div key={i} className={`bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 group hover:border-${s.color}-200 transition-colors`}>
-            <div className={`w-12 h-12 bg-${s.color}-50 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
-              <s.icon className={`w-6 h-6 text-${s.color}-600`} />
+          <div key={i} className={`bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 group ${s.hoverBorder} transition-colors`}>
+            <div className={`w-12 h-12 ${s.cardBg} rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
+              <s.icon className={`w-6 h-6 ${s.iconColor}`} />
             </div>
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.label}</p>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-black text-slate-900">{s.val}</span>
-                <span className={`text-[10px] font-bold text-${s.color}-400 uppercase`}>{s.sub}</span>
+                <span className={`text-[10px] font-bold ${s.subColor} uppercase`}>{s.sub}</span>
               </div>
             </div>
           </div>
@@ -313,9 +313,9 @@ export default function MessagingPage() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-1">
         <div className="flex p-1 gap-1">
           {[
-            { id: 'flagged', label: 'FLAGGED', icon: Flag, count: stats.flaggedToday, countColor: 'amber' },
-            { id: 'reports', label: 'REPORTS', icon: AlertTriangle, count: stats.openReports, countColor: 'red' },
-            { id: 'muted', label: 'MUTED', icon: Ban, count: stats.mutedUsers, countColor: 'slate' },
+            { id: 'flagged', label: 'FLAGGED', icon: Flag, count: stats.flaggedToday, badgeBg: 'bg-amber-100', badgeText: 'text-amber-600' },
+            { id: 'reports', label: 'REPORTS', icon: AlertTriangle, count: stats.openReports, badgeBg: 'bg-red-100', badgeText: 'text-red-600' },
+            { id: 'muted', label: 'MUTED', icon: Ban, count: stats.mutedUsers, badgeBg: 'bg-slate-100', badgeText: 'text-slate-600' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -329,7 +329,7 @@ export default function MessagingPage() {
               <tab.icon className="h-4 w-4" />
               {tab.label}
               {tab.count > 0 && (
-                <span className={`px-1.5 py-0.5 bg-${tab.countColor}-100 text-${tab.countColor}-600 text-[9px] rounded-md`}>
+                <span className={`px-1.5 py-0.5 ${tab.badgeBg} ${tab.badgeText} text-[9px] rounded-md`}>
                   {tab.count}
                 </span>
               )}

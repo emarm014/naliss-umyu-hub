@@ -91,7 +91,9 @@ export default function RegisterLevel() {
   };
 
   const handleFinishWithLevel = async (level: string) => {
-    const { provider, email: storeEmail, password, full_name, username, reg_number } = signupStore;
+    // Read fresh store values inside the async handler to avoid stale closures
+    const signupState = useSignupStore.getState();
+    const { provider, email: storeEmail, password, full_name, username, reg_number } = signupState;
     const activeEmail = storeEmail || session?.user?.email;
 
     if (!activeEmail) {

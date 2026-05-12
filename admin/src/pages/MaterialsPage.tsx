@@ -52,8 +52,8 @@ const materialTypeConfig = {
 
 export default function MaterialsPage() {
   const { materials: allMaterials, courses, syncAll, removeMaterial, refreshAnalytics } = useAdminDataStore();
-  const { user, permissions } = useAuthStore();
-  const assignedLevel = permissions?.assigned_level || null;
+  const { user, profile, permissions } = useAuthStore();
+  const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
 
   const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialWithDetails | null>(null);
@@ -68,6 +68,7 @@ export default function MaterialsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showPreview, setShowPreview] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [predefinedAsset, setPredefinedAsset] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -205,6 +206,7 @@ export default function MaterialsPage() {
       is_active: true
     });
     setShowModal('create');
+    setPredefinedAsset(null);
   };
 
   const location = useLocation();
@@ -221,6 +223,7 @@ export default function MaterialsPage() {
       else if (url.match(/\.(ppt|pptx)$/)) detectedType = 'ppt';
       else if (url.match(/\.(mp4|mov|avi)$/)) detectedType = 'video';
 
+      setPredefinedAsset(asset);
       setFormData(prev => ({
         ...prev,
         title: asset.title || prev.title,
@@ -650,7 +653,7 @@ export default function MaterialsPage() {
 
               <form id="material-form" onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
                 {/* Archive source banner */}
-                {(location.state as any)?.predefinedAsset === undefined && formData.file_url && showModal === 'create' && (
+                {predefinedAsset && formData.file_url && showModal === 'create' && (
                   <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold animate-in slide-in-from-top-2">
                     <span className="text-lg">📦</span>
                     File pre-loaded from Cloud Archive vault — fill in the details below to publish to the mobile app.

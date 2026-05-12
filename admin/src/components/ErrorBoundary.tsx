@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
                         boxShadow: '0 8px 32px rgba(0,0,0,0.08)', maxWidth: 480,
                         textAlign: 'center', border: '1px solid #f1f5f9',
                     }}>
-                        <div style={{ fontSize: 48, marginBottom: 16 }}>ΓÜá∩╕Å</div>
+                        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
                         <h2 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
                             Something went wrong
                         </h2>

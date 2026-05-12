@@ -58,7 +58,10 @@ export function NetworkStatusDot() {
   useEffect(() => {
     if (isOnline && wasOffline) {
       setShowOnline(true);
-      const t = setTimeout(() => setShowOnline(false), 3000);
+      const t = setTimeout(() => {
+        setShowOnline(false);
+        useNetworkStore.getState().clearWasOffline();
+      }, 3000);
       return () => clearTimeout(t);
     }
     if (!isOnline) setShowOnline(false);
@@ -280,7 +283,7 @@ function RootLayoutNav() {
       }
     };
 
-    const sub = require('react-native').AppState.addEventListener('change', handleAppState);
+    const sub = AppState.addEventListener('change', handleAppState);
     return () => {
       if (interval) clearInterval(interval);
       sub.remove();

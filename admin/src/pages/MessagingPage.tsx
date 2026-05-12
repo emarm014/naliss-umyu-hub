@@ -289,10 +289,10 @@ export default function MessagingPage() {
       {/* Moderation Pulse */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Open Reports', val: stats.openReports, icon: AlertTriangle, cardBg: 'bg-red-50', iconColor: 'text-red-600', subColor: 'text-red-400', hoverBorder: 'hover:border-red-200' },
-          { label: 'Red Flags', val: stats.flaggedToday, icon: Flag, cardBg: 'bg-amber-50', iconColor: 'text-amber-600', subColor: 'text-amber-400', hoverBorder: 'hover:border-amber-200' },
-          { label: 'Muted Registry', val: stats.mutedUsers, icon: Ban, cardBg: 'bg-slate-50', iconColor: 'text-slate-600', subColor: 'text-slate-400', hoverBorder: 'hover:border-slate-200' },
-          { label: 'Safety Score', val: `${stats.safetyScore}%`, icon: Shield, cardBg: 'bg-emerald-50', iconColor: 'text-emerald-600', subColor: 'text-emerald-400', hoverBorder: 'hover:border-emerald-200' },
+          { label: 'Open Reports', val: stats.openReports, sub: 'pending', icon: AlertTriangle, cardBg: 'bg-red-50', iconColor: 'text-red-600', subColor: 'text-red-400', hoverBorder: 'hover:border-red-200' },
+          { label: 'Red Flags', val: stats.flaggedToday, sub: 'today', icon: Flag, cardBg: 'bg-amber-50', iconColor: 'text-amber-600', subColor: 'text-amber-400', hoverBorder: 'hover:border-amber-200' },
+          { label: 'Muted Registry', val: stats.mutedUsers, sub: 'users', icon: Ban, cardBg: 'bg-slate-50', iconColor: 'text-slate-600', subColor: 'text-slate-400', hoverBorder: 'hover:border-slate-200' },
+          { label: 'Safety Score', val: `${stats.safetyScore}%`, sub: 'active', icon: Shield, cardBg: 'bg-emerald-50', iconColor: 'text-emerald-600', subColor: 'text-emerald-400', hoverBorder: 'hover:border-emerald-200' },
         ].map((s, i) => (
           <div key={i} className={`bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 group ${s.hoverBorder} transition-colors`}>
             <div className={`w-12 h-12 ${s.cardBg} rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>

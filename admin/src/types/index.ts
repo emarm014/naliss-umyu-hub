@@ -67,6 +67,8 @@ export interface User {
   permissions?: {
     can_manage_announcements: boolean;
     can_manage_materials: boolean;
+    can_manage_events: boolean;
+    can_manage_past_questions: boolean;
     can_manage_lecturers: boolean;
     can_manage_executives: boolean;
     can_manage_students: boolean;

@@ -5,6 +5,8 @@ import { supabase } from '../api/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { User as Profile } from '../types';
 import { useMessageStore } from './message.store';
+import { useGroupStore } from './group.store';
+import { useGlobalSyncStore } from './globalSync.store';
 
 interface AuthState {
   session: Session | null;
@@ -264,6 +266,10 @@ export const useAuthStore = create<AuthState>()(
             .eq('id', user.id);
         }
         await supabase.auth.signOut();
+        // CRITICAL: Clear all cached data to prevent data leak between users
+        useMessageStore.getState().clearCache();
+        useGroupStore.getState().clearGroups();
+        useGlobalSyncStore.getState().terminate();
         set({ session: null, user: null, profile: null, isProfileComplete: null, error: null });
       },
 

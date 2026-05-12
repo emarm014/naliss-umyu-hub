@@ -68,6 +68,13 @@ export default function ProfileScreen() {
         hobbies: (storeProfile as any).hobbies ?? prev.hobbies,
         biography: (storeProfile as any).biography ?? prev.biography,
       }));
+      // Sync notifSettings from store profile to keep toggles in sync
+      setNotifSettings({
+        notif_announcements: (storeProfile as any)?.notif_announcements ?? notifSettings.notif_announcements,
+        notif_events: (storeProfile as any)?.notif_events ?? notifSettings.notif_events,
+        notif_messages: (storeProfile as any)?.notif_messages ?? notifSettings.notif_messages,
+        notif_materials: (storeProfile as any)?.notif_materials ?? notifSettings.notif_materials,
+      });
     }
   }, [storeProfile]);
   const [isLoading, setIsLoading] = useState(!storeProfile); // skip spinner if store already has profile

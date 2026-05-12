@@ -1016,17 +1016,16 @@ export default function ChatScreen() {
     const handleClearChat = () => {
         Alert.alert(
             'Clear Chat',
-            'Are you sure you want to clear all messages in this group? This will only hide them for you.',
+            'Are you sure you want to clear all messages in this group? This will remove all messages from your device.',
             [
                 { text: 'Cancel', style: 'cancel' },
                 { 
                     text: 'Clear', 
                     style: 'destructive', 
                     onPress: () => {
-                        // Only clear the UI state — do NOT touch the persistent cache.
-                        // Messages are permanent and will reappear when the user
-                        // navigates back to this chat (re-fetched from server/cache).
+                        // Clear both UI state and persistent cache for this group
                         setMessages([]);
+                        messageStore.setMessages(id, []);
                         setShowGroupMenu(false);
                     } 
                 },
@@ -1509,12 +1508,12 @@ export default function ChatScreen() {
                 // Optimistic UI
                 const newMessage = {
                     id: tempId,
-                    content: uploadName,
+                    content: originalName,
                     created_at: new Date().toISOString(),
                     sender_id: currentUser.id,
                     user: { 
-                        username: currentUser.user_metadata?.username || 'me', 
-                        avatar_url: currentUser.user_metadata?.avatar_url 
+                        username: profile?.username || currentUser.user_metadata?.username || 'me', 
+                        avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url 
                     },
                     message_type: 'document',
                     content_type: 'document',
@@ -1597,12 +1596,12 @@ export default function ChatScreen() {
                 // Optimistic UI
                 const newMessage = {
                     id: tempId,
-                    content: uploadName,
+                    content: originalName,
                     created_at: new Date().toISOString(),
                     sender_id: currentUser.id,
                     user: { 
-                        username: currentUser.user_metadata?.username || 'me', 
-                        avatar_url: currentUser.user_metadata?.avatar_url 
+                        username: profile?.username || currentUser.user_metadata?.username || 'me', 
+                        avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url 
                     },
                     message_type: type,
                     content_type: type,
@@ -1653,7 +1652,7 @@ export default function ChatScreen() {
     const formatFileSize = (bytes?: number) => {
         if (!bytes) return '0 B';
         const k = 1024;
-        const sizes = ['B', 'KB', 'MB'];
+        const sizes = ['B', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     };

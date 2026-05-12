@@ -142,7 +142,8 @@ export default function HomeScreen() {
   useEffect(() => {
     fetchProfile();
     loadData();
-  }, [loadData, fetchProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount - loadData already fetches what it needs
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);

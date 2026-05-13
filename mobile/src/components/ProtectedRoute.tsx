@@ -30,10 +30,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const maintenanceMode = useSettingsStore(s => s.maintenanceMode);
   const maintenanceMessage = useSettingsStore(s => s.maintenanceMessage);
   const maintenanceEstimatedEnd = useSettingsStore(s => s.maintenanceEstimatedEnd);
-  const fetchSettings = useSettingsStore(s => s.fetchSettings);
-  const initializeListener = useSettingsStore(s => s.initializeListener);
-
-  const initializeSync = useGlobalSyncStore(s => s.initialize);
   
   const segments = useSegments();
   const router = useRouter();
@@ -131,24 +127,29 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Only fetch settings if online — cached values are used offline
     if (isOnline) {
-      fetchSettings();
+      useSettingsStore.getState().fetchSettings();
     }
-    const unsubscribeSettings = initializeListener();
+    const unsubscribeSettings = useSettingsStore.getState().initializeListener();
     
     return () => {
       unsubscribeSettings();
     };
-  }, [fetchSettings, initializeListener, isOnline]);
+    // CRITICAL: Do NOT include store functions in dependencies — they can be
+    // recreated on every render, causing infinite loops. Use getState() instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
 
   // 1.1 Activate Global Ecosystem Sync when session is active
   // NOTE: We intentionally do NOT terminate on cleanup here — that would kill
   // realtime channels on every navigation. terminate() is only called on sign-out.
   useEffect(() => {
     if (session && (isProfileComplete === true || offlineUnblocked)) {
-      initializeSync();
+      useGlobalSyncStore.getState().initialize();
     }
     // No cleanup / terminate here — channels must survive navigation
-  }, [session, isProfileComplete, initializeSync, offlineUnblocked]);
+    // CRITICAL: Do NOT include store functions in dependencies
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, isProfileComplete, offlineUnblocked]);
 
   // 2. Auth State Sync
   useEffect(() => {

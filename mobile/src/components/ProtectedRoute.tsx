@@ -567,7 +567,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         }
       }
     }
-  }, [session, isProfileComplete, segments, authLoading, offlineUnblocked, restrictionInfo, pathname]);
+    // CRITICAL: Remove `pathname` from dependencies — it changes AFTER navigation
+    // and causes the guard to re-run unnecessarily, creating infinite loops.
+    // The safeNavigate ref already has its own pathname check internally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, isProfileComplete, segments, authLoading, offlineUnblocked, restrictionInfo]);
 
   // BLOCK: Ban / Suspension screen — shown immediately, persists until user chooses to logout
   if (restrictionInfo) {

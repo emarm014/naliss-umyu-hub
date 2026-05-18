@@ -12,6 +12,8 @@ import { useAuthStore } from '../../src/stores/auth.store';
 import { useGroupStore } from '../../src/stores/group.store';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError, trackFeature } from '../../src/utils/sentry';
 
 const LEVELS = [
   { id: '100', title: '100 Level', desc: 'Freshman year — foundation courses' },
@@ -38,6 +40,7 @@ const STEPS = [
 ];
 
 export default function RegisterLevel() {
+  useSentryScreen('RegisterLevel');
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
@@ -293,6 +296,7 @@ export default function RegisterLevel() {
       router.replace('/(tabs)' as any);
 
     } catch (err: any) {
+      captureUIError('RegisterLevel.handleFinish', err, { selectedLevel });
       if (isMounted.current) {
         useSignupStore.getState().setIsGoogleDelaying(false);
         setIsProfileComplete(null);

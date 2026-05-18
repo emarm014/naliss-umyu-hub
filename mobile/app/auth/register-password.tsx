@@ -9,6 +9,8 @@ import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
 import { useSignupStore } from '../../src/stores/signup.store';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError } from '../../src/utils/sentry';
 
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
@@ -24,6 +26,7 @@ function StepBar({ current, total }: { current: number; total: number }) {
 }
 
 export default function RegisterPassword() {
+  useSentryScreen('RegisterPassword');
   const { email: emailParam } = useLocalSearchParams<{ email: string }>();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -88,7 +91,8 @@ export default function RegisterPassword() {
       // Update step BEFORE navigating to prevent ProtectedRoute interference
       useSignupStore.getState().setCurrentStep(4);
       router.push('/auth/identity' as any);
-    } catch {
+    } catch (err) {
+      captureUIError('RegisterPassword.handleSetPassword', err);
       if (isMounted.current) Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       if (isMounted.current) setIsLoading(false);

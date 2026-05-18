@@ -10,8 +10,11 @@ import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
 import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { AuthGuardian } from '../../src/utils/auth-guardian';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError } from '../../src/utils/sentry';
 
 export default function ResetPassword() {
+  useSentryScreen('ResetPassword');
   const [email, setEmail] = useState('');
   const [focused, setFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -54,6 +57,7 @@ export default function ResetPassword() {
       await AuthGuardian.recordResetAttempt(email.trim().toLowerCase());
       setIsSent(true);
     } catch (err: any) {
+      captureUIError('ResetPassword.handleReset', err, { email: email.trim().toLowerCase() });
       if (err.message?.includes('Error sending recovery email') || err.message?.includes('rate limit')) {
         setErrorTip('You may have reached the email limit (3/hour). Please wait 1 hour and try again.');
         Alert.alert('Limit Reached', 'Too many reset requests. Please wait 1 hour and try again.');

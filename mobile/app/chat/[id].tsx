@@ -30,12 +30,15 @@ import { FileService } from '../../src/services/file.service';
 import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
 import { sendChatMessageNotification } from '../../src/utils/notifications';
 import { useTheme } from '../../src/stores/theme.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError, trackFeature } from '../../src/utils/sentry';
 
 const MAX_CHARS = 500;
 
 const STICKER_LIST = ['😀','😂','😍','🥳','🔥','💯','👍','👏','🎉','❤️','😎','🤔','😢','🙏','✨','💪','😁','🫡','🤝','👋'];
 
 export default function ChatScreen() {
+    useSentryScreen('ChatScreen');
     const params = useLocalSearchParams();
     const id = Array.isArray(params.id) ? params.id[0] : params.id as string;
     const type = params.type;
@@ -608,7 +611,8 @@ export default function ChatScreen() {
                     Alert.alert('Error', 'Failed to edit message');
                 }
                 return;
-            } catch {
+            } catch (err) {
+                captureUIError('ChatScreen.editMessage', err, { groupId: id });
                 Alert.alert('Error', 'Failed to edit message');
                 return;
             }
@@ -681,7 +685,8 @@ export default function ChatScreen() {
             const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
             sendChatMessageNotification(id, groupName, senderName, preview, currentUser.id);
 
-        } catch {
+        } catch (err) {
+            captureUIError('ChatScreen.sendTextMessage', err, { groupId: id });
             setMessages(prev => prev.map(m =>
                 m.id === tempId ? { ...m, status: 'failed' } : m
             ));
@@ -944,6 +949,7 @@ export default function ChatScreen() {
                 messageStore.updateMessage(id, tempId, { id: data.id, content: imageUrl, status: 'sent' });
 
             } catch (err: any) {
+                captureUIError('ChatScreen.sendImageMessage', err, { groupId: id });
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
                 setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
                 messageStore.updateMessage(id, tempId, { status: 'failed' });

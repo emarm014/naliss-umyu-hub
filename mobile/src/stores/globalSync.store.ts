@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../api/supabase/client';
+import { captureStoreError } from '../utils/sentry';
+import * as Sentry from '@sentry/react-native';
 import { useAuthStore } from './auth.store';
 import { useAnnouncementStore } from './announcement.store';
 import { useEventStore } from './event.store';
@@ -318,10 +320,12 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
         useAuthStore.getState().fetchProfile(true);
       })
       .subscribe((status) => {
-        // Auto-reconnect on channel error — Supabase handles this internally,
-        // but we log for debugging
         if (status === 'CHANNEL_ERROR') {
-          // Will be handled by resubscribe() when network comes back
+          Sentry.addBreadcrumb({
+            category: 'realtime',
+            message: 'Supabase realtime channel error — will resubscribe on next network restore',
+            level: 'warning',
+          });
         }
       });
 

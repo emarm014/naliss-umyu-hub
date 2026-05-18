@@ -9,6 +9,8 @@ import { AuthGuardian } from '../../src/utils/auth-guardian';
 import { useSignupStore } from '../../src/stores/signup.store';
 import { useNetworkStore } from '../../src/stores/network.store';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError, trackFeature } from '../../src/utils/sentry';
 
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
@@ -24,6 +26,7 @@ function StepBar({ current, total }: { current: number; total: number }) {
 }
 
 export default function RegisterEmail() {
+  useSentryScreen('RegisterEmail');
   const [email, setEmail] = useState('');
   const [focused, setFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -166,6 +169,7 @@ export default function RegisterEmail() {
       router.push({ pathname: '/auth/register-otp' as any, params: { email: trimmedEmail } });
 
     } catch (err: any) {
+      captureUIError('RegisterEmail.handleContinue', err, { email: email.trim().toLowerCase() });
       if (!isMounted.current) return;
       const msg = (err?.message || '').toLowerCase();
 

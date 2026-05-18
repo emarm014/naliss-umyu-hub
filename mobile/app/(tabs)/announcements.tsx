@@ -13,6 +13,7 @@ import { supabase } from '../../src/api/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 
 const { width } = Dimensions.get('window');
 
@@ -46,6 +47,7 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }>
 };
 
 export default function AnnouncementsScreen() {
+    useSentryScreen('AnnouncementsScreen');
     const { announcements, fetchAnnouncements, isLoading: loadingAnnouncements } = useAnnouncementStore();
     const { events, fetchUpcomingEvents, isLoading: loadingEvents } = useEventStore();
     const { profile: user } = useAuthStore();

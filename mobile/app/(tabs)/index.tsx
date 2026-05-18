@@ -14,6 +14,7 @@ import { NalissLogo } from '../../src/components/NalissLogo';
 import { useAnnouncementStore, useEventStore, useResourceStore, useAuthStore } from '../../src/stores';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 
 const { width } = Dimensions.get('window');
 
@@ -105,6 +106,7 @@ const quickActions = [
 ];
 
 export default function HomeScreen() {
+  useSentryScreen('HomeScreen');
   const { profile: user, fetchProfile } = useAuthStore();
   const isAdmin = user?.role === 'super_admin' || (user?.role as any) === 'system_owner';
   const { announcements, fetchAnnouncements, isLoading: loadingAnnouncements } = useAnnouncementStore();

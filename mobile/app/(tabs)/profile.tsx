@@ -26,6 +26,8 @@ import { Modal, TextInput } from 'react-native';
 import { uploadLocalFileToCloudinary, uploadToCloudinary } from '../../src/lib/cloudinary';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme, useThemeStore } from '../../src/stores/theme.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { trackFeature, captureUIError } from '../../src/utils/sentry';
 
 const { width } = Dimensions.get('window');
 
@@ -44,6 +46,7 @@ const getUserRank = (points: number) => {
 };
 
 export default function ProfileScreen() {
+  useSentryScreen('ProfileScreen');
   const router = useRouter();
   const { profile: storeProfile, updatePreferences, updateProfile } = useAuthStore();
   const { materials } = useResourceStore();
@@ -225,6 +228,7 @@ export default function ProfileScreen() {
       setIsEditing(false);
       Alert.alert('Success', 'Profile updated successfully');
     } catch (err: any) {
+      captureUIError('ProfileScreen.saveProfile', err);
       // Show the actual error — most common is username already taken
       const msg = err?.message || '';
       if (msg.includes('unique') || msg.includes('duplicate') || msg.includes('users_username_key')) {
@@ -265,6 +269,7 @@ export default function ProfileScreen() {
 
   const generateSticker = async () => {
     if (!user?.id) return;
+    trackFeature('profile', 'generate_sticker', { userId: user.id });
     setIsUpdatingAvatar(true);
     try {
       const randomSeed = Math.random().toString(36).substring(7);
@@ -299,6 +304,7 @@ export default function ProfileScreen() {
 
       Alert.alert('Done!', 'Your profile picture has been updated.');
     } catch (err: any) {
+      captureUIError('ProfileScreen.generateSticker', err, { userId: user?.id });
       const isNetwork = err?.message?.includes('fetch') ||
         err?.message?.includes('network') ||
         err?.message?.includes('timed out') ||
@@ -358,6 +364,7 @@ export default function ProfileScreen() {
 
       Alert.alert('Success', 'Profile photo updated successfully!');
     } catch (err: any) {
+      captureUIError('ProfileScreen.confirmAndUploadAvatar', err, { userId: user?.id });
       const isNetworkError = err?.message?.includes('fetch') ||
         err?.message?.includes('network') ||
         err?.message?.includes('timed out') ||
@@ -403,6 +410,7 @@ export default function ProfileScreen() {
       setShowSecurity(false);
       Alert.alert('Password Changed', 'Your password has been updated successfully. Use it next time you sign in.');
     } catch (err: any) {
+      captureUIError('ProfileScreen.handleChangePassword', err);
       const msg = err?.message || '';
       if (msg.includes('same password') || msg.includes('different from')) {
         Alert.alert('Same Password', 'Your new password must be different from your current password.');

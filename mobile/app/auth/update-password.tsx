@@ -7,8 +7,11 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError } from '../../src/utils/sentry';
 
 export default function UpdatePassword() {
+  useSentryScreen('UpdatePassword');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -57,6 +60,7 @@ export default function UpdatePassword() {
       if (error) throw error;
       setIsSuccess(true);
     } catch (err: any) {
+      captureUIError('UpdatePassword.handleUpdate', err);
       // Detect expired recovery link
       if (err.message?.includes('expired') || err.message?.includes('invalid')) {
         Alert.alert(

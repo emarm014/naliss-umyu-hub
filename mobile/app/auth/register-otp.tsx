@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError } from '../../src/utils/sentry';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
   ScrollView, ActivityIndicator, Alert, SafeAreaView, StatusBar, AppState, AppStateStatus,
@@ -89,6 +91,7 @@ function StepBar({ current, total }: { current: number; total: number }) {
 }
 
 export default function RegisterOTP() {
+  useSentryScreen('RegisterOTP');
   const { email } = useLocalSearchParams<{ email: string }>();
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [isLoading, setIsLoading] = useState(false);
@@ -363,6 +366,7 @@ export default function RegisterOTP() {
       router.push({ pathname: '/auth/register-password', params: { email } });
 
     } catch (err: any) {
+      captureUIError('RegisterOTP.handleVerify', err, { email });
       if (!isMounted.current) return;
       if (err.message?.includes('expired') || err.message?.includes('Token has expired')) {
         Alert.alert('Code Expired', 'Your verification code has expired. Please request a new one.');

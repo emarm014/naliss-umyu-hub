@@ -18,8 +18,10 @@ import { format } from 'date-fns';
 import { supabase } from '../../src/api/supabase/client';
 import { useSettingsStore, useAuthStore, useGroupStore } from '../../src/stores';
 import { useTheme } from '../../src/stores/theme.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 
 export default function MessagesScreen() {
+  useSentryScreen('MessagesScreen');
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
   const { profile } = useAuthStore();

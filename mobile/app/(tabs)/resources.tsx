@@ -30,6 +30,8 @@ import * as WebBrowser from 'expo-web-browser';
 import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../src/stores/theme.store';
 import * as Sharing from 'expo-sharing';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { trackFeature, captureUIError } from '../../src/utils/sentry';
 
 const { width } = Dimensions.get('window');
 
@@ -45,6 +47,7 @@ const LEVELS: { key: AcademicLevel | 'all'; label: string }[] = [
 ];
 
 export default function ResourcesScreen() {
+  useSentryScreen('ResourcesScreen');
   const params = useLocalSearchParams();
   const { colors, isDark } = useTheme();
   const { 
@@ -120,6 +123,7 @@ export default function ResourcesScreen() {
 
   const handleRead = async (material: Material) => {
     if (!material.file_url) return;
+    trackFeature('resources', 'open_viewer', { materialId: material.id, title: material.title });
     try {
       let fileType: 'image' | 'video' | 'pdf' | 'audio' | 'document' = 'document';
       const mType = (material as any).material_type?.toLowerCase() || '';
@@ -195,13 +199,15 @@ export default function ResourcesScreen() {
 
       const type = (material as any).material_type ? 'material' : 'past_question';
       await incrementViewCount(material.id, type);
-    } catch {
+    } catch (err) {
+      captureUIError('ResourcesScreen.handleRead', err, { materialId: material.id });
       Alert.alert('Error', 'Could not open the viewer.');
     }
   };
 
   const handleDownload = async (material: Material) => {
     if (!material.file_url) return;
+    trackFeature('resources', 'download', { materialId: material.id, title: material.title });
     try {
       const displayName = material.file_name || extractFileNameFromUrl(material.file_url, material.title);
       const resultUri = await downloadFile(material.file_url, material.id, displayName);
@@ -211,8 +217,8 @@ export default function ResourcesScreen() {
         await incrementDownloadCount(material.id, type);
         await refreshDownloadedStatus();
       }
-    } catch {
-      // downloadFile already shows alert
+    } catch (err) {
+      captureUIError('ResourcesScreen.handleDownload', err, { materialId: material.id });
     }
   };
 

@@ -12,6 +12,8 @@ import { validateRegistrationNumberMatch } from '../../src/utils/validation';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { supabase } from '../../src/api/supabase/client';
 import { useNetworkStore } from '../../src/stores/network.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError } from '../../src/utils/sentry';
 
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
@@ -27,6 +29,7 @@ function StepBar({ current, total }: { current: number; total: number }) {
 }
 
 export default function RegisterIdentity() {
+  useSentryScreen('RegisterIdentity');
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [matricNo, setMatricNo] = useState('');
@@ -164,7 +167,8 @@ export default function RegisterIdentity() {
       signupStore.setCurrentStep(isGoogleFlow ? 3 : 5);
       router.push('/auth/level' as any);
 
-    } catch {
+    } catch (err) {
+      captureUIError('RegisterIdentity.handleContinue', err);
       if (!isMounted.current) return;
       Alert.alert('Validation Error', 'Something went wrong. Please check your connection and try again.');
     } finally {

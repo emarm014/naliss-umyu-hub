@@ -33,6 +33,7 @@ interface AuthState {
   checkProfileComplete: (userId: string) => Promise<void>;
   attemptProfileRepair: () => Promise<boolean>;
   setIsProfileComplete: (complete: boolean | null) => void;
+  setProfile: (profile: Profile | null) => void;
   signOut: () => Promise<void>;
   setError: (error: string | null) => void;
 }
@@ -206,14 +207,15 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { data, error } = await supabase
             .from('users')
-            .select('level')
+            .select('registration_number, level')
             .eq('id', userId)
             .maybeSingle();
 
           if (error) throw error;
           
-          // If level exists, the atomic profile is complete
-          const complete = !!data?.level;
+          // Profile is complete only when BOTH registration_number AND level are set
+          // (matches the same check in ProtectedRoute's onAuthStateChange)
+          const complete = !!(data?.registration_number && data?.level);
           set({ isProfileComplete: complete });
 
           // ── SELF-HEALING: If no profile row but user is logged in, attempt repair ──
@@ -255,22 +257,31 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setIsProfileComplete: (complete) => set({ isProfileComplete: complete }),
+      setProfile: (profile) => set({ profile: profile as any }),
 
       signOut: async () => {
         const { user } = get();
-        if (user) {
-          // Clear push token from DB on sign out
-          await supabase
+        // Capture userId BEFORE signOut fires the SIGNED_OUT event.
+        // ProtectedRoute's onAuthStateChange reads user.id from Zustand state
+        // to check ban/suspend — it must be available when the event fires.
+        const userId = user?.id;
+        if (userId) {
+          // Clear push token from DB on sign out (best-effort — don't block signout)
+          supabase
             .from('users')
             .update({ push_token: null } as any)
-            .eq('id', user.id);
+            .eq('id', userId)
+            .then(() => {})
+            .catch(() => {});
         }
-        await supabase.auth.signOut();
+        // Clear local state BEFORE calling signOut so onAuthStateChange
+        // sees a clean slate and doesn't re-enter the ban-check with stale data.
+        set({ session: null, user: null, profile: null, isProfileComplete: null, error: null });
         // CRITICAL: Clear all cached data to prevent data leak between users
         useMessageStore.getState().clearCache();
         useGroupStore.getState().clearGroups();
         useGlobalSyncStore.getState().terminate();
-        set({ session: null, user: null, profile: null, isProfileComplete: null, error: null });
+        await supabase.auth.signOut();
       },
 
       setError: (error) => set({ error }),
@@ -282,8 +293,9 @@ export const useAuthStore = create<AuthState>()(
         session: state.session,
         user: state.user,
         profile: state.profile,
-        isProfileComplete: state.isProfileComplete,
         lastFetch: state.lastFetch,
+        // isProfileComplete intentionally NOT persisted — stale false value causes
+        // signup screen flash on cold launch. Always re-derived from onAuthStateChange.
       }),
       // When store rehydrates from AsyncStorage (app open), immediately set
       // isLoading=false so ProtectedRoute doesn't show blank spinner offline.

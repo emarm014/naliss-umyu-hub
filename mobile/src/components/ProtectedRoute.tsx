@@ -22,6 +22,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const setSession = useAuthStore(s => s.setSession);
   const setUser = useAuthStore(s => s.setUser);
   const setIsProfileComplete = useAuthStore(s => s.setIsProfileComplete);
+  const setProfile = useAuthStore(s => s.setProfile);
   const authLoading = useAuthStore(s => s.isLoading);
   const _hasHydrated = useAuthStore(s => s._hasHydrated);
 
@@ -34,7 +35,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const profile = useAuthStore(s => s.profile);
   const [restrictionInfo, setRestrictionInfo] = useState<{
     type: 'banned' | 'suspended';
     reason: string | null;
@@ -43,7 +44,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [countdown, setCountdown] = useState<string>('');
 
   // Safety timeout: if isGoogleDelaying gets stuck (e.g. error during level screen),
-  // auto-clear it after 3 minutes so the user is never permanently locked
+  // auto-clear it after 3 minutes so the user is never permanently locked.
+  // Depends on session so the timer resets on each new login, not just on mount.
   useEffect(() => {
     const signupState = useSignupStore.getState();
     if (!signupState.isGoogleDelaying) return;
@@ -51,7 +53,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       useSignupStore.getState().setIsGoogleDelaying(false);
     }, 3 * 60 * 1000); // 3 minutes
     return () => clearTimeout(timer);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   // ── OFFLINE-FIRST: Unblock spinner as fast as possible ───────────────────
   // Strategy:
@@ -75,10 +78,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       const cachedProfile = useAuthStore.getState().profile;
       const hasCompleteCache = !!(cachedProfile?.registration_number && cachedProfile?.level);
 
-      // If we have a complete cached profile, unblock after 100ms
-      // (gives onAuthStateChange a tiny window to resolve first if network is fast)
+      // If we have a complete cached profile, unblock after 1500ms
+      // (gives onAuthStateChange enough time to complete its DB fetch before we trust cache)
       // If no cached profile, wait 4s before giving up
-      const delay = hasCompleteCache ? 100 : 4000;
+      const delay = hasCompleteCache ? 1500 : 4000;
 
       offlineUnblockTimer.current = setTimeout(() => {
         if (useAuthStore.getState().isProfileComplete === null) {
@@ -245,7 +248,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
                 'Access Denied', 
                 'This account has been graduated. Access to the platform is restricted to active students only.'
               );
-              await supabase.auth.signOut();
+              // Clear state immediately, then sign out — avoids double SIGNED_OUT event
+              setSession(null);
+              setUser(null);
+              setIsProfileComplete(null);
+              setProfile(null);
+              supabase.auth.signOut().catch(() => {});
               return;
             }
 
@@ -321,7 +329,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [setSession, setUser, setIsProfileComplete]);
+  }, [setSession, setUser, setIsProfileComplete, setProfile]);
 
   const hydrateSignupStore = (currentSession: any) => {
     const signupState = useSignupStore.getState();

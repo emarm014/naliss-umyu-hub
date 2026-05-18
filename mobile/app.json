@@ -71,10 +71,11 @@
         }
       ],
       [
-        "@sentry/react-native",
+        "@sentry/react-native/expo",
         {
-          "organization": "naliss",
-          "project": "naliss-umyu-hub"
+          "url": "https://sentry.io/",
+          "project": "naiss-umyu-hub",
+          "organization": "emerm"
         }
       ]
     ],

@@ -17,10 +17,13 @@ import { useAuthStore } from '../../src/stores/auth.store';
 import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { AuthGuardian } from '../../src/utils/auth-guardian';
 import { useNetworkStore } from '../../src/stores/network.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { startTransaction, trackUserAction } from '../../src/utils/sentry';
 
 const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
+  useSentryScreen('LoginScreen');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -34,6 +37,7 @@ export default function LoginScreen() {
   const { isOnline, checkNetworkStatus } = useNetworkStore();
 
   const handleLogin = async () => {
+    trackUserAction('login.submit', { email: email.trim().toLowerCase() });
     if (!email.trim() || !password) {
       Alert.alert('Missing Fields', 'Please enter both email and password');
       return;
@@ -63,6 +67,7 @@ export default function LoginScreen() {
     }
 
     setIsLoading(true);
+    const finishTransaction = startTransaction('auth.login', { email: email.trim().toLowerCase() });
     try {
       const { data: provider, error: providerError } = await supabase.rpc('check_existing_account', { email_addr: email.trim().toLowerCase() });
 
@@ -108,6 +113,7 @@ export default function LoginScreen() {
       await AuthGuardian.clearFailures(email);
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) throw error;
+      finishTransaction('ok');
       // Sentry: breadcrumb for successful login
       Sentry.addBreadcrumb({
         category: 'auth',
@@ -126,6 +132,7 @@ export default function LoginScreen() {
       }) as any).catch(() => {});
 
     } catch (err: any) {
+      finishTransaction('error');
       const msg = err.message || 'Login failed. Please try again.';
       // Sentry: capture login errors with full context
       Sentry.captureException(err, {

@@ -13,7 +13,7 @@ import { useGroupStore } from '../../src/stores/group.store';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
-import { captureUIError, trackFeature } from '../../src/utils/sentry';
+import { captureUIError, trackFeature, startTransaction } from '../../src/utils/sentry';
 
 const LEVELS = [
   { id: '100', title: '100 Level', desc: 'Freshman year — foundation courses' },
@@ -117,6 +117,7 @@ export default function RegisterLevel() {
 
     setIsLoading(true);
     advanceTo(1); // 8% — "Verifying session…"
+    const finishTransaction = startTransaction('auth.registration', { level: selectedLevel! });
 
     // Block ProtectedRoute from redirecting while we're loading
     useSignupStore.getState().setIsGoogleDelaying(true);
@@ -292,10 +293,12 @@ export default function RegisterLevel() {
       // Hold at 100% for 800ms so the user reads the success message
       await new Promise(r => setTimeout(r, 800));
 
+      finishTransaction('ok');
       if (!isMounted.current) return;
       router.replace('/(tabs)' as any);
 
     } catch (err: any) {
+      finishTransaction('error');
       captureUIError('RegisterLevel.handleFinish', err, { selectedLevel });
       if (isMounted.current) {
         useSignupStore.getState().setIsGoogleDelaying(false);

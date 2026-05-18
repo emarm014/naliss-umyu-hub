@@ -50,22 +50,32 @@ const fetchWithRetry = async (
     });
     clearTimeout(timeoutId);
     const durationMs = Date.now() - startMs;
-    // Log slow requests (>3s) as warnings so they appear highlighted in Sentry
-    if (durationMs > 3000) {
+    const method = options.method ?? 'GET';
+
+    if (!response.ok) {
+      // Non-2xx — always record as error breadcrumb
       Sentry.addBreadcrumb({
         category: 'api.supabase',
-        message: `Slow request: ${options.method ?? 'GET'} ${urlPath} (${durationMs}ms)`,
+        message: `HTTP ${response.status}: ${method} ${urlPath} (${durationMs}ms)`,
+        data: { path: urlPath, status: response.status, durationMs, attempt },
+        level: 'error',
+      });
+    } else if (durationMs > 3000) {
+      // Slow but successful — warn so it shows highlighted in the trail
+      Sentry.addBreadcrumb({
+        category: 'api.supabase',
+        message: `Slow: ${method} ${urlPath} (${durationMs}ms)`,
         data: { path: urlPath, status: response.status, durationMs, attempt },
         level: 'warning',
       });
-    }
-    // Log non-2xx responses
-    if (!response.ok) {
+    } else {
+      // Normal successful request — record as debug breadcrumb so we always
+      // have the full API call sequence visible before any crash
       Sentry.addBreadcrumb({
         category: 'api.supabase',
-        message: `HTTP ${response.status}: ${options.method ?? 'GET'} ${urlPath}`,
-        data: { path: urlPath, status: response.status, durationMs, attempt },
-        level: 'error',
+        message: `${method} ${urlPath} ${response.status} (${durationMs}ms)`,
+        data: { path: urlPath, status: response.status, durationMs },
+        level: 'debug',
       });
     }
     return response;

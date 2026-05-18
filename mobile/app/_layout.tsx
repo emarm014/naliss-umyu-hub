@@ -1,15 +1,39 @@
 import * as Sentry from '@sentry/react-native';
 
 // ── Sentry: initialised before everything else so it catches all boot errors ──
+const IS_PROD = process.env.EXPO_PUBLIC_APP_ENV === 'production';
+
 Sentry.init({
   dsn: 'https://d788f703d8c028e11be19ad6c99b2822@o4511411773571072.ingest.de.sentry.io/4511413255995472',
-  // Send all traces in dev; sample at 10% in production to reduce quota usage
-  tracesSampleRate: process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 0.1 : 1.0,
-  // Disable native layer in Expo Go — works without a native build
-  enableNativeNagger: false,
-  // Capture unhandled promise rejections automatically
+
+  // ── Tracing ──────────────────────────────────────────────────────────────
+  // 100% in dev to see all spans; 20% in prod to control quota
+  tracesSampleRate: IS_PROD ? 0.2 : 1.0,
+
+  // ── Breadcrumbs ──────────────────────────────────────────────────────────
+  // Keep last 150 breadcrumbs — enough to reconstruct the full sequence
+  // leading up to any crash without overwhelming the Sentry event payload
+  maxBreadcrumbs: 150,
+
+  // Filter out noisy breadcrumbs that add no crash-diagnostic value
+  beforeBreadcrumb(breadcrumb) {
+    // Drop Expo/RN internal console.log noise
+    if (breadcrumb.category === 'console' && breadcrumb.level === 'log') return null;
+    // Drop XHR breadcrumbs for realtime heartbeat pings — they fire every 15s
+    if (
+      breadcrumb.category === 'xhr' &&
+      typeof breadcrumb.data?.url === 'string' &&
+      (breadcrumb.data.url.includes('/realtime/') || breadcrumb.data.url.includes('heartbeat'))
+    ) return null;
+    return breadcrumb;
+  },
+
+  // ── Capture config ───────────────────────────────────────────────────────
+  // Catch failed HTTP requests as breadcrumbs automatically
   enableCaptureFailedRequests: true,
-  debug: process.env.EXPO_PUBLIC_APP_ENV !== 'production',
+  // Disable native nagger — works in Expo Go without a native build
+  enableNativeNagger: false,
+  debug: !IS_PROD,
 });
 
 import { useEffect, useState, useRef } from 'react';
@@ -56,6 +80,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSignupStore } from '../src/stores/signup.store';
 import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
 import { useThemeStore } from '../src/stores/theme.store';
+
+// ── AppState breadcrumbs ──────────────────────────────────────────────────────
+// Records every foreground/background transition so Sentry shows the exact
+// moment the user backgrounded the app before a crash or ANR.
+AppState.addEventListener('change', (nextState: AppStateStatus) => {
+  Sentry.addBreadcrumb({
+    category: 'app.lifecycle',
+    message: `AppState → ${nextState}`,
+    level: nextState === 'active' ? 'info' : 'warning',
+    data: { state: nextState },
+  });
+});
 
 // ── Kill detection key ────────────────────────────────────────────────────────
 // Written to AsyncStorage when app goes to background during an active signup.

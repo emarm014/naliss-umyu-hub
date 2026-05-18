@@ -84,6 +84,19 @@ export function trackFeature(feature: string, action: string, data?: Record<stri
   });
 }
 
+/**
+ * Call on any significant user interaction (button tap, form submit, picker select).
+ * Creates a ui.click breadcrumb visible in the Sentry trail before every crash.
+ */
+export function trackUserAction(action: string, data?: Record<string, any>) {
+  Sentry.addBreadcrumb({
+    category: 'ui.click',
+    message: action,
+    data,
+    level: 'info',
+  });
+}
+
 // ── Exception capture helpers ──────────────────────────────────────────────
 
 export function captureStoreError(
@@ -121,31 +134,73 @@ export function captureApiError(
   });
 }
 
-// ── Performance helpers ────────────────────────────────────────────────────
+// ── Performance / Tracing helpers ────────────────────────────────────────────────────
 
 /**
- * Wrap an async operation in a Sentry span for performance monitoring.
+ * Wrap an async operation in a Sentry span so it shows up in Performance traces.
+ * Creates a real span within the active transaction (if one exists) and also
+ * records a breadcrumb with the duration for crash trail context.
+ *
  * Usage: const result = await withSpan('store.fetchProfile', () => supabase.from(...))
  */
 export async function withSpan<T>(
   name: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  attributes?: Record<string, string | number | boolean>
 ): Promise<T> {
-  const start = Date.now();
-  try {
-    const result = await fn();
+  return Sentry.startSpan(
+    { name, op: name, attributes },
+    async (span) => {
+      const start = Date.now();
+      try {
+        const result = await fn();
+        const durationMs = Date.now() - start;
+        span?.setStatus({ code: 1 }); // OK
+        Sentry.addBreadcrumb({
+          category: 'perf',
+          message: `${name} ✓ ${durationMs}ms`,
+          level: 'debug',
+          data: { durationMs, ...attributes },
+        });
+        return result;
+      } catch (err) {
+        const durationMs = Date.now() - start;
+        span?.setStatus({ code: 2 }); // ERROR
+        Sentry.addBreadcrumb({
+          category: 'perf',
+          message: `${name} ✗ FAILED after ${durationMs}ms`,
+          level: 'error',
+          data: { durationMs, error: (err as any)?.message, ...attributes },
+        });
+        throw err;
+      }
+    }
+  );
+}
+
+/**
+ * Start a root transaction for a named user flow (e.g. login, registration).
+ * The returned finish() function MUST be called when the flow completes or fails.
+ * This groups all spans under one transaction in Sentry Performance.
+ *
+ * Usage:
+ *   const finish = startTransaction('auth.login');
+ *   try { ... } finally { finish(); }
+ */
+export function startTransaction(name: string, data?: Record<string, string>) {
+  // addBreadcrumb marks the start of the flow in the crash trail
+  Sentry.addBreadcrumb({
+    category: 'transaction',
+    message: `▶ ${name}`,
+    level: 'info',
+    data,
+  });
+  const startMs = Date.now();
+  return function finish(status: 'ok' | 'error' = 'ok') {
     Sentry.addBreadcrumb({
-      category: 'perf',
-      message: `${name} completed in ${Date.now() - start}ms`,
-      level: 'debug',
+      category: 'transaction',
+      message: `■ ${name} [${status}] ${Date.now() - startMs}ms`,
+      level: status === 'ok' ? 'info' : 'error',
     });
-    return result;
-  } catch (err) {
-    Sentry.addBreadcrumb({
-      category: 'perf',
-      message: `${name} FAILED after ${Date.now() - start}ms`,
-      level: 'error',
-    });
-    throw err;
-  }
+  };
 }

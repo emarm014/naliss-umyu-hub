@@ -1,3 +1,17 @@
+import * as Sentry from '@sentry/react-native';
+
+// ── Sentry: initialised before everything else so it catches all boot errors ──
+Sentry.init({
+  dsn: 'https://d788f703d8c028e11be19ad6c99b2822@o4511411773571072.ingest.de.sentry.io/4511413255995472',
+  // Send all traces in dev; sample at 10% in production to reduce quota usage
+  tracesSampleRate: process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 0.1 : 1.0,
+  // Disable native layer in Expo Go — works without a native build
+  enableNativeNagger: false,
+  // Capture unhandled promise rejections automatically
+  enableCaptureFailedRequests: true,
+  debug: process.env.EXPO_PUBLIC_APP_ENV !== 'production',
+});
+
 import { useEffect, useState, useRef } from 'react';
 // Polyfill for WeakRef (required for some versions of Supabase SDK on older Android/Hermes)
 if (typeof (globalThis as any).WeakRef === 'undefined') {
@@ -414,7 +428,7 @@ export function ErrorBoundary(props: any) {
   return <CustomErrorBoundary {...props} />;
 }
 
-export default function RootLayout() {
+function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -425,3 +439,9 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// Sentry.wrap instruments the root component for:
+// - JS crash reporting
+// - Unhandled promise rejections
+// - Native crash reporting (when built with EAS)
+export default Sentry.wrap(RootLayout);

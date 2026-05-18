@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as Sentry from '@sentry/react-native';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -67,6 +68,13 @@ export default function LoginScreen() {
 
       // Only block on known provider responses — if RPC errors, fall through to normal auth
       if (!providerError) {
+        // Sentry: log what check_existing_account returned
+        Sentry.addBreadcrumb({
+          category: 'auth.rpc',
+          message: `check_existing_account result: ${provider}`,
+          data: { provider, email: email.trim().toLowerCase() },
+          level: 'info',
+        });
         if (provider === 'google') {
           Alert.alert('Use Google Sign-In', 'This account is linked to Google. Please use "Continue with Google" below.');
           setIsLoading(false);
@@ -100,6 +108,13 @@ export default function LoginScreen() {
       await AuthGuardian.clearFailures(email);
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) throw error;
+      // Sentry: breadcrumb for successful login
+      Sentry.addBreadcrumb({
+        category: 'auth',
+        message: 'Login successful',
+        data: { email: email.trim().toLowerCase(), method: 'email' },
+        level: 'info',
+      });
       // Navigation handled by ProtectedRoute's onAuthStateChange
 
       // Log successful login (best-effort, fire-and-forget)
@@ -112,6 +127,11 @@ export default function LoginScreen() {
 
     } catch (err: any) {
       const msg = err.message || 'Login failed. Please try again.';
+      // Sentry: capture login errors with full context
+      Sentry.captureException(err, {
+        tags: { location: 'LoginScreen.handleLogin' },
+        extra: { email: email.trim().toLowerCase(), errorMessage: msg },
+      });
 
       // Log failed login attempt server-side (best-effort, fire-and-forget)
       (supabase.from('activity_logs' as any).insert({

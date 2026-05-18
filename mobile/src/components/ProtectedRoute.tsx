@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import * as Sentry from '@sentry/react-native';
 import { useRouter, useSegments, usePathname } from 'expo-router';
 import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView } from 'react-native';
 import { useAuthStore, useSettingsStore } from '../stores';
@@ -158,6 +159,18 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
 
+      // ── Sentry: log every auth state change as a breadcrumb ──────────────
+      Sentry.addBreadcrumb({
+        category: 'auth',
+        message: `Auth event: ${event}`,
+        data: {
+          userId: currentSession?.user?.id ?? useAuthStore.getState().user?.id ?? 'none',
+          email: currentSession?.user?.email ?? 'none',
+          hasSession: !!currentSession,
+        },
+        level: 'info',
+      });
+
       // ── SIGNED_OUT intercept ──────────────────────────────────────────────
       // Supabase may fire SIGNED_OUT when the server invalidates a session
       // (e.g. after a ban/suspend). Before clearing state and redirecting to
@@ -204,11 +217,21 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         setUser(null);
         setIsProfileComplete(null);
         setProfile(null);
+        // Sentry: clear user identity on sign-out
+        Sentry.setUser(null);
         return;
       }
 
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
+
+      // Sentry: attach user identity on every active session event
+      if (currentSession?.user) {
+        Sentry.setUser({
+          id: currentSession.user.id,
+          email: currentSession.user.email ?? undefined,
+        });
+      }
       
       if (currentSession?.user) {
         // Domain validation — block non-institutional emails
@@ -242,7 +265,21 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           if (profileError) throw profileError;
           if (profileData) {
             setProfile(profileData as any);
-            
+
+            // Sentry: breadcrumb for profile fetch result
+            Sentry.addBreadcrumb({
+              category: 'auth.profile',
+              message: 'Profile fetched from DB',
+              data: {
+                userId: currentSession.user.id,
+                status: profileData.status,
+                role: profileData.role,
+                hasRegNumber: !!profileData.registration_number,
+                hasLevel: !!profileData.level,
+              },
+              level: 'info',
+            });
+
             // BLOCK: Account status check (Ban / Suspend / Graduate)
             if (profileData.status === 'graduated') {
               Alert.alert(
@@ -309,6 +346,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             hydrateSignupStore(currentSession);
           }
         } catch (profileErr) {
+          // Sentry: capture silent profile fetch failures — previously invisible
+          Sentry.captureException(profileErr, {
+            tags: { location: 'ProtectedRoute.onAuthStateChange.profileFetch' },
+            extra: {
+              userId: currentSession?.user?.id,
+              event,
+            },
+          });
           // OFFLINE GUARD: If we have a local isProfileComplete, trust it
           // Don't leave isProfileComplete as null — that causes infinite spinner
           const currentComplete = useAuthStore.getState().isProfileComplete;
@@ -462,6 +507,18 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     if (pathname === target) return;
     lastNavTime.current = now;
     lastNavTarget.current = target;
+    // Sentry: track every auth-driven navigation redirect
+    Sentry.addBreadcrumb({
+      category: 'navigation',
+      message: `Auth redirect: ${pathname} → ${target}`,
+      data: {
+        from: pathname,
+        to: target,
+        userId: useAuthStore.getState().user?.id ?? 'none',
+        isProfileComplete: useAuthStore.getState().isProfileComplete,
+      },
+      level: 'info',
+    });
     router.replace(target as any);
   };
 

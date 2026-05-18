@@ -211,6 +211,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       setUser(currentSession?.user ?? null);
       
       if (currentSession?.user) {
+        // Domain validation — block non-institutional emails
+        // Google OAuth users in the middle of signup are allowed through temporarily
+        const signupState = useSignupStore.getState();
+        const isInSignupFlow = signupState.hasActiveSession() || signupState.provider === 'google';
+        if (!isInSignupFlow && (!currentSession.user.email || !INSTITUTIONAL_EMAIL_REGEX.test(currentSession.user.email))) {
+          Alert.alert('Access Denied', 'You must use an institutional student email (@students.umyu.edu.ng).');
+          setSession(null); setUser(null); setIsProfileComplete(null); setProfile(null);
+          supabase.auth.signOut().catch(() => {});
+          return;
+        }
+
         // Try to check user profile and status (Silently fail if offline)
         // GUARD: If profile is already marked complete, skip the DB re-check
         // for token refresh events ONLY. For USER_UPDATED we still need to
@@ -231,18 +242,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           if (profileError) throw profileError;
           if (profileData) {
             setProfile(profileData as any);
-
-            // Domain validation — done here so we can exempt admins using profileData.role
-            // Google OAuth users in signup are also allowed through temporarily
-            const signupState = useSignupStore.getState();
-            const isInSignupFlow = signupState.hasActiveSession() || signupState.provider === 'google';
-            const isAdminRole = profileData.role === 'super_admin' || profileData.role === 'moderator';
-            if (!isInSignupFlow && !isAdminRole && (!currentSession.user.email || !INSTITUTIONAL_EMAIL_REGEX.test(currentSession.user.email))) {
-              Alert.alert('Access Denied', 'You must use an institutional student email (@students.umyu.edu.ng).');
-              setSession(null); setUser(null); setIsProfileComplete(null); setProfile(null);
-              supabase.auth.signOut().catch(() => {});
-              return;
-            }
             
             // BLOCK: Account status check (Ban / Suspend / Graduate)
             if (profileData.status === 'graduated') {
@@ -287,9 +286,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             }
 
             // Atomic check: Is profile record complete?
-            // Admins/super_admins don't need a registration_number — treat as complete
-            const isAdmin = profileData.role === 'super_admin' || profileData.role === 'moderator';
-            if ((profileData.registration_number && profileData.level) || (isAdmin && profileData.level)) {
+            // Everyone (including moderators) must have both fields — moderators are promoted students
+            if (profileData.registration_number && profileData.level) {
               setIsProfileComplete(true);
             } else {
               setIsProfileComplete(false);

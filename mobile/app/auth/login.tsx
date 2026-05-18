@@ -64,32 +64,37 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const { data: provider, error: providerError } = await supabase.rpc('check_existing_account', { email_addr: email.trim().toLowerCase() });
-      if (providerError) throw providerError;
 
-      if (provider === 'google') {
-        Alert.alert('Use Google Sign-In', 'This account is linked to Google. Please use "Continue with Google" below.');
-        return;
-      }
+      // Only block on known provider responses — if RPC errors, fall through to normal auth
+      if (!providerError) {
+        if (provider === 'google') {
+          Alert.alert('Use Google Sign-In', 'This account is linked to Google. Please use "Continue with Google" below.');
+          setIsLoading(false);
+          return;
+        }
 
-      if (provider === 'graduated') {
-        Alert.alert(
-          'Account Graduated',
-          'This email belongs to a graduated student. The NALISS UMYU Hub is only for currently enrolled students.\n\nYour alumni record is preserved in the system.',
-          [{ text: 'OK', style: 'default' }]
-        );
-        return;
-      }
+        if (provider === 'graduated') {
+          Alert.alert(
+            'Account Graduated',
+            'This email belongs to a graduated student. The NALISS UMYU Hub is only for currently enrolled students.\n\nYour alumni record is preserved in the system.',
+            [{ text: 'OK', style: 'default' }]
+          );
+          setIsLoading(false);
+          return;
+        }
 
-      if (provider === 'none') {
-        Alert.alert(
-          'Account Not Found',
-          'No account found with this email. Would you like to sign up?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Create Account', onPress: () => router.push('/auth/eligibility' as any) },
-          ]
-        );
-        return;
+        if (provider === 'none') {
+          Alert.alert(
+            'Account Not Found',
+            'No account found with this email. Would you like to sign up?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Create Account', onPress: () => router.push('/auth/eligibility' as any) },
+            ]
+          );
+          setIsLoading(false);
+          return;
+        }
       }
 
       await AuthGuardian.clearFailures(email);

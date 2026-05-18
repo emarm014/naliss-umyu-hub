@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase/client';
+import { captureStoreError } from '../utils/sentry';
 
 export interface Announcement {
     id: string;
@@ -84,6 +85,9 @@ export const useAnnouncementStore = create<AnnouncementState>()(
                     const isNetworkError = error instanceof Error && 
                         (error.message.includes('network') || error.message.includes('fetch') || 
                          error.message.includes('Failed') || error.message.includes('abort'));
+                    if (!isNetworkError) {
+                        captureStoreError('announcement', 'fetchAnnouncements', error, { level });
+                    }
                     set({
                         error: isNetworkError ? null : (error instanceof Error ? error.message : 'Failed to fetch'),
                         isLoading: false

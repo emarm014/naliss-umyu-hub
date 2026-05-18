@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase/client';
+import { captureStoreError } from '../utils/sentry';
 
 interface GroupState {
     groups: any[];
@@ -125,6 +126,7 @@ export const useGroupStore = create<GroupState>()(
 
                     set({ groups: processed, isLoading: false, lastFetched: new Date().toISOString() });
                 } catch (err: unknown) {
+                    captureStoreError('group', 'fetchGroups', err, { userId: session?.user?.id });
                     set({ isLoading: false, error: (err as Error)?.message || 'Failed to load groups.' });
                 }
             },

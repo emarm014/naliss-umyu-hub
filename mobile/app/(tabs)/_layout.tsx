@@ -2,12 +2,18 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { useTheme } from '../../src/stores/theme.store';
+import { trackScreen } from '../../src/utils/sentry';
 
 export default function TabsLayout() {
   const { colors, isDark } = useTheme();
 
   return (
     <Tabs
+      screenListeners={{
+        focus: (e) => {
+          trackScreen(e.target?.split('-')[0] ?? 'unknown_tab');
+        },
+      }}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,

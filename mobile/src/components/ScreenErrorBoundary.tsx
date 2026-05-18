@@ -1,4 +1,5 @@
 import React from 'react';
+import * as Sentry from '@sentry/react-native';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/Colors';
@@ -28,8 +29,11 @@ export class ScreenErrorBoundary extends React.Component<
     return { hasError: true, error: error?.message || 'Unknown error' };
   }
 
-  componentDidCatch() {
-    // Silent — error is already captured in state
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    Sentry.captureException(error, {
+      tags: { location: 'ScreenErrorBoundary' },
+      extra: { componentStack: info.componentStack },
+    });
   }
 
   handleRetry = () => {

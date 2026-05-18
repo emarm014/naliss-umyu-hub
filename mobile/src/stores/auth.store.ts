@@ -7,6 +7,7 @@ import { User as Profile } from '../types';
 import { useMessageStore } from './message.store';
 import { useGroupStore } from './group.store';
 import { useGlobalSyncStore } from './globalSync.store';
+import { captureStoreError, trackStoreAction } from '../utils/sentry';
 
 interface AuthState {
   session: Session | null;
@@ -79,6 +80,7 @@ export const useAuthStore = create<AuthState>()(
           if (!isNetworkError) {
             // Real DB error — surface it so the UI can react
             set({ error: err.message || 'Failed to load profile' });
+            captureStoreError('auth', 'fetchProfile', err, { userId: user.id });
           }
         }
       },
@@ -152,6 +154,7 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
           // Real error — revert optimistic update
+          captureStoreError('auth', 'updateProfile', err, { userId: user.id, updates: Object.keys(updates) });
           set({ profile });
           throw err;
         }

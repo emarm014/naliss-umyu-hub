@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase/client';
 import { Material, Course, MaterialType, AcademicLevel, SemesterType, PastQuestion } from '../types';
 import { checkFileExists, extractFileNameFromUrl } from '../utils/download';
+import { captureStoreError } from '../utils/sentry';
 
 interface ResourceState {
     materials: Material[];
@@ -76,7 +77,8 @@ export const useResourceStore = create<ResourceState>()(
                     const materials = (data as unknown) as Material[];
                     set({ materials, isLoading: false, lastFetchMaterials: Date.now() });
                     get().refreshDownloadedStatus();
-                } catch {
+                } catch (err) {
+                    captureStoreError('resource', 'fetchMaterials', err, { filters });
                     set({ isLoading: false });
                 }
             },
@@ -113,7 +115,8 @@ export const useResourceStore = create<ResourceState>()(
                     const pastQuestions = (data as unknown) as PastQuestion[];
                     set({ pastQuestions, isLoading: false, lastFetchPastQuestions: Date.now() });
                     get().refreshDownloadedStatus();
-                } catch {
+                } catch (err) {
+                    captureStoreError('resource', 'fetchPastQuestions', err, { filters });
                     set({ isLoading: false });
                 }
             },
@@ -140,7 +143,8 @@ export const useResourceStore = create<ResourceState>()(
                     const { data, error } = await query.order('code');
                     if (error) throw error;
                     set({ courses: (data as unknown) as Course[], isLoading: false, lastFetchCourses: Date.now() });
-                } catch {
+                } catch (err) {
+                    captureStoreError('resource', 'fetchCourses', err, { level });
                     set({ isLoading: false });
                 }
             },
@@ -235,6 +239,7 @@ export const useResourceStore = create<ResourceState>()(
                     }
                     set({ isLoading: false });
                 } catch (error) {
+                    captureStoreError('resource', 'deleteResource', error, { id, type });
                     set({
                         error: error instanceof Error ? error.message : 'Failed to delete resource',
                         isLoading: false

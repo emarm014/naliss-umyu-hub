@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as Network from 'expo-network';
+import { trackNetworkChange } from '../utils/sentry';
 
 interface NetworkState {
   isOnline: boolean;
@@ -51,11 +52,13 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       if (!wasOnline && isOnline) {
         // Just came back online — trigger all registered callbacks
         get().setOnline();
+        trackNetworkChange(true, networkState.type);
         onlineCallbacks.forEach(cb => {
           try { cb(); } catch { /* silent */ }
         });
       } else if (wasOnline && !isOnline) {
         get().setOffline();
+        trackNetworkChange(false, networkState.type);
       }
 
       set({

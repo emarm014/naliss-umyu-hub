@@ -1,4 +1,5 @@
 import React from 'react';
+import * as Sentry from '@sentry/react-native';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
@@ -17,6 +18,15 @@ interface Props {
  * Replaces the generic Expo Router error screen with a professional recovery UI.
  */
 export function ErrorBoundary({ error, retry }: Props) {
+  // Report every crash boundary hit to Sentry with full stack
+  React.useEffect(() => {
+    Sentry.captureException(error, {
+      tags: { location: 'ErrorBoundary.root' },
+      extra: { stack: error.stack },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+
   const handleHardReset = async () => {
     try {
       // Wipe all local persistence to clear corrupted state

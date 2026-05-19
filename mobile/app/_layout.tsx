@@ -250,7 +250,6 @@ const queryClient = new QueryClient({
 });
 
 function RootLayoutNav() {
-  const { checkNetworkStatus } = useNetworkStore();
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const { isDark } = useThemeStore();
   
@@ -323,16 +322,17 @@ function RootLayoutNav() {
   }, [fontsLoaded]);
 
   useEffect(() => {
-    checkNetworkStatus();
+    const check = () => useNetworkStore.getState().checkNetworkStatus();
+    check();
     // Reduced polling: 5s when active (down from 2s) — less battery drain
     // Most network changes are detected by the OS anyway via Network.getNetworkStateAsync
-    let interval: ReturnType<typeof setInterval> | null = setInterval(checkNetworkStatus, 5000);
+    let interval: ReturnType<typeof setInterval> | null = setInterval(check, 5000);
 
     const handleAppState = (nextState: string) => {
       if (nextState === 'active') {
         // App came to foreground — check immediately then resume polling
-        checkNetworkStatus();
-        if (!interval) interval = setInterval(checkNetworkStatus, 5000);
+        check();
+        if (!interval) interval = setInterval(check, 5000);
       } else {
         // App went to background — stop polling to save battery
         if (interval) { clearInterval(interval); interval = null; }
@@ -344,7 +344,8 @@ function RootLayoutNav() {
       if (interval) clearInterval(interval);
       sub.remove();
     };
-  }, [checkNetworkStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Stable empty deps — checkNetworkStatus accessed via getState() to avoid re-run loop
 
   // Register reconnection callback — when device comes back online, re-sync AND re-open realtime channels
   useEffect(() => {

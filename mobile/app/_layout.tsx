@@ -481,3 +481,7 @@ function RootLayout() {
 // - Unhandled promise rejections
 // - Native crash reporting (when built with EAS)
 export default Sentry.wrap(RootLayout);
+
+// ── TEMPORARY: Sentry boot verification — remove after confirming event in dashboard ──
+console.warn('[NALISS] Sentry boot test firing — check https://emerm.sentry.io/issues/');
+Sentry.captureException(new Error('[NALISS] Sentry boot test — delete after verifying'));

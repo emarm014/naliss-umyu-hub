@@ -6,6 +6,12 @@ const IS_PROD = process.env.EXPO_PUBLIC_APP_ENV === 'production';
 Sentry.init({
   dsn: 'https://d788f703d8c028e11be19ad6c99b2822@o4511411773571072.ingest.de.sentry.io/4511413255995472',
 
+  // ── Release & environment ─────────────────────────────────────────────────
+  // These MUST match what the @sentry/react-native/expo plugin uploads source
+  // maps under during an EAS build. Sentry uses release+dist to find the right
+  // source map for a given crash, turning minified stack traces into readable ones.
+  environment: process.env.EXPO_PUBLIC_APP_ENV ?? 'development',
+
   // ── Tracing ──────────────────────────────────────────────────────────────
   // 100% in dev to see all spans; 20% in prod to control quota
   tracesSampleRate: IS_PROD ? 0.2 : 1.0,
@@ -481,7 +487,3 @@ function RootLayout() {
 // - Unhandled promise rejections
 // - Native crash reporting (when built with EAS)
 export default Sentry.wrap(RootLayout);
-
-// ── TEMPORARY: Sentry boot verification — remove after confirming event in dashboard ──
-console.warn('[NALISS] Sentry boot test firing — check https://emerm.sentry.io/issues/');
-Sentry.captureException(new Error('[NALISS] Sentry boot test — delete after verifying'));

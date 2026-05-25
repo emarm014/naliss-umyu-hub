@@ -24,9 +24,10 @@ export default function MessagesScreen() {
   useSentryScreen('MessagesScreen');
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
-  const { profile } = useAuthStore();
-  const { readOnlyMode } = useSettingsStore();
-  const { groups, fetchGroups, isLoading } = useGroupStore();
+  const profile = useAuthStore(s => s.profile);
+  const readOnlyMode = useSettingsStore(s => s.readOnlyMode);
+  const groups = useGroupStore(s => s.groups);
+  const isLoading = useGroupStore(s => s.isLoading);
   const { colors, isDark } = useTheme();
 
   const isStudent = !['super_admin', 'moderator'].includes(profile?.role || '');
@@ -41,12 +42,12 @@ export default function MessagesScreen() {
   });
 
   useEffect(() => {
-    fetchGroups();
-  }, [fetchGroups]);
+    useGroupStore.getState().fetchGroups();
+  }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchGroups();
+    await useGroupStore.getState().fetchGroups();
     setRefreshing(false);
   };
 

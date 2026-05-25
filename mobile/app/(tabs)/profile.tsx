@@ -48,8 +48,8 @@ const getUserRank = (points: number) => {
 export default function ProfileScreen() {
   useSentryScreen('ProfileScreen');
   const router = useRouter();
-  const { profile: storeProfile, updatePreferences, updateProfile } = useAuthStore();
-  const { materials } = useResourceStore();
+  const storeProfile = useAuthStore(s => s.profile);
+  const materials = useResourceStore(s => s.materials);
   const { colors, isDark } = useTheme();
   const { toggleTheme } = useThemeStore();
   // Drive the header directly from the auth store — updates reflect instantly
@@ -221,7 +221,7 @@ export default function ProfileScreen() {
       // Sync to DB + store + message cache
       // updateProfile does optimistic store update first, then DB
       // On real DB error it reverts the optimistic update and throws
-      await updateProfile(editableUpdates);
+      await useAuthStore.getState().updateProfile(editableUpdates);
 
       // Only close modal and update local state AFTER DB confirms
       setUser((prev: any) => ({ ...prev, ...editableUpdates }));
@@ -300,7 +300,7 @@ export default function ProfileScreen() {
       setUser((prev: any) => ({ ...prev, avatar_url: hostedUrl }));
 
       // 2. Sync to DB + auth metadata + store (optimistic — never reverts on network error)
-      await updateProfile({ avatar_url: hostedUrl });
+      await useAuthStore.getState().updateProfile({ avatar_url: hostedUrl });
 
       Alert.alert('Done!', 'Your profile picture has been updated.');
     } catch (err: any) {
@@ -360,7 +360,7 @@ export default function ProfileScreen() {
       setUser((prev: any) => ({ ...prev, avatar_url: avatarUrl }));
 
       // 2. Sync to DB + auth metadata + store
-      await updateProfile({ avatar_url: avatarUrl });
+      await useAuthStore.getState().updateProfile({ avatar_url: avatarUrl });
 
       Alert.alert('Success', 'Profile photo updated successfully!');
     } catch (err: any) {
@@ -939,7 +939,7 @@ export default function ProfileScreen() {
                             onPress={async () => {
                                 setIsSavingNotifs(true);
                                 try {
-                                    await updatePreferences(notifSettings);
+                                    await useAuthStore.getState().updatePreferences(notifSettings);
                                     setShowNotifications(false);
                                     Alert.alert('Saved', 'Notification preferences updated.');
                                 } catch {

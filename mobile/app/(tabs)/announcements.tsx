@@ -48,9 +48,11 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }>
 
 export default function AnnouncementsScreen() {
     useSentryScreen('AnnouncementsScreen');
-    const { announcements, fetchAnnouncements, isLoading: loadingAnnouncements } = useAnnouncementStore();
-    const { events, fetchUpcomingEvents, isLoading: loadingEvents } = useEventStore();
-    const { profile: user } = useAuthStore();
+    const announcements = useAnnouncementStore(s => s.announcements);
+    const loadingAnnouncements = useAnnouncementStore(s => s.isLoading);
+    const events = useEventStore(s => s.events);
+    const loadingEvents = useEventStore(s => s.isLoading);
+    const user = useAuthStore(s => s.profile);
     const params = useLocalSearchParams();
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategory, setActiveCategory] = useState(params.tab as string || 'All');
@@ -58,9 +60,10 @@ export default function AnnouncementsScreen() {
     const { colors, isDark } = useTheme();
 
     const loadData = async () => {
+        const level = useAuthStore.getState().profile?.level || undefined;
         await Promise.all([
-            fetchAnnouncements(user?.level || undefined),
-            fetchUpcomingEvents(user?.level || undefined),
+            useAnnouncementStore.getState().fetchAnnouncements(level),
+            useEventStore.getState().fetchUpcomingEvents(level),
         ]);
     };
 

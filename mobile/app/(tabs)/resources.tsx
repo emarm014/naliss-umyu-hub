@@ -56,17 +56,16 @@ export default function ResourcesScreen() {
     courses, 
     downloadedIds,
     isLoading: resourcesLoading, 
-    fetchMaterials,
-    fetchPastQuestions,
-    fetchCourses, 
     incrementDownloadCount,
     incrementViewCount,
     refreshDownloadedStatus,
     deleteResource,
   } = useResourceStore();
-  const { lecturers, executives, isLoading: directoryLoading, fetchLecturers, fetchExecutives } = useDirectoryStore();
+  const lecturers = useDirectoryStore(s => s.lecturers);
+  const executives = useDirectoryStore(s => s.executives);
+  const directoryLoading = useDirectoryStore(s => s.isLoading);
 
-  const { profile: user } = useAuthStore();
+  const user = useAuthStore(s => s.profile);
   const [activeMainTab, setActiveMainTab] = useState<MainTab>((params.tab as MainTab) || 'materials');
   const [activeDirectoryTab, setActiveDirectoryTab] = useState<DirectoryTab>('staff');
   const [selectedLevel, setSelectedLevel] = useState<AcademicLevel | 'all'>('all');
@@ -100,16 +99,16 @@ export default function ResourcesScreen() {
     // Always fetch ALL levels — filtering is done client-side from the cache.
     // force=true ensures we always get all levels, not a cached subset.
     const tasks = [];
-    if (activeMainTab === 'materials') tasks.push(fetchMaterials({}, true));
-    if (activeMainTab === 'past_q') tasks.push(fetchPastQuestions({}, true));
-    if (activeMainTab === 'courses') tasks.push(fetchCourses(undefined, true));
+    if (activeMainTab === 'materials') tasks.push(useResourceStore.getState().fetchMaterials({}, true));
+    if (activeMainTab === 'past_q') tasks.push(useResourceStore.getState().fetchPastQuestions({}, true));
+    if (activeMainTab === 'courses') tasks.push(useResourceStore.getState().fetchCourses(undefined, true));
     if (activeMainTab === 'directory') {
-      if (activeDirectoryTab === 'staff') tasks.push(fetchLecturers());
-      else tasks.push(fetchExecutives());
+      if (activeDirectoryTab === 'staff') tasks.push(useDirectoryStore.getState().fetchLecturers());
+      else tasks.push(useDirectoryStore.getState().fetchExecutives());
     }
 
     await Promise.all(tasks);
-  }, [activeMainTab, activeDirectoryTab, fetchMaterials, fetchPastQuestions, fetchCourses, fetchLecturers, fetchExecutives]);
+  }, [activeMainTab, activeDirectoryTab]);
 
   useEffect(() => {
     loadData();

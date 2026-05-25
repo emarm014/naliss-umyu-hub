@@ -107,12 +107,14 @@ const quickActions = [
 
 export default function HomeScreen() {
   useSentryScreen('HomeScreen');
-  const { profile: user, fetchProfile } = useAuthStore();
+  const user = useAuthStore(s => s.profile);
   const isAdmin = user?.role === 'super_admin' || (user?.role as any) === 'system_owner';
-  const { announcements, fetchAnnouncements, isLoading: loadingAnnouncements } = useAnnouncementStore();
+  const announcements = useAnnouncementStore(s => s.announcements);
+  const loadingAnnouncements = useAnnouncementStore(s => s.isLoading);
   const readIds = useAnnouncementStore(s => s.readIds);
-  const { events, fetchUpcomingEvents, isLoading: loadingEvents } = useEventStore();
-  const { materials, fetchMaterials, fetchCourses } = useResourceStore();
+  const events = useEventStore(s => s.events);
+  const loadingEvents = useEventStore(s => s.isLoading);
+  const materials = useResourceStore(s => s.materials);
   const [refreshing, setRefreshing] = React.useState(false);
   const [unreadCount, setUnreadCount] = React.useState(0);
   const { colors, isDark } = useTheme();
@@ -126,32 +128,34 @@ export default function HomeScreen() {
   const rank = getUserRank(userPoints);
 
   const loadData = useCallback(async () => {
+    const level = useAuthStore.getState().profile?.level || undefined;
     await Promise.all([
-      fetchAnnouncements(user?.level || undefined),
-      fetchUpcomingEvents(user?.level || undefined),
-      fetchMaterials({ level: user?.level || undefined }),
-      fetchCourses(user?.level || undefined),
+      useAnnouncementStore.getState().fetchAnnouncements(level),
+      useEventStore.getState().fetchUpcomingEvents(level),
+      useResourceStore.getState().fetchMaterials({ level }),
+      useResourceStore.getState().fetchCourses(level),
     ]);
     const oneDayAgo = new Date();
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    const profile = useAuthStore.getState().profile;
     let count = 0;
-    if (user?.notif_announcements) {
+    if (profile?.notif_announcements) {
       count += useAnnouncementStore.getState().announcements.filter(a => new Date(a.created_at) > oneDayAgo).length;
     }
     setUnreadCount(count);
-  }, [user?.level, user?.notif_announcements, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses]);
+  }, []);
 
   useEffect(() => {
-    fetchProfile();
+    useAuthStore.getState().fetchProfile();
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount - loadData already fetches what it needs
+  }, []); // Only run on mount
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchProfile(), loadData()]);
+    await Promise.all([useAuthStore.getState().fetchProfile(), loadData()]);
     setRefreshing(false);
-  }, [loadData, fetchProfile]);
+  }, [loadData]);
 
   if (!user) {
     return (

@@ -369,7 +369,7 @@ function RootLayoutNav() {
           try {
             const { data } = await supabase
               .from('messages')
-              .select('*, user:users(id, username, full_name, avatar_url, level), reply_to_message:messages!reply_to_id(id, content, user:users(username))')
+              .select('*, user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level), reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))')
               .eq('group_id', group.id)
               .eq('is_deleted', false)
               .gt('created_at', lastSeen)

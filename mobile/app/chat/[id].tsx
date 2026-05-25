@@ -243,8 +243,8 @@ export default function ChatScreen() {
                 .from('messages')
                 .select(`
                     *,
-                    user:users(id, username, full_name, avatar_url, level),
-                    reply_to_message:messages!reply_to_id(id, content, user:users(username))
+                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level),
+                    reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
                 `)
                 .eq('group_id', id)
                 .eq('is_deleted', false)
@@ -313,8 +313,8 @@ export default function ChatScreen() {
                 .from('messages')
                 .select(`
                     *,
-                    user:users(id, username, full_name, avatar_url, level),
-                    reply_to_message:messages!reply_to_id(id, content, user:users(username))
+                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level),
+                    reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
                 `)
                 .eq('group_id', id)
                 .eq('is_deleted', false)
@@ -434,7 +434,7 @@ export default function ChatScreen() {
                         if (!membersRef.current.find(m => m.id === newMsg.sender_id)) {
                             const { data: fullData } = await supabase
                                 .from('messages')
-                                .select('*, user:users(id, username, full_name, avatar_url, level)')
+                                .select('*, user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level)')
                                 .eq('id', newMsg.id)
                                 .single();
                             if (fullData) {

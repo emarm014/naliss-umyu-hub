@@ -33,8 +33,7 @@ export default function LoginScreen() {
   const [passwordFocused, setPasswordFocused] = useState(false);
 
   const router = useRouter();
-  const { setError } = useAuthStore();
-  const { isOnline, checkNetworkStatus } = useNetworkStore();
+  const isOnline = useNetworkStore(s => s.isOnline);
 
   const handleLogin = async () => {
     trackUserAction('login.submit', { email: email.trim().toLowerCase() });
@@ -43,7 +42,7 @@ export default function LoginScreen() {
       return;
     }
 
-    const online = await checkNetworkStatus();
+    const online = await useNetworkStore.getState().checkNetworkStatus();
     if (!online) {
       Alert.alert('No Connection', 'You need an internet connection to sign in. Please check your network and try again.');
       return;
@@ -155,7 +154,7 @@ export default function LoginScreen() {
       } else {
         Alert.alert('Login Failed', msg);
       }
-      setError(msg);
+      useAuthStore.getState().setError(msg);
     } finally {
       setIsLoading(false);
     }
@@ -165,7 +164,7 @@ export default function LoginScreen() {
     try {
       setIsGoogleLoading(true);
 
-      const online = await checkNetworkStatus();
+      const online = await useNetworkStore.getState().checkNetworkStatus();
       if (!online) {
         Alert.alert('No Connection', 'You need an internet connection to sign in with Google.');
         setIsGoogleLoading(false);

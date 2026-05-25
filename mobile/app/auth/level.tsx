@@ -48,7 +48,7 @@ export default function RegisterLevel() {
   const isMounted = useRef(true);
   const router = useRouter();
   const signupStore = useSignupStore();
-  const { session, setIsProfileComplete, fetchProfile } = useAuthStore();
+  const session = useAuthStore(s => s.session);
 
   useEffect(() => {
     isMounted.current = true;
@@ -128,7 +128,7 @@ export default function RegisterLevel() {
     // finds no profile yet, sets isProfileComplete=false, and may unmount this screen.
     // Setting it to true here prevents that re-check from running.
     // It will be reset to null in the catch block if profile creation fails.
-    setIsProfileComplete(true);
+    useAuthStore.getState().setIsProfileComplete(true);
 
     try {
       const numericLevel = parseInt(level, 10);
@@ -272,7 +272,7 @@ export default function RegisterLevel() {
 
       // ── STEP 6: Fetch profile (verify it was created) ─────────────────────
       advanceTo(6); // 74% — "Verifying profile record…"
-      await fetchProfile(true);
+      await useAuthStore.getState().fetchProfile(true);
 
       // ── STEP 7: Join level groups ─────────────────────────────────────────
       advanceTo(7); // 86% — "Joining your level groups…"
@@ -302,7 +302,7 @@ export default function RegisterLevel() {
       captureUIError('RegisterLevel.handleFinish', err, { selectedLevel });
       if (isMounted.current) {
         useSignupStore.getState().setIsGoogleDelaying(false);
-        setIsProfileComplete(null);
+        useAuthStore.getState().setIsProfileComplete(null);
         advanceTo(0);
         setIsLoading(false);
         const msg = err?.message || 'Could not complete registration. Please try again.';

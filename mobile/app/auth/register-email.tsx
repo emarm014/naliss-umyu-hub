@@ -33,7 +33,6 @@ export default function RegisterEmail() {
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const isMounted = useRef(true);
   const router = useRouter();
-  const { checkNetworkStatus } = useNetworkStore();
 
   useEffect(() => {
     isMounted.current = true;
@@ -63,7 +62,7 @@ export default function RegisterEmail() {
       return;
     }
 
-    const online = await checkNetworkStatus();
+    const online = await useNetworkStore.getState().checkNetworkStatus();
     if (!online) {
       Alert.alert('No Connection', 'You need an internet connection to register.');
       return;

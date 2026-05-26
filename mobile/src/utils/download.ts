@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Alert } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 
 // Safe vault directory — works on both SDK 55 (Paths API) and older builds
 const getVaultBase = (): string => {
@@ -189,12 +190,27 @@ export const downloadFile = async (
         return result.uri;
     } catch (err: any) {
         const msg = err?.message || '';
+
+        // Always send the real error + URL to Sentry so it appears in the dashboard
+        Sentry.captureException(err, {
+            tags: { location: 'download.downloadFile', fileId },
+            extra: { url, displayName, errorMessage: msg },
+        });
+        Sentry.addBreadcrumb({
+            category: 'feature.download',
+            message: `Download failed: ${displayName}`,
+            data: { url, fileId, error: msg },
+            level: 'error',
+        });
+
         if (msg.includes('empty') || msg.includes('invalid')) {
             Alert.alert('Download Failed', 'The file could not be downloaded. The file may be corrupted or the link has expired.');
         } else if (msg.includes('status')) {
             Alert.alert('Download Failed', `The server rejected the request (${msg}). Please try again.`);
+        } else if (msg.includes('Network request failed') || msg.includes('network') || msg.includes('fetch')) {
+            Alert.alert('Download Failed', 'Network error. Please check your internet connection and try again.');
         } else {
-            Alert.alert('Download Failed', 'Could not download the file. Please check your connection and try again.');
+            Alert.alert('Download Failed', `Could not download the file.\n\n${msg || 'Unknown error'}`);
         }
         return null;
     }

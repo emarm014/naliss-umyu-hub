@@ -123,12 +123,7 @@ export default function LoginScreen() {
       // Navigation handled by ProtectedRoute's onAuthStateChange
 
       // Log successful login (best-effort, fire-and-forget)
-      (supabase.from('activity_logs' as any).insert({
-        action: 'auth.login_success',
-        entity_type: 'auth',
-        description: `Successful login: ${email.trim().toLowerCase()}`,
-        metadata: { email: email.trim().toLowerCase(), method: 'email' },
-      }) as any).catch(() => {});
+      (async () => { try { await supabase.from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), method: 'email' } }); } catch (_) {} })();
 
     } catch (err: any) {
       finishTransaction('error');
@@ -140,12 +135,7 @@ export default function LoginScreen() {
       });
 
       // Log failed login attempt server-side (best-effort, fire-and-forget)
-      (supabase.from('activity_logs' as any).insert({
-        action: 'auth.login_failed',
-        entity_type: 'auth',
-        description: `Failed login attempt: ${email.trim().toLowerCase()}`,
-        metadata: { email: email.trim().toLowerCase(), reason: msg, method: 'email' },
-      }) as any).catch(() => {});
+      (async () => { try { await supabase.from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), reason: msg, method: 'email' } }); } catch (_) {} })();
 
       if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials')) {
         Alert.alert('Wrong Password', 'The password you entered is incorrect. Please try again.');
@@ -232,12 +222,7 @@ export default function LoginScreen() {
       }
     } catch (err: any) {
       // Log Google auth failure (best-effort)
-      (supabase.from('activity_logs' as any).insert({
-        action: 'auth.login_failed',
-        entity_type: 'auth',
-        description: 'Failed Google sign-in attempt',
-        metadata: { reason: err?.message || 'Unknown', method: 'google' },
-      }) as any).catch(() => {});
+      (async () => { try { await supabase.from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: 'Failed Google sign-in attempt', metadata: { reason: err?.message || 'Unknown', method: 'google' } }); } catch (_) {} })();
       Alert.alert('Google Sign-In Failed', 'Sign-in failed. Please try again.');
     } finally {
       setIsGoogleLoading(false);

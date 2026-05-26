@@ -230,6 +230,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     }
   }, [isVisible]);
 
+  const [isSaved, setIsSaved] = React.useState(false);
+
   if (!isVisible) return null;
 
   // Loading state
@@ -314,8 +316,6 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         );
     }
   };
-
-  const [isSaved, setIsSaved] = React.useState(false);
 
   const saveToDevice = async () => {
     try {

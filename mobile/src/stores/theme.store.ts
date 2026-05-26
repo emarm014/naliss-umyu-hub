@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/Colors';
@@ -44,5 +45,5 @@ export const useThemeStore = create<ThemeState>()(
  * Use this instead of importing COLORS directly.
  */
 export function useTheme() {
-  return useThemeStore((s) => ({ colors: s.colors, isDark: s.isDark }));
+  return useThemeStore(useShallow((s) => ({ colors: s.colors, isDark: s.isDark })));
 }

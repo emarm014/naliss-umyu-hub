@@ -1201,7 +1201,7 @@ export default function ChatScreen() {
                             </View>
                         )}
 
-                        {item.replyTo && (
+                        {item.reply_to_id && item.replyTo && (item.replyTo.content || item.replyTo.username) && (
                             <View style={styles.replyPreview}>
                                 <View style={styles.replyBar} />
                                 <View style={styles.replyContent}>
@@ -1246,7 +1246,7 @@ export default function ChatScreen() {
                                     }
                                 }}
                             >
-                                <View style={[styles.imageMessageContainer, isMe ? styles.messageBubbleMe : styles.messageBubbleOther]}>
+                                <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <Image
                                         source={{ uri: item.content }}
@@ -1298,9 +1298,9 @@ export default function ChatScreen() {
                             </TouchableOpacity>
                         ) : (
                             <View style={[
-                                styles.messageBubble,
-                                isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }]
-                                     : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }],
+                                item.message_type === 'video' ? styles.imageMessageContainer : styles.messageBubble,
+                                isMe ? (item.message_type === 'video' ? styles.imageBubbleMe : [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }])
+                                     : (item.message_type === 'video' ? styles.imageBubbleOther : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }]),
                                 isSystem && styles.messageBubbleSystem
                             ]}>
                                 {item.message_type === 'video' ? (
@@ -2387,6 +2387,8 @@ const styles = StyleSheet.create({
     },
     messageBubbleMe: { backgroundColor: '#dcf8c6', borderBottomRightRadius: 4 },
     messageBubbleOther: { backgroundColor: '#FFF', borderTopLeftRadius: 4 },
+    imageBubbleMe: { backgroundColor: '#dcf8c6', borderBottomRightRadius: 4, padding: 2 },
+    imageBubbleOther: { backgroundColor: '#FFF', borderTopLeftRadius: 4, padding: 2 },
     messageBubbleSystem: {
         backgroundColor: '#f1f5f9', alignSelf: 'center', borderRadius: 12,
         maxWidth: '90%', borderColor: 'transparent', paddingVertical: 6, paddingHorizontal: 16,
@@ -2633,18 +2635,18 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         padding: 12,
-        backgroundColor: '#f8fafc',
-        borderRadius: 16,
+        backgroundColor: 'rgba(0,0,0,0.04)',
+        borderRadius: 12,
         borderWidth: 1,
-        borderColor: '#e2e8f0',
+        borderColor: 'rgba(0,0,0,0.05)',
         gap: 12,
         marginBottom: 4,
     },
     documentIconBox: {
         width: 44,
         height: 44,
-        borderRadius: 12,
-        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        backgroundColor: 'rgba(255,255,255,0.6)',
         alignItems: 'center',
         justifyContent: 'center',
     },

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { Logger } from '../utils/logger';
 interface MessageCache {
     [groupId: string]: any[];
 }
@@ -55,9 +55,13 @@ export const useMessageStore = create<MessageState>()(
             },
 
             addMessage: (groupId, message) => {
+                Logger.info('message.store', 'addMessage called', { groupId, messageId: message.id, status: message.status });
                 set((state) => {
                     const existing = state.cache[groupId] || [];
-                    if (existing.some(m => m.id === message.id)) return state;
+                    if (existing.some(m => m.id === message.id)) {
+                        Logger.warn('message.store', 'Duplicate message rejected', { groupId, messageId: message.id });
+                        return state;
+                    }
 
                     const updated = [...existing, message].sort((a, b) =>
                         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()

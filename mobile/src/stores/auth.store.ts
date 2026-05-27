@@ -5,7 +5,8 @@ import { supabase } from '../api/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { User as Profile } from '../types';
 import { captureStoreError, trackStoreAction, isNetworkError } from '../utils/sentry';
-
+import { Logger } from '../utils/logger';
+import { withRetry } from '../utils/api-protection';
 interface AuthState {
   session: Session | null;
   user: SupabaseUser | null;
@@ -66,13 +67,17 @@ export const useAuthStore = create<AuthState>()(
         const fetchStartedAt = Date.now();
 
         try {
-          const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-
-          if (error) throw error;
+          const { data, error } = await Logger.perf('auth.store', 'fetchProfile', () => 
+            withRetry(async () => {
+              const result = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+              if (result.error) throw result.error;
+              return result;
+            }, { componentName: 'auth.store', operationName: 'fetchProfile' })
+          );
 
           const currentState = get();
           

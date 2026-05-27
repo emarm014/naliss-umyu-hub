@@ -9,6 +9,17 @@ export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // Smart safe area buffer for Android:
+  // - Gesture nav (insets.bottom ~15-40): Add 8px buffer to avoid accidental swipe gestures.
+  // - 3-Button nav (insets.bottom > 40): No buffer needed, avoid wasting screen space.
+  // - Legacy / Non-translucent (insets.bottom = 0): No buffer needed.
+  let androidBottomBuffer = 0;
+  if (Platform.OS === 'android') {
+    if (insets.bottom > 0 && insets.bottom < 40) {
+      androidBottomBuffer = 8;
+    }
+  }
+
   return (
     <Tabs
       screenListeners={{
@@ -22,9 +33,8 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.textMuted,
         
         // Let React Navigation natively handle the bottom safe area
-        // We inject a small buffer into the inset on Android for WhatsApp-style lift
         safeAreaInsets: {
-          bottom: insets.bottom + (Platform.OS === 'android' ? 12 : 0),
+          bottom: insets.bottom + androidBottomBuffer,
         },
         
         tabBarStyle: {

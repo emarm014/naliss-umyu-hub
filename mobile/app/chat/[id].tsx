@@ -14,7 +14,10 @@ import {
     Alert,
     Pressable,
     ScrollView,
-} from 'react-native';import { useLocalSearchParams, useRouter } from 'expo-router';
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
+import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../src/constants/Colors';
@@ -98,6 +101,7 @@ export default function ChatScreen() {
     });
     const [showGroupMenu, setShowGroupMenu] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
+    const [isSending, setIsSending] = useState(false);
     const flatListRef = useRef<FlatList>(null);
     const realtimeChannelRef = useRef<any>(null);
     const isMounted = useRef(true);
@@ -566,6 +570,7 @@ export default function ChatScreen() {
 
     // Simulate sending with status transitions
     const handleSend = async () => {
+        if (isSending) return; // Prevent spam-clicking duplicate requests
         if (isChatRestricted) {
             Alert.alert('Read-Only Mode', 'The application is currently in read-only mode. You cannot send messages at this time.');
             return;
@@ -576,121 +581,125 @@ export default function ChatScreen() {
         }
         if (!inputText.trim() || !currentUser) return;
 
-        const tempId = `temp-${Date.now()}`;
-        const content = inputText.trim();
-        
-        if (editingMessage) {
-            try {
-                // Optimistic update — show edit immediately
-                setMessages(prev => prev.map(m =>
-                    m.id === editingMessage.id
-                        ? { ...m, content, is_edited: true, isEdited: true }
-                        : m
-                ));
-                messageStore.updateMessage(id, editingMessage.id, { content, is_edited: true, isEdited: true });
-                setEditingMessage(null);
-                setInputText('');
-
-                const { error } = await supabase
-                    .from('messages')
-                    .update({ 
-                        content, 
-                        is_edited: true,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', editingMessage.id);
-
-                if (error) {
-                    // Revert on failure
+        setIsSending(true);
+        try {
+            const tempId = `temp-${Date.now()}`;
+            const content = inputText.trim();
+            
+            if (editingMessage) {
+                try {
+                    // Optimistic update — show edit immediately
                     setMessages(prev => prev.map(m =>
                         m.id === editingMessage.id
-                            ? { ...m, content: editingMessage.content, is_edited: editingMessage.is_edited, isEdited: editingMessage.isEdited }
+                            ? { ...m, content, is_edited: true, isEdited: true }
                             : m
                     ));
-                    messageStore.updateMessage(id, editingMessage.id, { content: editingMessage.content, is_edited: editingMessage.is_edited, isEdited: editingMessage.isEdited });
+                    messageStore.updateMessage(id, editingMessage.id, { content, is_edited: true, isEdited: true });
+                    setEditingMessage(null);
+                    setInputText('');
+
+                    const { error } = await supabase
+                        .from('messages')
+                        .update({ 
+                            content, 
+                            is_edited: true,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', editingMessage.id);
+
+                    if (error) {
+                        // Revert on failure
+                        setMessages(prev => prev.map(m =>
+                            m.id === editingMessage.id
+                                ? { ...m, content: editingMessage.content, is_edited: editingMessage.is_edited, isEdited: editingMessage.isEdited }
+                                : m
+                        ));
+                        messageStore.updateMessage(id, editingMessage.id, { content: editingMessage.content, is_edited: editingMessage.is_edited, isEdited: editingMessage.isEdited });
+                        Alert.alert('Error', 'Failed to edit message');
+                    }
+                    return;
+                } catch (err) {
+                    captureUIError('ChatScreen.editMessage', err, { groupId: id });
                     Alert.alert('Error', 'Failed to edit message');
+                    return;
                 }
-                return;
-            } catch (err) {
-                captureUIError('ChatScreen.editMessage', err, { groupId: id });
-                Alert.alert('Error', 'Failed to edit message');
-                return;
             }
-        }
 
-        const newMessage = {
-            id: tempId,
-            content,
-            created_at: new Date().toISOString(),
-            sender_id: currentUser.id,
-            user: { 
-                username: profile?.username || currentUser.user_metadata?.username || 'me', 
-                full_name: profile?.full_name || currentUser.user_metadata?.full_name,
-                level: profile?.level || currentUser.user_metadata?.level, 
-                avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url 
-            },
-            replyTo: replyingTo ? { 
-                id: replyingTo.id, 
-                username: replyingTo.user?.username || replyingTo.username, 
-                content: (replyingTo.content || '').substring(0, 50) 
-            } : null,
-            isEdited: false,
-            is_edited: false,
-            message_type: 'text',
-            content_type: 'text',
-            status: 'sending' as any,
-        };
+            const newMessage = {
+                id: tempId,
+                content,
+                created_at: new Date().toISOString(),
+                sender_id: currentUser.id,
+                user: { 
+                    username: profile?.username || currentUser.user_metadata?.username || 'me', 
+                    full_name: profile?.full_name || currentUser.user_metadata?.full_name,
+                    level: profile?.level || currentUser.user_metadata?.level, 
+                    avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url 
+                },
+                replyTo: replyingTo ? { 
+                    id: replyingTo.id, 
+                    username: replyingTo.user?.username || replyingTo.username, 
+                    content: (replyingTo.content || '').substring(0, 50) 
+                } : null,
+                isEdited: false,
+                is_edited: false,
+                message_type: 'text',
+                content_type: 'text',
+                status: 'sending' as any,
+            };
 
-        setMessages(prev => [...prev, newMessage]);
-        messageStore.addMessage(id, newMessage); // Optimistic cache update
-        setInputText('');
-        setReplyingTo(null);
+            setMessages(prev => [...prev, newMessage]);
+            messageStore.addMessage(id, newMessage); // Optimistic cache update
+            setInputText('');
+            setReplyingTo(null);
 
-        setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+            setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
 
-        try {
-            const { data, error } = await supabase
-                .from('messages')
-                .insert([{
-                    content,
-                    sender_id: currentUser.id,
-                    group_id: id,
-                    reply_to_id: replyingTo?.id || null,
-                    message_type: 'text',
-                    metadata: { tempId }
-                }])
-                .select()
-                .single();
+            try {
+                const { data, error } = await supabase
+                    .from('messages')
+                    .insert([{
+                        content,
+                        sender_id: currentUser.id,
+                        group_id: id,
+                        reply_to_id: replyingTo?.id || null,
+                        message_type: 'text',
+                        metadata: { tempId }
+                    }])
+                    .select()
+                    .single();
 
-            if (error) throw error;
+                if (error) throw error;
 
-            // Confirm the temp message — but only if realtime hasn't already done it
-            // (realtime may have already swapped tempId → real ID)
-            setMessages(prev => {
-                // If tempId still exists as 'sending', confirm it
-                const stillPending = prev.find(m => m.id === tempId && m.status === 'sending');
-                if (stillPending) {
-                    messageStore.updateMessage(id, tempId, { id: (data as any).id, status: 'sent' });
-                    return prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, status: 'sent' } : m);
-                }
-                // Realtime already confirmed it — nothing to do
-                return prev;
-            });
+                // Confirm the temp message — but only if realtime hasn't already done it
+                // (realtime may have already swapped tempId → real ID)
+                setMessages(prev => {
+                    // If tempId still exists as 'sending', confirm it
+                    const stillPending = prev.find(m => m.id === tempId && m.status === 'sending');
+                    if (stillPending) {
+                        messageStore.updateMessage(id, tempId, { id: (data as any).id, status: 'sent' });
+                        return prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, status: 'sent' } : m);
+                    }
+                    // Realtime already confirmed it — nothing to do
+                    return prev;
+                });
 
-            // Fire push notification to all group members (except sender) — fire and forget
-            const senderName = profile?.username || profile?.full_name || 'Someone';
-            const groupName = group?.name || 'Group Chat';
-            const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
-            sendChatMessageNotification(id, groupName, senderName, preview, currentUser.id);
+                // Fire push notification to all group members (except sender) — fire and forget
+                const senderName = profile?.username || profile?.full_name || 'Someone';
+                const groupName = group?.name || 'Group Chat';
+                const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
+                sendChatMessageNotification(id, groupName, senderName, preview, currentUser.id);
 
-        } catch (err) {
-            captureUIError('ChatScreen.sendTextMessage', err, { groupId: id });
-            setMessages(prev => prev.map(m =>
-                m.id === tempId ? { ...m, status: 'failed' } : m
-            ));
-            messageStore.updateMessage(id, tempId, { status: 'failed' });
+            } catch (err: any) {
+                captureUIError('ChatScreen.sendMessage', err, { groupId: id });
+                // Mark temp message as failed
+                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'error' } : m));
+                messageStore.updateMessage(id, tempId, { status: 'error' });
+            }
+        } finally {
+            setIsSending(false);
         }
     };
 
@@ -1781,11 +1790,12 @@ export default function ChatScreen() {
     const [activeVideo, setActiveVideo] = useState<string | null>(null);
 
     return (
-        <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-        >
+        <ScreenErrorBoundary>
+            <KeyboardAvoidingView
+                style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+            >
             {/* Header */}
             <View style={[styles.header, styles.headerLight, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 <TouchableOpacity style={styles.backButton} onPress={goBack}>
@@ -2290,6 +2300,7 @@ export default function ChatScreen() {
                 fileName={viewerFile.name}
             />
         </KeyboardAvoidingView>
+        </ScreenErrorBoundary>
     );
 }
 

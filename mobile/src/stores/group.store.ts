@@ -72,22 +72,28 @@ export const useGroupStore = create<GroupState>()(
 
                     if (groupsResult.error) throw groupsResult.error;
 
-                    // Fetch last message per group in ONE query (not N separate queries)
-                    const { data: lastMsgsData } = await (supabase
-                        .from('messages')
-                        .select('id, group_id, content, content_type, message_type, created_at, sender:users!messages_sender_id_fkey(username, full_name)')
-                        .in('group_id', groupIds)
-                        .eq('is_deleted', false)
-                        .order('created_at', { ascending: false }) as any);
-
-                    // Keep only the most recent message per group
+                    // Fetch last message per group using parallel safe .limit(1) queries
+                    // This prevents downloading the entire database history
                     const lastMsgMap: Record<string, any> = {};
-                    if (lastMsgsData) {
-                        for (const msg of lastMsgsData as any[]) {
-                            if (!lastMsgMap[msg.group_id]) {
-                                lastMsgMap[msg.group_id] = msg;
+                    
+                    if (groupIds.length > 0) {
+                        const lastMsgPromises = groupIds.map(gId => 
+                            supabase
+                                .from('messages')
+                                .select('id, group_id, content, content_type, message_type, created_at, sender:users!messages_sender_id_fkey(username, full_name)')
+                                .eq('group_id', gId)
+                                .eq('is_deleted', false)
+                                .order('created_at', { ascending: false })
+                                .limit(1)
+                                .maybeSingle()
+                        );
+                        
+                        const lastMsgResults = await Promise.all(lastMsgPromises);
+                        lastMsgResults.forEach((res) => {
+                            if (res.data) {
+                                lastMsgMap[(res.data as any).group_id] = res.data;
                             }
-                        }
+                        });
                     }
 
                     const unreadMap: Record<string, number> = {};

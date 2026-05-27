@@ -252,9 +252,8 @@ export default function ChatScreen() {
                 `)
                 .eq('group_id', id)
                 .eq('is_deleted', false)
-                .order('created_at', { ascending: true });
-            // No limit — load ALL messages so users can scroll through full history
-            // and access everything offline via the persisted message cache.
+                .order('created_at', { ascending: false })
+                .limit(300);
 
             // Determine if this is a filtered/search query
             const isFiltered = !!(params.username || params.body || params.date);
@@ -284,7 +283,7 @@ export default function ChatScreen() {
                 } : null,
                 status: 'sent',
                 isOnline: msg.user?.last_active_at ? (new Date().getTime() - new Date(msg.user.last_active_at).getTime() < 60000) : false
-            }));
+            })).reverse(); // Reverse because we fetched descending to get the latest 300
 
             // CRITICAL: Only update the persistent cache for full (unfiltered) fetches.
             // Filtered/search results must NEVER overwrite the full message cache —

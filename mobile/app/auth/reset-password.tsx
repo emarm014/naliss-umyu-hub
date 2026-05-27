@@ -50,9 +50,13 @@ export default function ResetPassword() {
       // Use explicit deep link URL — naliss://auth/update-password
       // This must be whitelisted in Supabase Dashboard → Auth → URL Configuration → Redirect URLs
       const redirectUrl = Linking.createURL('auth/update-password');
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 15000);
+      });
+      const resetPromise = supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
         redirectTo: redirectUrl,
       });
+      const { error } = await Promise.race([resetPromise, timeoutPromise]) as any;
       if (error) throw error;
       await AuthGuardian.recordResetAttempt(email.trim().toLowerCase());
       setIsSent(true);

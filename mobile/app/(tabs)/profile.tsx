@@ -406,9 +406,17 @@ export default function ProfileScreen() {
 
     setIsChangingPassword(true);
     try {
-      const { error } = await supabase.auth.updateUser({
+      // Add a 15-second timeout to prevent the UI from hanging endlessly 
+      // if the Supabase network request gets stuck.
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 15000);
+      });
+
+      const updatePromise = supabase.auth.updateUser({
         password: newPassword,
       });
+
+      const { data, error } = await Promise.race([updatePromise, timeoutPromise]) as any;
 
       if (error) throw error;
 

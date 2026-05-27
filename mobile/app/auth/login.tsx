@@ -112,7 +112,11 @@ export default function LoginScreen() {
       }
 
       await AuthGuardian.clearFailures(email);
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 15000);
+      });
+      const signInPromise = supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      const { error } = await Promise.race([signInPromise, timeoutPromise]) as any;
       if (error) throw error;
       finishTransaction('ok');
       // Sentry: breadcrumb for successful login

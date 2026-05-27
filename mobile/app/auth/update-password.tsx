@@ -56,7 +56,11 @@ export default function UpdatePassword() {
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 15000);
+      });
+      const updatePromise = supabase.auth.updateUser({ password });
+      const { error } = await Promise.race([updatePromise, timeoutPromise]) as any;
       if (error) throw error;
       setIsSuccess(true);
     } catch (err: any) {

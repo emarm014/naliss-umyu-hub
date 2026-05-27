@@ -261,11 +261,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
         // Try to check user profile and status (Silently fail if offline)
         // GUARD: If profile is already marked complete, skip the DB re-check
-        // for token refresh events ONLY. For USER_UPDATED we still need to
-        // check ban/suspend status in case the admin just changed it.
+        // for token refresh AND user-updated events. Password changes fire
+        // USER_UPDATED — re-querying the DB here is unnecessary and causes
+        // the "endless loading" bug when changing password from the profile modal.
         const currentIsComplete = useAuthStore.getState().isProfileComplete;
-        if (currentIsComplete === true && event === 'TOKEN_REFRESHED') {
-          // Token refresh — profile already verified complete, no need to re-query
+        if (currentIsComplete === true && (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+          // Token refresh or password change — profile already verified complete, no need to re-query
           return;
         }
 

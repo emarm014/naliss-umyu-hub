@@ -74,7 +74,11 @@ export default function RegisterPassword() {
     try {
       // Verify the Supabase session is still active before proceeding.
       // The OTP session from step 2 could have expired if the user took too long.
-      const { data: { user }, error: sessionError } = await supabase.auth.getUser();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 15000);
+      });
+      const getUserPromise = supabase.auth.getUser();
+      const { data: { user }, error: sessionError } = await Promise.race([getUserPromise, timeoutPromise]) as any;
       if (sessionError || !user) {
         Alert.alert(
           'Session Expired',

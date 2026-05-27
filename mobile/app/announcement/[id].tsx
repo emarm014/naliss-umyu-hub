@@ -48,6 +48,7 @@ export default function AnnouncementDetailsScreen() {
 function AnnouncementDetailsContent() {
     const { id } = useLocalSearchParams();
     const announcements = useAnnouncementStore(s => s.announcements);
+    const markAsRead = useAnnouncementStore(s => s.markAsRead);
     const [viewerVisible, setViewerVisible] = React.useState(false);
 
     const announcement = announcements.find(a => a.id === id);
@@ -56,18 +57,25 @@ function AnnouncementDetailsContent() {
     useEffect(() => {
         if (!announcement) return;
         
-        // 1. Increment View Count (safe async IIFE to avoid .catch on non-promise)
-        (async () => {
+        const announcementId = announcement.id;
+        
+        async function updateAnnouncementStats() {
             try {
                 await supabase.rpc('increment_announcement_view_count' as any, { 
-                    announcement_id: announcement.id 
+                    announcement_id: announcementId 
                 });
-            } catch (_) {}
-        })();
+            } catch (error) {
+                // Ignore silent analytics errors
+            }
+            
+            // Mark as Read in persistence store
+            if (typeof markAsRead === 'function') {
+                markAsRead(announcementId);
+            }
+        }
 
-        // 2. Mark as Read in persistence store
-        useAnnouncementStore.getState().markAsRead(announcement.id);
-    }, [announcement?.id]);
+        updateAnnouncementStats();
+    }, [announcement?.id, markAsRead]);
 
     if (!announcement) {
         return (

@@ -25,6 +25,7 @@ interface ResourceState {
     deleteResource: (id: string, type: 'materials' | 'past_questions') => Promise<void>;
     refreshDownloadedStatus: () => Promise<void>;
     clearError: () => void;
+    clearCache: () => void;
 }
 
 const CACHE_TTL = Infinity; // No TTL — materials/courses/past questions available offline indefinitely
@@ -241,7 +242,7 @@ export const useResourceStore = create<ResourceState>()(
                 } catch (error) {
                     captureStoreError('resource', 'deleteResource', error, { id, type });
                     set({
-                        error: error instanceof Error ? error.message : 'Failed to delete resource',
+                        error: (error as any)?.message || 'Failed to delete resource',
                         isLoading: false
                     });
                     throw error;
@@ -249,6 +250,16 @@ export const useResourceStore = create<ResourceState>()(
             },
 
             clearError: () => set({ error: null }),
+            clearCache: () => set({
+                materials: [],
+                pastQuestions: [],
+                courses: [],
+                downloadedIds: [],
+                lastFetchMaterials: null,
+                lastFetchPastQuestions: null,
+                lastFetchCourses: null,
+                error: null,
+            }),
         }),
         {
             name: 'resource-storage',

@@ -32,6 +32,7 @@ interface EventState {
     lastFetch: number | null;
     error: string | null;
     fetchUpcomingEvents: (level?: string | null, force?: boolean) => Promise<void>;
+    clearCache: () => void;
 }
 
 const CACHE_TTL = Infinity; // No TTL — cached events available offline indefinitely
@@ -81,6 +82,7 @@ export const useEventStore = create<EventState>()(
                     set({ isLoading: false });
                 }
             },
+            clearCache: () => set({ events: [], lastFetch: null, error: null }),
         }),
         {
             name: 'event-storage',

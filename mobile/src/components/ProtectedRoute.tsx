@@ -535,6 +535,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       level: 'info',
     });
     router.replace(target as any);
+    
+    // Auto-clear the lock after 1.5s in case the navigation is swallowed 
+    // (e.g. by an active Alert modal dismissing on iOS)
+    setTimeout(() => {
+      if (lastNavTarget.current === target) {
+        lastNavTarget.current = '';
+      }
+    }, 1500);
   };
 
   // Reset the last navigation target when we've actually arrived at the destination
@@ -665,19 +673,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // BLOCK: Ban / Suspension screen — shown immediately, persists until user chooses to logout
   if (restrictionInfo) {
     const isBanned = restrictionInfo.type === 'banned';
-
     const handleSignOut = async () => {
-      await supabase.auth.signOut();
+      await useAuthStore.getState().signOut();
       setRestrictionInfo(null);
       router.replace('/auth/login');
     };
 
     const handleBackToLogin = async () => {
-      await supabase.auth.signOut();
+      await useAuthStore.getState().signOut();
       setRestrictionInfo(null);
       router.replace('/auth/login');
     };
-
     return (
       <SafeAreaView style={styles.restrictionSafeArea}>
         <View style={styles.restrictionContainer}>

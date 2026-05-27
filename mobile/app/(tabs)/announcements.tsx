@@ -57,21 +57,21 @@ export default function AnnouncementsScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategory, setActiveCategory] = useState(params.tab as string || 'All');
     const [refreshing, setRefreshing] = useState(false);
+    const fetchAnnouncements = useAnnouncementStore(s => s.fetchAnnouncements);
+    const fetchUpcomingEvents = useEventStore(s => s.fetchUpcomingEvents);
     const { colors, isDark } = useTheme();
 
     const loadData = async () => {
-        const level = useAuthStore.getState().profile?.level || undefined;
+        const level = user?.level || undefined;
         await Promise.all([
-            useAnnouncementStore.getState().fetchAnnouncements(level),
-            useEventStore.getState().fetchUpcomingEvents(level),
+            fetchAnnouncements(level),
+            fetchUpcomingEvents(level),
         ]);
     };
 
     useEffect(() => { loadData(); }, [user?.level]); // eslint-disable-line
     useEffect(() => { if (params.tab) setActiveCategory(params.tab as string); }, [params.tab]);
-
-    const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
-
+    const onRefresh = async () => { setRefreshing(true); try { await loadData(); } finally { setRefreshing(false); } };
     const query = searchQuery.trim().toLowerCase();
 
     const handleDelete = async (id: string) => {
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     searchContainer: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff' },
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 14, paddingHorizontal: 14, height: 46, gap: 10 },
     searchInput: { flex: 1, fontFamily: 'Inter-Medium', fontSize: 14, color: '#0f172a' },
-    filterRow: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+    filterRow: { flexGrow: 0, flexShrink: 0, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
     filterScroll: { paddingHorizontal: 20, paddingVertical: 0, gap: 0 },
     chip: {
         marginRight: 24,

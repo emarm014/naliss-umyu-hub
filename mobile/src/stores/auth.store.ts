@@ -4,10 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { User as Profile } from '../types';
-import { useMessageStore } from './message.store';
-import { useGroupStore } from './group.store';
-import { useGlobalSyncStore } from './globalSync.store';
-import { captureStoreError, trackStoreAction } from '../utils/sentry';
+import { captureStoreError, trackStoreAction, isNetworkError } from '../utils/sentry';
 
 interface AuthState {
   session: Session | null;
@@ -17,6 +14,8 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   lastFetch: number | null;
+  lastLocalProfileUpdateAt: number | null;
+  pendingProfileUpdates: Partial<Record<string, any>>;
   // True once zustand-persist has finished reading from AsyncStorage
   _hasHydrated: boolean;
 
@@ -49,6 +48,8 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       lastFetch: null,
+      lastLocalProfileUpdateAt: null,
+      pendingProfileUpdates: {},
       _hasHydrated: false,
 
       setSession: (session) => set({ session, isLoading: false }),
@@ -62,6 +63,8 @@ export const useAuthStore = create<AuthState>()(
           return; // Serve from cache
         }
 
+        const fetchStartedAt = Date.now();
+
         try {
           const { data, error } = await supabase
             .from('users')
@@ -70,14 +73,25 @@ export const useAuthStore = create<AuthState>()(
             .single();
 
           if (error) throw error;
-          set({ profile: (data as any) as Profile, lastFetch: Date.now() });
+
+          const currentState = get();
+          
+          // If a local optimistic update happened AFTER this fetch started,
+          // the fetched data is stale. Ignore it completely.
+          if (currentState.lastLocalProfileUpdateAt && currentState.lastLocalProfileUpdateAt > fetchStartedAt) {
+            return;
+          }
+          
+          // Apply any pending offline edits OVER the fetched server data
+          const merged = { 
+            ...(data as any), 
+            ...currentState.pendingProfileUpdates 
+          };
+          
+          set({ profile: merged as Profile, lastFetch: Date.now() });
         } catch (err: any) {
           // On network failure, keep the cached profile — don't clear it
-          const isNetworkError = err.message?.includes('fetch') ||
-            err.message?.includes('network') ||
-            err.message?.includes('timeout') ||
-            err.name === 'AbortError';
-          if (!isNetworkError) {
+          if (!isNetworkError(err)) {
             // Real DB error — surface it so the UI can react
             set({ error: err.message || 'Failed to load profile' });
             captureStoreError('auth', 'fetchProfile', err, { userId: user.id });
@@ -87,13 +101,16 @@ export const useAuthStore = create<AuthState>()(
 
       // Update profile fields and sync to auth metadata so chat shows updated info
       updateProfile: async (updates) => {
-        const { user, profile } = get();
+        const { user, profile, pendingProfileUpdates } = get();
         if (!user || !profile) return;
 
-        // Optimistic local update first — instant UI feedback everywhere
+        // Optimistic local update first — record it in pending so fetches don't overwrite
+        const newPending = { ...pendingProfileUpdates, ...(updates as any) };
         set({
+          pendingProfileUpdates: newPending,
           profile: { ...profile, ...(updates as any) } as Profile,
           lastFetch: Date.now(),
+          lastLocalProfileUpdateAt: Date.now(),
         });
 
         try {
@@ -106,23 +123,33 @@ export const useAuthStore = create<AuthState>()(
             .select();
 
           if (dbError) {
-            // Network errors — keep optimistic update, sync on next fetch
-            const isNetworkError = dbError.message?.includes('fetch') ||
-              dbError.message?.includes('network') ||
-              (dbError as any)?.name === 'AbortError';
-            if (!isNetworkError) {
+            // Network errors — keep optimistic update in pending, sync on next fetch
+            if (!isNetworkError(dbError)) {
               // Real DB error — revert optimistic update
-              set({ profile });
+              const revertedPending = { ...get().pendingProfileUpdates };
+              Object.keys(updates).forEach(k => delete revertedPending[k]);
+              set({ profile, pendingProfileUpdates: revertedPending });
               throw dbError;
             }
-            // Network error — optimistic update stays
+            // Network error — optimistic update stays in pending
             return;
           }
+
+          // DB Success! Remove these fields from pending since server has them now
+          const resolvedPending = { ...get().pendingProfileUpdates };
+          Object.keys(updates).forEach(k => delete resolvedPending[k]);
 
           // Confirm with the actual saved row if available
           const updatedRow = rows?.[0];
           if (updatedRow) {
-            set({ profile: (updatedRow as any) as Profile, lastFetch: Date.now() });
+            set({ 
+              profile: { ...(updatedRow as any), ...resolvedPending } as Profile, 
+              pendingProfileUpdates: resolvedPending,
+              lastFetch: Date.now(),
+              lastLocalProfileUpdateAt: Date.now(),
+            });
+          } else {
+            set({ pendingProfileUpdates: resolvedPending });
           }
 
           // 2. Sync to auth metadata (best-effort — don't block on failure)
@@ -142,30 +169,34 @@ export const useAuthStore = create<AuthState>()(
           if ((updates as any).avatar_url) senderPatch.avatar_url = (updates as any).avatar_url;
           if ((updates as any).full_name) senderPatch.full_name = (updates as any).full_name;
           if (Object.keys(senderPatch).length > 0) {
+            const { useMessageStore } = require('./message.store');
             useMessageStore.getState().patchSenderInfo(user.id, senderPatch);
           }
         } catch (err: any) {
-          const isNetworkError = err?.message?.includes('fetch') ||
-            err?.message?.includes('network') ||
-            err?.name === 'AbortError';
-
-          if (isNetworkError) {
-            // Network failure — keep optimistic update, sync on next fetch
+          if (isNetworkError(err)) {
+            // Network failure — keep optimistic update
             return;
           }
           // Real error — revert optimistic update
           captureStoreError('auth', 'updateProfile', err, { userId: user.id, updates: Object.keys(updates) });
-          set({ profile });
+          const revertedPending = { ...get().pendingProfileUpdates };
+          Object.keys(updates).forEach(k => delete revertedPending[k]);
+          set({ profile, pendingProfileUpdates: revertedPending });
           throw err;
         }
       },
 
       updatePreferences: async (prefs) => {
-        const { user, profile } = get();
+        const { user, profile, pendingProfileUpdates } = get();
         if (!user || !profile) return;
 
-        // Optimistic local update first — instant UI feedback, no spinner
-        set({ profile: { ...profile, ...prefs } as Profile });
+        // Optimistic local update first
+        const newPending = { ...pendingProfileUpdates, ...prefs };
+        set({ 
+          pendingProfileUpdates: newPending,
+          profile: { ...profile, ...prefs } as Profile,
+          lastLocalProfileUpdateAt: Date.now(),
+        });
 
         try {
           const { data: rows, error } = await supabase
@@ -175,33 +206,38 @@ export const useAuthStore = create<AuthState>()(
             .select();
 
           if (error) {
-            const isNetworkError = error.message?.includes('fetch') ||
-              error.message?.includes('network') ||
-              (error as any)?.name === 'AbortError';
-
-            if (isNetworkError) {
-              // Network failure — keep optimistic update, sync on next fetch
+            if (isNetworkError(error)) {
+              // Network failure — keep optimistic update
               return;
             }
-            // Real DB error — revert optimistic update and throw so UI can react
-            set({ profile });
+            // Real DB error — revert optimistic update
+            const revertedPending = { ...get().pendingProfileUpdates };
+            Object.keys(prefs).forEach(k => delete revertedPending[k]);
+            set({ profile, pendingProfileUpdates: revertedPending });
             throw error;
           }
+
+          // DB Success! Remove from pending
+          const resolvedPending = { ...get().pendingProfileUpdates };
+          Object.keys(prefs).forEach(k => delete resolvedPending[k]);
 
           // Confirm with actual saved row
           const updatedRow = rows?.[0];
           if (updatedRow) {
-            set({ profile: (updatedRow as any) as Profile });
+            set({ 
+              profile: { ...(updatedRow as any), ...resolvedPending } as Profile,
+              pendingProfileUpdates: resolvedPending
+            });
+          } else {
+            set({ pendingProfileUpdates: resolvedPending });
           }
         } catch (err: any) {
-          const isNetworkError = err?.message?.includes('fetch') ||
-            err?.message?.includes('network') ||
-            err?.name === 'AbortError';
-
-          if (isNetworkError) {
+          if (isNetworkError(err)) {
             return; // Keep optimistic update
           }
-          set({ profile }); // Revert
+          const revertedPending = { ...get().pendingProfileUpdates };
+          Object.keys(prefs).forEach(k => delete revertedPending[k]);
+          set({ profile, pendingProfileUpdates: revertedPending }); // Revert
           throw err;
         }
       },
@@ -274,17 +310,30 @@ export const useAuthStore = create<AuthState>()(
             .from('users')
             .update({ push_token: null } as any)
             .eq('id', userId)
-            .then(() => {})
-            .catch(() => {});
+            .then(
+              () => {},
+              () => {}
+            );
         }
         // Clear local state BEFORE calling signOut so onAuthStateChange
         // sees a clean slate and doesn't re-enter the ban-check with stale data.
         set({ session: null, user: null, profile: null, isProfileComplete: null, error: null });
         // CRITICAL: Clear all cached data to prevent data leak between users
-        useMessageStore.getState().clearCache();
-        useGroupStore.getState().clearGroups();
-        useGlobalSyncStore.getState().terminate();
-        await supabase.auth.signOut();
+        // Wrap each in its own try/catch so one failure doesn't skip the rest
+        try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}
+        try { require('./group.store').useGroupStore.getState().clearGroups(); } catch {}
+        try { require('./globalSync.store').useGlobalSyncStore.getState().terminate(); } catch {}
+        try { require('./announcement.store').useAnnouncementStore.getState().clearCache(); } catch {}
+        try { require('./event.store').useEventStore.getState().clearCache(); } catch {}
+        try { require('./resource.store').useResourceStore.getState().clearCache(); } catch {}
+        try { require('./directory.store').useDirectoryStore.getState().clearCache(); } catch {}
+        try { require('./signup.store').useSignupStore.getState().reset(); } catch {}
+        
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // Ignore network errors on signout to prevent UI hanging
+        }
       },
 
       setError: (error) => set({ error }),
@@ -297,6 +346,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         profile: state.profile,
         lastFetch: state.lastFetch,
+        pendingProfileUpdates: state.pendingProfileUpdates,
         // isProfileComplete intentionally NOT persisted — stale false value causes
         // signup screen flash on cold launch. Always re-derived from onAuthStateChange.
       }),

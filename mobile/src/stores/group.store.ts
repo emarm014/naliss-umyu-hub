@@ -126,7 +126,7 @@ export const useGroupStore = create<GroupState>()(
 
                     set({ groups: processed, isLoading: false, lastFetched: new Date().toISOString() });
                 } catch (err: unknown) {
-                    captureStoreError('group', 'fetchGroups', err, { userId: session?.user?.id });
+                    captureStoreError('group', 'fetchGroups', err);
                     set({ isLoading: false, error: (err as Error)?.message || 'Failed to load groups.' });
                 }
             },

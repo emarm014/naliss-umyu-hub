@@ -49,19 +49,18 @@ export default function ProfileScreen() {
   useSentryScreen('ProfileScreen');
   const router = useRouter();
   const storeProfile = useAuthStore(s => s.profile);
+  const updateProfile = useAuthStore(s => s.updateProfile);
+  const updatePreferences = useAuthStore(s => s.updatePreferences);
+  const fetchProfile = useAuthStore(s => s.fetchProfile);
+  const lastFetch = useAuthStore(s => s.lastFetch);
   const materials = useResourceStore(s => s.materials);
   const { colors, isDark } = useTheme();
   const { toggleTheme } = useThemeStore();
-  // Drive the header directly from the auth store — updates reflect instantly
-  // when updateProfile() is called anywhere (avatar, username, sticker, etc.)
-  const [user, setUser] = useState<any>(storeProfile ?? null);
-
-  // Keep local user in sync with store profile — so any update via updateProfile
-  // (from this screen or anywhere else) reflects immediately in the header
+  // Keep local fields in sync with store profile — so any update via updateProfile
+  // (from this screen or anywhere else) reflects immediately in the edit form
   React.useEffect(() => {
     if (storeProfile) {
-      setUser((prev: any) => ({ ...prev, ...storeProfile }));
-      // Also keep editData in sync so the edit form always shows latest saved values
+      // Keep editData in sync so the edit form always shows latest saved values
       setEditData(prev => ({
         ...prev,
         full_name: storeProfile.full_name || prev.full_name,
@@ -95,6 +94,19 @@ export default function ProfileScreen() {
     notif_messages: (storeProfile as any)?.notif_messages ?? true,
     notif_materials: (storeProfile as any)?.notif_materials ?? true,
   });
+
+  const closeNotificationsModal = () => {
+    if (storeProfile) {
+      setNotifSettings({
+        notif_announcements: (storeProfile as any)?.notif_announcements ?? true,
+        notif_events: (storeProfile as any)?.notif_events ?? true,
+        notif_messages: (storeProfile as any)?.notif_messages ?? true,
+        notif_materials: (storeProfile as any)?.notif_materials ?? true,
+      });
+    }
+    setShowNotifications(false);
+  };
+
   const [passwordData, setPasswordData] = useState({
     newPassword: '',
     confirmPassword: '',
@@ -124,19 +136,15 @@ export default function ProfileScreen() {
       if (error && error.code === 'PGRST116') { setIsLoading(false); return; }
       else if (error) throw error;
 
-      // Only update store + local state if the fetched profile is newer than
+      // Only update store if the fetched profile is newer than
       // what we have — prevents overwriting a just-saved avatar_url with stale data
-      const currentLastFetch = useAuthStore.getState().lastFetch || 0;
+      const currentLastFetch = lastFetch || 0;
       const fetchedAt = Date.now();
       // If store was updated in the last 5 seconds (e.g. just after avatar upload),
       // skip overwriting — the store already has the correct fresh data
       const storeIsVeryFresh = fetchedAt - currentLastFetch < 5000;
       if (!storeIsVeryFresh) {
-        setUser(profile);
         useAuthStore.setState({ profile: profile as any, lastFetch: fetchedAt });
-      } else {
-        // Still update local component state from the store (which has fresh data)
-        setUser(useAuthStore.getState().profile ?? profile);
       }
 
       setEditData({
@@ -186,10 +194,10 @@ export default function ProfileScreen() {
         (payload: any) => {
           const updated = payload.new;
           if (!updated) return;
-          // Update local component state immediately — badge re-renders instantly
-          setUser((prev: any) => ({ ...prev, ...updated }));
+          // Update store directly so all screens update in real-time
+          useAuthStore.setState({ profile: { ...useAuthStore.getState().profile, ...updated } as any });
           // Also update the auth store using fetchProfile so middleware runs correctly
-          useAuthStore.getState().fetchProfile(true);
+          fetchProfile(true);
         }
       )
       .subscribe();
@@ -200,7 +208,7 @@ export default function ProfileScreen() {
   }, [storeProfile?.id]);
 
   const handleUpdateProfile = async () => {
-    if (!user?.id) return;
+    if (!storeProfile?.id) return;
 
     // Validate username — only lowercase letters, numbers, underscores
     const trimmedUsername = editData.username.trim();
@@ -221,10 +229,9 @@ export default function ProfileScreen() {
       // Sync to DB + store + message cache
       // updateProfile does optimistic store update first, then DB
       // On real DB error it reverts the optimistic update and throws
-      await useAuthStore.getState().updateProfile(editableUpdates);
+      await updateProfile(editableUpdates);
 
-      // Only close modal and update local state AFTER DB confirms
-      setUser((prev: any) => ({ ...prev, ...editableUpdates }));
+      // Only close modal AFTER DB confirms
       setIsEditing(false);
       Alert.alert('Success', 'Profile updated successfully');
     } catch (err: any) {
@@ -235,7 +242,6 @@ export default function ProfileScreen() {
         Alert.alert('Username Taken', `"${editData.username}" is already in use. Please choose a different username.`);
       } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('connection')) {
         // Network error — optimistic update already applied, will sync later
-        setUser((prev: any) => ({ ...prev, username: editData.username.trim(), motivation: editData.motivation.trim(), hobbies: editData.hobbies.trim(), biography: editData.biography.trim() }));
         setIsEditing(false);
         Alert.alert('Saved Locally', 'Your changes have been saved on this device and will sync when your connection is restored.');
       } else {
@@ -252,12 +258,18 @@ export default function ProfileScreen() {
       {
         text: 'Sign Out',
         style: 'destructive',
-        onPress: async () => {
-          await supabase.auth.signOut();
+        onPress: () => {
+          // Add a 300ms delay to allow the Alert modal to fully dismiss.
+          // If we navigate synchronously, React Navigation can silently drop
+          // the route change because the view hierarchy is locked during dismiss.
+          setTimeout(async () => {
+            await useAuthStore.getState().signOut();
+          }, 300);
         },
       },
     ]);
   };
+
 
   const handleAvatarPress = () => {
     Alert.alert('Update Profile Picture', 'How would you like to update your avatar?', [
@@ -268,8 +280,8 @@ export default function ProfileScreen() {
   };
 
   const generateSticker = async () => {
-    if (!user?.id) return;
-    trackFeature('profile', 'generate_sticker', { userId: user.id });
+    if (!storeProfile?.id) return;
+    trackFeature('profile', 'generate_sticker', { userId: storeProfile.id });
     setIsUpdatingAvatar(true);
     try {
       const randomSeed = Math.random().toString(36).substring(7);
@@ -296,15 +308,12 @@ export default function ProfileScreen() {
 
       const hostedUrl = await uploadToCloudinary(blob, 'avatars');
 
-      // 1. Update local state immediately — visible right away
-      setUser((prev: any) => ({ ...prev, avatar_url: hostedUrl }));
-
-      // 2. Sync to DB + auth metadata + store (optimistic — never reverts on network error)
-      await useAuthStore.getState().updateProfile({ avatar_url: hostedUrl });
+      // Sync to DB + auth metadata + store (optimistic — never reverts on network error)
+      await updateProfile({ avatar_url: hostedUrl });
 
       Alert.alert('Done!', 'Your profile picture has been updated.');
     } catch (err: any) {
-      captureUIError('ProfileScreen.generateSticker', err, { userId: user?.id });
+      captureUIError('ProfileScreen.generateSticker', err, { userId: storeProfile?.id });
       const isNetwork = err?.message?.includes('fetch') ||
         err?.message?.includes('network') ||
         err?.message?.includes('timed out') ||
@@ -320,7 +329,7 @@ export default function ProfileScreen() {
   };
 
   const pickImage = async () => {
-    if (!user?.id) return;
+    if (!storeProfile?.id) return;
 
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -342,11 +351,11 @@ export default function ProfileScreen() {
   };
 
   const confirmAndUploadAvatar = async () => {
-    if (!tempAvatarUri || !user?.id) return;
+    if (!tempAvatarUri || !storeProfile?.id) return;
 
     // Capture URI immediately before any state changes
     const uri = tempAvatarUri;
-    const fileName = `${user.id}-avatar-${Date.now()}.jpg`;
+    const fileName = `${storeProfile.id}-avatar-${Date.now()}.jpg`;
 
     setIsUpdatingAvatar(true);
     setShowAvatarConfirm(false);
@@ -356,15 +365,12 @@ export default function ProfileScreen() {
       // Upload to Cloudinary
       const avatarUrl = await uploadLocalFileToCloudinary(uri, fileName, 'avatars', 'image/jpeg');
 
-      // 1. Update local component state immediately — avatar visible right away
-      setUser((prev: any) => ({ ...prev, avatar_url: avatarUrl }));
-
-      // 2. Sync to DB + auth metadata + store
-      await useAuthStore.getState().updateProfile({ avatar_url: avatarUrl });
+      // Sync to DB + auth metadata + store
+      await updateProfile({ avatar_url: avatarUrl });
 
       Alert.alert('Success', 'Profile photo updated successfully!');
     } catch (err: any) {
-      captureUIError('ProfileScreen.confirmAndUploadAvatar', err, { userId: user?.id });
+      captureUIError('ProfileScreen.confirmAndUploadAvatar', err, { userId: storeProfile?.id });
       const isNetworkError = err?.message?.includes('fetch') ||
         err?.message?.includes('network') ||
         err?.message?.includes('timed out') ||
@@ -454,7 +460,7 @@ export default function ProfileScreen() {
     }
   };
 
-  if (isLoading && !user) {
+  if (isLoading && !storeProfile) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -462,7 +468,7 @@ export default function ProfileScreen() {
     );
   }
 
-  if (!user) {
+  if (!storeProfile) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: colors.background }]}>
         <Ionicons name="person-outline" size={64} color={colors.textMuted} />
@@ -488,12 +494,12 @@ export default function ProfileScreen() {
           onPress={handleAvatarPress}
           disabled={isLoading || isUpdatingAvatar}
         >
-          {user?.avatar_url ? (
-            <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+          {storeProfile?.avatar_url ? (
+            <Image key={storeProfile.avatar_url} source={{ uri: storeProfile.avatar_url, cache: 'reload' }} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>
-                {(user?.full_name || '?').charAt(0).toUpperCase()}
+                {(storeProfile?.full_name || '?').charAt(0).toUpperCase()}
               </Text>
             </View>
           )}
@@ -508,29 +514,29 @@ export default function ProfileScreen() {
           )}
         </TouchableOpacity>
 
-        <Text style={styles.userName}>{user?.full_name}</Text>
-        {user?.username && (
-          <Text style={styles.userUsername}>@{user.username}</Text>
+        <Text style={styles.userName}>{storeProfile?.full_name}</Text>
+        {storeProfile?.username && (
+          <Text style={styles.userUsername}>@{storeProfile.username}</Text>
         )}
-        <Text style={styles.userEmail}>{user?.email}</Text>
+        <Text style={styles.userEmail}>{storeProfile?.email}</Text>
 
-        {user?.motivation && (
+        {storeProfile?.motivation && (
           <View style={styles.motivationContainer}>
             <Ionicons name="chatbubble-ellipses-outline" size={12} color="rgba(255,255,255,0.6)" />
             <Text style={styles.motivationText} numberOfLines={2}>
-              {user.motivation}
+              {storeProfile.motivation}
             </Text>
           </View>
         )}
 
         <View style={styles.roleContainer}>
           <LinearGradient
-            colors={getRoleBadgeColor(user?.role || 'student') as any}
+            colors={getRoleBadgeColor(storeProfile?.role || 'student') as any}
             style={styles.roleBadge}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
-            <Text style={styles.roleText}>{getRoleLabel(user?.role || 'student')}</Text>
+            <Text style={styles.roleText}>{getRoleLabel(storeProfile?.role || 'student')}</Text>
           </LinearGradient>
         </View>
       </LinearGradient>
@@ -543,7 +549,7 @@ export default function ProfileScreen() {
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.divider }]} />
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.text }]}>{user?.level || '100'}</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>{storeProfile?.level || '100'}</Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Level</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.divider }]} />
@@ -560,7 +566,7 @@ export default function ProfileScreen() {
           <View style={[styles.menuCard, { backgroundColor: colors.card }]}>
             <View style={styles.descriptionPadding}>
               <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-                {user?.biography || 'No biography provided yet. Tell us about yourself!'}
+                {storeProfile?.biography || 'No biography provided yet. Tell us about yourself!'}
               </Text>
             </View>
           </View>
@@ -572,7 +578,7 @@ export default function ProfileScreen() {
           <View style={[styles.menuCard, { backgroundColor: colors.card }]}>
             <View style={styles.descriptionPadding}>
               <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-                {user?.hobbies || 'Share your hobbies with the community!'}
+                {storeProfile?.hobbies || 'Share your hobbies with the community!'}
               </Text>
             </View>
           </View>
@@ -585,31 +591,31 @@ export default function ProfileScreen() {
             <InfoItem
               icon="person"
               label="Full Name"
-              value={user?.full_name || 'Not available'}
+              value={storeProfile?.full_name || 'Not available'}
               colors={colors}
             />
             <InfoItem
               icon="at"
               label="Username"
-              value={user?.username ? `@${user.username}` : 'Not set'}
+              value={storeProfile?.username ? `@${storeProfile.username}` : 'Not set'}
               colors={colors}
             />
             <InfoItem
               icon="mail"
               label="Email"
-              value={user?.email || 'Not available'}
+              value={storeProfile?.email || 'Not available'}
               colors={colors}
             />
             <InfoItem
               icon="card"
               label="Registration No."
-              value={user?.registration_number || 'Not available'}
+              value={storeProfile?.registration_number || 'Not available'}
               colors={colors}
             />
             <InfoItem
               icon="school"
               label="Academic Level"
-              value={`${user?.level || '100'} Level`}
+              value={`${storeProfile?.level || '100'} Level`}
               isLast
               colors={colors}
             />
@@ -648,8 +654,19 @@ export default function ProfileScreen() {
               icon="notifications" 
               iconColor="#ea580c" 
               iconBg={COLORS.actionOrange} 
-              label="Notifications" 
-              onPress={() => setShowNotifications(true)}
+              label="Notification Preferences" 
+              onPress={() => {
+                if (storeProfile) {
+                  setNotifSettings({
+                    notif_announcements: (storeProfile as any)?.notif_announcements ?? true,
+                    notif_events: (storeProfile as any)?.notif_events ?? true,
+                    notif_messages: (storeProfile as any)?.notif_messages ?? true,
+                    notif_materials: (storeProfile as any)?.notif_materials ?? true,
+                  });
+                }
+                setShowNotifications(true);
+              }}
+              rightContent={<Ionicons name="chevron-forward" size={20} color={colors.textMuted} />}
               colors={colors}
             />
             <MenuItem 
@@ -893,13 +910,13 @@ export default function ProfileScreen() {
             visible={showNotifications}
             animationType="slide"
             transparent={true}
-            onRequestClose={() => setShowNotifications(false)}
+            onRequestClose={closeNotificationsModal}
         >
             <View style={styles.modalOverlay}>
                 <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Notifications</Text>
-                        <TouchableOpacity onPress={() => setShowNotifications(false)}>
+                        <TouchableOpacity onPress={closeNotificationsModal}>
                             <Ionicons name="close" size={24} color={colors.text} />
                         </TouchableOpacity>
                     </View>
@@ -939,11 +956,18 @@ export default function ProfileScreen() {
                             onPress={async () => {
                                 setIsSavingNotifs(true);
                                 try {
-                                    await useAuthStore.getState().updatePreferences(notifSettings);
+                                    // A manual timeout to prevent endless hanging if network is silently dropping
+                                    const savePromise = updatePreferences(notifSettings);
+                                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+                                    await Promise.race([savePromise, timeoutPromise]);
                                     setShowNotifications(false);
                                     Alert.alert('Saved', 'Notification preferences updated.');
-                                } catch {
-                                    Alert.alert('Error', 'Failed to save preferences. Please try again.');
+                                } catch (e: any) {
+                                    if (e.message === 'timeout') {
+                                        Alert.alert('Network Error', 'The request timed out. Please check your internet connection.');
+                                    } else {
+                                        Alert.alert('Error', 'Failed to save preferences. Please try again.');
+                                    }
                                 } finally {
                                     setIsSavingNotifs(false);
                                 }
@@ -1124,8 +1148,7 @@ function InfoItem({ icon, label, value, isLast, colors }: { icon: keyof typeof I
     </View>
   );
 }
-
-function MenuItem({ icon, label, onPress, isLast, iconColor = COLORS.textSecondary, iconBg = '#f8fafc', colors }: { icon: keyof typeof Ionicons.glyphMap, label: string, onPress: () => void, isLast?: boolean, iconColor?: string, iconBg?: string, colors?: any }) {
+function MenuItem({ icon, label, onPress, isLast, iconColor = COLORS.textSecondary, iconBg = '#f8fafc', colors, rightContent }: { icon: keyof typeof Ionicons.glyphMap, label: string, onPress: () => void, isLast?: boolean, iconColor?: string, iconBg?: string, colors?: any, rightContent?: React.ReactNode }) {
   const themeColors = colors || COLORS;
   return (
     <TouchableOpacity style={[styles.menuItem, isLast && { borderBottomWidth: 0 }, { borderBottomColor: themeColors.divider }]} onPress={onPress}>
@@ -1133,11 +1156,10 @@ function MenuItem({ icon, label, onPress, isLast, iconColor = COLORS.textSeconda
         <Ionicons name={icon} size={18} color={iconColor} />
       </View>
       <Text style={[styles.menuLabel, { color: iconColor === COLORS.error ? COLORS.error : themeColors.text }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+      {rightContent !== undefined ? rightContent : <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />}
     </TouchableOpacity>
   );
 }
-
 function NotifToggle({ icon, label, description, value, onToggle }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;

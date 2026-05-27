@@ -48,13 +48,14 @@ export default function DirectoryScreen() {
             await fetchExecutives();
         }
     };
-
     const onRefresh = async () => {
         setRefreshing(true);
-        await loadData();
-        setRefreshing(false);
+        try {
+            await loadData();
+        } finally {
+            setRefreshing(false);
+        }
     };
-
     const filteredStaff = lecturers.filter(item =>
         item.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.position?.toLowerCase().includes(searchQuery.toLowerCase()) ||

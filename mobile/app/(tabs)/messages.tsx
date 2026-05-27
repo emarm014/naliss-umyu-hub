@@ -28,6 +28,7 @@ export default function MessagesScreen() {
   const readOnlyMode = useSettingsStore(s => s.readOnlyMode);
   const groups = useGroupStore(s => s.groups);
   const isLoading = useGroupStore(s => s.isLoading);
+  const fetchGroups = useGroupStore(s => s.fetchGroups);
   const { colors, isDark } = useTheme();
 
   const isStudent = !['super_admin', 'moderator'].includes(profile?.role || '');
@@ -42,13 +43,16 @@ export default function MessagesScreen() {
   });
 
   useEffect(() => {
-    useGroupStore.getState().fetchGroups();
-  }, []);
+    fetchGroups();
+  }, [fetchGroups]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await useGroupStore.getState().fetchGroups();
-    setRefreshing(false);
+    try {
+      await fetchGroups();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const levelGroups = conversations.filter(c => c.category === 'Level Groups');

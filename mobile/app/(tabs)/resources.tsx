@@ -64,6 +64,11 @@ export default function ResourcesScreen() {
   const lecturers = useDirectoryStore(s => s.lecturers);
   const executives = useDirectoryStore(s => s.executives);
   const directoryLoading = useDirectoryStore(s => s.isLoading);
+  const fetchLecturers = useDirectoryStore(s => s.fetchLecturers);
+  const fetchExecutives = useDirectoryStore(s => s.fetchExecutives);
+  const fetchMaterials = useResourceStore(s => s.fetchMaterials);
+  const fetchPastQuestions = useResourceStore(s => s.fetchPastQuestions);
+  const fetchCourses = useResourceStore(s => s.fetchCourses);
 
   const user = useAuthStore(s => s.profile);
   const [activeMainTab, setActiveMainTab] = useState<MainTab>((params.tab as MainTab) || 'materials');
@@ -99,27 +104,28 @@ export default function ResourcesScreen() {
     // Always fetch ALL levels — filtering is done client-side from the cache.
     // force=true ensures we always get all levels, not a cached subset.
     const tasks = [];
-    if (activeMainTab === 'materials') tasks.push(useResourceStore.getState().fetchMaterials({}, true));
-    if (activeMainTab === 'past_q') tasks.push(useResourceStore.getState().fetchPastQuestions({}, true));
-    if (activeMainTab === 'courses') tasks.push(useResourceStore.getState().fetchCourses(undefined, true));
+    if (activeMainTab === 'materials') tasks.push(fetchMaterials({}, true));
+    if (activeMainTab === 'past_q') tasks.push(fetchPastQuestions({}, true));
+    if (activeMainTab === 'courses') tasks.push(fetchCourses(undefined, true));
     if (activeMainTab === 'directory') {
-      if (activeDirectoryTab === 'staff') tasks.push(useDirectoryStore.getState().fetchLecturers());
-      else tasks.push(useDirectoryStore.getState().fetchExecutives());
+      if (activeDirectoryTab === 'staff') tasks.push(fetchLecturers());
+      else tasks.push(fetchExecutives());
     }
 
     await Promise.all(tasks);
-  }, [activeMainTab, activeDirectoryTab]);
+  }, [activeMainTab, activeDirectoryTab, fetchMaterials, fetchPastQuestions, fetchCourses, fetchLecturers, fetchExecutives]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
-
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await loadData();
-    setIsRefreshing(false);
+    try {
+      await loadData();
+    } finally {
+      setIsRefreshing(false);
+    }
   };
-
   const handleRead = async (material: Material) => {
     if (!material.file_url) return;
     trackFeature('resources', 'open_viewer', { materialId: material.id, title: material.title });

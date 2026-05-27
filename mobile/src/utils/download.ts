@@ -25,24 +25,33 @@ const VAULT_DIRECTORY = getVaultBase();
  * HTML redirect page instead of the binary file.
  */
 const toDownloadableUrl = (url: string): string => {
-    if (!url.includes('cloudinary.com')) return url;
-    // Already raw — no transformation needed
-    if (url.includes('/raw/upload/')) return url;
-    // Video — serve as-is for streaming
-    if (url.includes('/video/upload/')) return url;
+    // 1. Always enforce HTTPS (Android 9+ blocks cleartext HTTP by default)
+    let safeUrl = url.replace(/^http:\/\//i, 'https://');
 
-    if (url.includes('/image/upload/')) {
-        const lower = url.toLowerCase();
+    // 2. Safely encode URL if it isn't already encoded (fixes spaces in filenames)
+    // We check if it already has %20 to avoid double encoding.
+    if (safeUrl.includes(' ') && !safeUrl.includes('%20')) {
+        safeUrl = encodeURI(safeUrl);
+    }
+
+    if (!safeUrl.includes('cloudinary.com')) return safeUrl;
+
+    // Already raw — no transformation needed
+    if (safeUrl.includes('/raw/upload/')) return safeUrl;
+    // Video — serve as-is for streaming
+    if (safeUrl.includes('/video/upload/')) return safeUrl;
+
+    if (safeUrl.includes('/image/upload/')) {
+        const lower = safeUrl.toLowerCase();
         // Only convert to /raw/upload/ if there is an explicit non-image extension
         // URLs with no extension (e.g. public_id only) are images — keep /image/upload/
         const hasNonImageExt = lower.match(/\.(pdf|doc|docx|ppt|pptx|xls|xlsx|txt|zip|rar|csv)(\?|$)/);
         if (hasNonImageExt) {
-            return url.replace('/image/upload/', '/raw/upload/');
+            return safeUrl.replace('/image/upload/', '/raw/upload/');
         }
-        return url;
     }
 
-    return url;
+    return safeUrl;
 };
 
 /**

@@ -115,6 +115,12 @@ export default function HomeScreen() {
   const events = useEventStore(s => s.events);
   const loadingEvents = useEventStore(s => s.isLoading);
   const materials = useResourceStore(s => s.materials);
+  const fetchProfile = useAuthStore(s => s.fetchProfile);
+  const fetchAnnouncements = useAnnouncementStore(s => s.fetchAnnouncements);
+  const fetchUpcomingEvents = useEventStore(s => s.fetchUpcomingEvents);
+  const fetchMaterials = useResourceStore(s => s.fetchMaterials);
+  const fetchCourses = useResourceStore(s => s.fetchCourses);
+  const markAsRead = useAnnouncementStore(s => s.markAsRead);
   const [refreshing, setRefreshing] = React.useState(false);
   const [unreadCount, setUnreadCount] = React.useState(0);
   const { colors, isDark } = useTheme();
@@ -128,35 +134,35 @@ export default function HomeScreen() {
   const rank = getUserRank(userPoints);
 
   const loadData = useCallback(async () => {
-    const level = useAuthStore.getState().profile?.level || undefined;
+    const level = user?.level || undefined;
     await Promise.all([
-      useAnnouncementStore.getState().fetchAnnouncements(level),
-      useEventStore.getState().fetchUpcomingEvents(level),
-      useResourceStore.getState().fetchMaterials({ level }),
-      useResourceStore.getState().fetchCourses(level),
+      fetchAnnouncements(level),
+      fetchUpcomingEvents(level),
+      fetchMaterials({ level }),
+      fetchCourses(level),
     ]);
     const oneDayAgo = new Date();
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-    const profile = useAuthStore.getState().profile;
     let count = 0;
-    if (profile?.notif_announcements) {
-      count += useAnnouncementStore.getState().announcements.filter(a => new Date(a.created_at) > oneDayAgo).length;
+    if (user?.notif_announcements) {
+      count += announcements.filter(a => new Date(a.created_at) > oneDayAgo).length;
     }
     setUnreadCount(count);
-  }, []);
+  }, [user?.level, user?.notif_announcements, announcements, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses]);
 
   useEffect(() => {
-    useAuthStore.getState().fetchProfile();
+    fetchProfile();
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount
-
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([useAuthStore.getState().fetchProfile(), loadData()]);
-    setRefreshing(false);
+    try {
+      await Promise.all([fetchProfile(), loadData()]);
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadData]);
-
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -237,7 +243,7 @@ export default function HomeScreen() {
           <View style={styles.headerBody}>
             <View style={styles.avatarSection}>
               <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
-                <Image source={{ uri: avatar }} style={styles.avatar} />
+                <Image key={avatar} source={{ uri: avatar, cache: 'reload' }} style={styles.avatar} />
               </View>
               <View style={[styles.onlineDot, { borderColor: theme.gradient[1], backgroundColor: '#10b981' }]} />
             </View>
@@ -328,7 +334,7 @@ export default function HomeScreen() {
                     key={item.id}
                     style={[styles.posterCard, !isRead && { borderWidth: 2, borderColor: theme.accentColor }]}
                     onPress={async () => {
-                      await useAnnouncementStore.getState().markAsRead(item.id);
+                      await markAsRead(item.id);
                       router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any);
                     }}
                   >

@@ -109,10 +109,10 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     }, BG_SYNC_INTERVAL);
 
     // AppState listener — re-sync when app comes back to foreground (only if online)
-    const appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+    const appStateSub = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
       if (nextState === 'active') {
-        // Only sync if online — offline users get their cached data instantly
-        const isOnline = useNetworkStore.getState().isOnline;
+        // Force a fresh network check before syncing to avoid spamming failed requests
+        const isOnline = await useNetworkStore.getState().checkNetworkStatus();
         if (isOnline) {
           get().syncAll(true);
         }

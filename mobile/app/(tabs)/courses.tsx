@@ -36,13 +36,14 @@ export default function CoursesScreen() {
   useEffect(() => {
     loadCourses();
   }, [loadCourses]);
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadCourses();
-    setRefreshing(false);
+    try {
+      await loadCourses();
+    } finally {
+      setRefreshing(false);
+    }
   };
-
   const filteredCourses = courses.filter(c => c.semester === activeSemester);
 
   return (

@@ -85,6 +85,103 @@ interface UniversalViewerProps {
   showDownload?: boolean;
 }
 
+interface ViewerContentProps {
+  isDownloading: boolean;
+  downloadProgress: number;
+  downloadError: string | null;
+  localUri: string | null;
+  fileType: 'image' | 'video' | 'pdf' | 'audio' | 'document';
+  fileUri: string;
+  fileName: string;
+  onRetry: () => void;
+  onImageError: () => void;
+}
+
+const ViewerContent: React.FC<ViewerContentProps> = ({
+  isDownloading,
+  downloadProgress,
+  downloadError,
+  localUri,
+  fileType,
+  fileUri,
+  fileName,
+  onRetry,
+  onImageError,
+}) => {
+  if (isDownloading) {
+    return (
+      <View style={styles.center}>
+        <View style={styles.progressRing}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+        <Text style={styles.loadingText}>
+          {downloadProgress > 0 ? `Loading... ${downloadProgress}%` : 'Preparing file...'}
+        </Text>
+        {downloadProgress > 0 && (
+          <View style={styles.progressBarOuter}>
+            <View style={[styles.progressBarInner, { width: `${downloadProgress}%` as any }]} />
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  if (downloadError) {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="alert-circle-outline" size={56} color="#ef4444" />
+        <Text style={styles.errorText}>{downloadError}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!localUri) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Preparing file...</Text>
+      </View>
+    );
+  }
+
+  switch (fileType) {
+    case 'image':
+      return (
+        <Image
+          source={{ uri: localUri }}
+          style={styles.image}
+          resizeMode="contain"
+          onError={onImageError}
+        />
+      );
+
+    case 'video':
+      return <VideoPlayer localUri={localUri} remoteUrl={fileUri} />;
+
+    case 'audio':
+      return <AudioPlayer uri={localUri} fileName={fileName} />;
+
+    case 'pdf':
+    case 'document':
+      return (
+        <View style={{ flex: 1 }}>
+          <PdfJsViewer localUri={localUri} remoteUrl={fileUri} />
+        </View>
+      );
+
+    default:
+      return (
+        <View style={styles.center}>
+          <Ionicons name="document-outline" size={56} color={COLORS.textMuted} />
+          <Text style={styles.loadingText}>Format not supported for preview.</Text>
+        </View>
+      );
+  }
+};
+
 /**
  * Universal In-App Viewer V3.0 — Full Offline Support
  *
@@ -234,88 +331,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   if (!isVisible) return null;
 
-  // Loading state
-  const renderLoading = () => (
-    <View style={styles.center}>
-      <View style={styles.progressRing}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-      <Text style={styles.loadingText}>
-        {downloadProgress > 0 ? `Loading... ${downloadProgress}%` : 'Preparing file...'}
-      </Text>
-      {downloadProgress > 0 && (
-        <View style={styles.progressBarOuter}>
-          <View style={[styles.progressBarInner, { width: `${downloadProgress}%` as any }]} />
-        </View>
-      )}
-    </View>
-  );
 
-  // Error state
-  const renderError = () => (
-    <View style={styles.center}>
-      <Ionicons name="alert-circle-outline" size={56} color="#ef4444" />
-      <Text style={styles.errorText}>{downloadError}</Text>
-      <TouchableOpacity
-        style={styles.retryButton}
-        onPress={() => {
-          setDownloadError(null);
-          setLocalUri(null);
-          setIsDownloading(true);
-          setDownloadProgress(0);
-          setRetryKey(k => k + 1);
-        }}
-      >
-        <Text style={styles.retryText}>Retry</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderContent = () => {
-    if (isDownloading) return renderLoading();
-    if (downloadError) return renderError();
-    if (!localUri) return renderLoading();
-
-    switch (fileType) {
-      // ── IMAGE ──────────────────────────────────────────────────────────
-      case 'image':
-        return (
-          <Image
-            source={{ uri: localUri }}
-            style={styles.image}
-            resizeMode="contain"
-            onError={() => setDownloadError('Image could not be displayed.')}
-          />
-        );
-
-      // ── VIDEO ──────────────────────────────────────────────────────────
-      case 'video':
-        return <VideoPlayer localUri={localUri} remoteUrl={fileUri} />;
-
-      // ── AUDIO ──────────────────────────────────────────────────────────
-      case 'audio':
-        return <AudioPlayer uri={localUri} fileName={fileName} />;
-
-      // ── PDF / DOCUMENT ─────────────────────────────────────────────────
-      case 'pdf':
-      case 'document': {
-        // PDF.js Canvas renderer — same engine on iOS and Android, online + offline
-        return (
-          <View style={{ flex: 1 }}>
-            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} />
-          </View>
-        );
-      }
-
-      default:
-        return (
-          <View style={styles.center}>
-            <Ionicons name="document-outline" size={56} color={COLORS.textMuted} />
-            <Text style={styles.loadingText}>Format not supported for preview.</Text>
-          </View>
-        );
-    }
-  };
 
   const saveToDevice = async () => {
     try {
@@ -389,7 +405,25 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           </View>
 
           {/* Content */}
-          <View style={styles.content}>{renderContent()}</View>
+          <View style={styles.content}>
+            <ViewerContent
+              isDownloading={isDownloading}
+              downloadProgress={downloadProgress}
+              downloadError={downloadError}
+              localUri={localUri}
+              fileType={fileType}
+              fileUri={fileUri}
+              fileName={fileName}
+              onRetry={() => {
+                setDownloadError(null);
+                setLocalUri(null);
+                setIsDownloading(true);
+                setDownloadProgress(0);
+                setRetryKey(k => k + 1);
+              }}
+              onImageError={() => setDownloadError('Image could not be displayed.')}
+            />
+          </View>
 
           {/* Footer */}
           <View style={styles.footer}>

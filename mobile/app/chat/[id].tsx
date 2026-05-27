@@ -31,7 +31,7 @@ import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
 import { sendChatMessageNotification } from '../../src/utils/notifications';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
-import { captureUIError, trackFeature } from '../../src/utils/sentry';
+import { captureUIError, trackFeature, isNetworkError } from '../../src/utils/sentry';
 
 const MAX_CHARS = 500;
 
@@ -766,7 +766,8 @@ export default function ChatScreen() {
                         m.id === resendTempId ? { ...m, id: data.id, content: fileUrl, status: 'sent' } : m
                     ));
                     messageStore.updateMessage(id, resendTempId, { id: data.id, content: fileUrl, status: 'sent' });
-                } catch {
+                } catch (err: any) {
+                    captureUIError('ChatScreen.resendMessage', err, { groupId: id });
                     setUploadingIds(prev => { const next = { ...prev }; delete next[resendTempId]; return next; });
                     setMessages(prev => prev.map(m =>
                         m.id === resendTempId ? { ...m, id: messageId, status: 'failed' } : m
@@ -1555,7 +1556,8 @@ export default function ChatScreen() {
                 setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent' } : m));
                 messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent' });
             }
-        } catch {
+        } catch (err: any) {
+            captureUIError('ChatScreen.sendDocumentMessage', err, { groupId: id });
             // Mark only THIS message as failed — use captured tempId, not prefix match
             setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
             setUploadingIds(prev => {
@@ -1563,7 +1565,9 @@ export default function ChatScreen() {
                 delete next[tempId];
                 return next;
             });
-            Alert.alert('Upload Failed', 'Could not upload the document. Please check your connection and try again.');
+            if (!isNetworkError(err)) {
+                Alert.alert('Upload Failed', 'Could not upload the document. Please check your connection and try again.');
+            }
         }
     };
 
@@ -1643,7 +1647,8 @@ export default function ChatScreen() {
                 setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent' } : m));
                 messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent' });
             }
-        } catch {
+        } catch (err: any) {
+            captureUIError('ChatScreen.sendMediaMessage', err, { groupId: id });
             // Mark only THIS message as failed — use captured tempId, not prefix match
             setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
             setUploadingIds(prev => {
@@ -1651,7 +1656,9 @@ export default function ChatScreen() {
                 delete next[tempId];
                 return next;
             });
-            Alert.alert('Upload Failed', 'Could not upload the media file. Please check your connection and try again.');
+            if (!isNetworkError(err)) {
+                Alert.alert('Upload Failed', 'Could not upload the media file. Please check your connection and try again.');
+            }
         }
     };
 

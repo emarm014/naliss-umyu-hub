@@ -109,6 +109,7 @@ const SIGNUP_BG_KEY = 'signup_in_background';
 // Does NOT block navigation bars or cover any UI
 export function NetworkStatusDot() {
   const { isOnline, wasOffline } = useNetworkStore();
+  const clearWasOffline = useNetworkStore(s => s.clearWasOffline);
   const [showOnline, setShowOnline] = useState(false);
 
   useEffect(() => {
@@ -116,12 +117,12 @@ export function NetworkStatusDot() {
       setShowOnline(true);
       const t = setTimeout(() => {
         setShowOnline(false);
-        useNetworkStore.getState().clearWasOffline();
+        if (typeof clearWasOffline === 'function') clearWasOffline();
       }, 3000);
       return () => clearTimeout(t);
     }
     if (!isOnline) setShowOnline(false);
-  }, [isOnline, wasOffline]);
+  }, [isOnline, wasOffline, clearWasOffline]);
 
   // Only show when offline OR briefly when just came back online
   if (isOnline && !showOnline) return null;

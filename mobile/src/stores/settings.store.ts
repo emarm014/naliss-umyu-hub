@@ -115,10 +115,14 @@ export const useSettingsStore = create<SettingsState>()(
               });
             }
           )
-          .subscribe((status) => {
-            // If subscription fails, fall back to a fresh fetch
+          .subscribe(async (status) => {
+            // If subscription fails, fall back to a fresh fetch (if online)
             if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-              useSettingsStore.getState().fetchSettings();
+              const { useNetworkStore } = require('./network.store');
+              const isOnline = await useNetworkStore.getState().checkNetworkStatus();
+              if (isOnline) {
+                useSettingsStore.getState().fetchSettings();
+              }
             }
           });
 

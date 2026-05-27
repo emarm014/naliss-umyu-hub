@@ -76,6 +76,9 @@ export interface User {
   notif_messages: boolean;
   notif_materials: boolean;
   push_token: string | null;
+  motivation?: string | null;
+  biography?: string | null;
+  hobbies?: string | null;
 }
 
 // Department Interface

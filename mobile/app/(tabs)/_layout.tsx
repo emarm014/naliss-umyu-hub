@@ -3,22 +3,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { useTheme } from '../../src/stores/theme.store';
 import { trackScreen } from '../../src/utils/sentry';
-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-
-  // Modern WhatsApp-style spacing & safe area handling
-  // Add minimum padding if insets are small, otherwise add inset + small buffer
-  const bottomPadding = Platform.OS === 'ios' 
-    ? Math.max(insets.bottom, 20) 
-    : insets.bottom + 10; 
-    
-  // Base height of the tab content (icons + text)
-  const baseHeight = Platform.OS === 'ios' ? 52 : 60;
-  const tabHeight = baseHeight + bottomPadding;
 
   return (
     <Tabs
@@ -31,13 +20,22 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        
+        // Let React Navigation natively handle the bottom safe area
+        // We inject a small buffer into the inset on Android for WhatsApp-style lift
+        safeAreaInsets: {
+          bottom: insets.bottom + (Platform.OS === 'android' ? 12 : 0),
+        },
+        
         tabBarStyle: {
           backgroundColor: colors.card,
           borderTopWidth: 1,
           borderTopColor: colors.border,
+          // We intentionally omit `height` and `paddingBottom` here so React Navigation
+          // can natively calculate them using the safeAreaInsets above.
+          // We just enforce a minimum height so it doesn't look cramped.
+          minHeight: Platform.OS === 'ios' ? 84 : 64,
           paddingTop: 8,
-          paddingBottom: bottomPadding,
-          height: tabHeight,
           elevation: 12,
           shadowColor: isDark ? '#000' : '#1B5E20',
           shadowOffset: { width: 0, height: -4 },
@@ -45,14 +43,12 @@ export default function TabsLayout() {
           shadowRadius: 12,
         },
         tabBarItemStyle: {
-          justifyContent: 'center',
+          // paddingVertical ensures items stay centered within their expanded hit-box
           paddingVertical: 4,
         },
         tabBarLabelStyle: {
           fontFamily: 'Inter-SemiBold',
           fontSize: 10,
-          marginTop: 4,
-          marginBottom: 0,
         },
       }}
     >

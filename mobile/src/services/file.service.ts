@@ -147,5 +147,37 @@ export const FileService = {
   async deleteFile(fileId: string, fileUrlOrName: string) {
     const localUri = this.getLocalUri(fileId, fileUrlOrName);
     await FileSystem.deleteAsync(localUri, { idempotent: true });
+  },
+
+  /**
+   * Cleans up old files from the vault to prevent infinite storage growth.
+   * Runs gracefully in the background. Does not throw.
+   * @param maxAgeDays Files older than this will be deleted (default 30)
+   */
+  async cleanVault(maxAgeDays = 30) {
+    try {
+      const dirInfo = await FileSystem.getInfoAsync(VAULT_DIRECTORY);
+      if (!dirInfo.exists) return;
+
+      const files = await FileSystem.readDirectoryAsync(VAULT_DIRECTORY);
+      const now = Date.now();
+      const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+
+      for (const file of files) {
+        const fileUri = `${VAULT_DIRECTORY}${file}`;
+        const info = await FileSystem.getInfoAsync(fileUri);
+        
+        // If file exists and modification time is older than maxAgeDays
+        if (info.exists && (info as any).modificationTime) {
+          const modTimeMs = (info as any).modificationTime * 1000; // Expo returns seconds
+          if (now - modTimeMs > maxAgeMs) {
+            await FileSystem.deleteAsync(fileUri, { idempotent: true });
+            console.log(`[FileService] Cleaned up old file: ${file}`);
+          }
+        }
+      }
+    } catch {
+      // silent background cleanup failure
+    }
   }
 };

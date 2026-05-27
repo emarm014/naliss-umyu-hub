@@ -39,15 +39,16 @@ export const useMessageStore = create<MessageState>()(
             isLoading: false,
             error: null,
 
-            // Store ALL messages — no cap, no limit.
-            // Every message ever sent stays in the cache indefinitely.
+            // Store up to 300 messages per group to prevent AsyncStorage stringify crashes
+            // and memory leaks on large, active groups.
             setMessages: (groupId, messages) => {
+                const cappedMessages = messages.slice(-300);
                 // Update lastSeenAt to the most recent message timestamp
-                const latest = messages.length > 0
-                    ? messages[messages.length - 1]?.created_at
+                const latest = cappedMessages.length > 0
+                    ? cappedMessages[cappedMessages.length - 1]?.created_at
                     : null;
                 set((state) => ({
-                    cache: { ...state.cache, [groupId]: messages },
+                    cache: { ...state.cache, [groupId]: cappedMessages },
                     lastSeenAt: latest
                         ? { ...state.lastSeenAt, [groupId]: latest }
                         : state.lastSeenAt,
@@ -63,9 +64,9 @@ export const useMessageStore = create<MessageState>()(
                         return state;
                     }
 
-                    const updated = [...existing, message].sort((a, b) =>
-                        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                    );
+                    const updated = [...existing, message]
+                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                        .slice(-300);
 
                     // Only update lastSeenAt from confirmed server messages (real UUIDs).
                     // Temp messages use device-clock timestamps which may be ahead of the
@@ -146,9 +147,9 @@ export const useMessageStore = create<MessageState>()(
                     const newOnes = missedMessages.filter(m => !existingIds.has(m.id));
                     if (!newOnes.length) return state;
 
-                    const merged = [...existing, ...newOnes].sort((a, b) =>
-                        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                    );
+                    const merged = [...existing, ...newOnes]
+                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                        .slice(-300);
 
                     const latest = merged[merged.length - 1]?.created_at;
                     return {

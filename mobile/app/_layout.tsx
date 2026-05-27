@@ -86,6 +86,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSignupStore } from '../src/stores/signup.store';
 import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
 import { useThemeStore } from '../src/stores/theme.store';
+import { FileService } from '../src/services/file.service';
 
 // ── AppState breadcrumbs ──────────────────────────────────────────────────────
 // Records every foreground/background transition so Sentry shows the exact
@@ -277,6 +278,9 @@ function RootLayoutNav() {
       }
     };
     checkKill();
+
+    // Clean up old files from the vault (e.g. older than 30 days) to prevent OOM/storage bloating
+    FileService.cleanVault(30);
   }, []);
 
   // ── Background/foreground tracking for kill detection ────────────────────

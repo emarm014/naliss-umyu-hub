@@ -57,29 +57,52 @@ serve(async (req: Request) => {
 
       subject = 'Reset Your NALISS UMYU Hub Password'
       htmlContent = `
-        <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:16px">
-          <div style="text-align:center;margin-bottom:24px">
-            <h1 style="color:#064e3b;font-size:22px;margin:0">NALISS UMYU HUB</h1>
-            <p style="color:#64748b;font-size:13px;margin:4px 0 0">Library &amp; Information Science &middot; UMYU Katsina</p>
-          </div>
-          <div style="background:#fff;border-radius:12px;padding:28px;text-align:center">
-            <div style="width:64px;height:64px;background:#f0fdf4;border-radius:16px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;border:1px solid #bbf7d0">
-              <span style="font-size:32px">🔐</span>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; padding: 40px 20px; margin: 0;">
+          <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.1);">
+            
+            <!-- Header -->
+            <div style="background-color: #064e3b; padding: 32px 24px; text-align: center;">
+              <h1 style="color: #ffffff; font-size: 24px; font-weight: 700; margin: 0; letter-spacing: 0.5px;">NALISS UMYU HUB</h1>
+              <p style="color: #d1fae5; font-size: 14px; margin: 6px 0 0 0; opacity: 0.9;">Library &amp; Information Science</p>
             </div>
-            <h2 style="color:#0f172a;font-size:20px;margin:0 0 12px">Reset Your Password</h2>
-            <p style="color:#475569;font-size:14px;margin:0 0 24px;line-height:1.6">
-              You requested a password reset for your NALISS UMYU Hub account.
-              Tap the button below to open the app and create a new password.
+
+            <!-- Body -->
+            <div style="padding: 40px 32px; text-align: center;">
+              <div style="width: 72px; height: 72px; background-color: #f0fdf4; border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; border: 2px solid #bbf7d0;">
+                <span style="font-size: 32px; display: block; margin: 0 auto; line-height: 72px;">🔐</span>
+              </div>
+              
+              <h2 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 16px;">Reset Your Password</h2>
+              
+              <p style="color: #475569; font-size: 16px; line-height: 1.6; margin: 0 0 32px; text-align: left;">
+                Hello,<br><br>
+                We received a request to reset the password for your NALISS UMYU Hub account. 
+                Tap the secure button below to open the app and choose a new password.
+              </p>
+
+              <a href="${verifyUrl}" 
+                 style="display: inline-block; background-color: #064e3b; color: #ffffff; text-decoration: none; padding: 16px 36px; border-radius: 12px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(6, 78, 59, 0.2); transition: all 0.2s ease;">
+                Reset Password
+              </a>
+
+              <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e2e8f0; text-align: left;">
+                <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 0;">
+                  <strong style="color: #334155;">Security Notice:</strong> This link will securely expire in <strong style="color: #ef4444;">1 hour</strong>. 
+                  If you didn't request a password reset, you can safely ignore this email. Your account remains secure.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div style="max-width: 500px; margin: 24px auto 0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0 0 8px;">
+              &copy; 2026 NALISS UMYU Hub. All rights reserved.
             </p>
-            <a href="${verifyUrl}"
-               style="display:inline-block;background:#064e3b;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:700;letter-spacing:0.3px">
-              Reset Password
-            </a>
-            <p style="color:#94a3b8;font-size:12px;margin:20px 0 0">
-              This link expires in 1 hour. If you did not request a password reset, you can safely ignore this email.
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">
+              Umaru Musa Yar'adua University, Katsina
             </p>
           </div>
-          <p style="color:#94a3b8;font-size:11px;text-align:center;margin-top:20px">NALISS UMYU HUB &copy; 2026</p>
         </div>
       `
     } else {
@@ -97,19 +120,50 @@ serve(async (req: Request) => {
       subject = subjectMap[actionType] || 'Your NALISS UMYU Hub Verification Code'
 
       htmlContent = `
-        <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:16px">
-          <div style="text-align:center;margin-bottom:24px">
-            <h1 style="color:#064e3b;font-size:22px;margin:0">NALISS UMYU HUB</h1>
-            <p style="color:#64748b;font-size:13px;margin:4px 0 0">Library &amp; Information Science &middot; UMYU Katsina</p>
-          </div>
-          <div style="background:#fff;border-radius:12px;padding:28px;text-align:center">
-            <p style="color:#0f172a;font-size:15px;margin:0 0 20px">Your verification code is:</p>
-            <div style="background:#f0fdf4;border:2px solid #059669;border-radius:12px;padding:20px;display:inline-block">
-              <span style="font-size:36px;font-weight:900;color:#064e3b;letter-spacing:8px">${token}</span>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; padding: 40px 20px; margin: 0;">
+          <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.1);">
+            
+            <!-- Header -->
+            <div style="background-color: #064e3b; padding: 32px 24px; text-align: center;">
+              <h1 style="color: #ffffff; font-size: 24px; font-weight: 700; margin: 0; letter-spacing: 0.5px;">NALISS UMYU HUB</h1>
+              <p style="color: #d1fae5; font-size: 14px; margin: 6px 0 0 0; opacity: 0.9;">Library &amp; Information Science</p>
             </div>
-            <p style="color:#64748b;font-size:13px;margin:20px 0 0">This code expires in 1 hour. Do not share it with anyone.</p>
+
+            <!-- Body -->
+            <div style="padding: 40px 32px; text-align: center;">
+              <div style="width: 72px; height: 72px; background-color: #f0fdf4; border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; border: 2px solid #bbf7d0;">
+                <span style="font-size: 32px; display: block; margin: 0 auto; line-height: 72px;">🛡️</span>
+              </div>
+              
+              <h2 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 16px;">Authentication Code</h2>
+              
+              <p style="color: #475569; font-size: 16px; line-height: 1.6; margin: 0 0 24px; text-align: left;">
+                Hello,<br><br>
+                Please use the secure verification code below to continue.
+              </p>
+
+              <div style="background-color: #f0fdf4; border: 2px dashed #10b981; border-radius: 12px; padding: 24px; display: inline-block; margin-bottom: 32px;">
+                <span style="font-size: 40px; font-weight: 900; color: #064e3b; letter-spacing: 12px; font-family: monospace;">${token}</span>
+              </div>
+
+              <div style="padding-top: 24px; border-top: 1px solid #e2e8f0; text-align: left;">
+                <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 0;">
+                  <strong style="color: #334155;">Security Notice:</strong> This code will securely expire in <strong style="color: #ef4444;">1 hour</strong>. 
+                  Do not share this code with anyone. NALISS admins will never ask for your code.
+                </p>
+              </div>
+            </div>
           </div>
-          <p style="color:#94a3b8;font-size:11px;text-align:center;margin-top:20px">NALISS UMYU HUB &copy; 2026</p>
+
+          <!-- Footer -->
+          <div style="max-width: 500px; margin: 24px auto 0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0 0 8px;">
+              &copy; 2026 NALISS UMYU Hub. All rights reserved.
+            </p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">
+              Umaru Musa Yar'adua University, Katsina
+            </p>
+          </div>
         </div>
       `
     }

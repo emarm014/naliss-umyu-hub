@@ -45,8 +45,8 @@ export default function UpdatePassword() {
   }, []);
 
   const handleUpdate = async () => {
-    if (password.length < 8) {
-      Alert.alert('Too Short', 'Password must be at least 8 characters long.');
+    if (password.length < 6) {
+      Alert.alert('Too Short', 'Password must be at least 6 characters long.');
       return;
     }
     if (password !== confirmPassword) {

@@ -161,13 +161,9 @@ export default function ChatScreen() {
 
         // Presence: mark user as active when they enter the chat
         const markActive = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                await supabase
-                    .from('users')
-                    .update({ last_active_at: new Date().toISOString() })
-                    .eq('id', user.id);
-            }
+            // Use the throttled RPC — only updates if last_active_at is older than 60s
+            // This prevents 33 writes/second at 1000 concurrent users
+            await supabase.rpc('update_last_active' as any).catch(() => {});
         };
 
         markActive();

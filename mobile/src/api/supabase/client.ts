@@ -114,8 +114,8 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   },
   realtime: {
     params: {
-      eventsPerSecond: 40,       // up from 10 — handle bursts of messages
-      heartbeatIntervalMs: 15000, // 15s heartbeat (default 30s) — detect dead connections faster
+      eventsPerSecond: 10,       // back to default — 40 was too aggressive and risks rate limiting
+      heartbeatIntervalMs: 15000, // 15s heartbeat — detect dead connections faster than default 30s
     },
     timeout: 20000,              // 20s realtime connection timeout
   },

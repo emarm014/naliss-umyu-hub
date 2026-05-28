@@ -460,8 +460,6 @@ function RootLayoutNav() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="auth" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="(modals)" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="(admin)" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <GroupMembershipHandler />

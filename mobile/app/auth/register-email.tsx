@@ -100,14 +100,17 @@ export default function RegisterEmail() {
 
       // STEP 2: Check if registration is open — silently, never blocks OTP
       try {
-        const { data: regSetting } = await supabase
-          .from('system_settings')
-          .select('value')
-          .eq('key', 'allow_registration')
-          .maybeSingle();
-        if (regSetting?.value === 'false') {
-          Alert.alert('Registration Closed', 'New student registrations are currently closed. Please contact the administrator.');
-          return;
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (existingSession) {
+          const { data: regSetting } = await supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'allow_registration')
+            .maybeSingle();
+          if (regSetting?.value === 'false') {
+            Alert.alert('Registration Closed', 'New student registrations are currently closed. Please contact the administrator.');
+            return;
+          }
         }
       } catch {
         // Settings check failed — allow through, server enforces this

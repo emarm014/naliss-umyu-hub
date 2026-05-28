@@ -579,6 +579,7 @@ export default function ChatScreen() {
             return;
         }
         if (!inputText.trim() || !currentUser) return;
+        if (isOverLimit) return;
 
         setIsSending(true);
         try {
@@ -1237,8 +1238,12 @@ export default function ChatScreen() {
                                 onLongPress={() => setLongPressedMessage(item)}
                                 onPress={() => {
                                     if (isMe) {
-                                        // Sender: already has local URI, open directly
-                                        const viewUri = item._localUri || item.content;
+                                        // Sender: prefer Cloudinary URL (confirmed); fall back to local URI with file:// prefix
+                                        const viewUri = item.content?.startsWith('http')
+                                            ? item.content
+                                            : item._localUri
+                                                ? (item._localUri.startsWith('file://') ? item._localUri : `file://${item._localUri}`)
+                                                : item.content;
                                         setViewerFile({ uri: viewUri, type: 'image', name: `image_${item.id}.jpg` });
                                         setViewerVisible(true);
                                         return;
@@ -1320,7 +1325,13 @@ export default function ChatScreen() {
                                         onLongPress={() => setLongPressedMessage(item)}
                                         onPress={() => {
                                             if (isMe) {
-                                                setViewerFile({ uri: item.content, type: 'video', name: item.metadata?.name || `video_${item.id}.mp4` });
+                                                // Sender: prefer Cloudinary URL; fall back to local URI with file:// prefix
+                                                const videoUri = item.content?.startsWith('http')
+                                                    ? item.content
+                                                    : item._localUri
+                                                        ? (item._localUri.startsWith('file://') ? item._localUri : `file://${item._localUri}`)
+                                                        : item.content;
+                                                setViewerFile({ uri: videoUri, type: 'video', name: item.metadata?.name || `video_${item.id}.mp4` });
                                                 setViewerVisible(true);
                                                 return;
                                             }
@@ -1792,8 +1803,8 @@ export default function ChatScreen() {
         <ScreenErrorBoundary>
             <KeyboardAvoidingView
                 style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={0}
             >
             {/* Header */}
             <View style={[styles.header, styles.headerLight, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
@@ -1841,6 +1852,7 @@ export default function ChatScreen() {
                                 placeholderTextColor={colors.textMuted}
                                 value={searchParams.username}
                                 onChangeText={(val) => setSearchParams({ ...searchParams, username: val })}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                         </View>
                         <View style={[styles.searchField, { flex: 1.2, backgroundColor: colors.surface }]}>
@@ -1851,6 +1863,7 @@ export default function ChatScreen() {
                                 placeholderTextColor={colors.textMuted}
                                 value={searchParams.body}
                                 onChangeText={(val) => setSearchParams({ ...searchParams, body: val })}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                         </View>
                     </View>
@@ -1864,6 +1877,7 @@ export default function ChatScreen() {
                                 value={searchParams.date || ''}
                                 onChangeText={(val) => setSearchParams({ ...searchParams, date: val })}
                                 keyboardType="numeric"
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                         </View>
                         
@@ -2261,13 +2275,14 @@ export default function ChatScreen() {
 
                         <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
                             <TextInput
-                                style={[styles.input, { color: colors.text }]}
+                                style={[styles.input, { color: isDark ? '#f1f5f9' : '#0f172a' }]}
                                 placeholder="Type a message..."
-                                placeholderTextColor={colors.textMuted}
+                                placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
                                 multiline
                                 value={inputText}
                                 onChangeText={setInputText}
                                 maxLength={MAX_CHARS}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                             {charCount > MAX_CHARS * 0.8 && (
                                 <Text style={[styles.charCounter, isOverLimit && styles.charCounterOver]}>
@@ -2277,12 +2292,9 @@ export default function ChatScreen() {
                         </View>
 
                         <TouchableOpacity 
-                            style={[
-                                styles.sendButton,
-                                (!inputText.trim() || isOverLimit) && styles.sendButtonDisabled
-                            ]}
+                            style={styles.sendButton}
                             onPress={handleSend}
-                            disabled={!inputText.trim() || isOverLimit}
+                            activeOpacity={inputText.trim() && !isOverLimit ? 0.75 : 1}
                         >
                             <Ionicons name="send" size={20} color="#FFF" />
                         </TouchableOpacity>
@@ -2567,8 +2579,9 @@ const styles = StyleSheet.create({
     sendButton: {
         width: 44, height: 44, borderRadius: 22, backgroundColor: '#059669',
         alignItems: 'center', justifyContent: 'center',
+        shadowColor: '#059669', shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.35, shadowRadius: 6, elevation: 4,
     },
-    sendButtonDisabled: { backgroundColor: '#e2e8f0' },
     // Search Bar
     searchBarContainer: {
         backgroundColor: '#FFF',

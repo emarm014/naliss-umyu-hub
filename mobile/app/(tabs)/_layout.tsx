@@ -41,11 +41,9 @@ export default function TabsLayout() {
           backgroundColor: colors.card,
           borderTopWidth: 1,
           borderTopColor: colors.border,
-          // We intentionally omit `height` and `paddingBottom` here so React Navigation
-          // can natively calculate them using the safeAreaInsets above.
-          // We just enforce a minimum height so it doesn't look cramped.
           minHeight: Platform.OS === 'ios' ? 84 : 64,
           paddingTop: 8,
+          paddingBottom: Platform.OS === 'android' ? 6 : 4,
           elevation: 12,
           shadowColor: isDark ? '#000' : '#1B5E20',
           shadowOffset: { width: 0, height: -4 },

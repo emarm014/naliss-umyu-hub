@@ -43,6 +43,14 @@ export const useSettingsStore = create<SettingsState>()(
       fetchSettings: async () => {
         set({ isLoading: true });
         try {
+          // SESSION GUARD: system_settings requires authentication (RLS).
+          // Skip the fetch when unauthenticated to avoid 401 errors on login/register screens.
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            set({ isLoading: false });
+            return;
+          }
+
           const { data, error } = await supabase
             .from('system_settings')
             .select('key, value')

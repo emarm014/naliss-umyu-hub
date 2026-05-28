@@ -27,7 +27,7 @@ import { COLORS } from '../../src/constants/Colors';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useTheme } from '../../src/stores/theme.store';
 import * as Sharing from 'expo-sharing';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
@@ -322,6 +322,7 @@ export default function ResourcesScreen() {
             placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            keyboardAppearance={isDark ? 'dark' : 'light'}
           />
           {searchQuery !== '' && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>

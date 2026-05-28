@@ -18,8 +18,9 @@ import { extractFileNameFromUrl, getVaultFilePath } from '../../utils/download';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { WebView } from 'react-native-webview';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
+import * as Sentry from '@sentry/react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -219,8 +220,9 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     if (!isVisible) return;
 
     // Already a local file — open instantly, no download needed
-    if (fileUri.startsWith('file://')) {
-      setLocalUri(fileUri);
+    // Handles both file:// URIs and bare absolute paths (/data/user/0/...)
+    if (fileUri.startsWith('file://') || fileUri.startsWith('/')) {
+      setLocalUri(fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`);
       setIsOffline(true);
       setIsDownloading(false);
       return;
@@ -304,8 +306,12 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           }
           setIsDownloading(false);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
+          Sentry.captureException(err, {
+            tags: { location: 'UniversalViewer.resolve', fileType },
+            extra: { fileUri, fileName, fileId },
+          });
           setDownloadError('Could not load file. Tap retry.');
           setIsDownloading(false);
         }

@@ -10,15 +10,13 @@ interface SettingsState {
   readOnlyMode: boolean;
   allowRegistration: boolean;
   isLoading: boolean;
-  lastFetchedAt: number; // epoch ms — used to detect stale cache
+  lastFetchedAt: number;
 
-  // Actions
   fetchSettings: () => Promise<void>;
   setSettings: (settings: Partial<SettingsState>) => void;
   initializeListener: () => () => void;
 }
 
-// Parse a raw DB string value to boolean — handles 'true'/'false'/'1'/'0' etc.
 function parseBool(value: string | undefined | null, defaultVal: boolean): boolean {
   if (value === null || value === undefined) return defaultVal;
   const v = value.trim().toLowerCase();
@@ -43,8 +41,7 @@ export const useSettingsStore = create<SettingsState>()(
       fetchSettings: async () => {
         set({ isLoading: true });
         try {
-          // SESSION GUARD: system_settings requires authentication (RLS).
-          // Skip the fetch when unauthenticated to avoid 401 errors on login/register screens.
+          // SESSION GUARD: skip when unauthenticated to avoid 401 errors
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {
             set({ isLoading: false });
@@ -66,7 +63,6 @@ export const useSettingsStore = create<SettingsState>()(
           if (data && data.length > 0) {
             const map: Record<string, string> = {};
             data.forEach((item) => { map[item.key] = item.value; });
-
             set({
               maintenanceMode: parseBool(map.maintenance_mode, false),
               readOnlyMode: parseBool(map.read_only_mode, false),
@@ -85,7 +81,27 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       initializeListener: () => {
-        // Remove any existing channel with this name first to avoid duplicates
+        // ── Scale optimisation: poll every 5 minutes instead of holding a
+        // permanent WebSocket per user. system_settings almost never changes
+        // (only when admin toggles maintenance/read-only mode).
+        // This saves 1 realtime connection slot per active user — at 200 users
+        // that's 200 freed slots on the free tier (limit: 200 total).
+        //
+        // The realtime channel is still used as an instant-update path for
+        // admins who need to see changes immediately, but regular users get
+        // updates within 5 minutes which is perfectly acceptable.
+        const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+        // Initial fetch on mount
+        useSettingsStore.getState().fetchSettings();
+
+        // Poll every 5 minutes
+        const pollInterval = setInterval(() => {
+          useSettingsStore.getState().fetchSettings();
+        }, POLL_INTERVAL_MS);
+
+        // Keep a single shared realtime channel — only one instance app-wide
+        // (ProtectedRoute calls initializeListener once, not per user)
         const existingChannel = supabase.getChannels().find(
           (ch) => ch.topic === 'realtime:public:system_settings'
         );
@@ -104,7 +120,6 @@ export const useSettingsStore = create<SettingsState>()(
               const record = payload.new as any;
               if (!record?.key) return;
               const { key, value } = record;
-
               set((state) => {
                 switch (key) {
                   case 'maintenance_mode':
@@ -124,7 +139,6 @@ export const useSettingsStore = create<SettingsState>()(
             }
           )
           .subscribe(async (status) => {
-            // If subscription fails, fall back to a fresh fetch (if online)
             if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
               const { useNetworkStore } = require('./network.store');
               const isOnline = await useNetworkStore.getState().checkNetworkStatus();
@@ -134,13 +148,15 @@ export const useSettingsStore = create<SettingsState>()(
             }
           });
 
+        // Return cleanup — clears poll interval AND removes realtime channel
         return () => {
+          clearInterval(pollInterval);
           supabase.removeChannel(channel);
         };
       },
     }),
     {
-      name: 'naliss-settings-v2', // bumped version — forces cache invalidation
+      name: 'naliss-settings-v2',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         maintenanceMode: state.maintenanceMode,
@@ -152,10 +168,8 @@ export const useSettingsStore = create<SettingsState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        // If cache is older than 5 minutes, fetch fresh immediately on hydration
         const age = Date.now() - (state.lastFetchedAt ?? 0);
         if (age > 5 * 60 * 1000) {
-          // Defer slightly to let the store finish hydrating first
           setTimeout(() => {
             useSettingsStore.getState().fetchSettings();
           }, 100);

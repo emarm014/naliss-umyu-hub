@@ -101,7 +101,21 @@ export const Logger = {
       return;
     }
 
-    Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
+    // Normalize error to a proper Error instance — handles plain objects like
+    // Supabase errors {code, message, details, hint} which produce "[object Object]"
+    // when passed to new Error(String(error))
+    let normalizedError: Error;
+    if (error instanceof Error) {
+      normalizedError = error;
+    } else if (error && typeof error === 'object') {
+      const msg = error.message || error.error_description || error.msg || JSON.stringify(error);
+      normalizedError = new Error(msg);
+      (normalizedError as any).originalError = error;
+    } else {
+      normalizedError = new Error(String(error));
+    }
+
+    Sentry.captureException(normalizedError, {
       tags: { component, reqId },
       extra: { message, ...context, originalError: error },
     });

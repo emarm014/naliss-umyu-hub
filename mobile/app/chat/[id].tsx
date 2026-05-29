@@ -1824,18 +1824,18 @@ export default function ChatScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                             <Text style={styles.headerTitleLight} numberOfLines={1}>
+                             <Text style={[styles.headerTitleLight, { color: colors.text }]} numberOfLines={1}>
                                  {group?.name || (initialName as string) || 'Chat'}
                              </Text>
                              <Ionicons name="people-circle-outline" size={18} color={COLORS.primary} />
                         </View>
-                        <Text style={styles.headerSubtitleLight}>
+                        <Text style={[styles.headerSubtitleLight, { color: colors.textMuted }]}>
                             {isGeneralGroup ? 'General Hub' : 'Level Hub'} • Tap to see members
                         </Text>
                     </View>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setShowGroupMenu(true)}>
-                    <Ionicons name="ellipsis-vertical" size={24} color={COLORS.text} />
+                    <Ionicons name="ellipsis-vertical" size={24} color={colors.text} />
                 </TouchableOpacity>
             </View>
 
@@ -2184,15 +2184,15 @@ export default function ChatScreen() {
                 <TouchableWithoutFeedback onPress={() => setShowGroupMenu(false)}>
                     <View style={styles.menuOverlay}>
                         <TouchableWithoutFeedback>
-                            <View style={styles.menuContent}>
-                                <TouchableOpacity style={styles.menuItem} onPress={() => { setShowGroupMenu(false); setShowSearch(!showSearch); }}>
-                                    <Ionicons name="search-outline" size={20} color={COLORS.text} />
-                                    <Text style={styles.menuItemText}>Search Messages</Text>
+                            <View style={[styles.menuContent, { backgroundColor: colors.card }]}>
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => { setShowGroupMenu(false); setShowSearch(!showSearch); }}>
+                                    <Ionicons name="search-outline" size={20} color={colors.text} />
+                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Search Messages</Text>
                                 </TouchableOpacity>
                                 
-                                <TouchableOpacity style={styles.menuItem} onPress={() => { setShowGroupMenu(false); setShowMembersList(true); }}>
-                                    <Ionicons name="people-outline" size={20} color={COLORS.text} />
-                                    <Text style={styles.menuItemText}>Group Members</Text>
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => { setShowGroupMenu(false); setShowMembersList(true); }}>
+                                    <Ionicons name="people-outline" size={20} color={colors.text} />
+                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Group Members</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => {
@@ -2203,8 +2203,8 @@ export default function ChatScreen() {
                                     });
                                     setShowGroupSettings(true);
                                 }}>
-                                    <Ionicons name="settings-outline" size={20} color={COLORS.text} />
-                                    <Text style={styles.menuItemText}>Group Settings</Text>
+                                    <Ionicons name="settings-outline" size={20} color={colors.text} />
+                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Group Settings</Text>
                                 </TouchableOpacity>
                             </View>
                         </TouchableWithoutFeedback>

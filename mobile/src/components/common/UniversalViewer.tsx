@@ -344,29 +344,72 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       const uriToSave = localUri || fileUri;
       if (!uriToSave) return;
 
-      // Use expo-media-library for images/videos (saves to camera roll)
-      // For documents, use sharing (saves via system dialog)
       if (fileType === 'image' || fileType === 'video') {
+        // Images/videos → save to camera roll via MediaLibrary
         const MediaLibrary = await import('expo-media-library');
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status !== 'granted') {
           Alert.alert('Permission needed', 'Please grant media library access to save files.');
           return;
         }
-        await MediaLibrary.saveToLibraryAsync(uriToSave);
+        // Ensure the URI has file:// prefix for MediaLibrary
+        const mediaUri = uriToSave.startsWith('file://') ? uriToSave : `file://${uriToSave}`;
+        await MediaLibrary.saveToLibraryAsync(mediaUri);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 3000);
       } else {
-        // PDF/document — use sharing dialog to save
-        if (!(await Sharing.isAvailableAsync())) {
-          Alert.alert('Unavailable', 'Saving is not supported on this device.');
-          return;
-        }
+        // PDFs/documents → copy directly to Downloads folder, no share sheet
         const realFileName = extractFileNameFromUrl(fileUri, fileName);
-        await Sharing.shareAsync(uriToSave, { dialogTitle: `Save ${realFileName}` });
+        const safeName = realFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+        // Try to save to the public Downloads directory
+        const fs = FileSystem as any;
+        const downloadsDir =
+          fs.StorageAccessFramework?.getUriForDirectoryInRoot?.('Downloads') ||
+          (fs.documentDirectory ? `${fs.documentDirectory}Downloads/` : null);
+
+        // Best approach: copy to app's document directory with a clean name,
+        // then use MediaLibrary to move it to Downloads (works on all Android versions)
+        const destUri = `${FileSystem.documentDirectory}${safeName}`;
+
+        // If source is already local, copy it; if remote, it's already downloaded to localUri
+        const sourceUri = uriToSave.startsWith('file://') ? uriToSave : `file://${uriToSave}`;
+
+        await FileSystem.copyAsync({ from: sourceUri, to: destUri });
+
+        // Use MediaLibrary to save to Downloads (requires permission)
+        const MediaLibrary = await import('expo-media-library');
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === 'granted') {
+          const asset = await MediaLibrary.createAssetAsync(destUri);
+          // Try to move to Downloads album
+          try {
+            const album = await MediaLibrary.getAlbumAsync('Download');
+            if (album) {
+              await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+            } else {
+              await MediaLibrary.createAlbumAsync('Download', asset, false);
+            }
+          } catch {
+            // Album move failed — file is still saved as an asset
+          }
+          // Clean up temp copy
+          await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
+          setIsSaved(true);
+          setTimeout(() => setIsSaved(false), 3000);
+          Alert.alert('Saved', `"${realFileName}" has been saved to your Downloads folder.`);
+        } else {
+          // No permission — fall back to share sheet as last resort
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(sourceUri, { dialogTitle: `Save ${realFileName}` });
+          } else {
+            Alert.alert('Permission needed', 'Please grant storage access to save files.');
+          }
+        }
       }
-    } catch {
-      Alert.alert('Error', 'Could not save the file.');
+    } catch (err: any) {
+      Sentry.captureException(err, { tags: { location: 'UniversalViewer.saveToDevice' }, extra: { fileType, fileName } });
+      Alert.alert('Error', 'Could not save the file. Please try again.');
     }
   };
 

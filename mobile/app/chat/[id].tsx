@@ -14,6 +14,7 @@ import {
     Alert,
     Pressable,
     ScrollView,
+    ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -166,7 +167,7 @@ export default function ChatScreen() {
         const markActive = async () => {
             // Use the throttled RPC — only updates if last_active_at is older than 60s
             // This prevents 33 writes/second at 1000 concurrent users
-            await supabase.rpc('update_last_active' as any).catch(() => {});
+            await (supabase.rpc('update_last_active' as any) as any).catch(() => {});
         };
 
         markActive();
@@ -2307,7 +2308,7 @@ export default function ChatScreen() {
                                             onPress={async () => {
                                                 const newVal = !(group?.chat_enabled !== false);
                                                 setGroup((prev: any) => ({ ...prev, chat_enabled: newVal }));
-                                                await supabase.from('groups').update({ chat_enabled: newVal }).eq('id', id);
+                                                await (supabase.from('groups') as any).update({ chat_enabled: newVal }).eq('id', id);
                                             }}
                                         >
                                             <View style={[styles.groupSettingsToggleThumb, { transform: [{ translateX: group?.chat_enabled !== false ? 20 : 2 }] }]} />
@@ -2734,9 +2735,9 @@ const styles = StyleSheet.create({
     stickerButton: { padding: 6, marginBottom: 4 },
     inputWrapper: { flex: 1, position: 'relative', marginHorizontal: 8 },
     input: {
-        backgroundColor: '#f1f5f9', borderRadius: 24,
+        borderRadius: 24,
         paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, paddingRight: 60,
-        maxHeight: 80, minHeight: 44, fontFamily: 'Inter-Regular', fontSize: 15, color: COLORS.text,
+        maxHeight: 80, minHeight: 44, fontFamily: 'Inter-Regular', fontSize: 15,
     },
     charCounter: { position: 'absolute', right: 14, bottom: 12, fontFamily: 'Inter-Medium', fontSize: 10, color: '#94a3b8' },
     charCounterOver: { color: '#ef4444' },

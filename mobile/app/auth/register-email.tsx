@@ -12,6 +12,7 @@ import { useNetworkStore } from '../../src/stores/network.store';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature } from '../../src/utils/sentry';
+import * as Sentry from '@sentry/react-native';
 
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
@@ -121,14 +122,13 @@ export default function RegisterEmail() {
       if (!isMounted.current) return;
 
       // STEP 3: Check if account already exists
-      // If RPC fails for any reason, allow through — the OTP itself proves email ownership,
-      // and the DB constraint at profile creation is the real guard against duplicates.
       let provider = 'none';
       try {
+        Sentry.addBreadcrumb({ category: 'signup.email', message: 'Step 3: Checking existing account', level: 'info', data: { email: trimmedEmail } });
         const { data, error } = await supabase.rpc('check_existing_account', { email_addr: trimmedEmail });
         if (!error && data) provider = data;
       } catch {
-        // RPC failed — allow through, server enforces rules at profile creation
+        // RPC failed — allow through
       }
 
       if (provider === 'google') {
@@ -156,6 +156,7 @@ export default function RegisterEmail() {
       store.setCredentials(trimmedEmail, undefined);
 
       setLoadingStatus('Sending verification code…');
+      Sentry.addBreadcrumb({ category: 'signup.email', message: 'Step 4: Sending OTP', level: 'info', data: { email: trimmedEmail } });
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email: trimmedEmail,
         options: { shouldCreateUser: true },

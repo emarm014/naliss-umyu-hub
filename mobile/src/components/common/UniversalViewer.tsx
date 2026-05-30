@@ -510,7 +510,13 @@ function MobileVisualScan({ url }: { url: string }) {
 // Fallback: expo-av Video component (tap "Native Player" button)
 function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
   const [useNative, setUseNative] = React.useState(false);
-  const videoSrc = localUri || remoteUrl;
+
+  // Normalize URI for expo-av: local paths must have file:// prefix
+  // The web player handles bare paths via allowFileAccess, but expo-av requires file://
+  const rawSrc = localUri || remoteUrl;
+  const videoSrc = rawSrc && !rawSrc.startsWith('http') && !rawSrc.startsWith('file://')
+    ? `file://${rawSrc}`
+    : rawSrc;
 
   if (useNative) {
     return (
@@ -521,10 +527,16 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
           volume={1.0}
           isMuted={false}
           resizeMode={ResizeMode.CONTAIN}
-          shouldPlay={false}
+          shouldPlay={true}
           useNativeControls
           style={styles.video}
-          onError={() => setUseNative(false)}
+          onError={(err) => {
+            Sentry.captureException(new Error(`expo-av Video error: ${JSON.stringify(err)}`), {
+              tags: { location: 'UniversalViewer.VideoPlayer.native' },
+              extra: { videoSrc, rawSrc },
+            });
+            setUseNative(false);
+          }}
         />
         <TouchableOpacity
           onPress={() => setUseNative(false)}

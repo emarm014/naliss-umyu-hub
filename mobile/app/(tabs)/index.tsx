@@ -332,7 +332,7 @@ export default function HomeScreen() {
           <View style={styles.headerBody}>
             <View style={styles.avatarSection}>
               <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
-                <Image key={avatarKey} source={{ uri: avatar, cache: 'reload' }} style={styles.avatar} />
+                <Image key={avatarKey} source={{ uri: avatar, cache: 'force-cache' }} style={styles.avatar} />
               </View>
               <View style={[styles.onlineDot, { borderColor: theme.gradient[1], backgroundColor: '#10b981' }]} />
             </View>

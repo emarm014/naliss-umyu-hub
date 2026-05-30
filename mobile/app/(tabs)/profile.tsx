@@ -534,7 +534,7 @@ export default function ProfileScreen() {
             return avatarUri ? (
               <Image
                 key={`${avatarUri}-${lastLocalProfileUpdateAt || 0}`}
-                source={{ uri: avatarUri, cache: 'reload' }}
+                source={{ uri: avatarUri, cache: 'force-cache' }}
                 style={styles.avatar}
               />
             ) : (

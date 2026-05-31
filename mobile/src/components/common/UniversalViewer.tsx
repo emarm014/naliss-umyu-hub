@@ -431,14 +431,10 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
-            {/* Left: Share */}
-            {showDownload ? (
-              <TouchableOpacity onPress={shareFile} style={styles.closeButton}>
-                <Ionicons name="share-social-outline" size={24} color={COLORS.black} />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.closeButton} />
-            )}
+            {/* Left: Cancel (X) */}
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={24} color={COLORS.black} />
+            </TouchableOpacity>
 
             <View style={styles.titleContainer}>
               <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
@@ -453,7 +449,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
               </View>
             </View>
 
-            {/* Right: Back / Close */}
+            {/* Right: Back navigation arrow */}
             <TouchableOpacity onPress={onClose} style={styles.actionButton}>
               <Ionicons name="chevron-back" size={26} color={COLORS.black} />
             </TouchableOpacity>

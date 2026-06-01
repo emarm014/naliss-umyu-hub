@@ -217,7 +217,7 @@ function AnnouncementDetailsContent() {
                     <View style={styles.institutionalSignature}>
                         <View style={styles.sigLine} />
                         <Text style={styles.sigText}>Released by NALISS Public Relations</Text>
-                        <Text style={styles.sigSub}>University of Maiduguri Hub</Text>
+                        <Text style={styles.sigSub}>Umaru Musa Yar'adua University (UMYUK)</Text>
                     </View>
                 </View>
             </ScrollView>

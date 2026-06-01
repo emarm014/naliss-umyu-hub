@@ -344,45 +344,71 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       const uriToSave = localUri || fileUri;
       if (!uriToSave) return;
 
-      if (fileType === 'image' || fileType === 'video') {
-        // Images/videos → save to camera roll via MediaLibrary
-        const MediaLibrary = await import('expo-media-library');
-        const { status } = await MediaLibrary.requestPermissionsAsync();
+      // Ensure we have a local file — download if needed
+      let localFile = localUri;
+      if (!localFile || (!localFile.startsWith('file://') && !localFile.startsWith('/'))) {
+        // Not a local file — need to download first
+        Alert.alert('Preparing file…', 'Downloading file before saving. Please wait.');
+        return; // The viewer's download flow handles this — user should wait for it to finish
+      }
+
+      // Normalize to file:// URI
+      const fileUriNorm = localFile.startsWith('file://') ? localFile : `file://${localFile}`;
+      const realFileName = extractFileNameFromUrl(fileUri, fileName);
+
+      const MediaLibrary = await import('expo-media-library');
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+
+      if (fileType === 'image') {
+        // Images → camera roll
         if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant media library access to save files.');
+          Alert.alert('Permission needed', 'Please grant media library access to save images.');
           return;
         }
-        // Ensure the URI has file:// prefix for MediaLibrary
-        const mediaUri = uriToSave.startsWith('file://') ? uriToSave : `file://${uriToSave}`;
-        await MediaLibrary.saveToLibraryAsync(mediaUri);
+        await MediaLibrary.saveToLibraryAsync(fileUriNorm);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 3000);
-      } else {
-        // PDFs/documents → copy directly to Downloads folder, no share sheet
-        const realFileName = extractFileNameFromUrl(fileUri, fileName);
+
+      } else if (fileType === 'video') {
+        // Videos → camera roll
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please grant media library access to save videos.');
+          return;
+        }
+        await MediaLibrary.saveToLibraryAsync(fileUriNorm);
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 3000);
+
+      } else if (fileType === 'audio') {
+        // Audio → Music / Downloads
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please grant media library access to save audio.');
+          return;
+        }
         const safeName = realFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-
-        // Try to save to the public Downloads directory
-        const fs = FileSystem as any;
-        const downloadsDir =
-          fs.StorageAccessFramework?.getUriForDirectoryInRoot?.('Downloads') ||
-          (fs.documentDirectory ? `${fs.documentDirectory}Downloads/` : null);
-
-        // Best approach: copy to app's document directory with a clean name,
-        // then use MediaLibrary to move it to Downloads (works on all Android versions)
         const destUri = `${FileSystem.documentDirectory}${safeName}`;
+        await FileSystem.copyAsync({ from: fileUriNorm, to: destUri });
+        const asset = await MediaLibrary.createAssetAsync(destUri);
+        try {
+          const album = await MediaLibrary.getAlbumAsync('Music') || await MediaLibrary.getAlbumAsync('Download');
+          if (album) {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          } else {
+            await MediaLibrary.createAlbumAsync('Music', asset, false);
+          }
+        } catch { /* album move best-effort */ }
+        await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 3000);
 
-        // If source is already local, copy it; if remote, it's already downloaded to localUri
-        const sourceUri = uriToSave.startsWith('file://') ? uriToSave : `file://${uriToSave}`;
+      } else {
+        // PDF / document → Downloads folder
+        const safeName = realFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const destUri = `${FileSystem.documentDirectory}${safeName}`;
+        await FileSystem.copyAsync({ from: fileUriNorm, to: destUri });
 
-        await FileSystem.copyAsync({ from: sourceUri, to: destUri });
-
-        // Use MediaLibrary to save to Downloads (requires permission)
-        const MediaLibrary = await import('expo-media-library');
-        const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status === 'granted') {
           const asset = await MediaLibrary.createAssetAsync(destUri);
-          // Try to move to Downloads album
           try {
             const album = await MediaLibrary.getAlbumAsync('Download');
             if (album) {
@@ -390,22 +416,21 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             } else {
               await MediaLibrary.createAlbumAsync('Download', asset, false);
             }
-          } catch {
-            // Album move failed — file is still saved as an asset
-          }
-          // Clean up temp copy
+          } catch { /* album move best-effort */ }
           await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
-          setIsSaved(true);
-          setTimeout(() => setIsSaved(false), 3000);
           Alert.alert('Saved', `"${realFileName}" has been saved to your Downloads folder.`);
         } else {
-          // No permission — fall back to share sheet as last resort
+          // No permission — share as fallback
           if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(sourceUri, { dialogTitle: `Save ${realFileName}` });
+            await Sharing.shareAsync(destUri, { dialogTitle: `Save ${realFileName}` });
           } else {
             Alert.alert('Permission needed', 'Please grant storage access to save files.');
           }
+          await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
+          return;
         }
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 3000);
       }
     } catch (err: any) {
       Sentry.captureException(err, { tags: { location: 'UniversalViewer.saveToDevice' }, extra: { fileType, fileName } });
@@ -419,8 +444,13 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         Alert.alert('Unavailable', 'Sharing is not supported on this device.');
         return;
       }
-      await Sharing.shareAsync(localUri || fileUri);
-    } catch {
+      // Prefer local file for sharing — works offline and is faster
+      const uriToShare = localUri
+        ? (localUri.startsWith('file://') ? localUri : `file://${localUri}`)
+        : fileUri;
+      await Sharing.shareAsync(uriToShare);
+    } catch (err: any) {
+      Sentry.captureException(err, { tags: { location: 'UniversalViewer.shareFile' }, extra: { fileType, fileName } });
       Alert.alert('Error', 'Could not share this file.');
     }
   };
@@ -476,23 +506,29 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             />
           </View>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <TouchableOpacity style={styles.footerAction} onPress={saveToDevice}>
-              <Ionicons
-                name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
-                size={20}
-                color={isSaved ? '#10b981' : COLORS.primary}
-              />
-              <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
-                {isSaved ? 'Saved!' : 'Save to Device'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
-              <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
-              <Text style={styles.footerActionText}>Share</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Footer — only shown when download/share is enabled */}
+          {showDownload && (
+            <View style={styles.footer}>
+              <TouchableOpacity
+                style={[styles.footerAction, (!localUri && isDownloading) && { opacity: 0.5 }]}
+                onPress={saveToDevice}
+                disabled={isDownloading && !localUri}
+              >
+                <Ionicons
+                  name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
+                  size={20}
+                  color={isSaved ? '#10b981' : COLORS.primary}
+                />
+                <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
+                  {isSaved ? 'Saved!' : 'Save to Device'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
+                <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.footerActionText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </BlurView>
     </Modal>

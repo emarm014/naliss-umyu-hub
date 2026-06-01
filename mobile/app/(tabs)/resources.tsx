@@ -174,7 +174,12 @@ export default function ResourcesScreen() {
       else if (url.includes('/video/upload/')) {
         fileType = 'video';
       } else if (url.includes('/raw/upload/')) {
-        fileType = 'pdf'; // raw = non-image/video = document/pdf
+        // raw upload — check extension to distinguish audio from pdf/document
+        if (url.match(/\.(mp3|wav|ogg|aac|m4a|flac)(\?|$)/)) {
+          fileType = 'audio';
+        } else {
+          fileType = 'pdf'; // raw = non-image/video = document/pdf
+        }
       } else if (url.includes('/image/upload/')) {
         fileType = 'image'; // /image/upload/ with no extension = image (Cloudinary default)
       }

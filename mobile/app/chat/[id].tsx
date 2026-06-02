@@ -1473,13 +1473,16 @@ export default function ChatScreen() {
                                 )}
                                 <View style={styles.timeEditRow}>
                                     {item.isEdited && <Text style={styles.editedLabel}>edited</Text>}
-                                    <Text style={[
-                                        styles.messageTime,
-                                        isMe ? styles.messageTimeMe : styles.messageTimeOther
-                                    ]}>
-                                        {item.created_at ? format(new Date(item.created_at), 'p') : ''}
-                                    </Text>
-                                    {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} />}
+                                    {/* Don't show timestamp here for video — it already has one inside the video container */}
+                                    {item.message_type !== 'video' && (
+                                      <Text style={[
+                                          styles.messageTime,
+                                          isMe ? styles.messageTimeMe : styles.messageTimeOther
+                                      ]}>
+                                          {item.created_at ? format(new Date(item.created_at), 'p') : ''}
+                                      </Text>
+                                    )}
+                                    {isMe && item.message_type !== 'video' && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} />}
                                 </View>
                             </View>
                         )}
@@ -2438,16 +2441,17 @@ export default function ChatScreen() {
                             <Ionicons name="happy-outline" size={26} color={showStickerPicker ? "#059669" : colors.textMuted} />
                         </TouchableOpacity>
 
-                        <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                        {/* Input — always light background like WhatsApp so text is always visible */}
+                        <View style={[styles.inputWrapper, { backgroundColor: '#f1f5f9' }]}>
                             <TextInput
-                                style={[styles.input, { color: isDark ? '#f1f5f9' : '#0f172a' }]}
+                                style={[styles.input, { color: '#0f172a' }]}
                                 placeholder="Type a message..."
-                                placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
+                                placeholderTextColor="#94a3b8"
                                 multiline
                                 value={inputText}
                                 onChangeText={setInputText}
                                 maxLength={MAX_CHARS}
-                                keyboardAppearance={isDark ? 'dark' : 'light'}
+                                keyboardAppearance="light"
                             />
                             {charCount > MAX_CHARS * 0.8 && (
                                 <Text style={[styles.charCounter, isOverLimit && styles.charCounterOver]}>

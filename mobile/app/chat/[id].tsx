@@ -181,6 +181,9 @@ export default function ChatScreen() {
         return () => {
             isMounted.current = false;
             clearInterval(heartbeat);
+            if (clickTimeoutRef.current) {
+                clearTimeout(clickTimeoutRef.current);
+            }
             // Mark user as inactive when they leave the chat
             supabase.auth.getUser().then(({ data: { user } }) => {
                 if (user) {
@@ -1107,6 +1110,34 @@ export default function ChatScreen() {
         setLongPressedMessage(null);
     };
 
+    const lastPressRef = useRef<{ id: string; timestamp: number } | null>(null);
+    const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleDoubleTapReply = (message: any, singleTapAction?: () => void) => {
+        const now = Date.now();
+        const DOUBLE_TAP_DELAY = 250;
+        
+        if (lastPressRef.current && lastPressRef.current.id === message.id && (now - lastPressRef.current.timestamp) < DOUBLE_TAP_DELAY) {
+            if (clickTimeoutRef.current) {
+                clearTimeout(clickTimeoutRef.current);
+                clickTimeoutRef.current = null;
+            }
+            handleReply(message);
+            lastPressRef.current = null;
+        } else {
+            lastPressRef.current = { id: message.id, timestamp: now };
+            if (singleTapAction) {
+                if (clickTimeoutRef.current) {
+                    clearTimeout(clickTimeoutRef.current);
+                }
+                clickTimeoutRef.current = setTimeout(() => {
+                    singleTapAction();
+                    clickTimeoutRef.current = null;
+                }, DOUBLE_TAP_DELAY);
+            }
+        }
+    };
+
     const cancelReplyOrEdit = () => {
         setReplyingTo(null);
         setEditingMessage(null);
@@ -1231,6 +1262,7 @@ export default function ChatScreen() {
             <Pressable
                 onLongPress={() => setLongPressedMessage(item)}
                 delayLongPress={400}
+                onPress={() => handleDoubleTapReply(item)}
             >
                 <View style={[
                     styles.messageWrapper, 
@@ -1318,7 +1350,7 @@ export default function ChatScreen() {
                                 activeOpacity={0.92}
                                 delayLongPress={400}
                                 onLongPress={() => setLongPressedMessage(item)}
-                                onPress={() => {
+                                onPress={() => handleDoubleTapReply(item, () => {
                                     if (isMe) {
                                         // Sender: prefer Cloudinary URL (confirmed); fall back to local URI with file:// prefix
                                         const viewUri = item.content?.startsWith('http')
@@ -1339,7 +1371,7 @@ export default function ChatScreen() {
                                         // Not downloaded — start download, open when done
                                         handleDownloadAndOpen(item.id, item.content, `image_${item.id}.jpg`, 'image');
                                     }
-                                }}
+                                })}
                             >
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
@@ -1405,7 +1437,7 @@ export default function ChatScreen() {
                                         style={styles.videoThumbContainer}
                                         delayLongPress={400}
                                         onLongPress={() => setLongPressedMessage(item)}
-                                        onPress={() => {
+                                        onPress={() => handleDoubleTapReply(item, () => {
                                             if (isMe) {
                                                 // Sender: prefer Cloudinary URL; fall back to local URI with file:// prefix
                                                 const videoUri = item.content?.startsWith('http')
@@ -1423,7 +1455,7 @@ export default function ChatScreen() {
                                             } else if (downloadingIds[item.id] === undefined) {
                                                 handleDownloadAndOpen(item.id, item.content, fileName, 'video');
                                             }
-                                        }}                                    >
+                                        })}                                    >
                                         {/* Cloudinary video thumbnail — generated automatically */}
                                         {item.content?.startsWith('http') ? (
                                             <Image
@@ -1483,7 +1515,7 @@ export default function ChatScreen() {
                                         activeOpacity={0.8}
                                         delayLongPress={400}
                                         onLongPress={() => setLongPressedMessage(item)}
-                                        onPress={() => {
+                                        onPress={() => handleDoubleTapReply(item, () => {
                                             if (isMe) {
                                                 const fileName = item.metadata?.name || `document_${item.id}.pdf`;
                                                 setViewerFile({ uri: item.content, type: item.message_type, name: fileName });
@@ -1498,7 +1530,7 @@ export default function ChatScreen() {
                                             } else if (downloadingIds[item.id] === undefined) {
                                                 handleDownloadAndOpen(item.id, item.content, fileName, item.message_type);
                                             }
-                                        }}
+                                        })}
                                     >
                                         {/* File type icon */}
                                         <View style={[styles.documentIconBox, downloadedIds[item.id] && styles.documentIconBoxDone]}>

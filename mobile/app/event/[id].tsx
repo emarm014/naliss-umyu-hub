@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, SafeAreaView,
     TouchableOpacity, Image, Linking, Platform, Alert, Dimensions,
@@ -11,6 +11,7 @@ import { useEventStore } from '../../src/stores';
 import { format } from 'date-fns';
 import { supabase } from '../../src/api/supabase/client';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 
@@ -36,6 +37,7 @@ function EventDetailsContent() {
     const { id } = useLocalSearchParams();
     const { events } = useEventStore();
     const event = events.find(e => e.id === id);
+    const [viewerVisible, setViewerVisible] = useState(false);
 
     useEffect(() => {
         if (!event) return;
@@ -76,8 +78,10 @@ function EventDetailsContent() {
                 {/*  Hero Section  */}
                 <View style={styles.hero}>
                     {hasCover ? (
-                        <Image source={{ uri: getOptimizedCloudinaryUrl(event.cover_image_url!, 1000) }}
-                            style={StyleSheet.absoluteFillObject} resizeMode='cover' />
+                        <TouchableOpacity onPress={() => setViewerVisible(true)} activeOpacity={0.9} style={StyleSheet.absoluteFillObject}>
+                            <Image source={{ uri: getOptimizedCloudinaryUrl(event.cover_image_url!, 1000) }}
+                                style={StyleSheet.absoluteFillObject} resizeMode='cover' />
+                        </TouchableOpacity>
                     ) : (
                         <LinearGradient colors={status.gradient} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
                     )}
@@ -151,6 +155,18 @@ function EventDetailsContent() {
 
                 <View style={{ height: 60 }} />
             </ScrollView>
+
+            {event.cover_image_url && (
+                <UniversalViewer 
+                    isVisible={viewerVisible}
+                    onClose={() => setViewerVisible(false)}
+                    fileUri={event.cover_image_url}
+                    fileType="image"
+                    fileName={event.title}
+                    showDownload={true}
+                    showShare={false}
+                />
+            )}
         </View>
     );
 }

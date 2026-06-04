@@ -123,6 +123,8 @@ export function isNetworkError(error: any): boolean {
     fullErrorText.includes('cancel') ||
     fullErrorText.includes('status code 0') ||
     error.status === 0 ||
+    error.status === 401 || // Unauthorized — expected after logout, not a real error
+    error.code === 'PGRST301' || // PostgREST JWT expired / missing
     error.status === 504 || // Gateway Timeout
     error.status === 502 || // Bad Gateway
     error.status === 503    // Service Unavailable
@@ -130,6 +132,27 @@ export function isNetworkError(error: any): boolean {
 }
 
 // ── Exception capture helpers ──────────────────────────────────────────────
+
+/**
+ * Wraps a Supabase error object ({code, details, hint, message}) into a proper
+ * Error instance so Sentry can fingerprint and display it correctly instead of
+ * showing "Object captured as exception with keys: code, details, hint, message".
+ */
+function normalizeError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const obj = error as Record<string, any>;
+    const err = new Error(obj.message || 'Unknown Supabase error');
+    err.name = obj.code ? `SupabaseError [${obj.code}]` : 'SupabaseError';
+    // Attach original fields for Sentry extra context
+    (err as any).code = obj.code;
+    (err as any).details = obj.details;
+    (err as any).hint = obj.hint;
+    (err as any).status = obj.status;
+    return err;
+  }
+  return new Error(typeof error === 'string' ? error : String(error));
+}
 
 export function captureStoreError(
   store: string,
@@ -141,9 +164,9 @@ export function captureStoreError(
     console.warn(`[Store Network Error] ${store}.${action}:`, error);
     return;
   }
-  Sentry.captureException(error, {
+  Sentry.captureException(normalizeError(error), {
     tags: { store, action, location: `${store}.${action}` },
-    extra,
+    extra: { ...extra, originalError: error },
   });
 }
 
@@ -156,9 +179,9 @@ export function captureUIError(
     console.warn(`[UI Network Error] ${component}:`, error);
     return;
   }
-  Sentry.captureException(error, {
+  Sentry.captureException(normalizeError(error), {
     tags: { component, location: 'ui' },
-    extra,
+    extra: { ...extra, originalError: error },
   });
 }
 
@@ -172,9 +195,9 @@ export function captureApiError(
     console.warn(`[API Network Error] ${table}.${operation}:`, error);
     return;
   }
-  Sentry.captureException(error, {
+  Sentry.captureException(normalizeError(error), {
     tags: { table, operation, location: 'api.supabase' },
-    extra,
+    extra: { ...extra, originalError: error },
   });
 }
 

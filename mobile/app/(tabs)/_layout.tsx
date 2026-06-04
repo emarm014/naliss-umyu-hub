@@ -27,38 +27,54 @@ export default function TabsLayout() {
           trackScreen(e.target?.split('-')[0] ?? 'unknown_tab');
         },
       }}
+      sceneContainerStyle={{
+        backgroundColor: colors.background,
+        paddingBottom: Platform.OS === 'ios' ? (insets.bottom > 0 ? 104 : 88) : 88,
+      }}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
+        tabBarActiveTintColor: isDark ? '#2ea6ff' : colors.primary,
+        tabBarInactiveTintColor: isDark ? '#64748b' : colors.textMuted,
+        tabBarActiveBackgroundColor: isDark ? '#1c2d3a' : '#f1f5f9',
         
-        // Let React Navigation natively handle the bottom safe area
         safeAreaInsets: {
-          bottom: insets.bottom + androidBottomBuffer,
+          bottom: 0,
+          top: 0,
+          left: 0,
+          right: 0,
         },
         
         tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          // We intentionally omit `height` and `paddingBottom` here so React Navigation
-          // can natively calculate them using the safeAreaInsets above.
-          // We just enforce a minimum height so it doesn't look cramped.
-          minHeight: Platform.OS === 'ios' ? 84 : 64,
-          paddingTop: 8,
-          elevation: 12,
-          shadowColor: isDark ? '#000' : '#1B5E20',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: isDark ? 0.4 : 0.08,
-          shadowRadius: 12,
+          position: 'absolute',
+          bottom: Platform.OS === 'ios' ? (insets.bottom > 0 ? insets.bottom - 4 : 12) : 12,
+          left: 16,
+          right: 16,
+          height: 72,
+          borderRadius: 36,
+          backgroundColor: isDark ? '#131f28' : '#ffffff',
+          borderTopWidth: 0,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: isDark ? 0.4 : 0.12,
+          shadowRadius: 8,
+          borderWidth: 1,
+          borderColor: isDark ? '#1c2d3a' : '#e2e8f0',
+          paddingBottom: 0,
+          paddingTop: 0,
         },
         tabBarItemStyle: {
-          // paddingVertical ensures items stay centered within their expanded hit-box
+          borderRadius: 28,
+          marginVertical: 8,
+          marginHorizontal: 6,
           paddingVertical: 4,
+          justifyContent: 'center',
+          alignItems: 'center',
         },
         tabBarLabelStyle: {
           fontFamily: 'Inter-SemiBold',
           fontSize: 10,
+          marginTop: 2,
         },
       }}
     >

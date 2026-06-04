@@ -192,7 +192,8 @@ function AnnouncementDetailsContent() {
                     fileUri={announcement.cover_image_url}
                     fileType="image"
                     fileName={announcement.title}
-                    showDownload={false}
+                    showDownload={true}
+                    showShare={false}
                 />
             )}
         </View>

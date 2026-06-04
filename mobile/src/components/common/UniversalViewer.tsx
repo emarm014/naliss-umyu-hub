@@ -83,6 +83,7 @@ interface UniversalViewerProps {
   fileName: string;
   fileId?: string;           // material/past_question id — used to find vault file
   showDownload?: boolean;
+  showShare?: boolean;
 }
 
 interface ViewerContentProps {
@@ -96,6 +97,107 @@ interface ViewerContentProps {
   onRetry: () => void;
   onImageError: () => void;
 }
+
+interface ZoomableImageProps {
+  uri: string;
+  onImageError: () => void;
+}
+
+const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError }) => {
+  const [html, setHtml] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (Platform.OS === 'android') {
+      let cancelled = false;
+      const load = async () => {
+        try {
+          setLoading(true);
+          const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+          let mime = 'image/jpeg';
+          const lowerUri = uri.toLowerCase();
+          if (lowerUri.endsWith('.png')) {
+            mime = 'image/png';
+          } else if (lowerUri.endsWith('.gif')) {
+            mime = 'image/gif';
+          } else if (lowerUri.endsWith('.webp')) {
+            mime = 'image/webp';
+          }
+          const dataUri = `data:${mime};base64,${base64}`;
+          const htmlContent = `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,minimum-scale=1,user-scalable=yes">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#000;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+img{max-width:100%;max-height:100%;object-fit:contain}
+</style></head><body>
+<img src="${dataUri}" onerror="window.ReactNativeWebView.postMessage('error')"/>
+</body></html>`;
+          if (!cancelled) {
+            setHtml(htmlContent);
+            setLoading(false);
+          }
+        } catch {
+          if (!cancelled) {
+            onImageError();
+            setLoading(false);
+          }
+        }
+      };
+      load();
+      return () => { cancelled = true; };
+    }
+  }, [uri]);
+
+  if (Platform.OS === 'ios') {
+    return (
+      <ScrollView
+        maximumZoomScale={5}
+        minimumZoomScale={1}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+      >
+        <Image
+          source={{ uri }}
+          style={styles.image}
+          resizeMode="contain"
+          onError={onImageError}
+        />
+      </ScrollView>
+    );
+  }
+
+  if (loading || !html) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <WebView
+      source={{ html }}
+      style={{ flex: 1, backgroundColor: '#000', width }}
+      originWhitelist={['*']}
+      allowFileAccess
+      allowFileAccessFromFileURLs
+      allowUniversalAccessFromFileURLs
+      mixedContentMode="always"
+      javaScriptEnabled
+      domStorageEnabled
+      builtInZoomControls={true}
+      displayZoomControls={false}
+      scalesPageToFit={true}
+      onMessage={(event) => {
+        if (event.nativeEvent.data === 'error') {
+          onImageError();
+        }
+      }}
+    />
+  );
+};
 
 const ViewerContent: React.FC<ViewerContentProps> = ({
   isDownloading,
@@ -149,14 +251,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
 
   switch (fileType) {
     case 'image':
-      return (
-        <Image
-          source={{ uri: localUri }}
-          style={styles.image}
-          resizeMode="contain"
-          onError={onImageError}
-        />
-      );
+      return <ZoomableImage uri={localUri} onImageError={onImageError} />;
 
     case 'video':
       return <VideoPlayer localUri={localUri} remoteUrl={fileUri} />;
@@ -205,6 +300,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   fileName,
   fileId,
   showDownload = true,
+  showShare = true,
 }) => {
   const [localUri, setLocalUri] = React.useState<string | null>(null);
   const [isDownloading, setIsDownloading] = React.useState(false);
@@ -397,7 +493,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 )}
               </View>
             </View>
-            {showDownload && (
+            {showShare && showDownload && (
               <TouchableOpacity style={styles.actionButton} onPress={shareFile}>
                 <Ionicons name="share-social-outline" size={24} color={COLORS.black} />
               </TouchableOpacity>
@@ -426,7 +522,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           </View>
 
           {/* Footer */}
-          <View style={styles.footer}>
+          <View style={[styles.footer, !showShare && { justifyContent: 'center' }]}>
             <TouchableOpacity style={styles.footerAction} onPress={saveToDevice}>
               <Ionicons
                 name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
@@ -437,10 +533,12 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 {isSaved ? 'Saved!' : 'Save to Device'}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
-              <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
-              <Text style={styles.footerActionText}>Share</Text>
-            </TouchableOpacity>
+            {showShare && (
+              <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
+                <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.footerActionText}>Share</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </BlurView>
@@ -621,7 +719,7 @@ function PdfJsViewer({ localUri, remoteUrl }: { localUri: string | null; remoteU
         }
         if (cancelled) return;
         const srcJson = JSON.stringify(pdfSrc);
-        const htmlContent = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=3"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#1e293b;font-family:-apple-system,sans-serif}#toolbar{position:sticky;top:0;z-index:100;background:#0f172a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}#toolbar span{color:#94a3b8;font-size:12px;font-weight:600}#toolbar strong{color:#f1f5f9;font-size:13px}#pages{padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center}.pw{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.4);border-radius:8px;overflow:hidden}canvas{display:block;max-width:100%}.pn{position:absolute;bottom:8px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;color:#94a3b8}.sp{width:40px;height:40px;border:3px solid #334155;border-top-color:#064e3b;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#err{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;color:#ef4444;padding:24px;text-align:center}#err p{color:#94a3b8;font-size:13px;line-height:1.5}</style></head><body><div id="toolbar"><span>PDF VIEWER</span><strong id="pc">Loading...</strong></div><div id="loading"><div class="sp"></div><span>Rendering...</span></div><div id="err"><strong>Could not render PDF</strong><p id="em">The file may be corrupted.</p></div><div id="pages"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(async()=>{const ld=document.getElementById("loading"),er=document.getElementById("err"),em=document.getElementById("em"),pg=document.getElementById("pages"),pc=document.getElementById("pc");try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const src=' + srcJson + ';const pdf=await pdfjsLib.getDocument(src).promise;const tot=pdf.numPages;ld.style.display="none";pc.textContent=tot+" page"+(tot!==1?"s":"");const dpr=window.devicePixelRatio||2;const vw=window.innerWidth-32;for(let i=1;i<=tot;i++){const page=await pdf.getPage(i);const us=page.getViewport({scale:1});const sc=(vw/us.width)*dpr;const vp=page.getViewport({scale:sc});const wrap=document.createElement("div");wrap.className="pw";wrap.style.width=(vp.width/dpr)+"px";const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/dpr)+"px";cv.style.height=(vp.height/dpr)+"px";await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;const num=document.createElement("div");num.className="pn";num.textContent=i+" / "+tot;wrap.appendChild(cv);wrap.appendChild(num);pg.appendChild(wrap);}}catch(e){ld.style.display="none";er.style.display="flex";em.textContent=e?.message||"Unknown error";}})()</script></body></html>';
+        const htmlContent = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#1e293b;font-family:-apple-system,sans-serif}#toolbar{position:sticky;top:0;z-index:100;background:#0f172a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}#toolbar span{color:#94a3b8;font-size:12px;font-weight:600}#toolbar strong{color:#f1f5f9;font-size:13px}#pages{padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center}.pw{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.4);border-radius:8px;overflow:hidden}canvas{display:block;max-width:100%}.pn{position:absolute;bottom:8px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;color:#94a3b8}.sp{width:40px;height:40px;border:3px solid #334155;border-top-color:#064e3b;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#err{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;color:#ef4444;padding:24px;text-align:center}#err p{color:#94a3b8;font-size:13px;line-height:1.5}</style></head><body><div id="toolbar"><span>PDF VIEWER</span><strong id="pc">Loading...</strong></div><div id="loading"><div class="sp"></div><span>Rendering...</span></div><div id="err"><strong>Could not render PDF</strong><p id="em">The file may be corrupted.</p></div><div id="pages"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(async()=>{const ld=document.getElementById("loading"),er=document.getElementById("err"),em=document.getElementById("em"),pg=document.getElementById("pages"),pc=document.getElementById("pc");try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const src=' + srcJson + ';const pdf=await pdfjsLib.getDocument(src).promise;const tot=pdf.numPages;ld.style.display="none";pc.textContent=tot+" page"+(tot!==1?"s":"");const dpr=window.devicePixelRatio||2;const vw=window.innerWidth-32;for(let i=1;i<=tot;i++){const page=await pdf.getPage(i);const us=page.getViewport({scale:1});const sc=(vw/us.width)*dpr;const vp=page.getViewport({scale:sc});const wrap=document.createElement("div");wrap.className="pw";wrap.style.width=(vp.width/dpr)+"px";const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/dpr)+"px";cv.style.height=(vp.height/dpr)+"px";await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;const num=document.createElement("div");num.className="pn";num.textContent=i+" / "+tot;wrap.appendChild(cv);wrap.appendChild(num);pg.appendChild(wrap);}}catch(e){ld.style.display="none";er.style.display="flex";em.textContent=e?.message||"Unknown error";}})()</script></body></html>';
         if (!cancelled) { setHtml(htmlContent); setLoading(false); }
       } catch (e: any) {
         if (!cancelled) { setError(e?.message || 'Could not prepare PDF viewer.'); setLoading(false); }

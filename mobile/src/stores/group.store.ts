@@ -6,6 +6,7 @@ import { captureStoreError } from '../utils/sentry';
 
 interface GroupState {
     groups: any[];
+    membersCache: Record<string, any[]>;
     isLoading: boolean;
     error: string | null;
     lastFetched: string | null;
@@ -14,6 +15,8 @@ interface GroupState {
     markGroupAsRead: (groupId: string) => Promise<void>;
     incrementUnread: (groupId: string, lastMessage?: string, lastMessageAt?: string) => void;
     clearGroups: () => void;
+    setGroupMembers: (groupId: string, members: any[]) => void;
+    getGroupMembers: (groupId: string) => any[];
 }
 
 const CACHE_TTL = Infinity; // No TTL — group list available offline indefinitely
@@ -22,6 +25,7 @@ export const useGroupStore = create<GroupState>()(
     persist(
         (set, get) => ({
             groups: [],
+            membersCache: {},
             isLoading: false,
             error: null,
             lastFetched: null,
@@ -137,7 +141,20 @@ export const useGroupStore = create<GroupState>()(
                 }
             },
 
-            clearGroups: () => set({ groups: [], lastFetched: null }),
+            clearGroups: () => set({ groups: [], membersCache: {}, lastFetched: null }),
+
+            setGroupMembers: (groupId: string, members: any[]) => {
+                set((state) => ({
+                    membersCache: {
+                        ...state.membersCache,
+                        [groupId]: members,
+                    },
+                }));
+            },
+
+            getGroupMembers: (groupId: string) => {
+                return get().membersCache[groupId] || [];
+            },
 
             markGroupAsRead: async (groupId: string) => {
                 // Optimistic update — instant UI feedback
@@ -175,6 +192,7 @@ export const useGroupStore = create<GroupState>()(
             storage: createJSONStorage(() => AsyncStorage),
             partialize: (state) => ({
                 groups: state.groups,
+                membersCache: state.membersCache,
                 lastFetched: state.lastFetched,
             }),
         }

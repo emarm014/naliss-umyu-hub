@@ -94,6 +94,10 @@ export const useAnnouncementStore = create<AnnouncementState>()(
 
             fetchAnnouncements: async (level, force = false) => {
 
+                // AUTH GUARD: Don't query when logged out — RLS will return 401
+                const { useAuthStore: _authStore } = require('./auth.store');
+                if (!_authStore.getState().user) return;
+
                 const { lastFetch, announcements } = get();
 
                 const isFresh = lastFetch && Date.now() - lastFetch < CACHE_TTL && announcements.length > 0;

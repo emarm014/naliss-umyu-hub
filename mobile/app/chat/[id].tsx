@@ -35,6 +35,7 @@ import { sendChatMessageNotification } from '../../src/utils/notifications';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature, isNetworkError } from '../../src/utils/sentry';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const MAX_CHARS = 500;
 
@@ -52,6 +53,7 @@ export default function ChatScreen() {
     const { readOnlyMode } = useSettingsStore();
     const messageStore = useMessageStore();
     const { colors, isDark } = useTheme();
+    const insets = useSafeAreaInsets();
 
     // Use profile.role (from DB) — user_metadata.role is unreliable after profile updates
     const isStudent = profile?.role === 'student' || !['super_admin', 'moderator'].includes(profile?.role || '');
@@ -86,12 +88,14 @@ export default function ChatScreen() {
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [longPressedMessage, setLongPressedMessage] = useState<any>(null);
     const [viewerVisible, setViewerVisible] = useState(false);
+    const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
     const [viewerFile, setViewerFile] = useState<{ uri: string, type: any, name: string }>({ uri: '', type: 'document', name: '' });
     const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
     const [uploadingIds, setUploadingIds] = useState<Record<string, number>>({});
     const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
     const [showMembersList, setShowMembersList] = useState(false);
     const [viewingProfile, setViewingProfile] = useState<any>(null);
+    const [expandedAvatarUrl, setExpandedAvatarUrl] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showSearch, setShowSearch] = useState(false);
     const [searchParams, setSearchParams] = useState({
@@ -118,7 +122,7 @@ export default function ChatScreen() {
         isNearBottomRef.current = distanceFromBottom < 120;
     };
 
-    const { markGroupAsRead } = useGroupStore();
+    const { markGroupAsRead, setGroupMembers, getGroupMembers } = useGroupStore();
 
     useEffect(() => {
         // Reset mount flag — required when id changes (navigating between chats)
@@ -357,6 +361,12 @@ export default function ChatScreen() {
     };
 
     const fetchMembers = async () => {
+        // Load cached members immediately for instant offline display
+        const cached = getGroupMembers(id);
+        if (cached && cached.length > 0) {
+            setMembersWithRef(cached);
+        }
+
         try {
             const { data, error } = await (supabase
                 .from('group_members')
@@ -364,7 +374,9 @@ export default function ChatScreen() {
                 .eq('group_id', id) as any);
 
             if (error) throw error;
-            setMembersWithRef((data as any[])?.map(m => m.user) || []);
+            const fetched = (data as any[])?.map(m => m.user).filter(Boolean) || [];
+            setMembersWithRef(fetched);
+            setGroupMembers(id, fetched);
         } catch {
             // silent
         }
@@ -423,28 +435,57 @@ export default function ChatScreen() {
 
                             // Someone else's message — add with member info
                             const memberInfo = membersRef.current.find(m => m.id === newMsg.sender_id);
+
+                            // Find the replied-to message if reply_to_id exists
+                            let replyToData = null;
+                            if (newMsg.reply_to_id) {
+                                const repliedMsg = prev.find(m => m.id === newMsg.reply_to_id);
+                                if (repliedMsg) {
+                                    replyToData = {
+                                        id: repliedMsg.id,
+                                        username: repliedMsg.user?.username || repliedMsg.username || 'user',
+                                        content: repliedMsg.content?.substring(0, 50)
+                                    };
+                                }
+                            }
+
                             const formatted = {
                                 ...newMsg,
                                 status: 'sent',
                                 isEdited: false,
                                 user: memberInfo || newMsg.user || null,
+                                replyTo: replyToData
                             };
                             setTimeout(() => messageStore.addMessage(id, formatted), 0);
                             return [...prev, formatted];
                         });
 
-                        // Background: enrich sender profile if not in members list
-                        if (!membersRef.current.find(m => m.id === newMsg.sender_id)) {
+                        // Background: enrich sender profile and fetch joined reply details
+                        const isOurs = newMsg.sender_id === currentUser?.id;
+                        if (!isOurs) {
                             const { data: fullData } = await supabase
                                 .from('messages')
-                                .select('*, user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level)')
+                                .select(`
+                                    *,
+                                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level),
+                                    reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
+                                `)
                                 .eq('id', newMsg.id)
                                 .single();
                             if (fullData) {
-                                const withUser = { ...(fullData as any), status: 'sent', isEdited: false };
+                                const formatted = {
+                                    ...(fullData as any),
+                                    isEdited: (fullData as any).is_edited || false,
+                                    replyTo: (fullData as any).reply_to_message ? {
+                                        id: (fullData as any).reply_to_message.id,
+                                        username: (fullData as any).reply_to_message.user?.username,
+                                        content: (fullData as any).reply_to_message.content?.substring(0, 50)
+                                    } : null,
+                                    status: 'sent',
+                                };
                                 setMessages(prev => {
-                                    const updated = prev.map(m => m.id === newMsg.id ? withUser : m);
-                                    setTimeout(() => messageStore.updateMessage(id, newMsg.id, withUser), 0);
+                                    const updated = prev.map(m => m.id === newMsg.id ? formatted : m);
+                                    setTimeout(() => messageStore.updateMessage(id, newMsg.id, formatted), 0);
                                     return updated;
                                 });
                             }
@@ -483,7 +524,9 @@ export default function ChatScreen() {
                 async (payload) => {
                     if (payload.eventType === 'DELETE') {
                         const removedUserId = (payload.old as any).user_id;
-                        setMembersWithRef(membersRef.current.filter(m => m.id !== removedUserId));
+                        const updated = membersRef.current.filter(m => m.id !== removedUserId);
+                        setMembersWithRef(updated);
+                        setGroupMembers(id, updated);
                     } else if (payload.eventType === 'INSERT') {
                         // Fetch the new member's profile and add to list
                         const newUserId = (payload.new as any).user_id;
@@ -493,10 +536,12 @@ export default function ChatScreen() {
                             .eq('id', newUserId)
                             .single();
                         if (userProfile) {
-                            setMembersWithRef([
+                            const updated = [
                                 ...membersRef.current.filter(m => m.id !== newUserId),
                                 userProfile,
-                            ]);
+                            ];
+                            setMembersWithRef(updated);
+                            setGroupMembers(id, updated);
                         }
                     }
                 }
@@ -529,7 +574,7 @@ export default function ChatScreen() {
                     ));
 
                     // Also patch the members list so the members modal shows fresh avatar
-                    setMembersWithRef(membersRef.current.map(m =>
+                    const updatedMembers = membersRef.current.map(m =>
                         m.id === updatedUser.id
                             ? {
                                 ...m,
@@ -539,7 +584,9 @@ export default function ChatScreen() {
                                 last_active_at: updatedUser.last_active_at,
                             }
                             : m
-                    ));
+                    );
+                    setMembersWithRef(updatedMembers);
+                    setGroupMembers(id, updatedMembers);
 
                     // If this user's profile is currently being viewed, update it live
                     setViewingProfile((prev: any) => {
@@ -1161,31 +1208,52 @@ export default function ChatScreen() {
         return null;
     };
 
+    const scrollToMessage = (messageId: string) => {
+        const index = messages.findIndex(m => m.id === messageId);
+        if (index !== -1) {
+            flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+            setHighlightedMessageId(messageId);
+            setTimeout(() => {
+                setHighlightedMessageId(null);
+            }, 1000);
+        } else {
+            Alert.alert('Message not found', 'This message could not be located in the current conversation history.');
+        }
+    };
+
     const renderMessage = ({ item }: { item: any }) => {
         const isMe = item.sender_id === currentUser?.id;
         const isSystem = item.sender_id === 'system';
+        const isHighlighted = item.id === highlightedMessageId;
 
         return (
             <Pressable
                 onLongPress={() => setLongPressedMessage(item)}
                 delayLongPress={400}
             >
-                <View style={[styles.messageWrapper, isMe ? styles.messageWrapperRight : styles.messageWrapperLeft]}>
+                <View style={[
+                    styles.messageWrapper, 
+                    isMe ? styles.messageWrapperRight : styles.messageWrapperLeft,
+                    isHighlighted && { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.18)' : 'rgba(14, 165, 233, 0.12)' }
+                ]}>
                     {!isMe && !isSystem && (
                         <TouchableOpacity style={styles.messageAvatarContainer} onPress={() => openProfile(item.sender_id)}>
-                            {item.user?.avatar_url ? (
+                            {item.user?.avatar_url && item.user.avatar_url.trim() !== '' ? (
                                 <Image source={{ uri: item.user.avatar_url }} style={styles.messageAvatarImage} />
                             ) : (
                                 <View style={styles.messageAvatarPlaceholder}>
                                     <Text style={styles.messageAvatarText}>
-                                        {item.user?.username?.charAt(1)?.toUpperCase() || 'U'}
+                                        {item.user?.username?.charAt(0)?.toUpperCase() || 'U'}
                                     </Text>
                                 </View>
                             )}
                             {/* Online presence dot — green if active in last 5 min, grey otherwise */}
                             <View style={[
                                 styles.presenceDot,
-                                { backgroundColor: item.isOnline ? '#10B981' : '#94a3b8' }
+                                { 
+                                    backgroundColor: item.isOnline ? '#10B981' : '#94a3b8',
+                                    borderColor: isDark ? '#0f172a' : '#e8ecf1'
+                                }
                             ]} />
                         </TouchableOpacity>
                     )}
@@ -1210,13 +1278,27 @@ export default function ChatScreen() {
                         )}
 
                         {item.reply_to_id && item.replyTo && (item.replyTo.content || item.replyTo.username) && (
-                            <View style={styles.replyPreview}>
-                                <View style={styles.replyBar} />
+                            <TouchableOpacity 
+                                style={[
+                                    styles.replyPreview, 
+                                    { 
+                                        backgroundColor: isMe 
+                                            ? (isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.05)') 
+                                            : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)') 
+                                    }
+                                ]}
+                                onPress={() => scrollToMessage(item.reply_to_id)}
+                            >
+                                <View style={[styles.replyBar, { backgroundColor: isMe ? '#10b981' : '#059669' }]} />
                                 <View style={styles.replyContent}>
-                                    <Text style={styles.replyUsername}>{item.replyTo.username}</Text>
-                                    <Text style={styles.replyText} numberOfLines={1}>{item.replyTo.content}</Text>
+                                    <Text style={[styles.replyUsername, { color: isMe ? '#10b981' : '#059669' }]}>
+                                        {item.replyTo.username}
+                                    </Text>
+                                    <Text style={[styles.replyText, { color: isDark ? '#cbd5e1' : '#64748b' }]} numberOfLines={1}>
+                                        {item.replyTo.content}
+                                    </Text>
                                 </View>
-                            </View>
+                            </TouchableOpacity>
                         )}
 
                         {item.message_type === 'sticker' ? (
@@ -1803,7 +1885,7 @@ export default function ChatScreen() {
 
                 <TouchableOpacity style={styles.headerTitleContainer} onPress={() => setShowMembersList(true)}>
                     <View style={[styles.headerAvatarPlaceholderLight, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        {group?.avatar_url ? (
+                        {group?.avatar_url && group.avatar_url.trim() !== '' ? (
                             <Image
                                 source={{ uri: group.avatar_url }}
                                 style={{ width: 36, height: 36, borderRadius: 10 }}
@@ -1841,6 +1923,7 @@ export default function ChatScreen() {
                                 placeholderTextColor={colors.textMuted}
                                 value={searchParams.username}
                                 onChangeText={(val) => setSearchParams({ ...searchParams, username: val })}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                         </View>
                         <View style={[styles.searchField, { flex: 1.2, backgroundColor: colors.surface }]}>
@@ -1851,6 +1934,7 @@ export default function ChatScreen() {
                                 placeholderTextColor={colors.textMuted}
                                 value={searchParams.body}
                                 onChangeText={(val) => setSearchParams({ ...searchParams, body: val })}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                         </View>
                     </View>
@@ -1864,6 +1948,7 @@ export default function ChatScreen() {
                                 value={searchParams.date || ''}
                                 onChangeText={(val) => setSearchParams({ ...searchParams, date: val })}
                                 keyboardType="numeric"
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                         </View>
                         
@@ -1902,6 +1987,12 @@ export default function ChatScreen() {
                 keyExtractor={(item) => item.id}
                 renderItem={renderMessage}
                 contentContainerStyle={styles.messagesList}
+                onScrollToIndexFailed={(info) => {
+                    flatListRef.current?.scrollToOffset({
+                        offset: info.averageItemLength * info.index,
+                        animated: true,
+                    });
+                }}
                 style={{ flex: 1 }}
                 showsVerticalScrollIndicator={false}
                 onScroll={handleScrollEvent}
@@ -2037,12 +2128,12 @@ export default function ChatScreen() {
                                         setViewingProfile(member);
                                     }}
                                 >
-                                    {member.avatar_url ? (
+                                    {member.avatar_url && member.avatar_url.trim() !== '' ? (
                                         <Image source={{ uri: member.avatar_url }} style={styles.memberAvatar} />
                                     ) : (
                                         <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
                                             <Text style={{ fontWeight: 'bold', color: '#64748b' }}>
-                                                {member.full_name?.charAt(0)}
+                                                {member.username?.charAt(0)?.toUpperCase() || 'U'}
                                             </Text>
                                         </View>
                                     )}
@@ -2079,12 +2170,14 @@ export default function ChatScreen() {
                         {viewingProfile && (
                             <ScrollView showsVerticalScrollIndicator={false}>
                                 <View style={styles.profileHeader}>
-                                    {viewingProfile.avatar_url ? (
-                                        <Image source={{ uri: viewingProfile.avatar_url }} style={styles.profileAvatar} />
+                                    {viewingProfile.avatar_url && viewingProfile.avatar_url.trim() !== '' ? (
+                                        <TouchableOpacity onPress={() => setExpandedAvatarUrl(viewingProfile.avatar_url)}>
+                                            <Image source={{ uri: viewingProfile.avatar_url }} style={styles.profileAvatar} />
+                                        </TouchableOpacity>
                                     ) : (
                                         <View style={[styles.profileAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
                                             <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#64748b' }}>
-                                                {viewingProfile.full_name?.charAt(0)}
+                                                {viewingProfile.username?.charAt(0)?.toUpperCase() || 'U'}
                                             </Text>
                                         </View>
                                     )}
@@ -2166,6 +2259,31 @@ export default function ChatScreen() {
                 </View>
             </Modal>
 
+            {/* ========== EXPANDED AVATAR VIEW MODAL (Half-Screen) ========== */}
+            <Modal visible={!!expandedAvatarUrl} animationType="fade" transparent onRequestClose={() => setExpandedAvatarUrl(null)}>
+                <TouchableWithoutFeedback onPress={() => setExpandedAvatarUrl(null)}>
+                    <View style={styles.expandedAvatarOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.expandedAvatarCard, { backgroundColor: colors.card }]}>
+                                <View style={styles.expandedAvatarHeader}>
+                                    <Text style={[styles.expandedAvatarTitle, { color: colors.text }]}>Profile Photo</Text>
+                                    <TouchableOpacity onPress={() => setExpandedAvatarUrl(null)}>
+                                        <Ionicons name="close" size={24} color={colors.text} />
+                                    </TouchableOpacity>
+                                </View>
+                                {expandedAvatarUrl && (
+                                    <Image 
+                                        source={{ uri: expandedAvatarUrl }} 
+                                        style={styles.expandedAvatarImage} 
+                                        resizeMode="contain"
+                                    />
+                                )}
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
             {/* ========== GROUP MENU MODAL ========== */}
             <Modal visible={showGroupMenu} animationType="fade" transparent>
                 <TouchableWithoutFeedback onPress={() => setShowGroupMenu(false)}>
@@ -2194,11 +2312,11 @@ export default function ChatScreen() {
 
             {/* Sticker Picker */}
             {showStickerPicker && (
-                <View style={styles.stickerPickerContainer}>
+                <View style={[styles.stickerPickerContainer, { backgroundColor: isDark ? '#000000' : '#FFF', borderTopColor: isDark ? '#121212' : '#f1f5f9' }]}>
                     <View style={styles.stickerPickerHeader}>
-                        <Text style={styles.stickerPickerTitle}>Stickers</Text>
+                        <Text style={[styles.stickerPickerTitle, { color: colors.text }]}>Stickers</Text>
                         <TouchableOpacity onPress={() => setShowStickerPicker(false)}>
-                            <Ionicons name="close" size={22} color={COLORS.text} />
+                            <Ionicons name="close" size={22} color={colors.text} />
                         </TouchableOpacity>
                     </View>
                     <View style={styles.stickerGrid}>
@@ -2213,38 +2331,44 @@ export default function ChatScreen() {
 
             {/* Reply / Edit banner */}
             {(replyingTo || editingMessage) && (
-                <View style={styles.replyBanner}>
+                <View style={[styles.replyBanner, { backgroundColor: isDark ? '#000000' : '#FFF', borderTopColor: isDark ? '#121212' : '#f1f5f9' }]}>
                     <View style={styles.replyBannerLeft}>
                         <Ionicons name={editingMessage ? "create-outline" : "arrow-undo"} size={18} color="#059669" />
                         <View style={{ marginLeft: 10, flex: 1 }}>
                             <Text style={styles.replyBannerLabel}>
                                 {editingMessage ? 'Editing message' : `Replying to ${replyingTo?.user?.username}`}
                             </Text>
-                            <Text style={styles.replyBannerContent} numberOfLines={1}>
+                            <Text style={[styles.replyBannerContent, { color: colors.textSecondary }]} numberOfLines={1}>
                                 {editingMessage?.content || replyingTo?.content}
                             </Text>
                         </View>
                     </View>
                     <TouchableOpacity onPress={cancelReplyOrEdit}>
-                        <Ionicons name="close" size={22} color="#64748b" />
+                        <Ionicons name="close" size={22} color={colors.textSecondary} />
                     </TouchableOpacity>
                 </View>
             )}
 
             {/* Footer / Input Area */}
             {isChatRestricted ? (
-                <View style={[styles.readOnlyContainer, { paddingBottom: Platform.OS === 'ios' ? 32 : 16, backgroundColor: colors.card }]}>
+                <View style={[styles.readOnlyContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 16, backgroundColor: colors.card }]}>
                     <Ionicons name="lock-closed" size={20} color="#64748b" />
                     <Text style={[styles.readOnlyText, { color: colors.textSecondary }]}>Institutional Read-Only Mode Active</Text>
                 </View>
             ) : group?.chat_enabled === false ? (
-                <View style={[styles.readOnlyContainer, { paddingBottom: Platform.OS === 'ios' ? 32 : 16, backgroundColor: isDark ? '#1a0a0a' : '#fef2f2' }]}>
+                <View style={[styles.readOnlyContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 16, backgroundColor: isDark ? '#1a0a0a' : '#fef2f2' }]}>
                     <Ionicons name="chatbubble-ellipses-outline" size={20} color="#ef4444" />
                     <Text style={[styles.readOnlyText, { color: '#ef4444' }]}>Chat has been disabled for this group</Text>
                 </View>
             ) : (
-                <View style={{ backgroundColor: colors.card }}>
-                    <View style={[styles.inputContainer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+                <View style={{ backgroundColor: isDark ? '#000000' : colors.card }}>
+                    <View style={[styles.inputContainer, { 
+                        backgroundColor: isDark ? '#000000' : colors.card, 
+                        borderTopColor: isDark ? '#121212' : colors.border,
+                        paddingBottom: Platform.OS === 'ios'
+                            ? (insets.bottom > 0 ? insets.bottom + 8 : 16)
+                            : (insets.bottom > 0 ? insets.bottom + 12 : 16)
+                    }]}>
                         <TouchableOpacity 
                             style={styles.stickerButton}
                             onPress={() => setShowAttachmentMenu(true)}
@@ -2259,15 +2383,19 @@ export default function ChatScreen() {
                             <Ionicons name="happy-outline" size={26} color={showStickerPicker ? "#059669" : colors.textMuted} />
                         </TouchableOpacity>
 
-                        <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                        <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#000000' : '#f1f5f9', borderRadius: 24 }]}>
                             <TextInput
-                                style={[styles.input, { color: colors.text }]}
+                                style={[styles.input, { 
+                                    backgroundColor: isDark ? '#000000' : '#f1f5f9', 
+                                    color: isDark ? '#ffffff' : colors.text 
+                                }]}
                                 placeholder="Type a message..."
-                                placeholderTextColor={colors.textMuted}
+                                placeholderTextColor={isDark ? '#888888' : colors.textMuted}
                                 multiline
                                 value={inputText}
                                 onChangeText={setInputText}
                                 maxLength={MAX_CHARS}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                             {charCount > MAX_CHARS * 0.8 && (
                                 <Text style={[styles.charCounter, isOverLimit && styles.charCounterOver]}>
@@ -2279,7 +2407,7 @@ export default function ChatScreen() {
                         <TouchableOpacity 
                             style={[
                                 styles.sendButton,
-                                (!inputText.trim() || isOverLimit) && styles.sendButtonDisabled
+                                (!inputText.trim() || isOverLimit) && (isDark ? { backgroundColor: '#1e293b' } : styles.sendButtonDisabled)
                             ]}
                             onPress={handleSend}
                             disabled={!inputText.trim() || isOverLimit}
@@ -2835,6 +2963,40 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontFamily: 'Inter-Bold',
         color: '#64748b',
-        textAlign: 'center',
+    },
+    // Expanded Avatar View Styles
+    expandedAvatarOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    expandedAvatarCard: {
+        width: '90%',
+        maxHeight: '60%',
+        borderRadius: 16,
+        padding: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+        elevation: 5,
+    },
+    expandedAvatarHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        marginBottom: 16,
+    },
+    expandedAvatarTitle: {
+        fontFamily: 'Inter-Bold',
+        fontSize: 16,
+    },
+    expandedAvatarImage: {
+        width: '100%',
+        aspectRatio: 1,
+        borderRadius: 8,
     },
 });

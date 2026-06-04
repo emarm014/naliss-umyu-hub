@@ -35,14 +35,17 @@ Sentry.init({
   },
 
   // ── Capture config ───────────────────────────────────────────────────────
-  // Catch failed HTTP requests as breadcrumbs automatically
-  enableCaptureFailedRequests: true,
   // Disable native nagger — works in Expo Go without a native build
   enableNativeNagger: false,
   debug: !IS_PROD,
 });
 
 import { useEffect, useState, useRef } from 'react';
+import { LogBox } from 'react-native';
+LogBox.ignoreLogs([
+  'getInfoAsync is deprecated',
+  'expo-file-system: getInfoAsync is deprecated'
+]);
 // Polyfill for WeakRef (required for some versions of Supabase SDK on older Android/Hermes)
 if (typeof (globalThis as any).WeakRef === 'undefined') {
   (globalThis as any).WeakRef = class {
@@ -460,8 +463,6 @@ function RootLayoutNav() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="auth" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="(modals)" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="(admin)" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <GroupMembershipHandler />

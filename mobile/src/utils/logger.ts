@@ -73,7 +73,11 @@ export const Logger = {
       level: 'error',
     });
 
-    Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
+    let errObj = error;
+    if (!(error instanceof Error)) {
+      errObj = new Error(error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error)));
+    }
+    Sentry.captureException(errObj, {
       tags: { component, reqId },
       extra: { message, ...context, originalError: error },
     });

@@ -76,7 +76,10 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     const isOnline = useNetworkStore.getState().isOnline;
     if (!isOnline) return;
 
-    const level = useAuthStore.getState().profile?.level;
+    const authStore = useAuthStore.getState();
+    if (!authStore.user) return;
+
+    const level = authStore.profile?.level;
 
     // Priority 1: User-visible content first (groups, announcements, events)
     // Priority 2: Secondary content (materials, courses, directory) — slightly deferred

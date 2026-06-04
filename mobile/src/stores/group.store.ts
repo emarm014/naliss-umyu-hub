@@ -10,6 +10,8 @@ interface GroupState {
     isLoading: boolean;
     error: string | null;
     lastFetched: string | null;
+    currentTab: string | null;
+    isBadgeCleared: boolean;
 
     fetchGroups: (force?: boolean) => Promise<void>;
     markGroupAsRead: (groupId: string) => Promise<void>;
@@ -17,6 +19,8 @@ interface GroupState {
     clearGroups: () => void;
     setGroupMembers: (groupId: string, members: any[]) => void;
     getGroupMembers: (groupId: string) => any[];
+    setCurrentTab: (tab: string) => void;
+    clearBadge: () => void;
 }
 
 const CACHE_TTL = Infinity; // No TTL — group list available offline indefinitely
@@ -29,6 +33,8 @@ export const useGroupStore = create<GroupState>()(
             isLoading: false,
             error: null,
             lastFetched: null,
+            currentTab: null,
+            isBadgeCleared: true,
 
             fetchGroups: async (force = false) => {
                 const { lastFetched, groups } = get();
@@ -173,19 +179,33 @@ export const useGroupStore = create<GroupState>()(
             // Increment unread count for a group when a new message arrives
             // Called by globalSync when a message INSERT is detected
             incrementUnread: (groupId: string, lastMessage?: string, lastMessageAt?: string) => {
-                set((state) => ({
-                    groups: state.groups.map(g =>
-                        g.id === groupId
-                            ? {
-                                ...g,
-                                unread_count: (g.unread_count || 0) + 1,
-                                ...(lastMessage ? { last_message: lastMessage } : {}),
-                                ...(lastMessageAt ? { last_message_at: lastMessageAt } : {}),
-                              }
-                            : g
-                    )
-                }));
+                set((state) => {
+                    const isMessagesTab = state.currentTab === 'messages' || state.currentTab?.includes('messages') || state.currentTab?.includes('chat') || state.currentTab === 'CHAT';
+                    return {
+                        isBadgeCleared: isMessagesTab ? true : false,
+                        groups: state.groups.map(g =>
+                            g.id === groupId
+                                ? {
+                                    ...g,
+                                    unread_count: (g.unread_count || 0) + 1,
+                                    ...(lastMessage ? { last_message: lastMessage } : {}),
+                                    ...(lastMessageAt ? { last_message_at: lastMessageAt } : {}),
+                                  }
+                                : g
+                        )
+                    };
+                });
             },
+
+            setCurrentTab: (tab: string) => {
+                const isMessagesTab = tab === 'messages' || tab.includes('messages') || tab.includes('chat') || tab === 'CHAT';
+                set({
+                    currentTab: tab,
+                    ...(isMessagesTab ? { isBadgeCleared: true } : {})
+                });
+            },
+
+            clearBadge: () => set({ isBadgeCleared: true }),
         }),
         {
             name: 'group-storage',
@@ -194,6 +214,7 @@ export const useGroupStore = create<GroupState>()(
                 groups: state.groups,
                 membersCache: state.membersCache,
                 lastFetched: state.lastFetched,
+                isBadgeCleared: state.isBadgeCleared,
             }),
         }
     )

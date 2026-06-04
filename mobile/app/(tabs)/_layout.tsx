@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { useTheme } from '../../src/stores/theme.store';
 import { trackScreen } from '../../src/utils/sentry';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useGroupStore } from '../../src/stores/group.store';
 
 export default function TabsLayout() {
   const { colors, isDark } = useTheme();
@@ -20,11 +21,21 @@ export default function TabsLayout() {
     }
   }
 
+  const groups = useGroupStore((state) => state.groups);
+  const isBadgeCleared = useGroupStore((state) => state.isBadgeCleared);
+  const currentTab = useGroupStore((state) => state.currentTab);
+
+  const unreadGroupsCount = groups.filter((g: any) => g.unread_count > 0).length;
+  const showBadge = !isBadgeCleared && unreadGroupsCount > 0 && currentTab !== 'messages';
+  const badgeValue = showBadge ? unreadGroupsCount : undefined;
+
   return (
     <Tabs
       screenListeners={{
         focus: (e) => {
-          trackScreen(e.target?.split('-')[0] ?? 'unknown_tab');
+          const tabName = e.target?.split('-')[0] ?? 'unknown_tab';
+          trackScreen(tabName);
+          useGroupStore.getState().setCurrentTab(tabName);
         },
       }}
       sceneContainerStyle={{
@@ -106,6 +117,7 @@ export default function TabsLayout() {
         name="messages"
         options={{
           title: 'CHAT',
+          tabBarBadge: badgeValue,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={24} color={color} />
           ),

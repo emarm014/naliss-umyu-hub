@@ -53,6 +53,8 @@ export default function ProfileScreen() {
   const updatePreferences = useAuthStore(s => s.updatePreferences);
   const fetchProfile = useAuthStore(s => s.fetchProfile);
   const lastFetch = useAuthStore(s => s.lastFetch);
+  const lastLocalProfileUpdateAt = useAuthStore(s => s.lastLocalProfileUpdateAt);
+  const confirmedAvatarUrl = useAuthStore(s => s.confirmedAvatarUrl);
   const materials = useResourceStore(s => s.materials);
   const { colors, isDark } = useTheme();
   const { toggleTheme } = useThemeStore();
@@ -140,11 +142,24 @@ export default function ProfileScreen() {
       // what we have — prevents overwriting a just-saved avatar_url with stale data
       const currentLastFetch = lastFetch || 0;
       const fetchedAt = Date.now();
-      // If store was updated in the last 5 seconds (e.g. just after avatar upload),
-      // skip overwriting — the store already has the correct fresh data
-      const storeIsVeryFresh = fetchedAt - currentLastFetch < 5000;
+      // If store was updated in the last 30 seconds (e.g. just after avatar upload),
+      // skip overwriting — the store already has the correct fresh data.
+      // 30s matches the avatar protection window in auth.store fetchProfile.
+      const storeIsVeryFresh = fetchedAt - currentLastFetch < 30000;
       if (!storeIsVeryFresh) {
         useAuthStore.setState({ profile: profile as any, lastFetch: fetchedAt });
+      } else {
+        // Store is fresh — only update non-avatar fields so a stale DB row
+        // never overwrites a just-uploaded avatar_url
+        const currentProfile = useAuthStore.getState().profile;
+        useAuthStore.setState({
+          profile: {
+            ...(profile as any),
+            // Always keep the in-memory avatar_url — it's the most recent
+            avatar_url: currentProfile?.avatar_url ?? (profile as any).avatar_url,
+          } as any,
+          lastFetch: fetchedAt,
+        });
       }
 
       setEditData({
@@ -194,9 +209,17 @@ export default function ProfileScreen() {
         (payload: any) => {
           const updated = payload.new;
           if (!updated) return;
-          // Update store directly so all screens update in real-time
-          useAuthStore.setState({ profile: { ...useAuthStore.getState().profile, ...updated } as any });
-          // Also update the auth store using fetchProfile so middleware runs correctly
+          // Merge realtime update into store — but NEVER overwrite confirmedAvatarUrl
+          const currentState = useAuthStore.getState();
+          useAuthStore.setState({
+            profile: {
+              ...currentState.profile,
+              ...updated,
+              // Iron rule: confirmed avatar always wins over realtime DB push
+              avatar_url: currentState.confirmedAvatarUrl || updated.avatar_url || currentState.profile?.avatar_url,
+            } as any,
+          });
+          // Force-fetch only non-avatar fields — skip if it would overwrite avatar
           fetchProfile(true);
         }
       )
@@ -502,15 +525,26 @@ export default function ProfileScreen() {
           onPress={handleAvatarPress}
           disabled={isLoading || isUpdatingAvatar}
         >
-          {storeProfile?.avatar_url ? (
-            <Image key={storeProfile.avatar_url} source={{ uri: storeProfile.avatar_url, cache: 'reload' }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>
-                {(storeProfile?.full_name || '?').charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
+          {/* Always show an avatar — confirmedAvatarUrl is the iron-clad source,
+              falls back to profile.avatar_url, then DiceBear sticker. Never blank. */}
+          {(() => {
+            const avatarUri = confirmedAvatarUrl
+              || storeProfile?.avatar_url
+              || (storeProfile?.id ? `https://api.dicebear.com/9.x/fun-emoji/png?seed=${storeProfile.id}&size=200` : null);
+            return avatarUri ? (
+              <Image
+                key={`${avatarUri}-${lastLocalProfileUpdateAt || 0}`}
+                source={{ uri: avatarUri, cache: 'force-cache' }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>
+                  {(storeProfile?.full_name || '?').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            );
+          })()}
           {isUpdatingAvatar ? (
             <View style={[styles.editBadge, { backgroundColor: '#059669' }]}>
               <ActivityIndicator size="small" color="#FFF" />
@@ -731,6 +765,7 @@ export default function ProfileScreen() {
                             editable={false}
                             placeholder="Full Name"
                             placeholderTextColor={colors.textMuted}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
                         />
                         <Text style={[styles.inputSubtext, { marginBottom: 16, color: colors.textMuted }]}>Official name cannot be changed. Contact Admin for corrections.</Text>
 
@@ -742,6 +777,7 @@ export default function ProfileScreen() {
                             placeholder="username (e.g. nura_abd)"
                             placeholderTextColor={colors.textMuted}
                             autoCapitalize="none"
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
                         />
 
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -754,6 +790,7 @@ export default function ProfileScreen() {
                             editable={false}
                             placeholder="UMYU/LIS/XX/XXXX"
                             placeholderTextColor={colors.textMuted}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
                         />
                         <Text style={[styles.inputSubtext, { marginBottom: 16, color: colors.textMuted }]}>Registration number is fixed after sign-up.</Text>
 
@@ -766,6 +803,7 @@ export default function ProfileScreen() {
                             placeholderTextColor={colors.textMuted}
                             multiline
                             numberOfLines={2}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
                         />
 
                         <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Biography</Text>
@@ -777,6 +815,7 @@ export default function ProfileScreen() {
                             placeholderTextColor={colors.textMuted}
                             multiline
                             numberOfLines={4}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
                         />
 
                         <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Hobbies</Text>
@@ -788,6 +827,7 @@ export default function ProfileScreen() {
                             placeholderTextColor={colors.textMuted}
                             multiline
                             numberOfLines={3}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
                         />
 
                         <TouchableOpacity
@@ -842,6 +882,7 @@ export default function ProfileScreen() {
                               secureTextEntry={!showPasswordVisible}
                               autoCapitalize="none"
                               autoCorrect={false}
+                              keyboardAppearance={isDark ? 'dark' : 'light'}
                           />
                           <TouchableOpacity
                               onPress={() => setShowPasswordVisible(v => !v)}
@@ -884,6 +925,7 @@ export default function ProfileScreen() {
                               secureTextEntry={!showPasswordVisible}
                               autoCapitalize="none"
                               autoCorrect={false}
+                              keyboardAppearance={isDark ? 'dark' : 'light'}
                           />
                           {passwordData.confirmPassword.length > 0 && (
                             <View style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}>

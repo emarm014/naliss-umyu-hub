@@ -139,6 +139,7 @@ export default function AnnouncementsScreen() {
                         onChangeText={setSearchQuery}
                         placeholder={activeCategory === 'Event' ? 'Search events...' : 'Search announcements...'}
                         placeholderTextColor={colors.textMuted}
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
                     />
                     {searchQuery.length > 0 && (
                         <TouchableOpacity onPress={() => setSearchQuery('')}>

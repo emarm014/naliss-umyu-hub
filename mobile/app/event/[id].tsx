@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, SafeAreaView,
     TouchableOpacity, Image, Linking, Platform, Alert, Dimensions,
@@ -16,6 +16,40 @@ import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 
 const { width, height } = Dimensions.get('window');
+
+// Robust hero image — never blank, falls back to raw URL, auto-retries on error
+function HeroImage({ uri, fallbackUri }: { uri: string; fallbackUri: string }) {
+    const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+    const [currentUri, setCurrentUri] = useState(uri);
+    const [retryKey, setRetryKey] = useState(0);
+
+    useEffect(() => {
+        if (uri !== currentUri) { setCurrentUri(uri); setStatus('loading'); }
+    }, [uri]);
+
+    useEffect(() => {
+        if (status !== 'error') return;
+        const t = setTimeout(() => { setStatus('loading'); setRetryKey(k => k + 1); }, 3000);
+        return () => clearTimeout(t);
+    }, [status]);
+
+    const handleError = useCallback(() => {
+        if (currentUri !== fallbackUri) { setCurrentUri(fallbackUri); setStatus('loading'); }
+        else setStatus('error');
+    }, [currentUri, fallbackUri]);
+
+    return currentUri ? (
+        <Image
+            key={`${currentUri}-${retryKey}`}
+            source={{ uri: currentUri, cache: 'force-cache' }}
+            style={[StyleSheet.absoluteFillObject, { opacity: status === 'loaded' ? 1 : 0 }]}
+            resizeMode="cover"
+            onLoad={() => setStatus('loaded')}
+            onError={handleError}
+            fadeDuration={200}
+        />
+    ) : null;
+}
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string; gradient: [string, string] }> = {
     published: { bg: '#dbeafe', text: '#1d4ed8', label: 'PUBLISHED', gradient: ['#1e3a8a', '#2563eb'] },
@@ -79,8 +113,10 @@ function EventDetailsContent() {
                 <View style={styles.hero}>
                     {hasCover ? (
                         <TouchableOpacity onPress={() => setViewerVisible(true)} activeOpacity={0.9} style={StyleSheet.absoluteFillObject}>
-                            <Image source={{ uri: getOptimizedCloudinaryUrl(event.cover_image_url!, 1000) }}
-                                style={StyleSheet.absoluteFillObject} resizeMode='cover' />
+                            <HeroImage
+                                uri={getOptimizedCloudinaryUrl(event.cover_image_url!, 1000)}
+                                fallbackUri={event.cover_image_url!}
+                            />
                         </TouchableOpacity>
                     ) : (
                         <LinearGradient colors={status.gradient} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />

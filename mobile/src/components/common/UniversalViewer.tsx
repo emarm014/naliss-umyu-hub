@@ -18,8 +18,9 @@ import { extractFileNameFromUrl, getVaultFilePath } from '../../utils/download';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { WebView } from 'react-native-webview';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
+import * as Sentry from '@sentry/react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -315,8 +316,9 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     if (!isVisible) return;
 
     // Already a local file — open instantly, no download needed
-    if (fileUri.startsWith('file://')) {
-      setLocalUri(fileUri);
+    // Handles both file:// URIs and bare absolute paths (/data/user/0/...)
+    if (fileUri.startsWith('file://') || fileUri.startsWith('/')) {
+      setLocalUri(fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`);
       setIsOffline(true);
       setIsDownloading(false);
       return;
@@ -400,8 +402,12 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           }
           setIsDownloading(false);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
+          Sentry.captureException(err, {
+            tags: { location: 'UniversalViewer.resolve', fileType },
+            extra: { fileUri, fileName, fileId },
+          });
           setDownloadError('Could not load file. Tap retry.');
           setIsDownloading(false);
         }
@@ -434,29 +440,97 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       const uriToSave = localUri || fileUri;
       if (!uriToSave) return;
 
-      // Use expo-media-library for images/videos (saves to camera roll)
-      // For documents, use sharing (saves via system dialog)
-      if (fileType === 'image' || fileType === 'video') {
-        const MediaLibrary = await import('expo-media-library');
-        const { status } = await MediaLibrary.requestPermissionsAsync();
+      // Ensure we have a local file — download if needed
+      let localFile = localUri;
+      if (!localFile || (!localFile.startsWith('file://') && !localFile.startsWith('/'))) {
+        // Not a local file — need to download first
+        Alert.alert('Preparing file…', 'Downloading file before saving. Please wait.');
+        return; // The viewer's download flow handles this — user should wait for it to finish
+      }
+
+      // Normalize to file:// URI
+      const fileUriNorm = localFile.startsWith('file://') ? localFile : `file://${localFile}`;
+      const realFileName = extractFileNameFromUrl(fileUri, fileName);
+
+      const MediaLibrary = await import('expo-media-library');
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+
+      if (fileType === 'image') {
+        // Images → camera roll
         if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant media library access to save files.');
+          Alert.alert('Permission needed', 'Please grant media library access to save images.');
           return;
         }
-        await MediaLibrary.saveToLibraryAsync(uriToSave);
+        await MediaLibrary.saveToLibraryAsync(fileUriNorm);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 3000);
-      } else {
-        // PDF/document — use sharing dialog to save
-        if (!(await Sharing.isAvailableAsync())) {
-          Alert.alert('Unavailable', 'Saving is not supported on this device.');
+
+      } else if (fileType === 'video') {
+        // Videos → camera roll
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please grant media library access to save videos.');
           return;
         }
-        const realFileName = extractFileNameFromUrl(fileUri, fileName);
-        await Sharing.shareAsync(uriToSave, { dialogTitle: `Save ${realFileName}` });
+        await MediaLibrary.saveToLibraryAsync(fileUriNorm);
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 3000);
+
+      } else if (fileType === 'audio') {
+        // Audio → Music / Downloads
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please grant media library access to save audio.');
+          return;
+        }
+        const safeName = realFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const destUri = `${FileSystem.documentDirectory}${safeName}`;
+        await FileSystem.copyAsync({ from: fileUriNorm, to: destUri });
+        const asset = await MediaLibrary.createAssetAsync(destUri);
+        try {
+          const album = await MediaLibrary.getAlbumAsync('Music') || await MediaLibrary.getAlbumAsync('Download');
+          if (album) {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          } else {
+            await MediaLibrary.createAlbumAsync('Music', asset, false);
+          }
+        } catch { /* album move best-effort */ }
+        await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 3000);
+
+      } else {
+        // PDF / document → Downloads folder
+        const safeName = realFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const destUri = `${FileSystem.documentDirectory}${safeName}`;
+        await FileSystem.copyAsync({ from: fileUriNorm, to: destUri });
+
+        if (status === 'granted') {
+          const asset = await MediaLibrary.createAssetAsync(destUri);
+          try {
+            const album = await MediaLibrary.getAlbumAsync('Download');
+            if (album) {
+              await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+            } else {
+              await MediaLibrary.createAlbumAsync('Download', asset, false);
+            }
+          } catch { /* album move best-effort */ }
+          await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
+          Alert.alert('Saved', `"${realFileName}" has been saved to your Downloads folder.`);
+        } else {
+          // No permission — share as fallback
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(destUri, { dialogTitle: `Save ${realFileName}` });
+          } else {
+            Alert.alert('Permission needed', 'Please grant storage access to save files.');
+          }
+          await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
+          return;
+        }
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 3000);
       }
-    } catch {
-      Alert.alert('Error', 'Could not save the file.');
+    } catch (err: any) {
+      Sentry.captureException(err, { tags: { location: 'UniversalViewer.saveToDevice' }, extra: { fileType, fileName } });
+      Alert.alert('Error', 'Could not save the file. Please try again.');
     }
   };
 
@@ -466,8 +540,13 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         Alert.alert('Unavailable', 'Sharing is not supported on this device.');
         return;
       }
-      await Sharing.shareAsync(localUri || fileUri);
-    } catch {
+      // Prefer local file for sharing — works offline and is faster
+      const uriToShare = localUri
+        ? (localUri.startsWith('file://') ? localUri : `file://${localUri}`)
+        : fileUri;
+      await Sharing.shareAsync(uriToShare);
+    } catch (err: any) {
+      Sentry.captureException(err, { tags: { location: 'UniversalViewer.shareFile' }, extra: { fileType, fileName } });
       Alert.alert('Error', 'Could not share this file.');
     }
   };
@@ -478,9 +557,11 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
+            {/* Left: Cancel (X) */}
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={COLORS.black} />
             </TouchableOpacity>
+
             <View style={styles.titleContainer}>
               <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
               <View style={styles.badgeRow}>
@@ -493,11 +574,11 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 )}
               </View>
             </View>
-            {showShare && showDownload && (
-              <TouchableOpacity style={styles.actionButton} onPress={shareFile}>
-                <Ionicons name="share-social-outline" size={24} color={COLORS.black} />
-              </TouchableOpacity>
-            )}
+
+            {/* Right: Back navigation arrow */}
+            <TouchableOpacity onPress={onClose} style={styles.actionButton}>
+              <Ionicons name="chevron-back" size={26} color={COLORS.black} />
+            </TouchableOpacity>
           </View>
 
           {/* Content */}
@@ -521,25 +602,31 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             />
           </View>
 
-          {/* Footer */}
-          <View style={[styles.footer, !showShare && { justifyContent: 'center' }]}>
-            <TouchableOpacity style={styles.footerAction} onPress={saveToDevice}>
-              <Ionicons
-                name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
-                size={20}
-                color={isSaved ? '#10b981' : COLORS.primary}
-              />
-              <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
-                {isSaved ? 'Saved!' : 'Save to Device'}
-              </Text>
-            </TouchableOpacity>
-            {showShare && (
-              <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
-                <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.footerActionText}>Share</Text>
+          {/* Footer — only shown when download/share is enabled */}
+          {showDownload && (
+            <View style={[styles.footer, !showShare && { justifyContent: 'center' }]}>
+              <TouchableOpacity
+                style={[styles.footerAction, (!localUri && isDownloading) && { opacity: 0.5 }]}
+                onPress={saveToDevice}
+                disabled={isDownloading && !localUri}
+              >
+                <Ionicons
+                  name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
+                  size={20}
+                  color={isSaved ? '#10b981' : COLORS.primary}
+                />
+                <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
+                  {isSaved ? 'Saved!' : 'Save to Device'}
+                </Text>
               </TouchableOpacity>
-            )}
-          </View>
+              {showShare && (
+                <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
+                  <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
+                  <Text style={styles.footerActionText}>Share</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </View>
       </BlurView>
     </Modal>
@@ -602,7 +689,13 @@ function MobileVisualScan({ url }: { url: string }) {
 // Fallback: expo-av Video component (tap "Native Player" button)
 function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
   const [useNative, setUseNative] = React.useState(false);
-  const videoSrc = localUri || remoteUrl;
+
+  // Normalize URI for expo-av: local paths must have file:// prefix
+  // The web player handles bare paths via allowFileAccess, but expo-av requires file://
+  const rawSrc = localUri || remoteUrl;
+  const videoSrc = rawSrc && !rawSrc.startsWith('http') && !rawSrc.startsWith('file://')
+    ? `file://${rawSrc}`
+    : rawSrc;
 
   if (useNative) {
     return (
@@ -613,10 +706,16 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
           volume={1.0}
           isMuted={false}
           resizeMode={ResizeMode.CONTAIN}
-          shouldPlay={false}
+          shouldPlay={true}
           useNativeControls
           style={styles.video}
-          onError={() => setUseNative(false)}
+          onError={(err) => {
+            Sentry.captureException(new Error(`expo-av Video error: ${JSON.stringify(err)}`), {
+              tags: { location: 'UniversalViewer.VideoPlayer.native' },
+              extra: { videoSrc, rawSrc },
+            });
+            setUseNative(false);
+          }}
         />
         <TouchableOpacity
           onPress={() => setUseNative(false)}
@@ -719,7 +818,7 @@ function PdfJsViewer({ localUri, remoteUrl }: { localUri: string | null; remoteU
         }
         if (cancelled) return;
         const srcJson = JSON.stringify(pdfSrc);
-        const htmlContent = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#1e293b;font-family:-apple-system,sans-serif}#toolbar{position:sticky;top:0;z-index:100;background:#0f172a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}#toolbar span{color:#94a3b8;font-size:12px;font-weight:600}#toolbar strong{color:#f1f5f9;font-size:13px}#pages{padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center}.pw{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.4);border-radius:8px;overflow:hidden}canvas{display:block;max-width:100%}.pn{position:absolute;bottom:8px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;color:#94a3b8}.sp{width:40px;height:40px;border:3px solid #334155;border-top-color:#064e3b;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#err{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;color:#ef4444;padding:24px;text-align:center}#err p{color:#94a3b8;font-size:13px;line-height:1.5}</style></head><body><div id="toolbar"><span>PDF VIEWER</span><strong id="pc">Loading...</strong></div><div id="loading"><div class="sp"></div><span>Rendering...</span></div><div id="err"><strong>Could not render PDF</strong><p id="em">The file may be corrupted.</p></div><div id="pages"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(async()=>{const ld=document.getElementById("loading"),er=document.getElementById("err"),em=document.getElementById("em"),pg=document.getElementById("pages"),pc=document.getElementById("pc");try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const src=' + srcJson + ';const pdf=await pdfjsLib.getDocument(src).promise;const tot=pdf.numPages;ld.style.display="none";pc.textContent=tot+" page"+(tot!==1?"s":"");const dpr=window.devicePixelRatio||2;const vw=window.innerWidth-32;for(let i=1;i<=tot;i++){const page=await pdf.getPage(i);const us=page.getViewport({scale:1});const sc=(vw/us.width)*dpr;const vp=page.getViewport({scale:sc});const wrap=document.createElement("div");wrap.className="pw";wrap.style.width=(vp.width/dpr)+"px";const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/dpr)+"px";cv.style.height=(vp.height/dpr)+"px";await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;const num=document.createElement("div");num.className="pn";num.textContent=i+" / "+tot;wrap.appendChild(cv);wrap.appendChild(num);pg.appendChild(wrap);}}catch(e){ld.style.display="none";er.style.display="flex";em.textContent=e?.message||"Unknown error";}})()</script></body></html>';
+        const htmlContent = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#1e293b;font-family:-apple-system,sans-serif}#toolbar{position:sticky;top:0;z-index:100;background:#0f172a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}#toolbar span{color:#94a3b8;font-size:12px;font-weight:600}#toolbar strong{color:#f1f5f9;font-size:13px}#pages{padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center}.pw{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.4);border-radius:8px;overflow:hidden}canvas{display:block;max-width:100%}.pn{position:absolute;bottom:8px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;color:#94a3b8}.sp{width:40px;height:40px;border:3px solid #334155;border-top-color:#064e3b;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#err{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;color:#ef4444;padding:24px;text-align:center}#err p{color:#94a3b8;font-size:13px;line-height:1.5}</style></head><body><div id="toolbar"><span>PDF VIEWER</span><strong id="pc">Loading...</strong></div><div id="loading"><div class="sp"></div><span>Rendering...</span></div><div id="err"><strong>Could not render PDF</strong><p id="em">The file may be corrupted.</p></div><div id="pages"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(async()=>{const ld=document.getElementById("loading"),er=document.getElementById("err"),em=document.getElementById("em"),pg=document.getElementById("pages"),pc=document.getElementById("pc");try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const src=' + srcJson + ';const pdf=await pdfjsLib.getDocument(src).promise;const tot=pdf.numPages;ld.style.display="none";pc.textContent=tot+" page"+(tot!==1?"s":"");const dpr=Math.max(window.devicePixelRatio||1,2.5);const vw=window.innerWidth-32;for(let i=1;i<=tot;i++){const page=await pdf.getPage(i);const us=page.getViewport({scale:1});const sc=(vw/us.width)*dpr;const vp=page.getViewport({scale:sc});const wrap=document.createElement("div");wrap.className="pw";wrap.style.width=(vp.width/dpr)+"px";const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/dpr)+"px";cv.style.height=(vp.height/dpr)+"px";const ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";await page.render({canvasContext:ctx,viewport:vp}).promise;const num=document.createElement("div");num.className="pn";num.textContent=i+" / "+tot;wrap.appendChild(cv);wrap.appendChild(num);pg.appendChild(wrap);}}catch(e){ld.style.display="none";er.style.display="flex";em.textContent=e?.message||"Unknown error";}})()</script></body></html>';
         if (!cancelled) { setHtml(htmlContent); setLoading(false); }
       } catch (e: any) {
         if (!cancelled) { setError(e?.message || 'Could not prepare PDF viewer.'); setLoading(false); }

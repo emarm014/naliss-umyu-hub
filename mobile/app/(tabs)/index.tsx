@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, TouchableOpacity,
   Image, RefreshControl, ActivityIndicator, Dimensions,
@@ -17,6 +17,86 @@ import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 
 const { width } = Dimensions.get('window');
+
+// ── PosterImage — robust image with loading shimmer + error retry ─────────────
+// Replaces bare <Image> in poster cards. Never shows blank:
+//  - While loading: animated shimmer gradient
+//  - On error: solid gradient placeholder with icon + silent retry after 3s
+//  - On success: the actual image, fading in
+function PosterImage({
+  uri,
+  fallbackUri,
+  style,
+  gradientColors,
+}: {
+  uri: string | null | undefined;
+  fallbackUri?: string;
+  style: any;
+  gradientColors: [string, string];
+}) {
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [retryKey, setRetryKey] = useState(0);
+  const [currentUri, setCurrentUri] = useState(uri || fallbackUri || '');
+
+  // When the URI prop changes (e.g. after a store refresh), reset and reload
+  useEffect(() => {
+    const next = uri || fallbackUri || '';
+    if (next !== currentUri) {
+      setCurrentUri(next);
+      setStatus('loading');
+    }
+  }, [uri, fallbackUri]);
+
+  // Auto-retry once after 3s on error — handles transient network blips
+  useEffect(() => {
+    if (status !== 'error') return;
+    const t = setTimeout(() => {
+      setStatus('loading');
+      setRetryKey(k => k + 1);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [status]);
+
+  const handleError = useCallback(() => {
+    // If the optimized URL failed, try the raw fallback URI
+    if (currentUri !== fallbackUri && fallbackUri) {
+      setCurrentUri(fallbackUri);
+      setStatus('loading');
+    } else {
+      setStatus('error');
+    }
+  }, [currentUri, fallbackUri]);
+
+  return (
+    <View style={[style, { overflow: 'hidden' }]}>
+      {/* Placeholder gradient — always rendered underneath, visible while loading or on error */}
+      <LinearGradient
+        colors={gradientColors}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Shimmer overlay while loading */}
+      {status === 'loading' && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+      )}
+
+      {/* Actual image — only rendered when we have a URI */}
+      {currentUri ? (
+        <Image
+          key={`${currentUri}-${retryKey}`}
+          source={{ uri: currentUri, cache: 'force-cache' }}
+          style={[StyleSheet.absoluteFill, { opacity: status === 'loaded' ? 1 : 0 }]}
+          resizeMode="cover"
+          onLoad={() => setStatus('loaded')}
+          onError={handleError}
+          fadeDuration={200}
+        />
+      ) : null}
+    </View>
+  );
+}
 
 // ── Per-level theme config ────────────────────────────────────────────────────
 const LEVEL_THEMES: Record<string, {
@@ -108,6 +188,8 @@ const quickActions = [
 export default function HomeScreen() {
   useSentryScreen('HomeScreen');
   const user = useAuthStore(s => s.profile);
+  const lastLocalUpdate = useAuthStore(s => s.lastLocalProfileUpdateAt);
+  const confirmedAvatarUrl = useAuthStore(s => s.confirmedAvatarUrl);
   const isAdmin = user?.role === 'super_admin' || (user?.role as any) === 'system_owner';
   const announcements = useAnnouncementStore(s => s.announcements);
   const loadingAnnouncements = useAnnouncementStore(s => s.isLoading);
@@ -181,7 +263,14 @@ export default function HomeScreen() {
   }
 
   const displayName = user.username || user.full_name?.split(' ')[0] || 'Student';
-  const avatar = user.avatar_url || `https://i.pravatar.cc/150?u=${user.id}`;
+  // confirmedAvatarUrl is the iron-clad source — set on upload, never overwritten by any fetch.
+  // Falls back to profile.avatar_url (from DB), then to the DiceBear sticker seed.
+  // Never shows blank — always has a valid URI.
+  const avatar = confirmedAvatarUrl
+    || user.avatar_url
+    || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`;
+  // Key includes lastLocalUpdate so RN image cache is busted on every profile update
+  const avatarKey = `${avatar}-${lastLocalUpdate || 0}`;
   const matric = user.registration_number || '—';
   const levelNum = user.level || '100';
 
@@ -243,7 +332,7 @@ export default function HomeScreen() {
           <View style={styles.headerBody}>
             <View style={styles.avatarSection}>
               <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
-                <Image key={avatar} source={{ uri: avatar, cache: 'reload' }} style={styles.avatar} />
+                <Image key={avatarKey} source={{ uri: avatar, cache: 'force-cache' }} style={styles.avatar} />
               </View>
               <View style={[styles.onlineDot, { borderColor: theme.gradient[1], backgroundColor: '#10b981' }]} />
             </View>
@@ -338,9 +427,11 @@ export default function HomeScreen() {
                       router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any);
                     }}
                   >
-                    <Image
-                      source={{ uri: item.cover_image_url ? getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400) : 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=2070&auto=format&fit=crop' }}
+                    <PosterImage
+                      uri={item.cover_image_url ? getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400) : undefined}
+                      fallbackUri={item.cover_image_url || undefined}
                       style={styles.posterImage}
+                      gradientColors={['#0c4a6e', '#1e3a5f']}
                     />
                     <LinearGradient colors={['transparent', 'rgba(12,74,110,0.95)']} style={styles.posterGradient} />
                     <View style={styles.posterContent}>
@@ -381,9 +472,11 @@ export default function HomeScreen() {
                   style={styles.posterCard}
                   onPress={() => router.push({ pathname: '/event/[id]', params: { id: event.id } } as any)}
                 >
-                  <Image
-                    source={{ uri: event.cover_image_url ? getOptimizedCloudinaryUrl(event.cover_image_url, 600, 400) : 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop' }}
+                  <PosterImage
+                    uri={event.cover_image_url ? getOptimizedCloudinaryUrl(event.cover_image_url, 600, 400) : undefined}
+                    fallbackUri={event.cover_image_url || undefined}
                     style={styles.posterImage}
+                    gradientColors={['#052e16', '#14532d']}
                   />
                   <LinearGradient colors={['transparent', 'rgba(5,46,22,0.95)']} style={styles.posterGradient} />
                   <View style={styles.posterContent}>

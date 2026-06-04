@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, View, Text, SafeAreaView, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { NalissLogo } from '../src/components/NalissLogo';
 import { COLORS } from '../src/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';

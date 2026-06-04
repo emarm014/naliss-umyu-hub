@@ -17,6 +17,9 @@ interface AuthState {
   lastFetch: number | null;
   lastLocalProfileUpdateAt: number | null;
   pendingProfileUpdates: Partial<Record<string, any>>;
+  // The most recently confirmed avatar URL — set on upload, never overwritten by any fetch.
+  // This is the single source of truth for the avatar displayed in the UI.
+  confirmedAvatarUrl: string | null;
   // True once zustand-persist has finished reading from AsyncStorage
   _hasHydrated: boolean;
 
@@ -51,6 +54,7 @@ export const useAuthStore = create<AuthState>()(
       lastFetch: null,
       lastLocalProfileUpdateAt: null,
       pendingProfileUpdates: {},
+      confirmedAvatarUrl: null,
       _hasHydrated: false,
 
       setSession: (session) => set({ session, isLoading: false }),
@@ -86,12 +90,16 @@ export const useAuthStore = create<AuthState>()(
           if (currentState.lastLocalProfileUpdateAt && currentState.lastLocalProfileUpdateAt > fetchStartedAt) {
             return;
           }
-          
-          // Apply any pending offline edits OVER the fetched server data
-          const merged = { 
-            ...(data as any), 
-            ...currentState.pendingProfileUpdates 
-          };
+
+          // Apply any pending offline edits OVER the fetched server data.
+          const merged: any = { ...(data as any), ...currentState.pendingProfileUpdates };
+
+          // IRON RULE: confirmedAvatarUrl always wins over anything from the DB.
+          // Once a user sets their avatar, no fetch — stale or fresh — can revert it.
+          // confirmedAvatarUrl is only cleared on sign-out.
+          if (currentState.confirmedAvatarUrl) {
+            merged.avatar_url = currentState.confirmedAvatarUrl;
+          }
           
           set({ profile: merged as Profile, lastFetch: Date.now() });
         } catch (err: any) {
@@ -116,6 +124,8 @@ export const useAuthStore = create<AuthState>()(
           profile: { ...profile, ...(updates as any) } as Profile,
           lastFetch: Date.now(),
           lastLocalProfileUpdateAt: Date.now(),
+          // Lock in the new avatar immediately — no fetch can overwrite this
+          ...((updates as any).avatar_url ? { confirmedAvatarUrl: (updates as any).avatar_url } : {}),
         });
 
         try {
@@ -147,8 +157,15 @@ export const useAuthStore = create<AuthState>()(
           // Confirm with the actual saved row if available
           const updatedRow = rows?.[0];
           if (updatedRow) {
+            // Always keep avatar_url from the optimistic update if it was just set —
+            // the DB row returned here is the confirmed value, but we trust our
+            // optimistic value since we just wrote it. This prevents a race where
+            // a concurrent fetchProfile overwrites the new avatar with the old one.
+            const avatarGuard = (updates as any).avatar_url
+              ? { avatar_url: (updates as any).avatar_url }
+              : {};
             set({ 
-              profile: { ...(updatedRow as any), ...resolvedPending } as Profile, 
+              profile: { ...(updatedRow as any), ...resolvedPending, ...avatarGuard } as Profile, 
               pendingProfileUpdates: resolvedPending,
               lastFetch: Date.now(),
               lastLocalProfileUpdateAt: Date.now(),
@@ -322,7 +339,7 @@ export const useAuthStore = create<AuthState>()(
         }
         // Clear local state BEFORE calling signOut so onAuthStateChange
         // sees a clean slate and doesn't re-enter the ban-check with stale data.
-        set({ session: null, user: null, profile: null, isProfileComplete: null, error: null });
+        set({ session: null, user: null, profile: null, isProfileComplete: null, error: null, confirmedAvatarUrl: null });
         // CRITICAL: Clear all cached data to prevent data leak between users
         // Wrap each in its own try/catch so one failure doesn't skip the rest
         try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}
@@ -352,6 +369,7 @@ export const useAuthStore = create<AuthState>()(
         profile: state.profile,
         lastFetch: state.lastFetch,
         pendingProfileUpdates: state.pendingProfileUpdates,
+        confirmedAvatarUrl: state.confirmedAvatarUrl,
         // isProfileComplete intentionally NOT persisted — stale false value causes
         // signup screen flash on cold launch. Always re-derived from onAuthStateChange.
       }),
@@ -374,6 +392,11 @@ export const useAuthStore = create<AuthState>()(
           } else if (!state.session) {
             // No session cached — user is logged out, no spinner needed
             state.isProfileComplete = null;
+          }
+          // Seed confirmedAvatarUrl from profile if not already set —
+          // handles users who had an avatar before this field was introduced
+          if (!state.confirmedAvatarUrl && state.profile?.avatar_url) {
+            state.confirmedAvatarUrl = state.profile.avatar_url;
           }
           // If session exists but profile is incomplete, leave isProfileComplete
           // as-is so onAuthStateChange can handle the signup resume flow

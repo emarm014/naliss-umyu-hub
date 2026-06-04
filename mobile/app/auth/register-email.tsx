@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, SafeAreaView, StatusBar } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/api/supabase/client';
@@ -11,6 +12,7 @@ import { useNetworkStore } from '../../src/stores/network.store';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature } from '../../src/utils/sentry';
+import * as Sentry from '@sentry/react-native';
 
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
@@ -100,14 +102,17 @@ export default function RegisterEmail() {
 
       // STEP 2: Check if registration is open — silently, never blocks OTP
       try {
-        const { data: regSetting } = await supabase
-          .from('system_settings')
-          .select('value')
-          .eq('key', 'allow_registration')
-          .maybeSingle();
-        if (regSetting?.value === 'false') {
-          Alert.alert('Registration Closed', 'New student registrations are currently closed. Please contact the administrator.');
-          return;
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (existingSession) {
+          const { data: regSetting } = await supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'allow_registration')
+            .maybeSingle();
+          if (regSetting?.value === 'false') {
+            Alert.alert('Registration Closed', 'New student registrations are currently closed. Please contact the administrator.');
+            return;
+          }
         }
       } catch {
         // Settings check failed — allow through, server enforces this
@@ -117,14 +122,13 @@ export default function RegisterEmail() {
       if (!isMounted.current) return;
 
       // STEP 3: Check if account already exists
-      // If RPC fails for any reason, allow through — the OTP itself proves email ownership,
-      // and the DB constraint at profile creation is the real guard against duplicates.
       let provider = 'none';
       try {
+        Sentry.addBreadcrumb({ category: 'signup.email', message: 'Step 3: Checking existing account', level: 'info', data: { email: trimmedEmail } });
         const { data, error } = await supabase.rpc('check_existing_account', { email_addr: trimmedEmail });
         if (!error && data) provider = data;
       } catch {
-        // RPC failed — allow through, server enforces rules at profile creation
+        // RPC failed — allow through
       }
 
       if (provider === 'google') {
@@ -152,6 +156,7 @@ export default function RegisterEmail() {
       store.setCredentials(trimmedEmail, undefined);
 
       setLoadingStatus('Sending verification code…');
+      Sentry.addBreadcrumb({ category: 'signup.email', message: 'Step 4: Sending OTP', level: 'info', data: { email: trimmedEmail } });
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email: trimmedEmail,
         options: { shouldCreateUser: true },

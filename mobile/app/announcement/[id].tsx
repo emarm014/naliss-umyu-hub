@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -21,6 +21,44 @@ import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 
 // Category → theme mapping using ACTUAL db field (not keyword guessing)
 import { LinearGradient } from 'expo-linear-gradient';
+
+// Robust hero image — never blank, falls back to raw URL, auto-retries on error
+function HeroImage({ uri, fallbackUri, style }: { uri: string; fallbackUri: string; style: any }) {
+    const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+    const [currentUri, setCurrentUri] = useState(uri);
+    const [retryKey, setRetryKey] = useState(0);
+
+    useEffect(() => {
+        if (uri !== currentUri) { setCurrentUri(uri); setStatus('loading'); }
+    }, [uri]);
+
+    useEffect(() => {
+        if (status !== 'error') return;
+        const t = setTimeout(() => { setStatus('loading'); setRetryKey(k => k + 1); }, 3000);
+        return () => clearTimeout(t);
+    }, [status]);
+
+    const handleError = useCallback(() => {
+        if (currentUri !== fallbackUri) { setCurrentUri(fallbackUri); setStatus('loading'); }
+        else setStatus('error');
+    }, [currentUri, fallbackUri]);
+
+    return (
+        <View style={[style, { overflow: 'hidden', backgroundColor: '#0c4a6e' }]}>
+            {currentUri ? (
+                <Image
+                    key={`${currentUri}-${retryKey}`}
+                    source={{ uri: currentUri, cache: 'force-cache' }}
+                    style={[StyleSheet.absoluteFill, { opacity: status === 'loaded' ? 1 : 0 }]}
+                    resizeMode="cover"
+                    onLoad={() => setStatus('loaded')}
+                    onError={handleError}
+                    fadeDuration={200}
+                />
+            ) : null}
+        </View>
+    );
+}
 
 // Category → theme mapping using ACTUAL db field (not keyword guessing)
 const CATEGORY_THEMES: Record<string, { label: string; bg: string; color: string }> = {
@@ -104,10 +142,10 @@ function AnnouncementDetailsContent() {
                 {/* Immersive Hero Header */}
                 {announcement.cover_image_url ? (
                     <TouchableOpacity onPress={() => setViewerVisible(true)} activeOpacity={0.9} style={styles.heroPressable}>
-                        <Image
-                            source={{ uri: getOptimizedCloudinaryUrl(announcement.cover_image_url, 1000) }}
+                        <HeroImage
+                            uri={getOptimizedCloudinaryUrl(announcement.cover_image_url, 1000)}
+                            fallbackUri={announcement.cover_image_url}
                             style={styles.heroImage}
-                            resizeMode="cover"
                         />
                          <LinearGradient
                             colors={['rgba(0,0,0,0.4)', 'transparent', 'rgba(0,0,0,0.8)']}
@@ -179,7 +217,7 @@ function AnnouncementDetailsContent() {
                     <View style={styles.institutionalSignature}>
                         <View style={styles.sigLine} />
                         <Text style={styles.sigText}>Released by NALISS Public Relations</Text>
-                        <Text style={styles.sigSub}>University of Maiduguri Hub</Text>
+                        <Text style={styles.sigSub}>Umaru Musa Yar'adua University (UMYUK)</Text>
                     </View>
                 </View>
             </ScrollView>

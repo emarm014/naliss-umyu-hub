@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, ActivityIndicator, Alert, StatusBar } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, Alert, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
@@ -12,8 +13,12 @@ import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { useSignupStore } from '../../src/stores/signup.store';
 import { useSettingsStore } from '../../src/stores/settings.store';
 import { useNetworkStore } from '../../src/stores/network.store';
+import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { captureUIError, trackFeature } from '../../src/utils/sentry';
+import * as Sentry from '@sentry/react-native';
 
 export default function RegisterOptions() {
+  useSentryScreen('RegisterOptions');
   const router = useRouter();
 
   // Read from store — will update in real-time via the subscription below
@@ -45,6 +50,7 @@ export default function RegisterOptions() {
   const handleGoogleAuth = async () => {
     if (isGoogleLoading) return;
     setIsGoogleLoading(true);
+    trackFeature('signup', 'google_oauth_start');
 
     try {
       const { isOnline } = useNetworkStore.getState();
@@ -58,7 +64,8 @@ export default function RegisterOptions() {
       store.reset();
       store.touchActivity();
 
-      // ── STEP 1: Get OAuth URL (before opening browser) ───────────────────
+      // ── STEP 1: Get OAuth URL ─────────────────────────────────────────────
+      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 1: Getting OAuth URL', level: 'info' });
       const redirectUrl = Linking.createURL('/');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -68,27 +75,24 @@ export default function RegisterOptions() {
       if (error) throw error;
       if (!data.url) throw new Error('No OAuth URL returned');
 
-      // Set isGoogleDelaying BEFORE opening the browser so ProtectedRoute
-      // doesn't interfere while the OAuth flow is in progress
       store.setIsGoogleDelaying(true);
 
-      // ── STEP 2: Open browser — blocks until user completes or cancels ─────
+      // ── STEP 2: Open browser ──────────────────────────────────────────────
+      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 2: Opening OAuth browser', level: 'info' });
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 
-      // User cancelled — clean up silently
       if (result.type !== 'success' || !result.url) {
+        Sentry.addBreadcrumb({ category: 'signup.google', message: 'OAuth cancelled by user', level: 'info' });
         store.setIsGoogleDelaying(false);
         store.reset();
         if (isMounted.current) setIsGoogleLoading(false);
         return;
       }
 
-      if (!isMounted.current) {
-        store.setIsGoogleDelaying(false);
-        return;
-      }
+      if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
 
-      // ── STEP 3: Parse tokens from redirect URL ────────────────────────────
+      // ── STEP 3: Parse tokens ──────────────────────────────────────────────
+      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 3: Parsing OAuth tokens', level: 'info' });
       const url = result.url;
       const hashPart = url.split('#')[1] || '';
       const queryPart = url.split('?')[1]?.split('#')[0] || '';
@@ -98,6 +102,7 @@ export default function RegisterOptions() {
       const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
 
       if (!accessToken || !refreshToken) {
+        Sentry.captureMessage('Google OAuth: missing tokens in redirect URL', 'warning');
         store.setIsGoogleDelaying(false);
         store.reset();
         if (isMounted.current) {
@@ -107,8 +112,8 @@ export default function RegisterOptions() {
         return;
       }
 
-      // ── STEP 4: Set session — fires onAuthStateChange(SIGNED_IN) ──────────
-      // isGoogleDelaying=true blocks ProtectedRoute from interfering
+      // ── STEP 4: Set session ───────────────────────────────────────────────
+      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 4: Setting Supabase session', level: 'info' });
       const { data: { user }, error: sessionError } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
@@ -117,92 +122,64 @@ export default function RegisterOptions() {
       if (sessionError) throw sessionError;
       if (!user) throw new Error('No user returned from Google');
 
-      // ── STEP 5: Validate institutional email domain ───────────────────────
+      // ── STEP 5: Validate email domain ─────────────────────────────────────
+      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 5: Validating institutional email', level: 'info', data: { email: user.email } });
       if (!user.email || !INSTITUTIONAL_EMAIL_REGEX.test(user.email)) {
         store.setIsGoogleDelaying(false);
         await supabase.auth.signOut();
         store.reset();
         if (isMounted.current) {
           setIsGoogleLoading(false);
-          Alert.alert(
-            'Wrong Google Account',
-            'Please use your UMYU institutional Google account (@students.umyu.edu.ng).'
-          );
+          Alert.alert('Wrong Google Account', 'Please use your UMYU institutional Google account (@students.umyu.edu.ng).');
         }
         return;
       }
 
-      if (!isMounted.current) {
-        store.setIsGoogleDelaying(false);
-        return;
-      }
+      if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
 
       // ── STEP 6: Check account status ──────────────────────────────────────
-      // IMPORTANT: check_existing_account may delete an incomplete email account
-      // for this email address. That's intentional — Google signup takes priority
-      // over an incomplete email signup.
+      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 6: Checking account status', level: 'info' });
       try {
-        const { data: accountStatus } = await supabase.rpc('check_existing_account', {
-          email_addr: user.email,
-        });
+        const { data: accountStatus } = await supabase.rpc('check_existing_account', { email_addr: user.email });
 
         if (accountStatus === 'graduated') {
           store.setIsGoogleDelaying(false);
           await supabase.auth.signOut();
           store.reset();
-          if (isMounted.current) {
-            setIsGoogleLoading(false);
-            Alert.alert('Account Graduated', 'This email belongs to a graduated student. Access is restricted to active students only.');
-          }
+          if (isMounted.current) { setIsGoogleLoading(false); Alert.alert('Account Graduated', 'This email belongs to a graduated student. Access is restricted to active students only.'); }
           return;
         }
-
         if (accountStatus === 'email') {
-          // Fully registered email account exists — tell user to sign in instead
           store.setIsGoogleDelaying(false);
           await supabase.auth.signOut();
           store.reset();
-          if (isMounted.current) {
-            setIsGoogleLoading(false);
-            Alert.alert('Account Exists', 'This email is already registered. Please sign in instead.');
-          }
+          if (isMounted.current) { setIsGoogleLoading(false); Alert.alert('Account Exists', 'This email is already registered. Please sign in instead.'); }
           return;
         }
-
         if (accountStatus === 'google') {
-          // Already fully registered with Google — release delay and let
-          // ProtectedRoute's navigation guard send them to tabs
+          Sentry.addBreadcrumb({ category: 'signup.google', message: 'Existing Google account — redirecting to tabs', level: 'info' });
           store.setIsGoogleDelaying(false);
           if (isMounted.current) setIsGoogleLoading(false);
           return;
         }
-
-        // accountStatus === 'none' — new user (or incomplete signup cleaned up)
-        // Fall through to identity screen
-      } catch {
+      } catch (rpcErr) {
         // RPC failed — proceed anyway, server enforces rules at profile creation
+        Sentry.addBreadcrumb({ category: 'signup.google', message: 'check_existing_account RPC failed — proceeding', level: 'warning', data: { error: (rpcErr as any)?.message } });
       }
 
-      if (!isMounted.current) {
-        store.setIsGoogleDelaying(false);
-        return;
-      }
+      if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
 
-      // ── STEP 7: Set up store and navigate to identity ─────────────────────
-      // Set step BEFORE releasing isGoogleDelaying so ProtectedRoute
-      // resumes at the correct screen if it fires before router.push
+      // ── STEP 7: Navigate to identity ──────────────────────────────────────
+      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 7: Navigating to identity screen', level: 'info' });
       store.setProvider('google');
       store.setCredentials(user.email!, undefined);
       store.setGoogleTokens(user.email!, accessToken, refreshToken);
       store.setCurrentStep(2);
       store.touchActivity();
-
-      // Release delay THEN navigate — order matters
       store.setIsGoogleDelaying(false);
 
       if (isMounted.current) {
         setIsGoogleLoading(false);
-        // Use replace instead of push so back button doesn't return here
         router.replace('/auth/identity' as any);
       }
 
@@ -213,6 +190,7 @@ export default function RegisterOptions() {
         setIsGoogleLoading(false);
         const msg = err?.message || '';
         if (!msg.includes('cancelled') && !msg.includes('cancel')) {
+          captureUIError('RegisterOptions.handleGoogleAuth', err);
           Alert.alert('Sign In Failed', 'Google sign-in failed. Please try again.');
         }
       }

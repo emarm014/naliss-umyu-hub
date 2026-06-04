@@ -11,10 +11,7 @@ import { Announcement } from '../src/stores/announcement.store';
 import { Event } from '../src/stores/event.store';
 import { Material } from '../src/types';
 import { useTheme } from '../src/stores/theme.store';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Notifications are persisted to AsyncStorage so they survive offline + app restarts
-const NOTIF_CACHE_KEY = 'naliss_notifications_cache';
+import { useNotificationStore } from '../src/stores/notification.store';
 
 export default function NotificationsScreen() {
   const { profile, fetchProfile } = useAuthStore();
@@ -24,17 +21,9 @@ export default function NotificationsScreen() {
   const isOnline = useNetworkStore(s => s.isOnline);
   const { colors, isDark } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
-  // Persisted notification list — survives offline and app restarts
-  const [cachedNotifications, setCachedNotifications] = useState<any[]>([]);
-
-  // Load persisted notifications on mount (instant, no network needed)
-  useEffect(() => {
-    AsyncStorage.getItem(NOTIF_CACHE_KEY).then(raw => {
-      if (raw) {
-        try { setCachedNotifications(JSON.parse(raw)); } catch { /* ignore */ }
-      }
-    });
-  }, []);
+  
+  const notifications = useNotificationStore(s => s.notifications);
+  const readIds = useAnnouncementStore(s => s.readIds);
 
   useEffect(() => {
     if (!profile) fetchProfile();
@@ -46,13 +35,16 @@ export default function NotificationsScreen() {
     }
   }, []);
 
-  const readIds = useAnnouncementStore(s => s.readIds);
-
-  // Build notifications from live store data
-  const liveNotifications = React.useMemo(() => {
+  // Sync loaded database rows (announcements, events, resources) to the notification store
+  useEffect(() => {
     const list: any[] = [];
+    
+    // Default to true if preference is undefined/null
+    const notifAnnouncements = profile ? (profile.notif_announcements ?? true) : true;
+    const notifEvents = profile ? (profile.notif_events ?? true) : true;
+    const notifMaterials = profile ? (profile.notif_materials ?? true) : true;
 
-    if (profile?.notif_announcements) {
+    if (notifAnnouncements) {
       announcements.forEach((a: Announcement) => {
         list.push({
           id: a.id,
@@ -65,7 +57,7 @@ export default function NotificationsScreen() {
       });
     }
 
-    if (profile?.notif_events) {
+    if (notifEvents) {
       events.forEach((e: Event) => {
         list.push({
           id: e.id,
@@ -73,12 +65,12 @@ export default function NotificationsScreen() {
           title: e.title,
           message: `${e.venue || 'No venue'} • ${e.start_date ? format(new Date(e.start_date), 'MMM d, h:mm a') : ''}`,
           date: e.created_at,
-          isRead: true,
+          isRead: true, // Events default to read unless delivered via push
         });
       });
     }
 
-    if (profile?.notif_materials) {
+    if (notifMaterials) {
       materials.forEach((m: Material) => {
         list.push({
           id: m.id,
@@ -86,24 +78,15 @@ export default function NotificationsScreen() {
           title: m.title,
           message: 'New study material available',
           date: m.created_at,
-          isRead: true,
+          isRead: true, // Resources default to read unless delivered via push
         });
       });
     }
 
-    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [announcements, events, materials, profile, readIds]);
-
-  // Merge live + cached — live always wins for same ID, cached fills in offline gaps
-  const notifications = React.useMemo(() => {
-    if (liveNotifications.length > 0) {
-      // Persist the latest live list for offline use
-      AsyncStorage.setItem(NOTIF_CACHE_KEY, JSON.stringify(liveNotifications)).catch(() => {});
-      return liveNotifications;
+    if (list.length > 0) {
+      useNotificationStore.getState().addNotifications(list);
     }
-    // Offline or stores empty — serve from persisted cache
-    return cachedNotifications;
-  }, [liveNotifications, cachedNotifications]);
+  }, [announcements, events, materials, profile, readIds]);
 
   const onRefresh = useCallback(async () => {
     if (!isOnline) return;
@@ -125,20 +108,27 @@ export default function NotificationsScreen() {
       case 'announcement': return { name: 'megaphone',  color: COLORS.secondary, bg: COLORS.actionMint };
       case 'event':      return { name: 'calendar',     color: '#3B82F6', bg: COLORS.actionBlue };
       case 'chat':       return { name: 'chatbubbles',  color: COLORS.primary, bg: COLORS.actionMint };
+      case 'message':    return { name: 'chatbubbles',  color: COLORS.primary, bg: COLORS.actionMint };
       default:           return { name: 'notifications', color: COLORS.textMuted, bg: '#F1F5F9' };
     }
   };
 
   const markAllAsRead = async () => {
+    useNotificationStore.getState().markAllAsRead();
     await useAnnouncementStore.getState().markAllAsRead(profile?.level);
   };
 
-  const handleNotificationPress = async (id: string, type: string) => {
+  const handleNotificationPress = async (id: string, type: string, data?: any) => {
+    useNotificationStore.getState().markAsRead(id);
     if (type === 'announcement') {
       await useAnnouncementStore.getState().markAsRead(id);
       router.push({ pathname: '/announcement/[id]', params: { id } } as any);
+    } else if (type === 'event') {
+      router.push({ pathname: '/event/[id]', params: { id } } as any);
     } else if (type === 'resource') {
       router.push('/(tabs)/resources');
+    } else if ((type === 'message' || type === 'chat') && data?.group_id) {
+      router.push({ pathname: '/chat/[id]', params: { id: data.group_id } } as any);
     } else {
       router.push('/(tabs)');
     }
@@ -195,7 +185,7 @@ export default function NotificationsScreen() {
                   { backgroundColor: colors.card, borderBottomColor: colors.border },
                   !notification.isRead && [styles.unreadCard, { backgroundColor: isDark ? '#0f2a1e' : '#F0FDF4' }],
                 ]}
-                onPress={() => handleNotificationPress(notification.id, notification.type)}
+                onPress={() => handleNotificationPress(notification.id, notification.type, notification.data)}
                 activeOpacity={0.7}
               >
                 <View style={[styles.iconBg, { backgroundColor: iconConfig.bg }]}>

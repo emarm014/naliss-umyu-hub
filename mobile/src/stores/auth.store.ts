@@ -350,6 +350,7 @@ export const useAuthStore = create<AuthState>()(
         try { require('./resource.store').useResourceStore.getState().clearCache(); } catch {}
         try { require('./directory.store').useDirectoryStore.getState().clearCache(); } catch {}
         try { require('./signup.store').useSignupStore.getState().reset(); } catch {}
+        try { require('./notification.store').useNotificationStore.getState().clearNotifications(); } catch {}
         
         try {
           await supabase.auth.signOut();

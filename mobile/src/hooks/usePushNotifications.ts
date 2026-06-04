@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
+import { useNotificationStore } from '../stores/notification.store';
 
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -40,13 +41,33 @@ export function usePushNotifications() {
     }
 
     // Fired when a notification is received while the app is foregrounded
-    notificationListener.current = Notifications.addNotificationReceivedListener(_notification => {
-      // Notification received — handled by the notification handler above
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      const { title, body, data } = notification.request.content;
+      useNotificationStore.getState().addNotification({
+        id: notification.request.identifier || Math.random().toString(36).substring(2),
+        type: data?.type || 'general',
+        title: title || 'New Notification',
+        message: body || '',
+        date: new Date().toISOString(),
+        isRead: false,
+        data: data,
+      });
     });
 
     // Fired when user taps a notification (foreground, background, or killed)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data as any;
+      const { title, body, data } = response.notification.request.content;
+      const notifId = response.notification.request.identifier || Math.random().toString(36).substring(2);
+      
+      useNotificationStore.getState().addNotification({
+        id: notifId,
+        type: data?.type || 'general',
+        title: title || 'New Notification',
+        message: body || '',
+        date: new Date().toISOString(),
+        isRead: true,
+        data: data,
+      });
 
       // Deep link to the relevant screen based on notification type
       if (!data?.type) return;

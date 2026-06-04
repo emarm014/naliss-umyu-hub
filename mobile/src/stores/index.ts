@@ -11,3 +11,5 @@ export * from './group.store';
 export * from './globalSync.store';
 export * from './message.store';
 export * from './theme.store';
+export * from './notification.store';
+

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { useRouter, useSegments, usePathname } from 'expo-router';
-import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
 import { useAuthStore, useSettingsStore } from '../stores';
 import MaintenanceScreen from '../../app/maintenance';
 import { useSignupStore, useGlobalSyncStore } from '../stores';
@@ -14,6 +14,7 @@ import { User as Profile } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../components/NalissLogo';
 import { SplashLoadingScreen } from './SplashLoadingScreen';
+import { getOrCreateDeviceId, fetchIpAddress } from '../utils/device';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // ── Zustand selectors — subscribe to individual properties, NOT the whole store.
@@ -40,6 +41,115 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     until: Date | null;
   } | null>(null);
   const [countdown, setCountdown] = useState<string>('');
+  const [deviceSessionChecked, setDeviceSessionChecked] = useState(false);
+  const [sessionError, setSessionError] = useState<'device_limit_exceeded' | null>(null);
+
+  // ── Device Session Registration & 5-Device Limit check ─────────────────────
+  useEffect(() => {
+    if (session && isProfileComplete === true) {
+      let isSubscribed = true;
+      const verifyDeviceSession = async () => {
+        try {
+          const deviceId = await getOrCreateDeviceId();
+          const ipAddress = await fetchIpAddress();
+          const deviceName = `${Platform.OS === 'ios' ? 'iPhone' : 'Android Device'} (${Platform.OS} ${Platform.Version})`;
+
+          // 1. Fetch active sessions from the DB
+          const { data: activeSessions, error: fetchErr } = await (supabase as any)
+            .from('user_sessions')
+            .select('device_id, is_active')
+            .eq('user_id', session.user.id)
+            .eq('is_active', true);
+
+          if (fetchErr) throw fetchErr;
+          if (!isSubscribed) return;
+
+          const activeIds = (activeSessions as any[])?.map(s => s.device_id) || [];
+          const isCurrentDeviceActive = activeIds.includes(deviceId);
+
+          // 2. Enforce 5 device limit:
+          // If the current device is NOT already one of the active sessions,
+          // and we already have 5 or more active sessions, block access.
+          if (!isCurrentDeviceActive && activeIds.length >= 5) {
+            setSessionError('device_limit_exceeded');
+            setDeviceSessionChecked(true);
+            return;
+          }
+
+          // 3. Register/Update current device session
+          const { error: upsertErr } = await (supabase as any)
+            .from('user_sessions')
+            .upsert({
+              user_id: session.user.id,
+              device_id: deviceId,
+              device_name: deviceName,
+              os: Platform.OS,
+              ip_address: ipAddress,
+              is_active: true,
+              last_active_at: new Date().toISOString()
+            }, { onConflict: 'user_id,device_id' });
+
+          if (upsertErr) throw upsertErr;
+
+          if (isSubscribed) {
+            setSessionError(null);
+            setDeviceSessionChecked(true);
+          }
+        } catch (err) {
+          console.error('Device session verification failed:', err);
+          // robust offline-first fallback: let them proceed if offline or query fails
+          if (isSubscribed) {
+            setSessionError(null);
+            setDeviceSessionChecked(true);
+          }
+        }
+      };
+
+      verifyDeviceSession();
+      return () => { isSubscribed = false; };
+    } else {
+      setDeviceSessionChecked(false);
+      setSessionError(null);
+    }
+  }, [session, isProfileComplete]);
+
+  // ── Remote Logout Check on App Focus ──────────────────────────────────────
+  useEffect(() => {
+    if (!session || !deviceSessionChecked || sessionError) return;
+
+    const checkSessionStatus = async () => {
+      try {
+        const deviceId = await getOrCreateDeviceId();
+        const { data, error } = await (supabase as any)
+          .from('user_sessions')
+          .select('is_active')
+          .eq('user_id', session.user.id)
+          .eq('device_id', deviceId)
+          .maybeSingle();
+
+        if (error) return;
+        if (data && !data.is_active) {
+          Alert.alert('Session Terminated', 'This device has been logged out remotely.');
+          await supabase.auth.signOut();
+          useAuthStore.getState().setSession(null);
+          useAuthStore.getState().setUser(null);
+          useAuthStore.getState().setIsProfileComplete(null);
+          useAuthStore.getState().setProfile(null);
+        }
+      } catch {
+        // silent offline fallback
+      }
+    };
+
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        checkSessionStatus();
+      }
+    };
+
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, [session, deviceSessionChecked, sessionError]);
 
   // Safety timeout: if isGoogleDelaying gets stuck (e.g. error during level screen),
   // auto-clear it after 3 minutes so the user is never permanently locked.
@@ -807,6 +917,56 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const signupState = useSignupStore.getState();
     if (signupState.isGoogleDelaying) return <>{children}</>;
     return <SplashLoadingScreen message="Verifying profile..." />;
+  }
+
+  // Still verifying device session status
+  if (session && isProfileComplete === true && !deviceSessionChecked) {
+    return <SplashLoadingScreen message="Securing device connection..." />;
+  }
+
+  // BLOCK: 5-Device limit exceeded screen
+  if (sessionError === 'device_limit_exceeded') {
+    const handleExit = async () => {
+      await supabase.auth.signOut();
+      useAuthStore.getState().setSession(null);
+      useAuthStore.getState().setUser(null);
+      useAuthStore.getState().setIsProfileComplete(null);
+      useAuthStore.getState().setProfile(null);
+      setSessionError(null);
+    };
+
+    return (
+      <SafeAreaView style={styles.restrictionSafeArea}>
+        <View style={styles.restrictionContainer}>
+          <View style={styles.restrictionLogoRow}>
+            <NalissLogo size={42} />
+          </View>
+          <View style={[styles.restrictionCard, styles.suspendedCard, { borderColor: '#f59e0b' }]}>
+            <View style={[styles.restrictionIconCircle, styles.suspendedIconCircle, { borderColor: 'rgba(245,158,11,0.3)' }]}>
+              <Ionicons name="shield-outline" size={40} color="#f59e0b" />
+            </View>
+            <Text style={styles.restrictionTitle}>Device Limit Reached</Text>
+            <Text style={styles.restrictionSubtitle}>
+              You are currently logged in on 5 active devices. To protect your account security, UMYU Hub restricts access to at most 5 concurrent devices.
+            </Text>
+            <View style={styles.restrictionDivider} />
+            <Text style={[styles.contactText, { color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 20 }]}>
+              Please log out of UMYU Hub on one of your other active devices, or manage your active sessions under Profile &gt; Security &gt; Device Management to authorize this device.
+            </Text>
+          </View>
+          <View style={styles.restrictionActions}>
+            <TouchableOpacity
+              style={[styles.signOutButton, { backgroundColor: '#f59e0b', shadowColor: '#f59e0b' }]}
+              onPress={handleExit}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="log-out-outline" size={18} color="#ffffff" />
+              <Text style={styles.signOutButtonText}>Back to Login</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   // BLOCK: Global Maintenance Mode

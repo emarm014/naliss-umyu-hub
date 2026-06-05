@@ -28,6 +28,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme, useThemeStore } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
+import { verifyPassword, getOrCreateDeviceId } from '../../src/utils/device';
 
 const { width } = Dimensions.get('window');
 
@@ -88,9 +89,31 @@ export default function ProfileScreen() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [showSecurity, setShowSecurity] = useState(false);
+  const [showSecurityMenu, setShowSecurityMenu] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showDeviceLogs, setShowDeviceLogs] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDisplay, setShowDisplay] = useState(false);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string>('');
+  const [deviceSessions, setDeviceSessions] = useState<any[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+  const [sessionToTerminate, setSessionToTerminate] = useState<any>(null);
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
+  const [showConfirmPasswordVisible, setShowConfirmPasswordVisible] = useState(false);
+
+  React.useEffect(() => {
+    const loadDeviceId = async () => {
+      try {
+        const id = await getOrCreateDeviceId();
+        setCurrentDeviceId(id);
+      } catch (err) {
+        console.error('Failed to load device ID in profile:', err);
+      }
+    };
+    loadDeviceId();
+  }, []);
   const [notifSettings, setNotifSettings] = useState({
     notif_announcements: (storeProfile as any)?.notif_announcements ?? true,
     notif_events: (storeProfile as any)?.notif_events ?? true,
@@ -412,6 +435,93 @@ export default function ProfileScreen() {
     }
   };
 
+  const fetchDeviceSessions = async () => {
+    if (!storeProfile?.id) return;
+    setIsLoadingSessions(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from('user_sessions')
+        .select('*')
+        .eq('user_id', storeProfile.id)
+        .order('last_active_at', { ascending: false });
+      if (error) throw error;
+      setDeviceSessions(data || []);
+    } catch (err) {
+      console.error('Failed to fetch sessions:', err);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
+  const formatSessionTime = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' at ' + date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getDeviceIcon = (os: string) => {
+    const lower = (os || '').toLowerCase();
+    if (lower.includes('android')) return 'logo-android';
+    if (lower.includes('ios') || lower.includes('apple') || lower.includes('mac')) return 'logo-apple';
+    return 'desktop-outline';
+  };
+
+  const handleConfirmTerminateSession = async () => {
+    if (!sessionToTerminate) return;
+    if (!confirmPasswordInput) {
+      Alert.alert('Required', 'Please enter your password to confirm.');
+      return;
+    }
+
+    setIsVerifyingPassword(true);
+    try {
+      const verified = await verifyPassword(confirmPasswordInput);
+      if (!verified) {
+        Alert.alert('Verification Failed', 'Incorrect password. Please try again.');
+        setIsVerifyingPassword(false);
+        return;
+      }
+
+      // Terminate session in DB
+      const { error } = await (supabase as any)
+        .from('user_sessions')
+        .update({ is_active: false })
+        .eq('id', sessionToTerminate.id);
+
+      if (error) throw error;
+
+      // If it was the current device, force logout
+      if (sessionToTerminate.device_id === currentDeviceId) {
+        setConfirmPasswordVisible(false);
+        setShowDeviceLogs(false);
+        
+        // Perform local sign out
+        await supabase.auth.signOut();
+        useAuthStore.getState().setSession(null);
+        useAuthStore.getState().setUser(null);
+        useAuthStore.getState().setIsProfileComplete(null);
+        useAuthStore.getState().setProfile(null);
+        router.replace('/auth/login');
+        Alert.alert('Logged Out', 'This device session has been terminated.');
+      } else {
+        Alert.alert('Success', 'Device session terminated successfully.');
+        setConfirmPasswordVisible(false);
+        setConfirmPasswordInput('');
+        setSessionToTerminate(null);
+        // Refresh list
+        await fetchDeviceSessions();
+      }
+    } catch (err: any) {
+      console.error('Failed to terminate session:', err);
+      Alert.alert('Error', err.message || 'Failed to terminate session. Please try again.');
+    } finally {
+      setIsVerifyingPassword(false);
+    }
+  };
+
   const handleChangePassword = async () => {
     const { newPassword, confirmPassword } = passwordData;
 
@@ -445,7 +555,7 @@ export default function ProfileScreen() {
       if (error) throw error;
 
       setPasswordData({ newPassword: '', confirmPassword: '' });
-      setShowSecurity(false);
+      setShowChangePassword(false);
       Alert.alert('Password Changed', 'Your password has been updated successfully. Use it next time you sign in.');
     } catch (err: any) {
       captureUIError('ProfileScreen.handleChangePassword', err);
@@ -691,7 +801,7 @@ export default function ProfileScreen() {
               iconColor="#0284c7" 
               iconBg={COLORS.actionBlue} 
               label="Security" 
-              onPress={() => setShowSecurity(true)}
+              onPress={() => setShowSecurityMenu(true)}
               colors={colors}
             />
             <MenuItem 
@@ -851,16 +961,16 @@ export default function ProfileScreen() {
 
         {/* Security / Password Change Modal */}
         <Modal
-            visible={showSecurity}
+            visible={showChangePassword}
             animationType="slide"
             transparent={true}
-            onRequestClose={() => { setShowSecurity(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}
+            onRequestClose={() => { setShowChangePassword(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}
         >
             <View style={styles.modalOverlay}>
                 <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Change Password</Text>
-                        <TouchableOpacity onPress={() => { setShowSecurity(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}>
+                        <TouchableOpacity onPress={() => { setShowChangePassword(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}>
                             <Ionicons name="close" size={24} color={colors.text} />
                         </TouchableOpacity>
                     </View>
@@ -953,6 +1063,229 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                         <View style={{ height: 40 }} />
                     </ScrollView>
+                </View>
+            </View>
+        </Modal>
+
+        {/* Security Sub-Menu Modal */}
+        <Modal
+            visible={showSecurityMenu}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={() => setShowSecurityMenu(false)}
+        >
+            <View style={styles.modalOverlay}>
+                <View style={[styles.modalContent, { backgroundColor: colors.card, height: 'auto', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }]}>
+                    <View style={styles.modalHeader}>
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>Security Settings</Text>
+                        <TouchableOpacity onPress={() => setShowSecurityMenu(false)}>
+                            <Ionicons name="close" size={24} color={colors.text} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={[styles.menuCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: colors.border, marginBottom: 16 }]}>
+                        <MenuItem 
+                          icon="key" 
+                          iconColor="#0284c7" 
+                          iconBg={COLORS.actionBlue} 
+                          label="Change Password" 
+                          onPress={() => {
+                            setShowSecurityMenu(false);
+                            setShowChangePassword(true);
+                          }}
+                          colors={colors}
+                        />
+                        <MenuItem 
+                          icon="phone-portrait" 
+                          iconColor="#059669" 
+                          iconBg={COLORS.actionMint} 
+                          label="Device Management & Logs" 
+                          onPress={() => {
+                            setShowSecurityMenu(false);
+                            setShowDeviceLogs(true);
+                            fetchDeviceSessions();
+                          }}
+                          isLast
+                          colors={colors}
+                        />
+                    </View>
+                </View>
+            </View>
+        </Modal>
+
+        {/* Device Management Modal */}
+        <Modal
+            visible={showDeviceLogs}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={() => setShowDeviceLogs(false)}
+        >
+            <View style={styles.modalOverlay}>
+                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                    <View style={styles.modalHeader}>
+                        <View style={{ flex: 1, marginRight: 16 }}>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Device Management</Text>
+                            <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textMuted, marginTop: 2 }}>
+                                Active sessions (Limit: 5 concurrent devices)
+                            </Text>
+                        </View>
+                        <TouchableOpacity onPress={() => setShowDeviceLogs(false)}>
+                            <Ionicons name="close" size={24} color={colors.text} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {isLoadingSessions ? (
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color={COLORS.primary} />
+                        </View>
+                    ) : (
+                        <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false}>
+                            {deviceSessions.length === 0 ? (
+                                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                                    <Ionicons name="phone-portrait-outline" size={48} color={colors.textMuted} style={{ marginBottom: 12 }} />
+                                    <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.textSecondary }}>No login sessions found</Text>
+                                </View>
+                            ) : (
+                                deviceSessions.map((sessionItem) => {
+                                    const isCurrent = sessionItem.device_id === currentDeviceId;
+                                    const isActive = sessionItem.is_active;
+                                    return (
+                                        <View key={sessionItem.id} style={[styles.sessionCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: colors.border }]}>
+                                            <View style={styles.sessionCardLeft}>
+                                                <View style={[styles.sessionIconBg, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }]}>
+                                                    <Ionicons name={getDeviceIcon(sessionItem.os)} size={22} color={isDark ? '#cbd5e1' : '#475569'} />
+                                                </View>
+                                                <View style={styles.sessionDetails}>
+                                                    <Text style={[styles.sessionDeviceName, { color: colors.text }]} numberOfLines={1}>
+                                                        {sessionItem.device_name}
+                                                    </Text>
+                                                    <Text style={[styles.sessionIpText, { color: colors.textMuted }]}>
+                                                        IP: {sessionItem.ip_address || 'Unknown'}
+                                                    </Text>
+                                                    <Text style={[styles.sessionTimeText, { color: colors.textMuted }]}>
+                                                        Last Active: {formatSessionTime(sessionItem.last_active_at)}
+                                                    </Text>
+                                                    <View style={{ flexDirection: 'row', marginTop: 6, gap: 6 }}>
+                                                        {isCurrent && isActive && (
+                                                            <View style={[styles.badge, { backgroundColor: 'rgba(5, 150, 105, 0.15)' }]}>
+                                                                <Text style={[styles.badgeText, { color: '#059669' }]}>This Device</Text>
+                                                            </View>
+                                                        )}
+                                                        {isActive ? (
+                                                            <View style={[styles.badge, { backgroundColor: isCurrent ? 'rgba(5, 150, 105, 0.1)' : 'rgba(2, 132, 199, 0.15)' }]}>
+                                                                <Text style={[styles.badgeText, { color: isCurrent ? '#059669' : '#0284c7' }]}>Active</Text>
+                                                            </View>
+                                                        ) : (
+                                                            <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0' }]}>
+                                                                <Text style={[styles.badgeText, { color: colors.textMuted }]}>Logged Out</Text>
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                </View>
+                                            </View>
+                                            {isActive && (
+                                                <TouchableOpacity
+                                                    style={[styles.sessionDeleteButton, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2' }]}
+                                                    onPress={() => {
+                                                        setSessionToTerminate(sessionItem);
+                                                        setConfirmPasswordInput('');
+                                                        setConfirmPasswordVisible(true);
+                                                    }}
+                                                >
+                                                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                    );
+                                })
+                            )}
+                            <View style={{ height: 40 }} />
+                        </ScrollView>
+                    )}
+                </View>
+            </View>
+        </Modal>
+
+        {/* Password Confirmation Modal */}
+        <Modal
+            visible={confirmPasswordVisible}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => {
+                if (!isVerifyingPassword) {
+                    setConfirmPasswordVisible(false);
+                    setConfirmPasswordInput('');
+                    setSessionToTerminate(null);
+                }
+            }}
+        >
+            <View style={styles.avatarModalOverlay}>
+                <View style={[styles.avatarModalContent, { backgroundColor: colors.card }]}>
+                    <View style={styles.avatarModalHeader}>
+                        <Text style={[styles.avatarModalTitle, { color: colors.text }]}>Confirm Password</Text>
+                        <TouchableOpacity
+                            onPress={() => {
+                                setConfirmPasswordVisible(false);
+                                setConfirmPasswordInput('');
+                                setSessionToTerminate(null);
+                            }}
+                            disabled={isVerifyingPassword}
+                        >
+                            <Ionicons name="close" size={24} color={colors.text} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <Text style={[styles.modalDescription, { color: colors.textMuted, textAlign: 'left', marginBottom: 12 }]}>
+                        Please enter your password to confirm session termination for:
+                    </Text>
+                    <Text style={{ fontFamily: 'Inter-Bold', color: colors.text, fontSize: 14, marginBottom: 16 }}>
+                        {sessionToTerminate?.device_name}
+                    </Text>
+
+                    <View style={{ position: 'relative', marginBottom: 20 }}>
+                        <TextInput
+                            style={[styles.textInput, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border, paddingRight: 48 }]}
+                            value={confirmPasswordInput}
+                            onChangeText={setConfirmPasswordInput}
+                            placeholder="Enter password"
+                            placeholderTextColor={colors.textMuted}
+                            secureTextEntry={!showConfirmPasswordVisible}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
+                        />
+                        <TouchableOpacity
+                            onPress={() => setShowConfirmPasswordVisible(v => !v)}
+                            style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                        >
+                            <Ionicons name={showConfirmPasswordVisible ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.modalFooter}>
+                        <TouchableOpacity
+                            style={[styles.cancelButton, { flex: 1, borderColor: colors.border, backgroundColor: colors.surface }]}
+                            onPress={() => {
+                                setConfirmPasswordVisible(false);
+                                setConfirmPasswordInput('');
+                                setSessionToTerminate(null);
+                            }}
+                            disabled={isVerifyingPassword}
+                        >
+                            <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.saveButton, { flex: 1, marginLeft: 0, marginTop: 0, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: COLORS.error }]}
+                            onPress={handleConfirmTerminateSession}
+                            disabled={isVerifyingPassword}
+                        >
+                            {isVerifyingPassword ? (
+                                <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                                <Text style={[styles.saveButtonText, { fontSize: 13 }]}>CONFIRM LOGOUT</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
         </Modal>
@@ -1681,6 +2014,65 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
     color: COLORS.textSecondary,
+  },
+  sessionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  sessionCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  sessionIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  sessionDetails: {
+    flex: 1,
+  },
+  sessionDeviceName: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 15,
+    marginBottom: 2,
+  },
+  sessionIpText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  sessionTimeText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  badgeText: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  sessionDeleteButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
   },
 });
 

@@ -37,10 +37,44 @@ import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature, isNetworkError } from '../../src/utils/sentry';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const MAX_CHARS = 500;
 
 const STICKER_LIST = ['😀','😂','😍','🥳','🔥','💯','👍','👏','🎉','❤️','😎','🤔','😢','🙏','✨','💪','😁','🫡','🤝','👋'];
+
+const cacheUserAvatars = async (users: any[]): Promise<any[]> => {
+    try {
+        const fs = FileSystem as any;
+        const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
+        if (!docDir) return users;
+        const base = docDir.endsWith('/') ? docDir : `${docDir}/`;
+        
+        const promises = users.map(async (user) => {
+            if (!user.id || !user.avatar_url || !user.avatar_url.startsWith('http')) {
+                return user;
+            }
+            try {
+                const localPath = `${base}avatar_${user.id}.jpg`;
+                const info = await FileSystem.getInfoAsync(localPath);
+                if (info.exists) {
+                    return { ...user, avatar_url: `file://${localPath}` };
+                }
+                const downloadRes = await FileSystem.downloadAsync(user.avatar_url, localPath);
+                if (downloadRes.status === 200) {
+                    return { ...user, avatar_url: downloadRes.uri };
+                }
+            } catch {
+                // silent - fallback to original remote url
+            }
+            return user;
+        });
+        
+        return Promise.all(promises);
+    } catch {
+        return users;
+    }
+};
 
 export default function ChatScreen() {
     useSentryScreen('ChatScreen');
@@ -370,6 +404,11 @@ export default function ChatScreen() {
             setMembersWithRef(cached);
         }
 
+        const { useNetworkStore } = require('../../src/stores/network.store');
+        if (!useNetworkStore.getState().isOnline) {
+            return;
+        }
+
         try {
             const { data, error } = await (supabase
                 .from('group_members')
@@ -378,8 +417,11 @@ export default function ChatScreen() {
 
             if (error) throw error;
             const fetched = (data as any[])?.map(m => m.user).filter(Boolean) || [];
-            setMembersWithRef(fetched);
-            setGroupMembers(id, fetched);
+            
+            // Asynchronously download and map member avatars for offline availability
+            const updated = await cacheUserAvatars(fetched);
+            setMembersWithRef(updated);
+            setGroupMembers(id, updated);
         } catch {
             // silent
         }
@@ -2169,7 +2211,6 @@ export default function ChatScreen() {
                                     key={member.id}
                                     style={styles.memberItem}
                                     onPress={() => {
-                                        if (isYou) return; // don't open own profile
                                         setShowMembersList(false);
                                         setViewingProfile(member);
                                     }}
@@ -2188,9 +2229,17 @@ export default function ChatScreen() {
                                             <Text style={styles.memberFullName}>
                                                 {isYou ? `${member.full_name} (You)` : member.full_name}
                                             </Text>
-                                            {!isYou && (member.last_active_at && (new Date().getTime() - new Date(member.last_active_at).getTime() < 300000)) && (
-                                                <View style={styles.memberOnlineDot} />
-                                            )}
+                                            {(() => {
+                                                const { useNetworkStore } = require('../../src/stores/network.store');
+                                                const isOnline = useNetworkStore.getState().isOnline;
+                                                if (!isOnline) return null;
+                                                
+                                                const isUserOnline = isYou || (member.last_active_at && (new Date().getTime() - new Date(member.last_active_at).getTime() < 300000));
+                                                if (isUserOnline) {
+                                                    return <View style={styles.memberOnlineDot} />;
+                                                }
+                                                return null;
+                                            })()}
                                         </View>
                                         <Text style={styles.memberUsername}>@{member.username}</Text>
                                     </View>
@@ -2230,13 +2279,24 @@ export default function ChatScreen() {
                                     <Text style={styles.profileFullName}>{viewingProfile.full_name}</Text>
                                     <Text style={styles.profileUsername}>@{viewingProfile.username}</Text>
                                     <View style={styles.profileOnlineStatus}>
-                                        <View style={[
-                                            styles.profileOnlineDot, 
-                                            { backgroundColor: (viewingProfile.last_active_at && (new Date().getTime() - new Date(viewingProfile.last_active_at).getTime() < 300000)) ? '#10B981' : '#94a3b8' }
-                                        ]} />
-                                        <Text style={styles.profileOnlineText}>
-                                            {(viewingProfile.last_active_at && (new Date().getTime() - new Date(viewingProfile.last_active_at).getTime() < 300000)) ? 'Online' : 'Offline'}
-                                        </Text>
+                                        {(() => {
+                                            const { useNetworkStore } = require('../../src/stores/network.store');
+                                            const isOnline = useNetworkStore.getState().isOnline;
+                                            const isSelf = viewingProfile.id === currentUser?.id;
+                                            const isProfileOnline = isOnline && (isSelf || (viewingProfile.last_active_at && (new Date().getTime() - new Date(viewingProfile.last_active_at).getTime() < 300000)));
+                                            
+                                            return (
+                                                <>
+                                                    <View style={[
+                                                        styles.profileOnlineDot, 
+                                                        { backgroundColor: isProfileOnline ? '#10B981' : '#94a3b8' }
+                                                    ]} />
+                                                    <Text style={styles.profileOnlineText}>
+                                                        {isProfileOnline ? 'Online' : 'Offline'}
+                                                    </Text>
+                                                </>
+                                            );
+                                        })()}
                                     </View>
                                 </View>
 

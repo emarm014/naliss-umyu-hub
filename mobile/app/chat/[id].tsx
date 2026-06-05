@@ -2909,6 +2909,11 @@ const styles = StyleSheet.create({
         shadowColor: '#059669', shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.35, shadowRadius: 6, elevation: 4,
     },
+    sendButtonDisabled: {
+        backgroundColor: '#e2e8f0',
+        shadowOpacity: 0,
+        elevation: 0,
+    },
     // Search Bar
     searchBarContainer: {
         backgroundColor: '#FFF',

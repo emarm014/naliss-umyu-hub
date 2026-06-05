@@ -97,6 +97,8 @@ interface ViewerContentProps {
   fileName: string;
   onRetry: () => void;
   onImageError: () => void;
+  pdfEngine: 'local' | 'local_hd' | 'google' | 'microsoft';
+  isOffline: boolean;
 }
 
 interface ZoomableImageProps {
@@ -210,6 +212,8 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
   fileName,
   onRetry,
   onImageError,
+  pdfEngine,
+  isOffline,
 }) => {
   if (isDownloading) {
     return (
@@ -264,7 +268,18 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
     case 'document':
       return (
         <View style={{ flex: 1 }}>
-          <PdfJsViewer localUri={localUri} remoteUrl={fileUri} />
+          {pdfEngine === 'local' && (
+            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={2.2} />
+          )}
+          {pdfEngine === 'local_hd' && (
+            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={3.5} />
+          )}
+          {pdfEngine === 'google' && (
+            <GooglePdfViewer remoteUrl={fileUri} isOffline={isOffline} />
+          )}
+          {pdfEngine === 'microsoft' && (
+            <MicrosoftPdfViewer remoteUrl={fileUri} isOffline={isOffline} />
+          )}
         </View>
       );
 
@@ -309,7 +324,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   const [downloadError, setDownloadError] = React.useState<string | null>(null);
   const [isOffline, setIsOffline] = React.useState(false);
   const [retryKey, setRetryKey] = React.useState(0);
-  const [pdfEngine, setPdfEngine] = React.useState<'native' | 'scan'>('native');
+  const [pdfEngine, setPdfEngine] = React.useState<'local' | 'local_hd' | 'google' | 'microsoft'>('local');
 
   // Resolve local URI for any file type
   React.useEffect(() => {
@@ -355,7 +370,20 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         // Use viewer URL (applies fl_attachment for non-image files)
         const viewerUrl = getViewerUrl(fileUri);
         const realName = extractFileNameFromUrl(viewerUrl, fileName);
-        const safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+        // Enforce file extension based on fileType if missing
+        const lowerName = safeName.toLowerCase();
+        if (fileType === 'video' && !lowerName.match(/\.(mp4|mkv|webm|avi|mov|flv|3gp|wmv)$/)) {
+          safeName = `${safeName}.mp4`;
+        } else if (fileType === 'audio' && !lowerName.match(/\.(mp3|wav|m4a|aac|ogg|wma)$/)) {
+          safeName = `${safeName}.mp3`;
+        } else if (fileType === 'pdf' && !lowerName.endsWith('.pdf')) {
+          safeName = `${safeName}.pdf`;
+        } else if (fileType === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
+          safeName = `${safeName}.jpg`;
+        }
+
         const cachePath = `${VIEWER_CACHE}${safeName}`;
 
         const cacheInfo = await FileSystem.getInfoAsync(cachePath);
@@ -426,6 +454,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       setDownloadError(null);
       setDownloadProgress(0);
       setIsOffline(false);
+      setPdfEngine('local');
     }
   }, [isVisible]);
 
@@ -581,6 +610,57 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             </TouchableOpacity>
           </View>
 
+          {/* PDF Engine Switcher Bar */}
+          {(fileType === 'pdf' || fileType === 'document') && (
+            <View style={engineStyles.bar}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}
+              >
+                <TouchableOpacity
+                  style={[engineStyles.btn, pdfEngine === 'local' && engineStyles.btnActive]}
+                  onPress={() => setPdfEngine('local')}
+                >
+                  <Ionicons name="document-text-outline" size={14} color={pdfEngine === 'local' ? '#fff' : '#64748b'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'local' && engineStyles.btnTextActive]}>Local Std</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[engineStyles.btn, pdfEngine === 'local_hd' && engineStyles.btnActive]}
+                  onPress={() => setPdfEngine('local_hd')}
+                >
+                  <Ionicons name="sparkles-outline" size={14} color={pdfEngine === 'local_hd' ? '#fff' : '#64748b'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'local_hd' && engineStyles.btnTextActive]}>Local HD</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    engineStyles.btn,
+                    pdfEngine === 'google' && engineStyles.btnActive,
+                    isOffline && { opacity: 0.5 }
+                  ]}
+                  onPress={() => setPdfEngine('google')}
+                >
+                  <Ionicons name="logo-google" size={14} color={pdfEngine === 'google' ? '#fff' : '#64748b'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'google' && engineStyles.btnTextActive]}>Google Web</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    engineStyles.btn,
+                    pdfEngine === 'microsoft' && engineStyles.btnActive,
+                    isOffline && { opacity: 0.5 }
+                  ]}
+                  onPress={() => setPdfEngine('microsoft')}
+                >
+                  <Ionicons name="logo-windows" size={14} color={pdfEngine === 'microsoft' ? '#fff' : '#64748b'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'microsoft' && engineStyles.btnTextActive]}>MS View</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          )}
+
           {/* Content */}
           <View style={styles.content}>
             <ViewerContent
@@ -599,6 +679,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 setRetryKey(k => k + 1);
               }}
               onImageError={() => setDownloadError('Image could not be displayed.')}
+              pdfEngine={pdfEngine}
+              isOffline={isOffline}
             />
           </View>
 
@@ -697,11 +779,23 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
     ? `file://${rawSrc}`
     : rawSrc;
 
+  const isLocal = videoSrc && (videoSrc.startsWith('file://') || videoSrc.startsWith('/'));
+
+  // Auto-switch to Native Player for local files, as WebView HTML5 video does not support file:// on Android
+  React.useEffect(() => {
+    if (isLocal) {
+      setUseNative(true);
+    }
+  }, [isLocal]);
+
   if (useNative) {
     return (
       <View style={styles.videoContainer}>
         <Video
-          source={{ uri: videoSrc }}
+          source={{
+            uri: videoSrc,
+            overrideFileExtension: 'mp4',
+          } as any}
           rate={1.0}
           volume={1.0}
           isMuted={false}
@@ -714,16 +808,22 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
               tags: { location: 'UniversalViewer.VideoPlayer.native' },
               extra: { videoSrc, rawSrc },
             });
-            setUseNative(false);
+            if (!isLocal) {
+              setUseNative(false);
+            } else {
+              Alert.alert('Playback Error', 'Could not play the offline video file. The file may be corrupted.');
+            }
           }}
         />
-        <TouchableOpacity
-          onPress={() => setUseNative(false)}
-          style={videoStyles.switchBtn}
-        >
-          <Ionicons name="globe-outline" size={14} color="#fff" />
-          <Text style={videoStyles.switchBtnText}>Web Player</Text>
-        </TouchableOpacity>
+        {!isLocal && (
+          <TouchableOpacity
+            onPress={() => setUseNative(false)}
+            style={videoStyles.switchBtn}
+          >
+            <Ionicons name="globe-outline" size={14} color="#fff" />
+            <Text style={videoStyles.switchBtnText}>Web Player</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -799,8 +899,74 @@ const videoStyles = StyleSheet.create({
   },
 });
 
+// Google Document Viewer for high-clarity remote vector rendering
+function GooglePdfViewer({ remoteUrl, isOffline }: { remoteUrl: string; isOffline: boolean }) {
+  if (isOffline || !remoteUrl.startsWith('http')) {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="cloud-offline-outline" size={48} color={COLORS.textMuted} />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Google Viewer Unavailable Offline</Text>
+        <Text style={[styles.errorText, { fontSize: 12, marginTop: 4, fontWeight: 'normal', color: '#64748b' }]}>
+          Please select Local Standard or Local HD engines for offline use.
+        </Text>
+      </View>
+    );
+  }
+
+  const viewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(remoteUrl)}`;
+  return (
+    <WebView
+      source={{ uri: viewerUrl }}
+      style={styles.webview}
+      originWhitelist={['*']}
+      javaScriptEnabled
+      domStorageEnabled
+      startInLoadingState
+      renderLoading={() => (
+        <View style={[StyleSheet.absoluteFill, styles.center, { backgroundColor: '#fff' }]}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading Google Document Viewer...</Text>
+        </View>
+      )}
+    />
+  );
+}
+
+// Microsoft Office Online Viewer for high-clarity remote vector rendering
+function MicrosoftPdfViewer({ remoteUrl, isOffline }: { remoteUrl: string; isOffline: boolean }) {
+  if (isOffline || !remoteUrl.startsWith('http')) {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="cloud-offline-outline" size={48} color={COLORS.textMuted} />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Microsoft Viewer Unavailable Offline</Text>
+        <Text style={[styles.errorText, { fontSize: 12, marginTop: 4, fontWeight: 'normal', color: '#64748b' }]}>
+          Please select Local Standard or Local HD engines for offline use.
+        </Text>
+      </View>
+    );
+  }
+
+  const viewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(remoteUrl)}`;
+  return (
+    <WebView
+      source={{ uri: viewerUrl }}
+      style={styles.webview}
+      originWhitelist={['*']}
+      javaScriptEnabled
+      domStorageEnabled
+      startInLoadingState
+      renderLoading={() => (
+        <View style={[StyleSheet.absoluteFill, styles.center, { backgroundColor: '#fff' }]}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading MS Office Web Viewer...</Text>
+        </View>
+      )}
+    />
+  );
+}
+
 // PDF.js Canvas Renderer - works on Android + iOS, online + offline
-function PdfJsViewer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
+function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 2.2 }: { localUri: string | null; remoteUrl: string; scaleMultiplier?: number }) {
   const [html, setHtml] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -818,7 +984,7 @@ function PdfJsViewer({ localUri, remoteUrl }: { localUri: string | null; remoteU
         }
         if (cancelled) return;
         const srcJson = JSON.stringify(pdfSrc);
-        const htmlContent = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#1e293b;font-family:-apple-system,sans-serif}#toolbar{position:sticky;top:0;z-index:100;background:#0f172a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}#toolbar span{color:#94a3b8;font-size:12px;font-weight:600}#toolbar strong{color:#f1f5f9;font-size:13px}#pages{padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center}.pw{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.4);border-radius:8px;overflow:hidden}canvas{display:block;max-width:100%}.pn{position:absolute;bottom:8px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;color:#94a3b8}.sp{width:40px;height:40px;border:3px solid #334155;border-top-color:#064e3b;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#err{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;color:#ef4444;padding:24px;text-align:center}#err p{color:#94a3b8;font-size:13px;line-height:1.5}</style></head><body><div id="toolbar"><span>PDF VIEWER</span><strong id="pc">Loading...</strong></div><div id="loading"><div class="sp"></div><span>Rendering...</span></div><div id="err"><strong>Could not render PDF</strong><p id="em">The file may be corrupted.</p></div><div id="pages"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(async()=>{const ld=document.getElementById("loading"),er=document.getElementById("err"),em=document.getElementById("em"),pg=document.getElementById("pages"),pc=document.getElementById("pc");try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const src=' + srcJson + ';const pdf=await pdfjsLib.getDocument(src).promise;const tot=pdf.numPages;ld.style.display="none";pc.textContent=tot+" page"+(tot!==1?"s":"");const dpr=Math.max(window.devicePixelRatio||1,2.5);const vw=window.innerWidth-32;for(let i=1;i<=tot;i++){const page=await pdf.getPage(i);const us=page.getViewport({scale:1});const sc=(vw/us.width)*dpr;const vp=page.getViewport({scale:sc});const wrap=document.createElement("div");wrap.className="pw";wrap.style.width=(vp.width/dpr)+"px";const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/dpr)+"px";cv.style.height=(vp.height/dpr)+"px";const ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";await page.render({canvasContext:ctx,viewport:vp}).promise;const num=document.createElement("div");num.className="pn";num.textContent=i+" / "+tot;wrap.appendChild(cv);wrap.appendChild(num);pg.appendChild(wrap);}}catch(e){ld.style.display="none";er.style.display="flex";em.textContent=e?.message||"Unknown error";}})()</script></body></html>';
+        const htmlContent = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#1e293b;font-family:-apple-system,sans-serif}#toolbar{position:sticky;top:0;z-index:100;background:#0f172a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}#toolbar span{color:#94a3b8;font-size:12px;font-weight:600}#toolbar strong{color:#f1f5f9;font-size:13px}#pages{padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center}.pw{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.4);border-radius:8px;overflow:hidden}canvas{display:block;max-width:100%}.pn{position:absolute;bottom:8px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;color:#94a3b8}.sp{width:40px;height:40px;border:3px solid #334155;border-top-color:#064e3b;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#err{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;color:#ef4444;padding:24px;text-align:center}#err p{color:#94a3b8;font-size:13px;line-height:1.5}</style></head><body><div id="toolbar"><span>PDF VIEWER</span><strong id="pc">Loading...</strong></div><div id="loading"><div class="sp"></div><span>Rendering...</span></div><div id="err"><strong>Could not render PDF</strong><p id="em">The file may be corrupted.</p></div><div id="pages"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(async()=>{const ld=document.getElementById("loading"),er=document.getElementById("err"),em=document.getElementById("em"),pg=document.getElementById("pages"),pc=document.getElementById("pc");try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const src=' + srcJson + ';const pdf=await pdfjsLib.getDocument(src).promise;const tot=pdf.numPages;ld.style.display="none";pc.textContent=tot+" page"+(tot!==1?"s":"");const dpr=' + scaleMultiplier + ';const vw=window.innerWidth-32;for(let i=1;i<=tot;i++){const page=await pdf.getPage(i);const us=page.getViewport({scale:1});const sc=(vw/us.width)*dpr;const vp=page.getViewport({scale:sc});const wrap=document.createElement("div");wrap.className="pw";wrap.style.width=(vp.width/dpr)+"px";const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/dpr)+"px";cv.style.height=(vp.height/dpr)+"px";const ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";await page.render({canvasContext:ctx,viewport:vp}).promise;const num=document.createElement("div");num.className="pn";num.textContent=i+" / "+tot;wrap.appendChild(cv);wrap.appendChild(num);pg.appendChild(wrap);}}catch(e){ld.style.display="none";er.style.display="flex";em.textContent=e?.message||"Unknown error";}})()</script></body></html>';
         if (!cancelled) { setHtml(htmlContent); setLoading(false); }
       } catch (e: any) {
         if (!cancelled) { setError(e?.message || 'Could not prepare PDF viewer.'); setLoading(false); }
@@ -826,7 +992,7 @@ function PdfJsViewer({ localUri, remoteUrl }: { localUri: string | null; remoteU
     };
     build();
     return () => { cancelled = true; };
-  }, [localUri, remoteUrl]);
+  }, [localUri, remoteUrl, scaleMultiplier]);
 
   if (loading) return React.createElement(View, {style: styles.center}, React.createElement(ActivityIndicator, {size: 'large', color: COLORS.primary}), React.createElement(Text, {style: styles.loadingText}, 'Preparing PDF viewer...'));
   if (error || !html) return React.createElement(View, {style: styles.center}, React.createElement(Ionicons, {name: 'alert-circle-outline', size: 48, color: '#ef4444'}), React.createElement(Text, {style: styles.errorText}, error || 'Render failed'));
@@ -936,12 +1102,12 @@ const engineStyles = StyleSheet.create({
     gap: 8,
   },
   btn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 10,
     backgroundColor: '#fff',
     borderWidth: 1,

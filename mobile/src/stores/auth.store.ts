@@ -7,6 +7,27 @@ import { User as Profile } from '../types';
 import { captureStoreError, trackStoreAction, isNetworkError } from '../utils/sentry';
 import { Logger } from '../utils/logger';
 import { withRetry } from '../utils/api-protection';
+import * as FileSystem from 'expo-file-system/legacy';
+
+const cacheAvatarLocally = async (userId: string, remoteUrl: string): Promise<string | null> => {
+  if (!userId || !remoteUrl || !remoteUrl.startsWith('http')) return null;
+  try {
+    const fs = FileSystem as any;
+    const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
+    if (!docDir) return null;
+    const base = docDir.endsWith('/') ? docDir : `${docDir}/`;
+    const localPath = `${base}avatar_${userId}.jpg`;
+    
+    const downloadRes = await FileSystem.downloadAsync(remoteUrl, localPath);
+    if (downloadRes.status === 200) {
+      return downloadRes.uri;
+    }
+  } catch (err) {
+    // silent failure
+  }
+  return null;
+};
+
 interface AuthState {
   session: Session | null;
   user: SupabaseUser | null;
@@ -20,6 +41,8 @@ interface AuthState {
   // The most recently confirmed avatar URL — set on upload, never overwritten by any fetch.
   // This is the single source of truth for the avatar displayed in the UI.
   confirmedAvatarUrl: string | null;
+  // Local file system URI for the cached avatar image to support offline rendering.
+  localAvatarUrl: string | null;
   // True once zustand-persist has finished reading from AsyncStorage
   _hasHydrated: boolean;
 
@@ -55,6 +78,7 @@ export const useAuthStore = create<AuthState>()(
       lastLocalProfileUpdateAt: null,
       pendingProfileUpdates: {},
       confirmedAvatarUrl: null,
+      localAvatarUrl: null,
       _hasHydrated: false,
 
       setSession: (session) => set({ session, isLoading: false }),
@@ -102,6 +126,14 @@ export const useAuthStore = create<AuthState>()(
           }
           
           set({ profile: merged as Profile, lastFetch: Date.now() });
+
+          if (merged.avatar_url) {
+            cacheAvatarLocally(user.id, merged.avatar_url).then(localUri => {
+              if (localUri) {
+                set({ localAvatarUrl: localUri });
+              }
+            }).catch(() => {});
+          }
         } catch (err: any) {
           // On network failure, keep the cached profile — don't clear it
           if (!isNetworkError(err)) {
@@ -127,6 +159,14 @@ export const useAuthStore = create<AuthState>()(
           // Lock in the new avatar immediately — no fetch can overwrite this
           ...((updates as any).avatar_url ? { confirmedAvatarUrl: (updates as any).avatar_url } : {}),
         });
+
+        if ((updates as any).avatar_url) {
+          cacheAvatarLocally(user.id, (updates as any).avatar_url).then(localUri => {
+            if (localUri) {
+              set({ localAvatarUrl: localUri });
+            }
+          }).catch(() => {});
+        }
 
         try {
           // 1. Update public.users table
@@ -339,7 +379,7 @@ export const useAuthStore = create<AuthState>()(
         }
         // Clear local state BEFORE calling signOut so onAuthStateChange
         // sees a clean slate and doesn't re-enter the ban-check with stale data.
-        set({ session: null, user: null, profile: null, isProfileComplete: null, error: null, confirmedAvatarUrl: null });
+        set({ session: null, user: null, profile: null, isProfileComplete: null, error: null, confirmedAvatarUrl: null, localAvatarUrl: null });
         // CRITICAL: Clear all cached data to prevent data leak between users
         // Wrap each in its own try/catch so one failure doesn't skip the rest
         try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}
@@ -371,8 +411,7 @@ export const useAuthStore = create<AuthState>()(
         lastFetch: state.lastFetch,
         pendingProfileUpdates: state.pendingProfileUpdates,
         confirmedAvatarUrl: state.confirmedAvatarUrl,
-        // isProfileComplete intentionally NOT persisted — stale false value causes
-        // signup screen flash on cold launch. Always re-derived from onAuthStateChange.
+        localAvatarUrl: state.localAvatarUrl,
       }),
       // When store rehydrates from AsyncStorage (app open), immediately set
       // isLoading=false so ProtectedRoute doesn't show blank spinner offline.
@@ -399,8 +438,25 @@ export const useAuthStore = create<AuthState>()(
           if (!state.confirmedAvatarUrl && state.profile?.avatar_url) {
             state.confirmedAvatarUrl = state.profile.avatar_url;
           }
-          // If session exists but profile is incomplete, leave isProfileComplete
-          // as-is so onAuthStateChange can handle the signup resume flow
+          
+          // Verify that the local avatar file actually exists on disk.
+          // If it is missing (e.g. cleared by OS), re-cache it.
+          if (state.localAvatarUrl) {
+            FileSystem.getInfoAsync(state.localAvatarUrl).then(info => {
+              if (!info.exists && state.profile?.avatar_url && state.user?.id) {
+                cacheAvatarLocally(state.user.id, state.profile.avatar_url).then(localUri => {
+                  if (localUri) useAuthStore.setState({ localAvatarUrl: localUri });
+                  else useAuthStore.setState({ localAvatarUrl: null });
+                });
+              }
+            }).catch(() => {
+              useAuthStore.setState({ localAvatarUrl: null });
+            });
+          } else if (state.profile?.avatar_url && state.user?.id) {
+            cacheAvatarLocally(state.user.id, state.profile.avatar_url).then(localUri => {
+              if (localUri) useAuthStore.setState({ localAvatarUrl: localUri });
+            });
+          }
         }
       },
     }

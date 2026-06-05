@@ -75,3 +75,120 @@ export async function sendChatMessageNotification(
     // silent
   }
 }
+
+/**
+ * Reconstruct and upsert a published announcement, event, or material
+ * directly into the client's local store when received/synced via push notification.
+ * Enables 100% offline access to the full notice content.
+ */
+export function upsertEntityFromNotification(type: string, data: any) {
+  if (!data || !data.id) return;
+
+  try {
+    if (type === 'announcement') {
+      const { useAnnouncementStore } = require('../stores/announcement.store');
+      const newAnn = {
+        id: data.id,
+        title: data.title || '',
+        content: data.content || '',
+        cover_image_url: data.cover_image_url || null,
+        category: data.category || 'general',
+        priority: data.priority || 'normal',
+        target_level: data.target_level || null,
+        is_published: true,
+        is_pinned: data.is_pinned === 'true' || !!data.is_pinned,
+        view_count: Number(data.view_count || 0),
+        published_at: data.published_at || new Date().toISOString(),
+        created_at: data.created_at || new Date().toISOString(),
+        updated_at: data.updated_at || new Date().toISOString(),
+      };
+      
+      useAnnouncementStore.setState((state: any) => {
+        const exists = state.announcements.some((a: any) => a.id === data.id);
+        if (exists) {
+          return {
+            announcements: state.announcements.map((a: any) => (a.id === data.id ? { ...a, ...newAnn } : a)),
+          };
+        } else {
+          return {
+            announcements: [newAnn, ...state.announcements],
+          };
+        }
+      });
+    } else if (type === 'event') {
+      const { useEventStore } = require('../stores/event.store');
+      const newEvent = {
+        id: data.id,
+        title: data.title || '',
+        description: data.description || '',
+        cover_image_url: data.cover_image_url || null,
+        status: data.status || 'published',
+        is_virtual: data.is_virtual === 'true' || !!data.is_virtual,
+        virtual_link: data.virtual_link || null,
+        venue: data.venue || null,
+        start_date: data.start_date || new Date().toISOString(),
+        end_date: data.end_date || null,
+        start_time: data.start_time || null,
+        end_time: data.end_time || null,
+        max_attendees: data.max_attendees ? Number(data.max_attendees) : null,
+        current_attendees: Number(data.current_attendees || 0),
+        is_public: data.is_public === 'true' || data.is_public !== false,
+        view_count: Number(data.view_count || 0),
+        created_at: data.created_at || new Date().toISOString(),
+        published_at: data.published_at || new Date().toISOString(),
+        updated_at: data.updated_at || new Date().toISOString(),
+      };
+
+      useEventStore.setState((state: any) => {
+        const exists = state.events.some((e: any) => e.id === data.id);
+        if (exists) {
+          return {
+            events: state.events.map((e: any) => (e.id === data.id ? { ...e, ...newEvent } : e)),
+          };
+        } else {
+          return {
+            events: [newEvent, ...state.events],
+          };
+        }
+      });
+    } else if (type === 'material' || type === 'resource') {
+      const { useResourceStore } = require('../stores/resource.store');
+      const newMaterial = {
+        id: data.id,
+        title: data.title || '',
+        description: data.description || '',
+        file_url: data.file_url || '',
+        file_name: data.file_name || 'Material',
+        file_size: data.file_size ? Number(data.file_size) : null,
+        file_mime_type: data.file_mime_type || null,
+        level: data.level || null,
+        semester: data.semester || null,
+        course_id: data.course_id || null,
+        download_count: Number(data.download_count || 0),
+        view_count: Number(data.view_count || 0),
+        is_public: true,
+        is_downloadable: data.is_downloadable === 'true' || !!data.is_downloadable,
+        is_featured: data.is_featured === 'true' || !!data.is_featured,
+        is_active: data.is_active !== false,
+        created_at: data.created_at || new Date().toISOString(),
+        updated_at: data.updated_at || new Date().toISOString(),
+      };
+
+      useResourceStore.setState((state: any) => {
+        const exists = state.materials.some((m: any) => m.id === data.id);
+        if (exists) {
+          return {
+            materials: state.materials.map((m: any) => (m.id === data.id ? { ...m, ...newMaterial } : m)),
+          };
+        } else {
+          return {
+            materials: [newMaterial, ...state.materials],
+          };
+        }
+      });
+    }
+  } catch (err) {
+    // silent fallback
+  }
+}
+

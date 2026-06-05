@@ -263,10 +263,12 @@ export default function HomeScreen() {
   }
 
   const displayName = user.username || user.full_name?.split(' ')[0] || 'Student';
-  // confirmedAvatarUrl is the iron-clad source — set on upload, never overwritten by any fetch.
-  // Falls back to profile.avatar_url (from DB), then to the DiceBear sticker seed.
+  const localAvatarUrl = useAuthStore(s => s.localAvatarUrl);
+  // localAvatarUrl is the local file URI, falling back to confirmedAvatarUrl (the iron-clad source),
+  // then user.avatar_url (from DB), then to the DiceBear sticker seed.
   // Never shows blank — always has a valid URI.
-  const avatar = confirmedAvatarUrl
+  const avatar = localAvatarUrl
+    || confirmedAvatarUrl
     || user.avatar_url
     || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`;
   // Key includes lastLocalUpdate so RN image cache is busted on every profile update

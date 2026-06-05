@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationStore } from '../stores/notification.store';
+import { upsertEntityFromNotification } from '../utils/notifications';
 
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -38,20 +39,29 @@ export function usePushNotifications() {
           saveTokenToDatabase(token);
         }
       });
+
+      // Synchronize any notifications currently sitting in the system tray
+      syncDeliveredNotifications();
     }
 
     // Fired when a notification is received while the app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       const { title, body, data } = notification.request.content;
+      const notifId = notification.request.identifier || Math.random().toString(36).substring(2);
+      
       useNotificationStore.getState().addNotification({
-        id: notification.request.identifier || Math.random().toString(36).substring(2),
-        type: data?.type || 'general',
+        id: notifId,
+        type: (data?.type as string) || 'general',
         title: title || 'New Notification',
         message: body || '',
         date: new Date().toISOString(),
         isRead: false,
         data: data,
       });
+
+      if (data?.type) {
+        upsertEntityFromNotification(data.type as string, data);
+      }
     });
 
     // Fired when user taps a notification (foreground, background, or killed)
@@ -61,13 +71,17 @@ export function usePushNotifications() {
       
       useNotificationStore.getState().addNotification({
         id: notifId,
-        type: data?.type || 'general',
+        type: (data?.type as string) || 'general',
         title: title || 'New Notification',
         message: body || '',
-        date: new Date().toISOString(),
+        date: response.notification.date ? new Date(response.notification.date).toISOString() : new Date().toISOString(),
         isRead: true,
         data: data,
       });
+
+      if (data?.type) {
+        upsertEntityFromNotification(data.type as string, data);
+      }
 
       // Deep link to the relevant screen based on notification type
       if (!data?.type) return;
@@ -106,6 +120,33 @@ export function usePushNotifications() {
       }
     });
 
+    async function syncDeliveredNotifications() {
+      try {
+        const presented = await Notifications.getPresentedNotificationsAsync();
+        presented.forEach(notif => {
+          const { title, body, data } = notif.request.content;
+          const notifId = notif.request.identifier || Math.random().toString(36).substring(2);
+          const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
+          
+          useNotificationStore.getState().addNotification({
+            id: notifId,
+            type: (data?.type as string) || 'general',
+            title: title || 'New Notification',
+            message: body || '',
+            date: dateStr,
+            isRead: false,
+            data: data,
+          });
+
+          if (data?.type) {
+            upsertEntityFromNotification(data.type as string, data);
+          }
+        });
+      } catch {
+        // silent
+      }
+    }
+
     return () => {
       if (notificationListener.current) {
         notificationListener.current.remove();
@@ -137,11 +178,20 @@ async function registerForPushNotificationsAsync() {
   let token;
 
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
+    try {
+      await Notifications.deleteNotificationChannelAsync('default');
+    } catch {
+      // silent
+    }
+    await Notifications.setNotificationChannelAsync('default_v2', {
+      name: 'Default Alerts',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#064e3b',
+      bypassDnd: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      sound: 'default',
+      showBadge: true,
     });
   }
 

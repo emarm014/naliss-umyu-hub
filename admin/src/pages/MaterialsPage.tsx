@@ -308,7 +308,21 @@ export default function MaterialsPage() {
               targetUserIds: targetIds,
               title: '📚 New Study Material',
               body: `"${formData.title}" has been uploaded`,
-              data: { type: 'material' },
+              data: {
+                type: 'material',
+                id: inserted?.id || '',
+                title: formData.title,
+                description: formData.description,
+                file_url: formData.file_url,
+                file_name: formData.file_name,
+                file_size: formData.file_size,
+                file_mime_type: formData.file_mime_type,
+                level: formData.level,
+                semester: formData.semester,
+                course_id: formData.course_id === 'general' ? null : formData.course_id,
+                download_count: 0,
+                created_at: inserted?.created_at || new Date().toISOString(),
+              },
             });
           }
         });

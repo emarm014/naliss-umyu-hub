@@ -14,6 +14,8 @@ export interface AppNotification {
 
 interface NotificationState {
     notifications: AppNotification[];
+    _hasHydrated: boolean;
+    setHasHydrated: (hasHydrated: boolean) => void;
     addNotification: (notification: Omit<AppNotification, 'isRead'> & { isRead?: boolean }) => void;
     addNotifications: (notifications: Array<Omit<AppNotification, 'isRead'> & { isRead?: boolean }>) => void;
     markAsRead: (id: string) => void;
@@ -25,6 +27,8 @@ export const useNotificationStore = create<NotificationState>()(
     persist(
         (set, get) => ({
             notifications: [],
+            _hasHydrated: false,
+            setHasHydrated: (hasHydrated) => set({ _hasHydrated: hasHydrated }),
 
             addNotification: (notif) => {
                 set((state) => {
@@ -87,6 +91,14 @@ export const useNotificationStore = create<NotificationState>()(
         {
             name: 'naliss-notification-storage',
             storage: createJSONStorage(() => AsyncStorage),
+            partialize: (state) => ({
+                notifications: state.notifications,
+            }),
+            onRehydrateStorage: () => (state) => {
+                if (state) {
+                    state.setHasHydrated(true);
+                }
+            },
         }
     )
 );

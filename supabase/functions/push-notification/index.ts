@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
         body,
         data: data ?? {},
         priority: "high",
-        channelId: "default",
+        channelId: "default_v2",
         badge: 1,
       };
 

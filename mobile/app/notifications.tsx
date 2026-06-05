@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../src/constants/Colors';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { format } from 'date-fns';
 import { useAuthStore, useAnnouncementStore, useEventStore, useResourceStore } from '../src/stores';
 import { useNetworkStore } from '../src/stores/network.store';
@@ -12,6 +12,8 @@ import { Event } from '../src/stores/event.store';
 import { Material } from '../src/types';
 import { useTheme } from '../src/stores/theme.store';
 import { useNotificationStore } from '../src/stores/notification.store';
+import { upsertEntityFromNotification } from '../src/utils/notifications';
+import * as Notifications from 'expo-notifications';
 
 export default function NotificationsScreen() {
   const { profile, fetchProfile } = useAuthStore();
@@ -23,6 +25,7 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   
   const notifications = useNotificationStore(s => s.notifications);
+  const _hasHydrated = useNotificationStore(s => s._hasHydrated);
   const readIds = useAnnouncementStore(s => s.readIds);
 
   useEffect(() => {
@@ -34,6 +37,47 @@ export default function NotificationsScreen() {
       fetchCourses(profile?.level || undefined);
     }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Scrape presented notifications tray on screen focus to ingest background updates
+      async function syncDelivered() {
+        try {
+          const presented = await Notifications.getPresentedNotificationsAsync();
+          presented.forEach(notif => {
+            const { title, body, data } = notif.request.content;
+            const notifId = notif.request.identifier || Math.random().toString(36).substring(2);
+            const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
+            
+            useNotificationStore.getState().addNotification({
+              id: notifId,
+              type: (data?.type as string) || 'general',
+              title: title || 'New Notification',
+              message: body || '',
+              date: dateStr,
+              isRead: false,
+              data: data,
+            });
+
+            if (data?.type) {
+              upsertEntityFromNotification(data.type as string, data);
+            }
+          });
+        } catch {
+          // silent
+        }
+      }
+      syncDelivered();
+    }, [])
+  );
+
+  if (!_hasHydrated) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </SafeAreaView>
+    );
+  }
 
   // Sync loaded database rows (announcements, events, resources) to the notification store
   useEffect(() => {
@@ -120,12 +164,19 @@ export default function NotificationsScreen() {
 
   const handleNotificationPress = async (id: string, type: string, data?: any) => {
     useNotificationStore.getState().markAsRead(id);
+    
+    // Safely upsert target details into local caches before navigating,
+    // ensuring the destination details page can load completely offline.
+    if (type && data) {
+      upsertEntityFromNotification(type, data);
+    }
+
     if (type === 'announcement') {
       await useAnnouncementStore.getState().markAsRead(id);
       router.push({ pathname: '/announcement/[id]', params: { id } } as any);
     } else if (type === 'event') {
       router.push({ pathname: '/event/[id]', params: { id } } as any);
-    } else if (type === 'resource') {
+    } else if (type === 'resource' || type === 'material') {
       router.push('/(tabs)/resources');
     } else if ((type === 'message' || type === 'chat') && data?.group_id) {
       router.push({ pathname: '/chat/[id]', params: { id: data.group_id } } as any);

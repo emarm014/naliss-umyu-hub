@@ -608,7 +608,25 @@ function EventFormModal({
               targetUserIds: targetIds,
               title: '🗓️ New Event',
               body: `${formData.title} — ${formData.start_date}`,
-              data: { type: 'event' },
+              data: {
+                type: 'event',
+                id: savedEvent?.id || '',
+                title: formData.title,
+                description: formData.description,
+                cover_image_url: formData.cover_image_url || null,
+                status: formData.status || 'published',
+                is_virtual: formData.is_virtual,
+                virtual_link: formData.virtual_link || null,
+                venue: formData.venue || null,
+                start_date: formData.start_date,
+                end_date: formData.end_date || null,
+                start_time: formData.start_time || null,
+                end_time: formData.end_time || null,
+                max_attendees: formData.max_attendees || null,
+                current_attendees: 0,
+                created_at: savedEvent?.created_at || new Date().toISOString(),
+                published_at: savedEvent?.published_at || new Date().toISOString(),
+              },
             });
           }
         });

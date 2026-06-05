@@ -29,10 +29,12 @@ export default function TabsLayout() {
   const showBadge = !isBadgeCleared && unreadGroupsCount > 0 && currentTab !== 'messages';
   const badgeValue = showBadge ? unreadGroupsCount : undefined;
 
+  const TabsComponent = Tabs as any;
+
   return (
-    <Tabs
+    <TabsComponent
       screenListeners={{
-        focus: (e) => {
+        focus: (e: any) => {
           const tabName = e.target?.split('-')[0] ?? 'unknown_tab';
           trackScreen(tabName);
           useGroupStore.getState().setCurrentTab(tabName);
@@ -47,13 +49,6 @@ export default function TabsLayout() {
         tabBarActiveTintColor: isDark ? '#2ea6ff' : colors.primary,
         tabBarInactiveTintColor: isDark ? '#64748b' : colors.textMuted,
         tabBarActiveBackgroundColor: isDark ? '#1c2d3a' : '#f1f5f9',
-        
-        safeAreaInsets: {
-          bottom: 0,
-          top: 0,
-          left: 0,
-          right: 0,
-        },
         
         tabBarStyle: {
           position: 'absolute',
@@ -154,6 +149,6 @@ export default function TabsLayout() {
           headerShown: false,
         }}
       />
-    </Tabs>
+    </TabsComponent>
   );
 }

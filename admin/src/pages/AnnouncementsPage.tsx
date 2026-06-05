@@ -122,7 +122,17 @@ export default function AnnouncementsPage() {
           targetUserIds: targetIds,
           title: '📢 New Announcement',
           body: announcement.title,
-          data: { type: 'announcement', id: announcement.id },
+          data: {
+            type: 'announcement',
+            id: announcement.id,
+            title: announcement.title,
+            content: announcement.content,
+            category: announcement.category,
+            priority: announcement.priority,
+            cover_image_url: announcement.cover_image_url || null,
+            created_at: announcement.created_at,
+            published_at: announcement.published_at || new Date().toISOString(),
+          },
         });
       }
     } catch (err: unknown) {
@@ -678,7 +688,17 @@ function AnnouncementFormModal({
               targetUserIds: targetIds,
               title: '📢 New Announcement',
               body: formData.title,
-              data: { type: 'announcement', id: insertedId || announcement?.id },
+              data: {
+                type: 'announcement',
+                id: insertedId || announcement?.id || '',
+                title: formData.title,
+                content: formData.content,
+                category: formData.category,
+                priority: formData.priority,
+                cover_image_url: formData.cover_image_url || null,
+                created_at: announcement?.created_at || new Date().toISOString(),
+                published_at: data.published_at || new Date().toISOString(),
+              },
             });
           }
         });

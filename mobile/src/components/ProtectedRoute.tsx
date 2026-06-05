@@ -29,7 +29,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const maintenanceMessage = useSettingsStore(s => s.maintenanceMessage);
   const maintenanceEstimatedEnd = useSettingsStore(s => s.maintenanceEstimatedEnd);
   
-  const segments = useSegments();
+  const segments = useSegments() as string[];
   const router = useRouter();
   
   const profile = useAuthStore(s => s.profile);

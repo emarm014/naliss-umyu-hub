@@ -68,7 +68,6 @@ export const useResourceStore = create<ResourceState>()(
                         query = query.eq('material_type', filters.type);
                     }
                     if (filters?.courseId) query = query.eq('course_id', filters.courseId);
-                    if (filters?.level) query = query.eq('level', filters.level);
                     if (filters?.semester) query = query.eq('semester', filters.semester);
 
                     const { data, error } = await query.order('created_at', { ascending: false });
@@ -106,7 +105,6 @@ export const useResourceStore = create<ResourceState>()(
                         .eq('is_public', true);
 
                     if (filters?.courseId) query = query.eq('course_id', filters.courseId);
-                    if (filters?.level) query = query.eq('level', filters.level);
                     if (filters?.semester) query = query.eq('semester', filters.semester);
 
                     const { data, error } = await query.order('created_at', { ascending: false });
@@ -140,7 +138,6 @@ export const useResourceStore = create<ResourceState>()(
                     let query = supabase.from('courses')
                         .select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)')
                         .eq('is_active', true);
-                    if (level) query = query.eq('level', level);
                     const { data, error } = await query.order('code');
                     if (error) throw error;
                     set({ courses: (data as unknown) as Course[], isLoading: false, lastFetchCourses: Date.now() });

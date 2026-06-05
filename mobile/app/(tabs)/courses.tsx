@@ -44,7 +44,10 @@ export default function CoursesScreen() {
       setRefreshing(false);
     }
   };
-  const filteredCourses = courses.filter(c => c.semester === activeSemester);
+  const filteredCourses = courses.filter(c => 
+    c.semester === activeSemester && 
+    (!c.level || String(c.level) === String(activeLevel))
+  );
 
   return (
     <View style={styles.container}>

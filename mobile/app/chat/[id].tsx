@@ -711,7 +711,11 @@ export default function ChatScreen() {
             Alert.alert('Chat Disabled', 'Messaging has been disabled for this group by an administrator.');
             return;
         }
-        if (!inputText.trim() || !currentUser) return;
+        if (!currentUser) return;
+        if (!inputText.trim()) {
+            Alert.alert('Empty Message', 'Cannot send an empty message.');
+            return;
+        }
         if (isOverLimit) return;
 
         setIsSending(true);
@@ -3146,10 +3150,14 @@ export default function ChatScreen() {
                         <TouchableOpacity 
                             style={[
                                 styles.sendButton,
-                                (!inputText.trim() || isOverLimit) && (isDark ? { backgroundColor: '#1e293b' } : styles.sendButtonDisabled)
+                                (!inputText.trim() || isOverLimit) && {
+                                    opacity: 0.45,
+                                    shadowOpacity: 0,
+                                    elevation: 0,
+                                }
                             ]}
                             onPress={handleSend}
-                            activeOpacity={inputText.trim() && !isOverLimit ? 0.75 : 1}
+                            activeOpacity={0.75}
                         >
                             <Ionicons name="send" size={20} color="#FFF" />
                         </TouchableOpacity>

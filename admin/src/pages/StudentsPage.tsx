@@ -705,13 +705,11 @@ export default function StudentsPage() {
                          {user.status === 'suspended' && user.suspended_until && new Date(user.suspended_until) > new Date() && (
                            <SuspensionCountdown until={new Date(user.suspended_until)} />
                          )}
-                       </div>
-                    </td>
-                    <td className="px-8 py-5 text-right">
-                       <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <td className="px-8 py-5 text-right">
+                       <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => { setSelectedUser(user); setShowModal('view'); }}
-                            className="p-2 text-gray-400 hover:text-primary-950 hover:bg-white rounded-xl shadow-sm transition-all border border-transparent hover:border-gray-100"
+                            className="p-2 text-primary-950 bg-primary-50 hover:bg-primary-100 border border-primary-200 rounded-xl shadow-sm transition-all"
                             title="View Profile"
                           >
                             <Eye className="w-5 h-5" />
@@ -720,42 +718,42 @@ export default function StudentsPage() {
                           {user.role === 'moderator' && (
                             <button
                               onClick={() => { setSelectedUser(user); setShowModal('permissions'); }}
-                              className="p-2 text-amber-400 hover:text-amber-600 hover:bg-white rounded-xl shadow-sm transition-all border border-transparent hover:border-gray-100"
+                              className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl shadow-sm transition-all"
                               title="Permissions"
                             >
                               <Shield className="w-5 h-5" />
                             </button>
                           )}
-
+ 
                           <button
                             onClick={() => { setSelectedUser(user); setShowModal('edit'); }}
-                            className="p-2 text-gray-400 hover:text-primary-950 hover:bg-white rounded-xl shadow-sm transition-all border border-transparent hover:border-gray-100"
+                            className="p-2 text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl shadow-sm transition-all"
                             title="Edit Student"
                           >
                             <Edit className="w-5 h-5" />
                           </button>
-
+ 
                           <div className="w-px h-6 bg-gray-200 mx-1" />
-
+ 
                           {user.status === 'pending_verification' ? (
                             <button
                               onClick={() => handleVerify(user.id)}
-                              className="inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-[10px] font-black rounded-lg hover:bg-green-700 transition-all shadow-md shadow-green-500/20"
+                              className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-[10px] font-black rounded-xl hover:bg-green-700 transition-all shadow-md shadow-green-500/20"
                             >
                               VERIFY
                             </button>
                           ) : user.status === 'active' ? (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                                <button
                                  onClick={() => openConfirmModal(user, 'suspend')}
-                                 className="p-2 text-amber-400 hover:text-amber-600 hover:bg-white rounded-xl transition-all"
+                                 className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all"
                                  title="Suspend User"
                                >
                                  <UserX className="w-5 h-5" />
                                </button>
                                <button
                                  onClick={() => openConfirmModal(user, 'ban')}
-                                 className="p-2 text-red-400 hover:text-red-600 hover:bg-white rounded-xl transition-all"
+                                 className="p-2 text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all"
                                  title="Ban User"
                                >
                                  <Ban className="w-5 h-5" />
@@ -764,21 +762,21 @@ export default function StudentsPage() {
                           ) : (
                             <button
                               onClick={() => openConfirmModal(user, 'activate')}
-                              className="inline-flex items-center px-4 py-1.5 bg-primary-950 text-white text-[10px] font-black rounded-lg hover:bg-primary-800"
+                              className="inline-flex items-center px-4 py-2 bg-primary-950 text-white text-[10px] font-black rounded-xl hover:bg-primary-800 transition-all"
                             >
                               RESTORE
                             </button>
                           )}
-
+ 
                           {/* Role toggle — promote/demote moderator — super_admin only */}
                           {profile?.role === 'super_admin' && user.role !== 'super_admin' && user.status === 'active' && (
                             <button
                               onClick={() => handleRoleChange(user, user.role === 'moderator' ? 'student' : 'moderator')}
                               disabled={isSubmittingAction}
-                              className={`p-2 rounded-xl transition-all disabled:opacity-50 ${
+                              className={`p-2 rounded-xl border transition-all disabled:opacity-50 ${
                                 user.role === 'moderator'
-                                  ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'
-                                  : 'text-gray-300 hover:text-amber-500 hover:bg-amber-50'
+                                  ? 'text-amber-700 bg-amber-100 border-amber-300 hover:bg-amber-200'
+                                  : 'text-gray-500 bg-gray-50 border-gray-200 hover:text-amber-700 hover:bg-amber-50 hover:border-amber-200'
                               }`}
                               title={
                                 user.role === 'moderator'

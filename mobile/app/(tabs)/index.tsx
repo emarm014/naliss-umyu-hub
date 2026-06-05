@@ -16,6 +16,7 @@ import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
+import { getCleanAvatarUrl } from '../../src/utils';
 
 const { width } = Dimensions.get('window');
 
@@ -188,9 +189,7 @@ export default function HomeScreen() {
   // localAvatarUrl is the local file URI, falling back to confirmedAvatarUrl (the iron-clad source),
   // then user.avatar_url (from DB), then to the DiceBear sticker seed.
   // Never shows blank — always has a valid URI.
-  const avatar = localAvatarUrl
-    || confirmedAvatarUrl
-    || user.avatar_url
+  const avatar = getCleanAvatarUrl(localAvatarUrl || confirmedAvatarUrl || user.avatar_url)
     || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`;
   // Key includes lastLocalUpdate so RN image cache is busted on every profile update
   const avatarKey = `${avatar}-${lastLocalUpdate || 0}`;

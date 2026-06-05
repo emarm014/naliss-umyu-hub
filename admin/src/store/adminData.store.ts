@@ -124,6 +124,7 @@ interface AdminDataState {
   resubscribe: () => void;
   _channels: RealtimeChannel[];
   _syncTimer: ReturnType<typeof setTimeout> | null;
+  _rtSyncTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export const useAdminDataStore = create<AdminDataState>((set, get) => ({
@@ -151,6 +152,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
   error: null,
   _channels: [],
   _syncTimer: null,
+  _rtSyncTimer: null,
 
   // ── Full sync — ALL queries fire in ONE parallel batch ────────────────────
   syncAll: async (force = false) => {
@@ -158,7 +160,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     const lastSyncTime = get().lastSync ? new Date(get().lastSync!) : null;
     const isInitialLoad = !get().lastSync;
 
-    if (get().isSyncing || (!force && !isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 2 * 60 * 1000)) {
+    if (get().isSyncing || (!force && !isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 1000)) {
       return;
     }
 
@@ -362,11 +364,24 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
       set({ _syncTimer: timer });
     };
 
+    const debouncedSync = () => {
+      const existing = get()._rtSyncTimer;
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        set({ _rtSyncTimer: null });
+        get().syncAll(true);
+      }, 500);
+      set({ _rtSyncTimer: timer });
+    };
+
     const channels = tables.map(table =>
       supabase
         .channel(`admin_rt_${table}`)  // stable name — prevents duplicate channels on resubscribe
         .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
           const { eventType, old: oldRecord, new: newRecord } = payload;
+
+          // Trigger debounced background sync to pull down complete joined relations
+          debouncedSync();
 
           // ── INSTANT DELETE ───────────────────────────────────────────────
           if (eventType === 'DELETE' && oldRecord?.id) {
@@ -459,16 +474,20 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
   unsubscribe: () => {
     const timer = get()._syncTimer;
     if (timer) clearTimeout(timer);
+    const rtTimer = get()._rtSyncTimer;
+    if (rtTimer) clearTimeout(rtTimer);
     get()._channels.forEach(ch => supabase.removeChannel(ch));
-    set({ _channels: [], _syncTimer: null });
+    set({ _channels: [], _syncTimer: null, _rtSyncTimer: null });
   },
 
   resubscribe: () => {
-    // Cancel any pending debounced analytics call before tearing down channels
+    // Cancel any pending debounced calls before tearing down channels
     const timer = get()._syncTimer;
     if (timer) clearTimeout(timer);
+    const rtTimer = get()._rtSyncTimer;
+    if (rtTimer) clearTimeout(rtTimer);
     get()._channels.forEach(ch => supabase.removeChannel(ch));
-    set({ _channels: [], _syncTimer: null });
+    set({ _channels: [], _syncTimer: null, _rtSyncTimer: null });
     get().subscribe();
     get().syncAll(true);
   },

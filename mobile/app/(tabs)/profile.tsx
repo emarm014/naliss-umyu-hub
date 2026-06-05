@@ -16,6 +16,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useResourceStore, useAuthStore } from '../../src/stores';
 import { AcademicLevel } from '../../src/types';
+import { getCleanAvatarUrl } from '../../src/utils';
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -639,9 +640,9 @@ export default function ProfileScreen() {
           {/* Always show an avatar — confirmedAvatarUrl is the iron-clad source,
               falls back to profile.avatar_url, then DiceBear sticker. Never blank. */}
           {(() => {
-            const avatarUri = localAvatarUrl
+            const avatarUri = getCleanAvatarUrl(localAvatarUrl
               || confirmedAvatarUrl
-              || storeProfile?.avatar_url
+              || storeProfile?.avatar_url)
               || (storeProfile?.id ? `https://api.dicebear.com/9.x/fun-emoji/png?seed=${storeProfile.id}&size=200` : null);
             return avatarUri ? (
               <Image

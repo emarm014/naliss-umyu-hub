@@ -87,6 +87,10 @@ export default function ResourcesPage() {
   const { resources: storeResources, analytics, isSyncing: loading, error, syncAll, refreshAnalytics } = useAdminDataStore();
   const { profile } = useAuthStore();
 
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+
   const [activeTab, setActiveTab] = useState<'all' | 'vault' | 'institutional' | 'cloudinary'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'document' | 'image' | 'video'>('all');

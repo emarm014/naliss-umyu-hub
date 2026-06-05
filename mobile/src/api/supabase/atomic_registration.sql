@@ -23,7 +23,7 @@ BEGIN
       NEW.id,
       NEW.raw_user_meta_data->>'full_name',
       NEW.email,
-      COALESCE(NEW.raw_user_meta_data->>'avatar_url', 'https://api.dicebear.com/9.x/fun-emoji/svg?seed=' || NEW.id),
+      COALESCE(NEW.raw_user_meta_data->>'avatar_url', 'https://api.dicebear.com/9.x/fun-emoji/png?seed=' || NEW.id || '&size=200'),
       NEW.raw_user_meta_data->>'reg_number',
       NEW.raw_user_meta_data->>'level',
       true

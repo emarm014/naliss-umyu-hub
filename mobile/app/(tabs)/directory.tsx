@@ -193,17 +193,20 @@ export default function DirectoryScreen() {
     );
 }
 
+import { getCleanAvatarUrl } from '../../src/utils';
+
 function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (uri: string, name: string) => void }) {
+    const cleanAvatar = getCleanAvatarUrl(staff.avatar_url);
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => staff.avatar_url && onPressAvatar(staff.avatar_url, staff.full_name)}
-                    disabled={!staff.avatar_url}
+                    onPress={() => cleanAvatar && onPressAvatar(cleanAvatar, staff.full_name)}
+                    disabled={!cleanAvatar}
                 >
-                    {staff.avatar_url ? (
-                        <Image source={{ uri: staff.avatar_url }} style={styles.avatar} />
+                    {cleanAvatar ? (
+                        <Image source={{ uri: cleanAvatar }} style={styles.avatar} />
                     ) : (
                         <View style={[styles.avatar, styles.placeholderAvatar]}>
                             <Text style={styles.avatarPlaceholderText}>
@@ -251,18 +254,19 @@ function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (
 
 function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAvatar: (uri: string, name: string) => void }) {
     const fullName = executive.full_name || executive.user?.full_name || 'NALISS Executive';
-    const avatarUrl = executive.avatar_url || executive.user?.avatar_url;
+    const rawAvatarUrl = executive.avatar_url || executive.user?.avatar_url;
+    const cleanAvatar = getCleanAvatarUrl(rawAvatarUrl);
 
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => avatarUrl && onPressAvatar(avatarUrl, fullName)}
-                    disabled={!avatarUrl}
+                    onPress={() => cleanAvatar && onPressAvatar(cleanAvatar, fullName)}
+                    disabled={!cleanAvatar}
                 >
-                    {avatarUrl ? (
-                        <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+                    {cleanAvatar ? (
+                        <Image source={{ uri: cleanAvatar }} style={styles.avatar} />
                     ) : (
                         <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: COLORS.secondary + '20' }]}>
                             <Text style={[styles.avatarPlaceholderText, { color: COLORS.secondary }]}>

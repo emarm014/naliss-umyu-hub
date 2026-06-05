@@ -19,6 +19,7 @@ import { supabase } from '../../src/api/supabase/client';
 import { useSettingsStore, useAuthStore, useGroupStore } from '../../src/stores';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { getCleanAvatarUrl } from '../../src/utils';
 
 export default function MessagesScreen() {
   useSentryScreen('MessagesScreen');
@@ -105,7 +106,7 @@ export default function MessagesScreen() {
                     id: conversation.id,
                     type: 'group',
                     name: conversation.name || 'Group Chat',
-                    avatar: conversation.avatar_url || ''
+                    avatar: getCleanAvatarUrl(conversation.avatar_url) || ''
                   }
                 })}
               />
@@ -128,7 +129,7 @@ export default function MessagesScreen() {
                     id: conversation.id,
                     type: 'group',
                     name: conversation.name || 'Group Chat',
-                    avatar: conversation.avatar_url || ''
+                    avatar: getCleanAvatarUrl(conversation.avatar_url) || ''
                   }
                 })}
               />
@@ -197,13 +198,16 @@ function ConversationItem({
       onPress={onPress}
     >
       <View style={styles.avatarContainer}>
-        {conversation.avatar_url ? (
-          <Image source={{ uri: conversation.avatar_url }} style={styles.avatarImage} />
-        ) : (
-          <View style={styles.logoAvatarContainer}>
-            <NalissLogo size={46} />
-          </View>
-        )}
+        {(() => {
+          const cleanUrl = getCleanAvatarUrl(conversation.avatar_url);
+          return cleanUrl ? (
+            <Image source={{ uri: cleanUrl }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.logoAvatarContainer}>
+              <NalissLogo size={46} />
+            </View>
+          );
+        })()}
         {conversation.is_verified && (
           <View style={styles.verifiedBadge}>
             <Ionicons name="checkmark-circle" size={18} color="#10B981" />

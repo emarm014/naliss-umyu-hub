@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Users,
   FileText,
@@ -57,6 +57,10 @@ export default function DashboardPage() {
   const { analytics: census, isSyncing, lastSync, syncAll } = useAdminDataStore();
   const [trends, setTrends] = useState<TrendData | null>(null);
   const [cloudStorageBytes, setCloudStorageBytes] = useState<number | null>(null);
+
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
 
   // Fetch Cloudinary storage on mount for accurate storage card
   useEffect(() => {

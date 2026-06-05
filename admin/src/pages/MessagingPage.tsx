@@ -89,7 +89,6 @@ export default function MessagingPage() {
     isSyncing, 
     error: storeError, 
     syncAll,
-    fetchMessaging,
     refreshAnalytics,
   } = useAdminDataStore();
 
@@ -146,8 +145,9 @@ export default function MessagingPage() {
     return activeList.slice(from, to);
   }, [activeList, currentPage]);
 
-  // Fast-fetch on mount — only loads flagged messages, reports, muted users
-  useEffect(() => { fetchMessaging(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
 
   const handleUnflagMessage = async (messageId: string) => {
     try {

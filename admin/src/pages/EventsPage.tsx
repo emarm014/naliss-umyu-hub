@@ -46,6 +46,10 @@ const statusConfig = {
 export default function EventsPage() {
   const { events: allEvents, isSyncing, error: storeError, syncAll, removeEvent, refreshAnalytics } = useAdminDataStore();
   
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<Event['status'] | 'all'>('all');
   const [levelFilter, setLevelFilter] = useState<LevelOption>('all');

@@ -44,6 +44,10 @@ export default function ExecutivesPage() {
 
   const { executives: allExecutives, isSyncing, error: storeError, syncAll, removeExecutive, refreshAnalytics } = useAdminDataStore();
 
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+
   // Executive Statistics
   const executiveStats = {
     totalExecutives: allExecutives.length,

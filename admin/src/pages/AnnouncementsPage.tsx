@@ -61,6 +61,11 @@ export default function AnnouncementsPage() {
 
   const { profile, permissions } = useAuthStore();
   const { announcements: allAnnouncements, isSyncing, error: storeError, syncAll, removeAnnouncement, refreshAnalytics } = useAdminDataStore();
+  
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+
   const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
 
   const location = useLocation();

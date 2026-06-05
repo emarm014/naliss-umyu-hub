@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../../src/constants/Colors';
 import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
+import { getCleanAvatarUrl } from '../../../src/utils';
 
 export default function LecturerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -67,16 +68,19 @@ export default function LecturerDetailScreen() {
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarRing}>
-            {lecturer.avatar_url ? (
-              <Image
-                source={{ uri: getOptimizedCloudinaryUrl(lecturer.avatar_url, 300, 300) }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitials}>{initials}</Text>
-              </View>
-            )}
+            {(() => {
+              const cleanUrl = getCleanAvatarUrl(lecturer.avatar_url);
+              return cleanUrl ? (
+                <Image
+                  source={{ uri: getOptimizedCloudinaryUrl(cleanUrl, 300, 300) }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitials}>{initials}</Text>
+                </View>
+              );
+            })()}
           </View>
 
           {/* Title badge */}

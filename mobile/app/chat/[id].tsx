@@ -40,6 +40,7 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature, isNetworkError } from '../../src/utils/sentry';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
+import { getCleanAvatarUrl } from '../../src/utils';
 
 const MAX_CHARS = 500;
 
@@ -1306,15 +1307,18 @@ export default function ChatScreen() {
                 ]}>
                     {!isMe && !isSystem && (
                         <TouchableOpacity style={styles.messageAvatarContainer} onPress={() => openProfile(item.sender_id)}>
-                            {item.user?.avatar_url && item.user.avatar_url.trim() !== '' ? (
-                                <Image source={{ uri: item.user.avatar_url }} style={styles.messageAvatarImage} />
-                            ) : (
-                                <View style={styles.messageAvatarPlaceholder}>
-                                    <Text style={styles.messageAvatarText}>
-                                        {item.user?.username?.charAt(0)?.toUpperCase() || 'U'}
-                                    </Text>
-                                </View>
-                            )}
+                            {(() => {
+                                const cleanUrl = getCleanAvatarUrl(item.user?.avatar_url);
+                                return cleanUrl ? (
+                                    <Image source={{ uri: cleanUrl }} style={styles.messageAvatarImage} />
+                                ) : (
+                                    <View style={styles.messageAvatarPlaceholder}>
+                                        <Text style={styles.messageAvatarText}>
+                                            {item.user?.username?.charAt(0)?.toUpperCase() || 'U'}
+                                        </Text>
+                                    </View>
+                                );
+                            })()}
                             {/* Crown badge for moderators */}
                             {(item.user?.role === 'moderator' || item.user?.role === 'super_admin') && (
                                 <View style={[
@@ -2181,14 +2185,17 @@ export default function ChatScreen() {
 
                 <TouchableOpacity style={styles.headerTitleContainer} onPress={() => setShowMembersList(true)}>
                     <View style={[styles.headerAvatarPlaceholderLight, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        {group?.avatar_url && group.avatar_url.trim() !== '' ? (
-                            <Image
-                                source={{ uri: group.avatar_url }}
-                                style={{ width: 36, height: 36, borderRadius: 10 }}
-                            />
-                        ) : (
-                            <NalissLogo size={30} />
-                        )}
+                        {(() => {
+                            const cleanUrl = getCleanAvatarUrl(group?.avatar_url);
+                            return cleanUrl ? (
+                                <Image
+                                    source={{ uri: cleanUrl }}
+                                    style={{ width: 36, height: 36, borderRadius: 10 }}
+                                />
+                            ) : (
+                                <NalissLogo size={30} />
+                            );
+                        })()}
                     </View>
                     <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -2688,15 +2695,18 @@ export default function ChatScreen() {
                                         setViewingProfile(member);
                                     }}
                                 >
-                                    {member.avatar_url && member.avatar_url.trim() !== '' ? (
-                                        <Image source={{ uri: member.avatar_url }} style={styles.memberAvatar} />
-                                    ) : (
-                                        <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
-                                            <Text style={{ fontWeight: 'bold', color: '#64748b' }}>
-                                                {member.username?.charAt(0)?.toUpperCase() || 'U'}
-                                            </Text>
-                                        </View>
-                                    )}
+                                    {(() => {
+                                        const cleanUrl = getCleanAvatarUrl(member.avatar_url);
+                                        return cleanUrl ? (
+                                            <Image source={{ uri: cleanUrl }} style={styles.memberAvatar} />
+                                        ) : (
+                                            <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
+                                                <Text style={{ fontWeight: 'bold', color: '#64748b' }}>
+                                                    {member.username?.charAt(0)?.toUpperCase() || 'U'}
+                                                </Text>
+                                            </View>
+                                        );
+                                    })()}
                                     <View style={styles.memberInfo}>
                                         <View style={styles.memberNameRow}>
                                             <Text style={styles.memberFullName}>
@@ -2738,17 +2748,20 @@ export default function ChatScreen() {
                         {viewingProfile && (
                             <ScrollView showsVerticalScrollIndicator={false}>
                                 <View style={styles.profileHeader}>
-                                    {viewingProfile.avatar_url && viewingProfile.avatar_url.trim() !== '' ? (
-                                        <TouchableOpacity onPress={() => setExpandedAvatarUrl(viewingProfile.avatar_url)}>
-                                            <Image source={{ uri: viewingProfile.avatar_url }} style={styles.profileAvatar} />
-                                        </TouchableOpacity>
-                                    ) : (
-                                        <View style={[styles.profileAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
-                                            <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#64748b' }}>
-                                                {viewingProfile.username?.charAt(0)?.toUpperCase() || 'U'}
-                                            </Text>
-                                        </View>
-                                    )}
+                                    {(() => {
+                                        const cleanUrl = getCleanAvatarUrl(viewingProfile.avatar_url);
+                                        return cleanUrl ? (
+                                            <TouchableOpacity onPress={() => setExpandedAvatarUrl(cleanUrl)}>
+                                                <Image source={{ uri: cleanUrl }} style={styles.profileAvatar} />
+                                            </TouchableOpacity>
+                                        ) : (
+                                            <View style={[styles.profileAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
+                                                <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#64748b' }}>
+                                                    {viewingProfile.username?.charAt(0)?.toUpperCase() || 'U'}
+                                                </Text>
+                                            </View>
+                                        );
+                                    })()}
                                     <Text style={styles.profileFullName}>{viewingProfile.full_name}</Text>
                                     <Text style={styles.profileUsername}>@{viewingProfile.username}</Text>
                                     <View style={styles.profileOnlineStatus}>

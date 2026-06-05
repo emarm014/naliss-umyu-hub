@@ -23,6 +23,10 @@ const graduateYears = Array.from({ length: 20 }, (_, i) => currentYear - 5 + i);
 export default function GraduatesPage() {
   const { graduates: allGraduates, students: allStudents, isSyncing, lastSync, syncAll, removeGraduate, error, refreshAnalytics } = useAdminDataStore();
 
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);

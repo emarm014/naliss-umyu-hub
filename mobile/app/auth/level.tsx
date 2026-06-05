@@ -163,7 +163,7 @@ export default function RegisterLevel() {
         // ── STEP 3: Upload Google avatar to Cloudinary ────────────────────
         // Skip the password step for Google (step 3 is email-only)
         advanceTo(4); // 48% — "Uploading profile photo…"
-        finalAvatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${user.id}`;
+        finalAvatarUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`;
         const googleAvatarUrl = user.user_metadata?.avatar_url;
         if (googleAvatarUrl) {
           try {
@@ -226,7 +226,7 @@ export default function RegisterLevel() {
           }
         }
 
-        finalAvatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${user.id}`;
+        finalAvatarUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`;
 
         // After auth.updateUser(password), the session token is already updated
         // internally by Supabase. Just read the current session to ensure the

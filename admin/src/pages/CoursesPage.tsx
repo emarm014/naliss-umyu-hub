@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import { useAdminDataStore } from '../store/adminData.store';
@@ -49,6 +49,10 @@ export default function CoursesPage() {
     error: syncError,
     refreshAnalytics
   } = useAdminDataStore();
+
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const { profile, permissions } = useAuthStore();

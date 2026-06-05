@@ -346,7 +346,7 @@ export const useAuthStore = create<AuthState>()(
               p_email: user.email,
               p_registration_number: regNum,
               p_level: level.toString(),
-              p_avatar_url: metadata.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${user.id}`,
+              p_avatar_url: metadata.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`,
               p_username: metadata.username || (metadata.full_name || 'user').toLowerCase().replace(/\s+/g, '_') + '_' + user.id.slice(0, 6),
             });
             return !rpcError;

@@ -60,7 +60,6 @@ export default function PastQuestionsPage() {
     error, 
     syncAll,
     removePastQuestion,
-    fetchPastQuestions,
     refreshAnalytics,
   } = useAdminDataStore();
 
@@ -97,8 +96,9 @@ export default function PastQuestionsPage() {
     file_size: 0,
   });
 
-  // Fast-fetch on mount — only loads past questions + courses, not the whole app
-  useEffect(() => { fetchPastQuestions(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
 
   const location = useLocation();
 

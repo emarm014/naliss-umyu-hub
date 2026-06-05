@@ -72,6 +72,10 @@ export default function StudentsPage() {
   const { students: allStudents, isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore();
   const { profile, permissions } = useAuthStore();
 
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+
   // Moderators are locked to their assigned level — they cannot see other levels
   const assignedLevel = profile?.role === 'moderator' ? (permissions?.assigned_level || null) : null;
   

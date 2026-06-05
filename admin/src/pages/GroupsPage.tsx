@@ -63,9 +63,8 @@ export default function GroupsPage() {
 
   // ── Initial load + realtime refresh ──────────────────────────────────────
   useEffect(() => {
-    fetchGroups();
-    // Re-fetch on realtime changes via store subscription (already wired globally)
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    syncAll();
+  }, [syncAll]);
 
   // ── Filtered groups ───────────────────────────────────────────────────────
   const filteredGroups = useMemo(() => {

@@ -10,6 +10,7 @@ import { COLORS } from '../../../src/constants/Colors';
 import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { format } from 'date-fns';
+import { getCleanAvatarUrl } from '../../../src/utils';
 
 export default function ExecutiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -67,16 +68,19 @@ export default function ExecutiveDetailScreen() {
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarRing}>
-            {avatarUrl ? (
-              <Image
-                source={{ uri: getOptimizedCloudinaryUrl(avatarUrl, 300, 300) }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitials}>{initials}</Text>
-              </View>
-            )}
+            {(() => {
+              const cleanUrl = getCleanAvatarUrl(avatarUrl);
+              return cleanUrl ? (
+                <Image
+                  source={{ uri: getOptimizedCloudinaryUrl(cleanUrl, 300, 300) }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitials}>{initials}</Text>
+                </View>
+              );
+            })()}
           </View>
 
           {/* Status badge */}

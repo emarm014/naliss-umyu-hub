@@ -66,6 +66,10 @@ const ITEMS_PER_PAGE = 12;
 export default function LecturersPage() {
   const { lecturers: allLecturers, isSyncing, lastSync, syncAll, removeLecturer, error, refreshAnalytics } = useAdminDataStore();
   
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+  
   const [filteredLecturers, setFilteredLecturers] = useState<Lecturer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);

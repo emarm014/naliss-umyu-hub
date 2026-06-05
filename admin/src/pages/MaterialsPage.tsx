@@ -55,6 +55,10 @@ export default function MaterialsPage() {
   const { user, profile, permissions } = useAuthStore();
   const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
 
+  useEffect(() => {
+    syncAll();
+  }, [syncAll]);
+
   const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialWithDetails | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);

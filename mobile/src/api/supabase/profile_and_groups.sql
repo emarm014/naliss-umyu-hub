@@ -5,7 +5,7 @@ VALUES (
     'NALISS General Hub', 
     'Official group for all NALISS members', 
     'department', 
-    'https://api.dicebear.com/9.x/shapes/svg?seed=NalissGeneral',
+    'https://api.dicebear.com/9.x/shapes/png?seed=NalissGeneral&size=200',
     true
 )
 ON CONFLICT DO NOTHING;
@@ -13,16 +13,16 @@ ON CONFLICT DO NOTHING;
 -- Level Groups
 INSERT INTO public.groups (name, level, group_type, avatar_url, is_active)
 VALUES 
-    ('100 Level Hub', '100', 'level', 'https://api.dicebear.com/9.x/shapes/svg?seed=Level100', true),
-    ('200 Level Hub', '200', 'level', 'https://api.dicebear.com/9.x/shapes/svg?seed=Level200', true),
-    ('300 Level Hub', '300', 'level', 'https://api.dicebear.com/9.x/shapes/svg?seed=Level300', true),
-    ('400 Level Hub', '400', 'level', 'https://api.dicebear.com/9.x/shapes/svg?seed=Level400', true),
+    ('100 Level Hub', '100', 'level', 'https://api.dicebear.com/9.x/shapes/png?seed=Level100&size=200', true),
+    ('200 Level Hub', '200', 'level', 'https://api.dicebear.com/9.x/shapes/png?seed=Level200&size=200', true),
+    ('300 Level Hub', '300', 'level', 'https://api.dicebear.com/9.x/shapes/png?seed=Level300&size=200', true),
+    ('400 Level Hub', '400', 'level', 'https://api.dicebear.com/9.x/shapes/png?seed=Level400&size=200', true),
 
 ON CONFLICT DO NOTHING;
 
 -- Update existing groups with stickers just in case they were missing
-UPDATE public.groups SET avatar_url = 'https://api.dicebear.com/9.x/shapes/svg?seed=Level100' WHERE group_type = 'level' AND level = '100' AND avatar_url IS NULL;
-UPDATE public.groups SET avatar_url = 'https://api.dicebear.com/9.x/shapes/svg?seed=NalissGeneral' WHERE group_type = 'department' AND avatar_url IS NULL;
+UPDATE public.groups SET avatar_url = 'https://api.dicebear.com/9.x/shapes/png?seed=Level100&size=200' WHERE group_type = 'level' AND level = '100' AND avatar_url IS NULL;
+UPDATE public.groups SET avatar_url = 'https://api.dicebear.com/9.x/shapes/png?seed=NalissGeneral&size=200' WHERE group_type = 'department' AND avatar_url IS NULL;
 
 
 -- 2. Master Trigger for New Users (Handles General Group + Sticker DP)
@@ -37,7 +37,7 @@ BEGIN
     
     -- If no avatar provided, use a sticker/emoji generator based on user ID
     IF final_avatar IS NULL OR final_avatar = '' THEN
-        final_avatar := 'https://api.dicebear.com/9.x/fun-emoji/svg?seed=' || NEW.id;
+        final_avatar := 'https://api.dicebear.com/9.x/fun-emoji/png?seed=' || NEW.id || '&size=200';
     END IF;
 
     -- Create public.users profile

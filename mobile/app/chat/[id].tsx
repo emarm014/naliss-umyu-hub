@@ -152,9 +152,6 @@ export default function ChatScreen() {
         date: ''
     });
     const [showGroupMenu, setShowGroupMenu] = useState(false);
-    const [showGroupSettings, setShowGroupSettings] = useState(false);
-    const [groupSettingsEdit, setGroupSettingsEdit] = useState({ name: '', description: '' });
-    const [isSavingGroupSettings, setIsSavingGroupSettings] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const [isSending, setIsSending] = useState(false);
 
@@ -2873,184 +2870,14 @@ export default function ChatScreen() {
                                     <Text style={[styles.menuItemText, { color: colors.text }]}>Search Messages</Text>
                                 </TouchableOpacity>
                                 
-                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => { setShowGroupMenu(false); setShowMembersList(true); }}>
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setShowGroupMenu(false); setShowMembersList(true); }}>
                                     <Ionicons name="people-outline" size={20} color={colors.text} />
                                     <Text style={[styles.menuItemText, { color: colors.text }]}>Group Members</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => {
-                                    setShowGroupMenu(false);
-                                    setGroupSettingsEdit({
-                                        name: group?.name || '',
-                                        description: group?.description || '',
-                                    });
-                                    setShowGroupSettings(true);
-                                }}>
-                                    <Ionicons name="settings-outline" size={20} color={colors.text} />
-                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Group Settings</Text>
                                 </TouchableOpacity>
                             </View>
                         </TouchableWithoutFeedback>
                     </View>
                 </TouchableWithoutFeedback>
-            </Modal>
-
-            {/* Group Settings Modal */}
-            <Modal visible={showGroupSettings} animationType="slide" transparent onRequestClose={() => setShowGroupSettings(false)}>
-                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-                    <View style={[styles.groupSettingsSheet, { backgroundColor: colors.card }]}>
-                        {/* Header */}
-                        <View style={styles.groupSettingsHeader}>
-                            <TouchableOpacity onPress={() => setShowGroupSettings(false)}>
-                                <Ionicons name="close" size={24} color={colors.text} />
-                            </TouchableOpacity>
-                            <Text style={[styles.groupSettingsTitle, { color: colors.text }]}>Group Settings</Text>
-                            <View style={{ width: 24 }} />
-                        </View>
-
-                        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
-                            {/* Group Avatar */}
-                            <View style={styles.groupSettingsAvatarRow}>
-                                <View style={[styles.groupSettingsAvatar, { backgroundColor: colors.surface }]}>
-                                    {group?.avatar_url ? (
-                                        <Image source={{ uri: group.avatar_url }} style={{ width: 72, height: 72, borderRadius: 36 }} />
-                                    ) : (
-                                        <NalissLogo size={48} />
-                                    )}
-                                </View>
-                                <View style={{ flex: 1, marginLeft: 16 }}>
-                                    <Text style={[{ fontFamily: 'Inter-Bold', fontSize: 18, color: colors.text }]} numberOfLines={1}>
-                                        {group?.name || 'Group'}
-                                    </Text>
-                                    <Text style={[{ fontFamily: 'Inter-Medium', fontSize: 13, color: colors.textMuted, marginTop: 2 }]}>
-                                        {group?.group_type === 'level' ? `Level ${group?.level} Hub` : 'General Hub'}
-                                    </Text>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                                        <View style={[styles.groupSettingsBadge, { backgroundColor: group?.chat_enabled !== false ? '#dcfce7' : '#fee2e2' }]}>
-                                            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: group?.chat_enabled !== false ? '#16a34a' : '#dc2626' }} />
-                                            <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 11, color: group?.chat_enabled !== false ? '#16a34a' : '#dc2626' }}>
-                                                {group?.chat_enabled !== false ? 'Chat Active' : 'Chat Disabled'}
-                                            </Text>
-                                        </View>
-                                        <View style={[styles.groupSettingsBadge, { backgroundColor: colors.surface }]}>
-                                            <Ionicons name="people-outline" size={12} color={colors.textMuted} />
-                                            <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 11, color: colors.textMuted }}>
-                                                {members.length} members
-                                            </Text>
-                                        </View>
-                                    </View>
-                                </View>
-                            </View>
-
-                            {/* Group Description */}
-                            <View style={[styles.groupSettingsInfoCard, { backgroundColor: colors.surface }]}>
-                                <Text style={[styles.groupSettingsLabel, { color: colors.textMuted }]}>DESCRIPTION</Text>
-                                <Text style={[{ fontFamily: 'Inter-Regular', fontSize: 14, color: colors.text, lineHeight: 20 }]}>
-                                    {group?.description || 'No description set for this group.'}
-                                </Text>
-                            </View>
-
-                            {/* Admin-only edit section */}
-                            {(profile?.role === 'super_admin' || profile?.role === 'moderator') && (
-                                <View style={{ marginTop: 20 }}>
-                                    <Text style={[styles.groupSettingsLabel, { color: colors.textMuted, marginBottom: 12 }]}>ADMIN CONTROLS</Text>
-
-                                    <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: colors.textSecondary, marginBottom: 6 }]}>Group Name</Text>
-                                    <TextInput
-                                        style={[styles.groupSettingsInput, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border }]}
-                                        value={groupSettingsEdit.name}
-                                        onChangeText={(t) => setGroupSettingsEdit(prev => ({ ...prev, name: t }))}
-                                        placeholder="Group name..."
-                                        placeholderTextColor={colors.textMuted}
-                                        keyboardAppearance={isDark ? 'dark' : 'light'}
-                                    />
-
-                                    <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: colors.textSecondary, marginBottom: 6, marginTop: 14 }]}>Description</Text>
-                                    <TextInput
-                                        style={[styles.groupSettingsInput, styles.groupSettingsTextArea, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border }]}
-                                        value={groupSettingsEdit.description}
-                                        onChangeText={(t) => setGroupSettingsEdit(prev => ({ ...prev, description: t }))}
-                                        placeholder="Group description..."
-                                        placeholderTextColor={colors.textMuted}
-                                        multiline
-                                        numberOfLines={3}
-                                        keyboardAppearance={isDark ? 'dark' : 'light'}
-                                    />
-
-                                    {/* Toggle chat enabled */}
-                                    <View style={[styles.groupSettingsToggleRow, { backgroundColor: colors.surface }]}>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 14, color: colors.text }]}>Enable Chat</Text>
-                                            <Text style={[{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textMuted, marginTop: 2 }]}>
-                                                Allow members to send messages
-                                            </Text>
-                                        </View>
-                                        <TouchableOpacity
-                                            style={[styles.groupSettingsToggle, { backgroundColor: group?.chat_enabled !== false ? '#059669' : '#e2e8f0' }]}
-                                            onPress={async () => {
-                                                const newVal = !(group?.chat_enabled !== false);
-                                                setGroup((prev: any) => ({ ...prev, chat_enabled: newVal }));
-                                                await (supabase.from('groups') as any).update({ chat_enabled: newVal }).eq('id', id);
-                                            }}
-                                        >
-                                            <View style={[styles.groupSettingsToggleThumb, { transform: [{ translateX: group?.chat_enabled !== false ? 20 : 2 }] }]} />
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    <TouchableOpacity
-                                        style={[styles.groupSettingsSaveBtn, isSavingGroupSettings && { opacity: 0.7 }]}
-                                        disabled={isSavingGroupSettings}
-                                        onPress={async () => {
-                                            if (!groupSettingsEdit.name.trim()) {
-                                                Alert.alert('Required', 'Group name cannot be empty.');
-                                                return;
-                                            }
-                                            setIsSavingGroupSettings(true);
-                                            try {
-                                                const { error } = await supabase
-                                                    .from('groups')
-                                                    .update({
-                                                        name: groupSettingsEdit.name.trim(),
-                                                        description: groupSettingsEdit.description.trim() || null,
-                                                    })
-                                                    .eq('id', id);
-                                                if (error) throw error;
-                                                setGroup((prev: any) => ({
-                                                    ...prev,
-                                                    name: groupSettingsEdit.name.trim(),
-                                                    description: groupSettingsEdit.description.trim() || null,
-                                                }));
-                                                Alert.alert('Saved', 'Group settings updated successfully.');
-                                                setShowGroupSettings(false);
-                                            } catch (err: any) {
-                                                Alert.alert('Error', err?.message || 'Failed to save settings.');
-                                            } finally {
-                                                setIsSavingGroupSettings(false);
-                                            }
-                                        }}
-                                    >
-                                        {isSavingGroupSettings
-                                            ? <ActivityIndicator color="#fff" size="small" />
-                                            : <Text style={{ fontFamily: 'Inter-Bold', fontSize: 15, color: '#fff' }}>Save Changes</Text>
-                                        }
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-
-                            {/* Read-only info for students */}
-                            {profile?.role === 'student' && (
-                                <View style={[styles.groupSettingsInfoCard, { backgroundColor: colors.surface, marginTop: 16 }]}>
-                                    <Ionicons name="information-circle-outline" size={18} color={colors.textMuted} />
-                                    <Text style={[{ fontFamily: 'Inter-Regular', fontSize: 13, color: colors.textMuted, marginLeft: 8, flex: 1 }]}>
-                                        Only administrators can modify group settings.
-                                    </Text>
-                                </View>
-                            )}
-
-                            <View style={{ height: 40 }} />
-                        </ScrollView>
-                    </View>
-                </View>
             </Modal>
 
             {/* Sticker Picker */}
@@ -3751,68 +3578,6 @@ const styles = StyleSheet.create({
         width: '100%',
         aspectRatio: 1,
         borderRadius: 8,
-    },
-    // Group Settings Modal
-    groupSettingsSheet: {
-        borderTopLeftRadius: 24, borderTopRightRadius: 24,
-        maxHeight: '90%', paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-    },
-    groupSettingsHeader: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 20, paddingVertical: 16,
-        borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
-    },
-    groupSettingsTitle: {
-        fontFamily: 'Inter-Bold', fontSize: 17,
-    },
-    groupSettingsAvatarRow: {
-        flexDirection: 'row', alignItems: 'center',
-        marginBottom: 20,
-    },
-    groupSettingsAvatar: {
-        width: 72, height: 72, borderRadius: 36,
-        alignItems: 'center', justifyContent: 'center',
-        overflow: 'hidden',
-    },
-    groupSettingsBadge: {
-        flexDirection: 'row', alignItems: 'center', gap: 4,
-        paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
-    },
-    groupSettingsInfoCard: {
-        flexDirection: 'row', alignItems: 'flex-start',
-        padding: 14, borderRadius: 14, gap: 4,
-    },
-    groupSettingsLabel: {
-        fontFamily: 'Inter-Bold', fontSize: 11,
-        letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8,
-    },
-    groupSettingsInput: {
-        borderWidth: 1.5, borderRadius: 12,
-        paddingHorizontal: 14, paddingVertical: 12,
-        fontFamily: 'Inter-Regular', fontSize: 15,
-        marginBottom: 4,
-    },
-    groupSettingsTextArea: {
-        minHeight: 80, textAlignVertical: 'top',
-    },
-    groupSettingsToggleRow: {
-        flexDirection: 'row', alignItems: 'center',
-        padding: 14, borderRadius: 14, marginTop: 14, marginBottom: 4,
-    },
-    groupSettingsToggle: {
-        width: 44, height: 26, borderRadius: 13,
-        justifyContent: 'center', padding: 2,
-    },
-    groupSettingsToggleThumb: {
-        width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff',
-        shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.2, shadowRadius: 2, elevation: 2,
-    },
-    groupSettingsSaveBtn: {
-        backgroundColor: COLORS.primary, height: 50, borderRadius: 14,
-        alignItems: 'center', justifyContent: 'center', marginTop: 20,
-        shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.25, shadowRadius: 8, elevation: 4,
     },
     // Multi-file Preview Modal Styles
     previewModalContent: {

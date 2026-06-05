@@ -15,7 +15,9 @@ import {
     Pressable,
     ScrollView,
     ActivityIndicator,
+    PanResponder,
 } from 'react-native';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
@@ -75,6 +77,17 @@ const cacheUserAvatars = async (users: any[]): Promise<any[]> => {
         return users;
     }
 };
+
+interface SelectedFile {
+    uri: string;
+    name: string;
+    size?: number;
+    mimeType?: string;
+    type: 'image' | 'video' | 'audio' | 'document';
+    width?: number;
+    height?: number;
+    caption?: string;
+}
 
 export default function ChatScreen() {
     useSentryScreen('ChatScreen');
@@ -144,12 +157,40 @@ export default function ChatScreen() {
     const [isSavingGroupSettings, setIsSavingGroupSettings] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const [isSending, setIsSending] = useState(false);
+
+    // Multi-file selection & cropping states
+    const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+    const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+    const [isCropVisible, setIsCropVisible] = useState(false);
+    const [croppingIndex, setCroppingIndex] = useState<number | null>(null);
+    const [useSameCaptionForAll, setUseSameCaptionForAll] = useState(true);
+    const [generalCaption, setGeneralCaption] = useState('');
+    const [activeCaptionIndex, setActiveCaptionIndex] = useState<number | 'all'>('all');
+
+    const [cropImageUri, setCropImageUri] = useState<string>('');
+    const [imageWidth, setImageWidth] = useState<number>(1);
+    const [imageHeight, setImageHeight] = useState<number>(1);
+    const [zoomScale, setZoomScale] = useState<number>(1.0);
+    const [offsetX, setOffsetX] = useState<number>(0);
+    const [offsetY, setOffsetY] = useState<number>(0);
+
+    const lastOffsetX = useRef(0);
+    const lastOffsetY = useRef(0);
+
     const flatListRef = useRef<FlatList>(null);
     const realtimeChannelRef = useRef<any>(null);
     const isMounted = useRef(true);
     // Refs to latest function versions — prevents stale closures in callbacks
     const setupRealtimeRef = useRef<() => void>(() => {});
     const fetchMissedMessagesRef = useRef<() => Promise<void>>(async () => {});
+
+    useEffect(() => {
+        if (isPreviewVisible) {
+            setUseSameCaptionForAll(true);
+            setGeneralCaption('');
+            setActiveCaptionIndex('all');
+        }
+    }, [isPreviewVisible]);
 
     // Track whether user is near the bottom — only auto-scroll if they are
     const isNearBottomRef = useRef(true);
@@ -972,90 +1013,40 @@ export default function ChatScreen() {
         setShowAttachmentMenu(false);
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
+            mediaTypes: ImagePicker.MediaTypeOptions.All,
+            allowsMultipleSelection: true,
+            selectionLimit: 3,
             quality: 0.7,
         });
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
-            const asset = result.assets[0];
-
-            if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-                Alert.alert('File Too Large', 'Please select an image smaller than 10MB.');
-                return;
-            }
-
-            const tempId = `temp-img-${Date.now()}`;
-
-            // Optimistic UI — show local preview immediately
-            const newMessage = {
-                id: tempId,
-                content: asset.uri,        // local URI for instant preview
-                _localUri: asset.uri,       // keep local URI for dedup after upload
-                created_at: new Date().toISOString(),
-                sender_id: currentUser.id,
-                user: {
-                    username: profile?.username || currentUser.user_metadata?.username || 'me',
-                    full_name: profile?.full_name || currentUser.user_metadata?.full_name,
-                    level: profile?.level || currentUser.user_metadata?.level,
-                    avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url,
-                },
-                replyTo: null,
-                message_type: 'image',
-                content_type: 'image',
-                status: 'sending' as any,
-            };
-
-            setMessages(prev => {
-                // Prevent duplicate if somehow called twice
-                if (prev.some(m => m.id === tempId)) return prev;
-                return [...prev, newMessage];
+            const assets = result.assets.slice(0, 3);
+            const files: SelectedFile[] = assets.map(asset => {
+                const mime = asset.mimeType || '';
+                const type = mime.startsWith('video') ? 'video' : 'image';
+                const name = asset.fileName || asset.uri.split('/').pop() || (type === 'video' ? 'video.mp4' : 'image.jpg');
+                return {
+                    uri: asset.uri,
+                    name,
+                    size: asset.fileSize,
+                    mimeType: asset.mimeType,
+                    type,
+                    width: asset.width,
+                    height: asset.height
+                };
             });
-            messageStore.addMessage(id, newMessage);
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
 
-            try {
-                // Upload to Cloudinary with progress
-                const fileName = `${currentUser.id}-${Date.now()}.jpg`;
-                const imageUrl = await uploadLocalFileToCloudinary(
-                    asset.uri,
-                    fileName,
-                    'chat-images',
-                    'image/jpeg',
-                    (p: number) => setUploadingIds(prev => ({ ...prev, [tempId]: Math.min(Math.round(p), 99) }))
-                );
-
-                // Insert to DB — include tempId in metadata so realtime can dedup
-                const { data, error } = await (supabase
-                    .from('messages')
-                    .insert([{
-                        content: imageUrl,
-                        sender_id: currentUser.id,
-                        group_id: id,
-                        message_type: 'image',
-                        content_type: 'image',
-                        metadata: { tempId },
-                    }])
-                    .select()
-                    .single() as any);
-
-                if (error) throw error;
-
-                // Confirm: swap temp message with real one
-                setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
-                setMessages(prev => prev.map(m =>
-                    m.id === tempId
-                        ? { ...m, id: data.id, content: imageUrl, status: 'sent' }
-                        : m
-                ));
-                messageStore.updateMessage(id, tempId, { id: data.id, content: imageUrl, status: 'sent' });
-
-            } catch (err: any) {
-                captureUIError('ChatScreen.sendImageMessage', err, { groupId: id });
-                setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
-                messageStore.updateMessage(id, tempId, { status: 'failed' });
+            for (const file of files) {
+                const limit = file.type === 'video' ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
+                const label = file.type === 'video' ? '20MB' : '10MB';
+                if (file.size && file.size > limit) {
+                    Alert.alert('File Too Large', `Please select files smaller than ${label}.`);
+                    return;
+                }
             }
+
+            setSelectedFiles(files);
+            setIsPreviewVisible(true);
         }
     };
 
@@ -1457,6 +1448,12 @@ export default function ChatScreen() {
                                         </View>
                                     )}
 
+                                    {item.caption ? (
+                                        <Text style={[styles.mediaCaptionText, { color: isDark ? '#e2e8f0' : '#0f172a' }]}>
+                                            {item.caption}
+                                        </Text>
+                                    ) : null}
+
                                     <View style={styles.timeEditRow}>
                                         <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
                                             {item.created_at ? format(new Date(item.created_at), 'p') : ''}
@@ -1543,6 +1540,12 @@ export default function ChatScreen() {
                                             </View>
                                         )}
 
+                                        {item.caption ? (
+                                            <Text style={[styles.mediaCaptionText, { color: isDark ? '#e2e8f0' : '#0f172a' }]}>
+                                                {item.caption}
+                                            </Text>
+                                        ) : null}
+
                                         <View style={styles.timeEditRow}>
                                             <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
                                                 {item.created_at ? format(new Date(item.created_at), 'p') : ''}
@@ -1552,7 +1555,8 @@ export default function ChatScreen() {
                                     </TouchableOpacity>
                                 ) : item.message_type === 'document' || item.message_type === 'audio' ? (
                                     // ── DOC / AUDIO — tap to download then open ──────────────
-                                    <TouchableOpacity
+                                    <>
+                                        <TouchableOpacity
                                         style={styles.documentActionArea}
                                         activeOpacity={0.8}
                                         delayLongPress={400}
@@ -1617,6 +1621,12 @@ export default function ChatScreen() {
                                             <Ionicons name="arrow-down-circle-outline" size={24} color="#64748b" />
                                         ) : null}
                                     </TouchableOpacity>
+                                    {item.caption ? (
+                                        <Text style={[styles.mediaCaptionText, { color: isDark ? '#e2e8f0' : '#0f172a' }]}>
+                                            {item.caption}
+                                        </Text>
+                                    ) : null}
+                                    </>
                                 ) : (
                                     <Text style={[
                                         styles.messageText,
@@ -1669,83 +1679,38 @@ export default function ChatScreen() {
         if (!currentUser) return;
         setShowAttachmentMenu(false);
 
-        // Declare tempId here so the catch block can always reference it
-        let tempId = '';
-
         try {
             const result = await DocumentPicker.getDocumentAsync({
                 type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-                copyToCacheDirectory: true
+                copyToCacheDirectory: true,
+                multiple: true
             });
 
             if (!result.canceled && result.assets && result.assets.length > 0) {
-                const asset = result.assets[0];
-                
-                if (asset.size && asset.size > 5 * 1024 * 1024) {
-                    Alert.alert('File Too Large', 'Please select a file smaller than 5MB.');
-                    return;
+                const assets = result.assets.slice(0, 3);
+                const files: SelectedFile[] = assets.map(asset => {
+                    const name = asset.name;
+                    return {
+                        uri: asset.uri,
+                        name,
+                        size: asset.size,
+                        mimeType: asset.mimeType,
+                        type: 'document'
+                    };
+                });
+
+                for (const file of files) {
+                    if (file.size && file.size > 5 * 1024 * 1024) {
+                        Alert.alert('File Too Large', 'Please select files smaller than 5MB.');
+                        return;
+                    }
                 }
 
-                tempId = `temp-doc-${Date.now()}`;
-                const originalName = asset.name;
-                const uploadName = `${Date.now()}-${originalName}`;
-
-                // Optimistic UI
-                const newMessage = {
-                    id: tempId,
-                    content: originalName,
-                    created_at: new Date().toISOString(),
-                    sender_id: currentUser.id,
-                    user: { 
-                        username: profile?.username || currentUser.user_metadata?.username || 'me', 
-                        avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url 
-                    },
-                    message_type: 'document',
-                    content_type: 'document',
-                    status: 'sending' as any,
-                    metadata: { name: originalName, size: asset.size }
-                };
-
-                setMessages(prev => [...prev, newMessage]);
-                messageStore.addMessage(id, newMessage);
-
-                const fileUrl = await uploadLocalFileToCloudinary(asset.uri, uploadName, 'chat-docs', asset.mimeType || 'application/octet-stream', (p: number) => {
-                    setUploadingIds(prev => ({ ...prev, [tempId]: Math.min(Math.round(p), 99) }));
-                });
-
-                const { data, error } = await supabase
-                    .from('messages')
-                    .insert([{
-                        content: fileUrl,
-                        sender_id: currentUser.id,
-                        group_id: id,
-                        message_type: 'document',
-                        metadata: { name: originalName, size: asset.size, tempId }
-                    }])
-                    .select()
-                    .single();
-
-                if (error) throw error;
-                setUploadingIds(prev => {
-                    const next = { ...prev };
-                    delete next[tempId];
-                    return next;
-                });
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent' } : m));
-                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent' });
+                setSelectedFiles(files);
+                setIsPreviewVisible(true);
             }
         } catch (err: any) {
-            captureUIError('ChatScreen.sendDocumentMessage', err, { groupId: id });
-            // Mark only THIS message as failed — use captured tempId, not prefix match
-            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
-            setUploadingIds(prev => {
-                const next = { ...prev };
-                delete next[tempId];
-                return next;
-            });
-            if (!isNetworkError(err)) {
-                Alert.alert('Upload Failed', 'Could not upload the document. Please check your connection and try again.');
-            }
+            captureUIError('ChatScreen.pickDocument', err, { groupId: id });
         }
     };
 
@@ -1757,86 +1722,42 @@ export default function ChatScreen() {
         if (!currentUser) return;
         setShowAttachmentMenu(false);
 
-        // Declare tempId here so the catch block can always reference it
-        let tempId = '';
-
         try {
             const result = await DocumentPicker.getDocumentAsync({
                 type: ['audio/*', 'video/*'],
-                copyToCacheDirectory: true
+                copyToCacheDirectory: true,
+                multiple: true
             });
 
             if (!result.canceled && result.assets && result.assets.length > 0) {
-                const asset = result.assets[0];
-                
-                const isAudio = asset.mimeType?.startsWith('audio');
-                const sizeLimit = isAudio ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
-                const sizeLabelMB = isAudio ? '5MB' : '20MB';
-                if (asset.size && asset.size > sizeLimit) {
-                    Alert.alert('File Too Large', `Please select a ${isAudio ? 'audio' : 'video'} file smaller than ${sizeLabelMB}.`);
-                    return;
+                const assets = result.assets.slice(0, 3);
+                const files: SelectedFile[] = assets.map(asset => {
+                    const name = asset.name;
+                    const isAudio = asset.mimeType?.startsWith('audio') || name.toLowerCase().endsWith('.mp3') || name.toLowerCase().endsWith('.m4a') || name.toLowerCase().endsWith('.wav');
+                    return {
+                        uri: asset.uri,
+                        name,
+                        size: asset.size,
+                        mimeType: asset.mimeType,
+                        type: isAudio ? 'audio' : 'video'
+                    };
+                });
+
+                for (const file of files) {
+                    const isAudio = file.type === 'audio';
+                    const sizeLimit = isAudio ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
+                    const sizeLabelMB = isAudio ? '5MB' : '20MB';
+                    if (file.size && file.size > sizeLimit) {
+                        Alert.alert('File Too Large', `Please select files smaller than ${sizeLabelMB}.`);
+                        return;
+                    }
                 }
-                const type = isAudio ? 'audio' : 'video';
-                tempId = `temp-${type}-${Date.now()}`;
-                const originalName = asset.name;
-                const uploadName = `${Date.now()}-${originalName}`;
 
-                // Optimistic UI
-                const newMessage = {
-                    id: tempId,
-                    content: originalName,
-                    created_at: new Date().toISOString(),
-                    sender_id: currentUser.id,
-                    user: { 
-                        username: profile?.username || currentUser.user_metadata?.username || 'me', 
-                        avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url 
-                    },
-                    message_type: type,
-                    content_type: type,
-                    status: 'sending' as any,
-                    metadata: { name: originalName, size: asset.size }
-                };
-
-                setMessages(prev => [...prev, newMessage]);
-                messageStore.addMessage(id, newMessage);
-
-                const fileUrl = await uploadLocalFileToCloudinary(asset.uri, uploadName, `chat-${type}s`, asset.mimeType || 'application/octet-stream', (p: number) => {
-                    setUploadingIds(prev => ({ ...prev, [tempId]: Math.min(Math.round(p), 99) }));
-                });
-
-                const { data, error } = await supabase
-                    .from('messages')
-                    .insert([{
-                        content: fileUrl,
-                        sender_id: currentUser.id,
-                        group_id: id,
-                        message_type: type,
-                        metadata: { name: originalName, size: asset.size, tempId }
-                    }])
-                    .select()
-                    .single();
-
-                if (error) throw error;
-                setUploadingIds(prev => {
-                    const next = { ...prev };
-                    delete next[tempId];
-                    return next;
-                });
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent' } : m));
-                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent' });
+                setSelectedFiles(files);
+                setIsPreviewVisible(true);
             }
         } catch (err: any) {
-            captureUIError('ChatScreen.sendMediaMessage', err, { groupId: id });
-            // Mark only THIS message as failed — use captured tempId, not prefix match
-            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
-            setUploadingIds(prev => {
-                const next = { ...prev };
-                delete next[tempId];
-                return next;
-            });
-            if (!isNetworkError(err)) {
-                Alert.alert('Upload Failed', 'Could not upload the media file. Please check your connection and try again.');
-            }
+            captureUIError('ChatScreen.pickAudioVideo', err, { groupId: id });
         }
     };
 
@@ -1847,6 +1768,288 @@ export default function ChatScreen() {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     };
+
+    // Multi-file cropping and sending helpers
+    const zoomScaleRef = useRef(1.0);
+    const offsetXRef = useRef(0);
+    const offsetYRef = useRef(0);
+    const imageWidthRef = useRef(1);
+    const imageHeightRef = useRef(1);
+
+    const setZoomScaleWithRef = (val: number | ((prev: number) => number)) => {
+        setZoomScale(prev => {
+            const next = typeof val === 'function' ? val(prev) : val;
+            zoomScaleRef.current = next;
+            return next;
+        });
+    };
+    const setOffsetXWithRef = (val: number | ((prev: number) => number)) => {
+        setOffsetX(prev => {
+            const next = typeof val === 'function' ? val(prev) : val;
+            offsetXRef.current = next;
+            return next;
+        });
+    };
+    const setOffsetYWithRef = (val: number | ((prev: number) => number)) => {
+        setOffsetY(prev => {
+            const next = typeof val === 'function' ? val(prev) : val;
+            offsetYRef.current = next;
+            return next;
+        });
+    };
+
+    // Width and height of the container
+    const CONTAINER_SIZE = 300;
+    const CROP_SIZE = 200;
+
+    const initCrop = (uri: string, w: number, h: number) => {
+        setCropImageUri(uri);
+        const originalW = w || 1;
+        const originalH = h || 1;
+        setImageWidth(originalW);
+        imageWidthRef.current = originalW;
+        setImageHeight(originalH);
+        imageHeightRef.current = originalH;
+
+        const ar = originalW / originalH;
+        let dw = CONTAINER_SIZE;
+        let dh = CONTAINER_SIZE;
+        if (ar > 1) {
+            dh = CONTAINER_SIZE;
+            dw = CONTAINER_SIZE * ar;
+        } else {
+            dw = CONTAINER_SIZE;
+            dh = CONTAINER_SIZE / ar;
+        }
+
+        const initialMinZoom = Math.max(CROP_SIZE / dw, CROP_SIZE / dh);
+        setZoomScale(initialMinZoom);
+        zoomScaleRef.current = initialMinZoom;
+        setOffsetX(0);
+        offsetXRef.current = 0;
+        setOffsetY(0);
+        offsetYRef.current = 0;
+    };
+
+    const handleZoom = (factor: number) => {
+        let ar = imageWidthRef.current / imageHeightRef.current;
+        let dw = CONTAINER_SIZE;
+        let dh = CONTAINER_SIZE;
+        if (ar > 1) {
+            dh = CONTAINER_SIZE;
+            dw = CONTAINER_SIZE * ar;
+        } else {
+            dw = CONTAINER_SIZE;
+            dh = CONTAINER_SIZE / ar;
+        }
+        const minZ = Math.max(CROP_SIZE / dw, CROP_SIZE / dh);
+
+        setZoomScaleWithRef(prev => {
+            const nextZoom = Math.max(minZ, Math.min(5.0, prev + factor));
+            
+            // Adjust and clamp offsets for new size
+            const W_img = dw * nextZoom;
+            const H_img = dh * nextZoom;
+            const maxOffsetX = W_img / 2 - 100;
+            const minOffsetX = 100 - W_img / 2;
+            const maxOffsetY = H_img / 2 - 100;
+            const minOffsetY = 100 - H_img / 2;
+
+            setOffsetXWithRef(x => Math.max(minOffsetX, Math.min(maxOffsetX, x)));
+            setOffsetYWithRef(y => Math.max(minOffsetY, Math.min(maxOffsetY, y)));
+            return nextZoom;
+        });
+    };
+
+    const handleApplyCrop = async () => {
+        if (croppingIndex === null) return;
+        try {
+            const file = selectedFiles[croppingIndex];
+
+            let ar = imageWidthRef.current / imageHeightRef.current;
+            let dw = CONTAINER_SIZE;
+            let dh = CONTAINER_SIZE;
+            if (ar > 1) {
+                dh = CONTAINER_SIZE;
+                dw = CONTAINER_SIZE * ar;
+            } else {
+                dw = CONTAINER_SIZE;
+                dh = CONTAINER_SIZE / ar;
+            }
+
+            const W_img = dw * zoomScaleRef.current;
+            const H_img = dh * zoomScaleRef.current;
+
+            const x_img = (CONTAINER_SIZE - W_img) / 2 + offsetXRef.current;
+            const y_img = (CONTAINER_SIZE - H_img) / 2 + offsetYRef.current;
+
+            const relX = 50 - x_img;
+            const relY = 50 - y_img;
+
+            const scale = imageWidthRef.current / W_img;
+            const originX = Math.max(0, Math.round(relX * scale));
+            const originY = Math.max(0, Math.round(relY * scale));
+            const cropWidth = Math.min(imageWidthRef.current - originX, Math.round(CROP_SIZE * scale));
+            const cropHeight = Math.min(imageHeightRef.current - originY, Math.round(CROP_SIZE * scale));
+
+            const result = await ImageManipulator.manipulateAsync(
+                file.uri,
+                [{ crop: { originX, originY, width: cropWidth, height: cropHeight } }],
+                { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+            );
+
+            setSelectedFiles(prev => {
+                const next = [...prev];
+                next[croppingIndex] = {
+                    ...file,
+                    uri: result.uri,
+                    width: result.width,
+                    height: result.height,
+                    size: undefined
+                };
+                return next;
+            });
+
+            setIsCropVisible(false);
+            setCroppingIndex(null);
+        } catch (err) {
+            console.error('Cropping error:', err);
+            Alert.alert('Crop Error', 'Failed to crop image. Please try again.');
+        }
+    };
+
+    const handleSendSelectedFiles = async () => {
+        if (selectedFiles.length === 0) return;
+        setIsPreviewVisible(false);
+        const filesToSend = [...selectedFiles];
+        setSelectedFiles([]);
+
+        for (const file of filesToSend) {
+            const tempId = `temp-upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            let msgType = file.type;
+            let originalName = file.name;
+            let uploadName = `${Date.now()}-${originalName}`;
+            let folder = 'chat-docs';
+            let contentType = file.mimeType || 'application/octet-stream';
+
+            if (file.type === 'image') {
+                folder = 'chat-images';
+                contentType = 'image/jpeg';
+                if (!uploadName.toLowerCase().endsWith('.jpg') && !uploadName.toLowerCase().endsWith('.jpeg')) {
+                    uploadName += '.jpg';
+                }
+            } else if (file.type === 'video') {
+                folder = 'chat-videos';
+            } else if (file.type === 'audio') {
+                folder = 'chat-audios';
+            }
+
+            const fileCaption = useSameCaptionForAll ? generalCaption : file.caption;
+
+            // Optimistic UI
+            const newMessage = {
+                id: tempId,
+                content: file.type === 'image' ? file.uri : originalName,
+                _localUri: file.uri,
+                created_at: new Date().toISOString(),
+                sender_id: currentUser!.id,
+                user: {
+                    username: profile?.username || currentUser!.user_metadata?.username || 'me',
+                    full_name: profile?.full_name || currentUser!.user_metadata?.full_name,
+                    level: profile?.level || currentUser!.user_metadata?.level,
+                    avatar_url: profile?.avatar_url || currentUser!.user_metadata?.avatar_url,
+                },
+                replyTo: null,
+                message_type: msgType,
+                content_type: msgType,
+                status: 'sending' as any,
+                metadata: { name: originalName, size: file.size, tempId },
+                caption: fileCaption || null
+            };
+
+            setMessages(prev => [...prev, newMessage]);
+            messageStore.addMessage(id, newMessage);
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+
+            try {
+                const fileUrl = await uploadLocalFileToCloudinary(
+                    file.uri,
+                    uploadName,
+                    folder,
+                    contentType,
+                    (p: number) => setUploadingIds(prev => ({ ...prev, [tempId]: Math.min(Math.round(p), 99) }))
+                );
+
+                const { data, error } = await supabase
+                    .from('messages')
+                    .insert([{
+                        content: fileUrl,
+                        sender_id: currentUser!.id,
+                        group_id: id,
+                        message_type: msgType,
+                        content_type: msgType,
+                        metadata: { name: originalName, size: file.size, tempId },
+                        caption: fileCaption || null
+                    }])
+                    .select()
+                    .single();
+
+                if (error) throw error;
+
+                setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
+                setMessages(prev => prev.map(m =>
+                    m.id === tempId
+                        ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null }
+                        : m
+                ));
+                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null });
+            } catch (err: any) {
+                captureUIError('ChatScreen.sendSelectedFileQueue', err, { groupId: id });
+                setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
+                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+                messageStore.updateMessage(id, tempId, { status: 'failed' });
+            }
+        }
+    };
+
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onPanResponderGrant: () => {
+                lastOffsetX.current = offsetXRef.current;
+                lastOffsetY.current = offsetYRef.current;
+            },
+            onPanResponderMove: (evt, gestureState) => {
+                let newX = lastOffsetX.current + gestureState.dx;
+                let newY = lastOffsetY.current + gestureState.dy;
+
+                let ar = imageWidthRef.current / imageHeightRef.current;
+                let dw = CONTAINER_SIZE;
+                let dh = CONTAINER_SIZE;
+                if (ar > 1) {
+                    dh = CONTAINER_SIZE;
+                    dw = CONTAINER_SIZE * ar;
+                } else {
+                    dw = CONTAINER_SIZE;
+                    dh = CONTAINER_SIZE / ar;
+                }
+
+                const W_img = dw * zoomScaleRef.current;
+                const H_img = dh * zoomScaleRef.current;
+                const maxOffsetX = W_img / 2 - 100;
+                const minOffsetX = 100 - W_img / 2;
+                const maxOffsetY = H_img / 2 - 100;
+                const minOffsetY = 100 - H_img / 2;
+
+                const clampedX = Math.max(minOffsetX, Math.min(maxOffsetX, newX));
+                const clampedY = Math.max(minOffsetY, Math.min(maxOffsetY, newY));
+
+                setOffsetXWithRef(clampedX);
+                setOffsetYWithRef(clampedY);
+            }
+        })
+    ).current;
 
     // Check which media messages are already downloaded on load
     const checkDownloadedState = async (msgs: any[]) => {
@@ -2155,6 +2358,271 @@ export default function ChatScreen() {
                     </View>
                 </Modal>
             )}
+
+            {/* File Preview Modal */}
+            <Modal visible={isPreviewVisible} animationType="slide" transparent>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.previewModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={styles.previewHeader}>
+                            <Text style={[styles.previewTitle, { color: colors.text }]}>Selected Files</Text>
+                            <TouchableOpacity onPress={() => { setSelectedFiles([]); setIsPreviewVisible(false); }}>
+                                <Ionicons name="close" size={24} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewScrollContent}>
+                            {selectedFiles.map((item, index) => (
+                                <TouchableOpacity 
+                                    key={index} 
+                                    activeOpacity={0.85}
+                                    onPress={() => {
+                                        if (!useSameCaptionForAll) {
+                                            setActiveCaptionIndex(index);
+                                        }
+                                    }}
+                                    style={[
+                                        styles.previewItemCard, 
+                                        { backgroundColor: isDark ? '#1e293b' : '#f8fafc' },
+                                        !useSameCaptionForAll && activeCaptionIndex === index && { borderWidth: 2, borderColor: COLORS.primary }
+                                    ]}
+                                >
+                                    <View style={styles.previewMediaContainer}>
+                                        {item.type === 'image' ? (
+                                            <Image source={{ uri: item.uri }} style={styles.previewThumbnail} />
+                                        ) : item.type === 'video' ? (
+                                            <View style={[styles.previewPlaceholder, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
+                                                <Ionicons name="videocam" size={32} color={COLORS.primary} />
+                                                <Text style={[styles.previewPlaceholderText, { color: colors.text }]}>Video</Text>
+                                            </View>
+                                        ) : item.type === 'audio' ? (
+                                            <View style={[styles.previewPlaceholder, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
+                                                <Ionicons name="musical-notes" size={32} color={COLORS.primary} />
+                                                <Text style={[styles.previewPlaceholderText, { color: colors.text }]}>Audio</Text>
+                                            </View>
+                                        ) : (
+                                            <View style={[styles.previewPlaceholder, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
+                                                <Ionicons name="document-text" size={32} color={COLORS.primary} />
+                                                <Text style={[styles.previewPlaceholderText, { color: colors.text }]}>PDF</Text>
+                                            </View>
+                                        )}
+
+                                        {item.type === 'image' && (
+                                            <TouchableOpacity 
+                                                onPress={() => {
+                                                    initCrop(item.uri, item.width || 0, item.height || 0);
+                                                    setCroppingIndex(index);
+                                                    setIsCropVisible(true);
+                                                }}
+                                                style={styles.previewCropBadge}
+                                            >
+                                                <Ionicons name="crop" size={14} color="#FFF" />
+                                                <Text style={styles.previewCropText}>Crop</Text>
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {item.caption ? (
+                                            <View style={styles.previewCaptionBadge}>
+                                                <Ionicons name="chatbox-ellipses" size={10} color="#FFF" />
+                                            </View>
+                                        ) : null}
+                                    </View>
+
+                                    <Text numberOfLines={1} style={[styles.previewItemName, { color: colors.text }]}>
+                                        {item.name}
+                                    </Text>
+
+                                    <TouchableOpacity 
+                                        onPress={() => {
+                                            const updated = selectedFiles.filter((_, i) => i !== index);
+                                            setSelectedFiles(updated);
+                                            if (updated.length === 0) {
+                                                setIsPreviewVisible(false);
+                                            } else {
+                                                if (activeCaptionIndex !== 'all' && activeCaptionIndex >= updated.length) {
+                                                    setActiveCaptionIndex(0);
+                                                }
+                                            }
+                                        }}
+                                        style={styles.previewRemoveBtn}
+                                    >
+                                        <Ionicons name="close-circle" size={22} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+
+                        {/* Caption Entry Section */}
+                        <View style={styles.captionSectionContainer}>
+                            <View style={styles.previewCaptionToggleRow}>
+                                <Text style={[styles.previewCaptionToggleText, { color: colors.text }]}>
+                                    Use same caption for all files
+                                </Text>
+                                <TouchableOpacity 
+                                    onPress={() => {
+                                        setUseSameCaptionForAll(prev => {
+                                            const next = !prev;
+                                            if (next) {
+                                                setActiveCaptionIndex('all');
+                                            } else {
+                                                setActiveCaptionIndex(0);
+                                            }
+                                            return next;
+                                        });
+                                    }}
+                                    style={[
+                                        styles.previewCaptionSwitch,
+                                        { backgroundColor: useSameCaptionForAll ? COLORS.primary : (isDark ? '#334155' : '#cbd5e1') }
+                                    ]}
+                                >
+                                    <View style={[
+                                        styles.previewCaptionSwitchThumb,
+                                        useSameCaptionForAll ? { right: 2 } : { left: 2 }
+                                    ]} />
+                                </TouchableOpacity>
+                            </View>
+
+                            {!useSameCaptionForAll && (
+                                <Text style={[styles.captionInstructionsText, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+                                    Tap a file thumbnail above to write its caption:
+                                </Text>
+                            )}
+
+                            {useSameCaptionForAll ? (
+                                <TextInput
+                                    placeholder="Write a caption for all items... (optional)"
+                                    placeholderTextColor={isDark ? '#94a3b8' : '#64748b'}
+                                    value={generalCaption}
+                                    onChangeText={setGeneralCaption}
+                                    style={[styles.previewCaptionInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
+                                    multiline
+                                    maxLength={200}
+                                />
+                            ) : (
+                                <TextInput
+                                    placeholder={`Write a caption for ${activeCaptionIndex !== 'all' && selectedFiles[activeCaptionIndex as number] ? selectedFiles[activeCaptionIndex as number].name : 'selected item'}... (optional)`}
+                                    placeholderTextColor={isDark ? '#94a3b8' : '#64748b'}
+                                    value={activeCaptionIndex !== 'all' && selectedFiles[activeCaptionIndex as number] ? (selectedFiles[activeCaptionIndex as number].caption || '') : ''}
+                                    onChangeText={(text) => {
+                                        if (activeCaptionIndex !== 'all') {
+                                            setSelectedFiles(prev => {
+                                                const next = [...prev];
+                                                next[activeCaptionIndex as number] = {
+                                                    ...next[activeCaptionIndex as number],
+                                                    caption: text
+                                                };
+                                                return next;
+                                            });
+                                        }
+                                    }}
+                                    style={[styles.previewCaptionInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
+                                    multiline
+                                    maxLength={200}
+                                />
+                            )}
+                        </View>
+
+                        <View style={styles.previewActionRow}>
+                            <TouchableOpacity 
+                                onPress={() => { setSelectedFiles([]); setIsPreviewVisible(false); }} 
+                                style={[styles.previewCancelBtn, { borderColor: colors.border }]}
+                            >
+                                <Text style={[styles.previewCancelText, { color: colors.text }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={handleSendSelectedFiles} 
+                                style={[styles.previewSendBtn, { backgroundColor: COLORS.primary }]}
+                            >
+                                <Ionicons name="send" size={16} color="#FFF" style={{ marginRight: 6 }} />
+                                <Text style={styles.previewSendText}>Add</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Image Cropper Modal */}
+            <Modal visible={isCropVisible} animationType="fade" transparent>
+                <View style={styles.cropOverlay}>
+                    <View style={[styles.cropCard, { backgroundColor: colors.card }]}>
+                        <View style={styles.cropHeader}>
+                            <Text style={[styles.cropTitle, { color: colors.text }]}>Crop Image</Text>
+                            <TouchableOpacity onPress={() => { setIsCropVisible(false); setCroppingIndex(null); }}>
+                                <Ionicons name="close" size={24} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Interactive Cropper Canvas */}
+                        <View style={styles.cropCanvasContainer}>
+                            <View 
+                                style={[styles.cropCanvas, { backgroundColor: isDark ? '#0f172a' : '#e2e8f0' }]} 
+                                {...panResponder.panHandlers}
+                            >
+                                {(() => {
+                                    const ar = imageWidth / imageHeight;
+                                    const dw = ar > 1 ? CONTAINER_SIZE * ar : CONTAINER_SIZE;
+                                    const dh = ar > 1 ? CONTAINER_SIZE : CONTAINER_SIZE / ar;
+                                    const imgWidth = dw * zoomScale;
+                                    const imgHeight = dh * zoomScale;
+                                    const imgLeft = (CONTAINER_SIZE - imgWidth) / 2 + offsetX;
+                                    const imgTop = (CONTAINER_SIZE - imgHeight) / 2 + offsetY;
+                                    return cropImageUri ? (
+                                        <Image 
+                                            source={{ uri: cropImageUri }} 
+                                            style={{
+                                                position: 'absolute',
+                                                width: imgWidth,
+                                                height: imgHeight,
+                                                left: imgLeft,
+                                                top: imgTop,
+                                            }}
+                                            resizeMode="stretch"
+                                        />
+                                    ) : null;
+                                })()}
+
+                                {/* Crop Area Frame Overlay (200x200 box centered inside 300x300 container) */}
+                                <View style={styles.cropFrameOverlay} pointerEvents="none" />
+                                
+                                {/* Dimmed surrounding overlays */}
+                                <View style={[styles.cropDimOverlay, { top: 0, left: 0, width: 300, height: 50 }]} pointerEvents="none" />
+                                <View style={[styles.cropDimOverlay, { top: 250, left: 0, width: 300, height: 50 }]} pointerEvents="none" />
+                                <View style={[styles.cropDimOverlay, { top: 50, left: 0, width: 50, height: 200 }]} pointerEvents="none" />
+                                <View style={[styles.cropDimOverlay, { top: 50, left: 250, width: 50, height: 200 }]} pointerEvents="none" />
+                            </View>
+                        </View>
+
+                        {/* Zoom Controls */}
+                        <View style={styles.cropZoomRow}>
+                            <TouchableOpacity onPress={() => handleZoom(-0.2)} style={[styles.zoomBtn, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                                <Ionicons name="remove" size={20} color={colors.text} />
+                            </TouchableOpacity>
+                            <Text style={[styles.zoomText, { color: colors.text }]}>
+                                {Math.round(zoomScale * 100)}%
+                            </Text>
+                            <TouchableOpacity onPress={() => handleZoom(0.2)} style={[styles.zoomBtn, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                                <Ionicons name="add" size={20} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Actions */}
+                        <View style={styles.cropActionRow}>
+                            <TouchableOpacity 
+                                onPress={() => { setIsCropVisible(false); setCroppingIndex(null); }} 
+                                style={[styles.cropCancelBtn, { borderColor: colors.border }]}
+                            >
+                                <Text style={[styles.cropCancelText, { color: colors.text }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={handleApplyCrop} 
+                                style={[styles.cropApplyBtn, { backgroundColor: COLORS.primary }]}
+                            >
+                                <Ionicons name="checkmark" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                                <Text style={styles.cropApplyText}>Apply</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Attachment Menu Modal */}
             <Modal visible={showAttachmentMenu} animationType="fade" transparent>
@@ -3337,5 +3805,294 @@ const styles = StyleSheet.create({
         alignItems: 'center', justifyContent: 'center', marginTop: 20,
         shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.25, shadowRadius: 8, elevation: 4,
+    },
+    // Multi-file Preview Modal Styles
+    previewModalContent: {
+        width: '90%',
+        maxHeight: '80%',
+        borderRadius: 24,
+        padding: 20,
+        borderWidth: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    previewHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    previewTitle: {
+        fontFamily: 'Inter-Bold',
+        fontSize: 18,
+    },
+    previewScrollContent: {
+        paddingVertical: 10,
+        gap: 16,
+    },
+    previewItemCard: {
+        width: 110,
+        padding: 10,
+        borderRadius: 16,
+        alignItems: 'center',
+        position: 'relative',
+    },
+    previewMediaContainer: {
+        width: 90,
+        height: 90,
+        borderRadius: 12,
+        overflow: 'hidden',
+        justifyContent: 'center',
+        alignItems: 'center',
+        position: 'relative',
+    },
+    previewThumbnail: {
+        width: '100%',
+        height: '100%',
+    },
+    previewPlaceholder: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    previewPlaceholderText: {
+        fontSize: 10,
+        fontFamily: 'Inter-Bold',
+        marginTop: 4,
+    },
+    previewCropBadge: {
+        position: 'absolute',
+        bottom: 6,
+        backgroundColor: 'rgba(15, 23, 42, 0.75)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+    },
+    previewCropText: {
+        color: '#FFF',
+        fontSize: 9,
+        fontFamily: 'Inter-Bold',
+    },
+    previewItemName: {
+        fontSize: 11,
+        fontFamily: 'Inter-Medium',
+        marginTop: 8,
+        width: '100%',
+        textAlign: 'center',
+    },
+    previewRemoveBtn: {
+        position: 'absolute',
+        top: -6,
+        right: -6,
+        zIndex: 10,
+    },
+    previewActionRow: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        gap: 12,
+        marginTop: 20,
+    },
+    previewCancelBtn: {
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    previewCancelText: {
+        fontFamily: 'Inter-Bold',
+        fontSize: 14,
+    },
+    previewSendBtn: {
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 12,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    previewSendText: {
+        color: '#FFF',
+        fontFamily: 'Inter-Bold',
+        fontSize: 14,
+    },
+
+    // Image Cropper Modal Styles
+    cropOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cropCard: {
+        width: '90%',
+        borderRadius: 24,
+        padding: 20,
+        alignItems: 'center',
+    },
+    cropHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        marginBottom: 20,
+    },
+    cropTitle: {
+        fontFamily: 'Inter-Bold',
+        fontSize: 18,
+    },
+    cropCanvasContainer: {
+        width: 300,
+        height: 300,
+        borderRadius: 16,
+        overflow: 'hidden',
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    cropCanvas: {
+        width: 300,
+        height: 300,
+        position: 'relative',
+        overflow: 'hidden',
+    },
+    cropFrameOverlay: {
+        position: 'absolute',
+        top: 50,
+        left: 50,
+        width: 200,
+        height: 200,
+        borderWidth: 2,
+        borderColor: '#FFF',
+        borderStyle: 'solid',
+        borderRadius: 4,
+    },
+    cropDimOverlay: {
+        position: 'absolute',
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    },
+    cropZoomRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16,
+        marginBottom: 24,
+        width: '100%',
+    },
+    zoomBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    zoomText: {
+        fontFamily: 'Inter-Bold',
+        fontSize: 14,
+        minWidth: 48,
+        textAlign: 'center',
+    },
+    cropActionRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '100%',
+        gap: 12,
+    },
+    cropCancelBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cropCancelText: {
+        fontFamily: 'Inter-Bold',
+        fontSize: 14,
+    },
+    cropApplyBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 14,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cropApplyText: {
+        color: '#FFF',
+        fontFamily: 'Inter-Bold',
+        fontSize: 14,
+    },
+    // Media Message Bubble Captions
+    mediaCaptionText: {
+        fontFamily: 'Inter-Regular',
+        fontSize: 14,
+        paddingHorizontal: 8,
+        paddingTop: 6,
+        paddingBottom: 2,
+    },
+    // Preview Modal Caption styles
+    captionSectionContainer: {
+        width: '100%',
+        marginTop: 10,
+        marginBottom: 10,
+    },
+    previewCaptionToggleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+    },
+    previewCaptionToggleText: {
+        fontFamily: 'Inter-Medium',
+        fontSize: 13,
+    },
+    previewCaptionSwitch: {
+        width: 44,
+        height: 24,
+        borderRadius: 12,
+        padding: 2,
+        justifyContent: 'center',
+    },
+    previewCaptionSwitchThumb: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: '#FFF',
+    },
+    captionInstructionsText: {
+        fontFamily: 'Inter-Medium',
+        fontSize: 11,
+        marginBottom: 8,
+    },
+    previewCaptionInput: {
+        borderWidth: 1,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontFamily: 'Inter-Regular',
+        fontSize: 14,
+        minHeight: 44,
+        maxHeight: 80,
+        textAlignVertical: 'top',
+    },
+    previewCaptionBadge: {
+        position: 'absolute',
+        top: 6,
+        left: 6,
+        backgroundColor: COLORS.primary,
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });

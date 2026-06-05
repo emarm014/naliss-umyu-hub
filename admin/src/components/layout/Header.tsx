@@ -9,7 +9,7 @@ export default function Header() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { profile, signOut } = useAuthStore();
-  const { isSyncing } = useAdminDataStore();
+  const { isSyncing, syncAll } = useAdminDataStore();
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -45,6 +45,16 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Refresh Button */}
+          <button
+            onClick={() => syncAll(true)}
+            disabled={isSyncing}
+            className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh Database"
+          >
+            <RefreshCcw className={`h-5 w-5 ${isSyncing ? 'animate-spin text-primary-600' : ''}`} />
+          </button>
+
           {/* Notifications */}
           <button className="relative p-2 text-gray-400 hover:text-gray-500">
             <Bell className="h-6 w-6" />

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
+import { useAdminDataStore } from '../../store/adminData.store';
 import {
   LayoutDashboard,
   Users,
@@ -52,6 +53,7 @@ const navigation = [
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, signOut } = useAuthStore();
   
   const handleLogout = async () => {
@@ -146,6 +148,11 @@ export default function Sidebar() {
                 key={item.href}
                 to={item.href}
                 end={item.href === '/materials' || item.href === '/'}
+                onClick={() => {
+                  if (location.pathname === item.href) {
+                    useAdminDataStore.getState().syncAll(true);
+                  }
+                }}
                 className={({ isActive }) => `
                     flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200
                     ${isActive 

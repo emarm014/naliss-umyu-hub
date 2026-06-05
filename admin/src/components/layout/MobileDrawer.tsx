@@ -1,5 +1,6 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
+import { useAdminDataStore } from '../../store/adminData.store';
 import {
   LayoutDashboard, Users, FileText, MessageSquare,
   GraduationCap, Briefcase, FolderOpen, BarChart3,
@@ -39,6 +40,7 @@ interface Props {
 
 export default function MobileDrawer({ isOpen, onClose }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, permissions, signOut } = useAuthStore();
   const userRole = profile?.role || 'student';
 
@@ -110,7 +112,12 @@ export default function MobileDrawer({ isOpen, onClose }: Props) {
                   key={item.href}
                   to={item.href}
                   end={item.href === '/' || item.href === '/materials'}
-                  onClick={onClose}
+                  onClick={() => {
+                    onClose();
+                    if (location.pathname === item.href) {
+                      useAdminDataStore.getState().syncAll(true);
+                    }
+                  }}
                   className={({ isActive }) =>
                     `flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all active:scale-95 ${
                       isActive

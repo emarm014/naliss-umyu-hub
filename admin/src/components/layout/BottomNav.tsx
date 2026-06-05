@@ -1,5 +1,6 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
+import { useAdminDataStore } from '../../store/adminData.store';
 import {
   LayoutDashboard,
   Users,
@@ -23,6 +24,7 @@ const primaryNav = [
 
 export default function BottomNav() {
   const { profile } = useAuthStore();
+  const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const userRole = profile?.role || 'student';
 
@@ -45,6 +47,11 @@ export default function BottomNav() {
                 key={item.href}
                 to={item.href}
                 end={item.href === '/' || item.href === '/materials'}
+                onClick={() => {
+                  if (location.pathname === item.href) {
+                    useAdminDataStore.getState().syncAll(true);
+                  }
+                }}
                 className={({ isActive }) =>
                   `flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-2xl min-w-[52px] transition-all duration-200 ${
                     isActive

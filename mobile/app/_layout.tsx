@@ -83,6 +83,7 @@ import { NalissLogo } from '../src/components/NalissLogo';
 // because the app never signals that the auth session is complete.
 WebBrowser.maybeCompleteAuthSession();
 import { ProtectedRoute } from '../src/components/ProtectedRoute';
+import { SplashLoadingScreen } from '../src/components/SplashLoadingScreen';
 import { supabase } from '../src/api/supabase/client';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -151,72 +152,6 @@ export function NetworkStatusDot() {
 // Keep OfflineBanner as a no-op — replaced by NetworkStatusDot in headers
 function OfflineBanner() { return null; }
 
-// ── Professional Splash / Loading Screen ──────────────────────────────────────
-function SplashLoadingScreen() {
-  const pulseAnim = useRef(new Animated.Value(0.95)).current;
-  const dot1 = useRef(new Animated.Value(0.3)).current;
-  const dot2 = useRef(new Animated.Value(0.3)).current;
-  const dot3 = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    // Subtle logo pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-        Animated.timing(pulseAnim, { toValue: 0.95, duration: 1000, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-      ])
-    ).start();
-
-    // Staggered dot bounce
-    const animateDot = (dot: Animated.Value, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(dot, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.timing(dot, { toValue: 0.3, duration: 400, useNativeDriver: true }),
-        ])
-      ).start();
-
-    animateDot(dot1, 0);
-    animateDot(dot2, 200);
-    animateDot(dot3, 400);
-  }, []);
-
-  return (
-    <View style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
-      <Animated.View style={{ transform: [{ scale: pulseAnim }], marginBottom: 24 }}>
-        <NalissLogo size={130} />
-      </Animated.View>
-
-      <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.primary, letterSpacing: 1.5, marginBottom: 4 }}>
-        NALISS UMYU HUB
-      </Text>
-      <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 44, letterSpacing: 2, textTransform: 'uppercase' }}>
-        Information is Light
-      </Text>
-
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        {[dot1, dot2, dot3].map((dot, i) => (
-          <Animated.View
-            key={i}
-            style={{
-              width: 8, height: 8, borderRadius: 4,
-              backgroundColor: COLORS.primary,
-              opacity: dot,
-            }}
-          />
-        ))}
-      </View>
-
-      <View style={{ position: 'absolute', bottom: 48, alignItems: 'center' }}>
-        <Text style={{ fontSize: 11, color: '#CBD5E1', letterSpacing: 1.5 }}>
-          NALISS UMYU HUB © 2026
-        </Text>
-      </View>
-    </View>
-  );
-}
-
 // ── Deep Link Session Handler ─────────────────────────────────────────────────
 // Extracts Supabase auth tokens from redirect URLs (e.g. after OAuth or reset)
 function extractSessionFromUrl(url: string) {
@@ -256,7 +191,15 @@ const queryClient = new QueryClient({
 
 function RootLayoutNav() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [isSplashDelayActive, setIsSplashDelayActive] = useState(true);
   const { isDark } = useThemeStore();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsSplashDelayActive(false);
+    }, 2200); // Keep animated splash for 2.2 seconds to display the beautiful branding
+    return () => clearTimeout(timer);
+  }, []);
   
   // Register Institutional Signal (Push Notifications)
   usePushNotifications();
@@ -439,7 +382,7 @@ function RootLayoutNav() {
     return () => subscription.remove();
   }, []);
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded || isSplashDelayActive) {
     return <SplashLoadingScreen />;
   }
 

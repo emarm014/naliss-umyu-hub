@@ -13,6 +13,7 @@ import { COLORS } from '../constants/Colors';
 import { User as Profile } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../components/NalissLogo';
+import { SplashLoadingScreen } from './SplashLoadingScreen';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // ── Zustand selectors — subscribe to individual properties, NOT the whole store.
@@ -788,11 +789,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // and causing a login redirect that immediately reverses to tabs.
   // On a real device AsyncStorage reads in ~10-50ms — imperceptible.
   if (!_hasHydrated) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+    return <SplashLoadingScreen message="Checking authorization..." />;
   }
 
   // Still waiting for profile check AND not yet unblocked by offline timeout
@@ -809,11 +806,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     // Also skip spinner if a signup transition is actively in progress
     const signupState = useSignupStore.getState();
     if (signupState.isGoogleDelaying) return <>{children}</>;
-    return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+    return <SplashLoadingScreen message="Verifying profile..." />;
   }
 
   // BLOCK: Global Maintenance Mode

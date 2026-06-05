@@ -22,12 +22,18 @@ CREATE TABLE IF NOT EXISTS public.user_sessions (
 ALTER TABLE public.user_sessions ENABLE ROW LEVEL SECURITY;
 
 -- 3. RLS Policies
--- Users can view their own login sessions
+-- Users can view their own login sessions, super_admins can view all sessions
 CREATE POLICY "Users can view their own sessions"
 ON public.user_sessions
 FOR SELECT
 TO authenticated
-USING (auth.uid() = user_id);
+USING (
+  auth.uid() = user_id 
+  OR EXISTS (
+    SELECT 1 FROM public.users 
+    WHERE id = auth.uid() AND role = 'super_admin'
+  )
+);
 
 -- Users can register new devices/sessions
 CREATE POLICY "Users can insert their own sessions"
@@ -36,13 +42,25 @@ FOR INSERT
 TO authenticated
 WITH CHECK (auth.uid() = user_id);
 
--- Users can update session activity or terminate sessions
+-- Users can update session activity or terminate sessions, super_admins can update all sessions
 CREATE POLICY "Users can update their own sessions"
 ON public.user_sessions
 FOR UPDATE
 TO authenticated
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
+USING (
+  auth.uid() = user_id 
+  OR EXISTS (
+    SELECT 1 FROM public.users 
+    WHERE id = auth.uid() AND role = 'super_admin'
+  )
+)
+WITH CHECK (
+  auth.uid() = user_id 
+  OR EXISTS (
+    SELECT 1 FROM public.users 
+    WHERE id = auth.uid() AND role = 'super_admin'
+  )
+);
 
 -- 4. Indices for fast lookups
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON public.user_sessions(user_id);

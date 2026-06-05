@@ -26,6 +26,7 @@ import SettingsPage from './pages/SettingsPage';
 import ActivityLogsPage from './pages/ActivityLogsPage';
 import GroupMediaPage from './pages/GroupMediaPage';
 import ModeratorStoragePage from './pages/ModeratorStoragePage';
+import SecurityPage from './pages/SecurityPage';
 
 // Aggressive caching: keep data fresh for 10 min, retry up to 3x with backoff
 const queryClient = new QueryClient({
@@ -107,6 +108,7 @@ function App() {
               <Route path="/group-media" element={<GroupMediaPage />} />
               <Route path="/storage" element={<ModeratorStoragePage />} />
               <Route path="/messaging" element={<MessagingPage />} />
+              <Route path="/security" element={<SecurityPage />} />
 
               {/* Cloud Archive — super_admin only */}
               <Route element={<RoleProtectedRoute minRole="super_admin" />}>

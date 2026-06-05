@@ -5,7 +5,7 @@ import {
   GraduationCap, Briefcase, FolderOpen, BarChart3,
   History, Archive, UsersRound, BookOpen, Cloud,
   Wrench, HelpCircle, LogOut, Calendar, Images,
-  HardDrive, X,
+  HardDrive, X, ShieldCheck,
 } from 'lucide-react';
 import { NalissLogo } from '../NalissLogo';
 
@@ -28,6 +28,7 @@ const allNav = [
   { name: 'Graduates', href: '/graduates', icon: Archive, minRole: 'super_admin' as const },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, minRole: 'super_admin' as const },
   { name: 'Activity Logs', href: '/logs', icon: History, minRole: 'super_admin' as const },
+  { name: 'Security Settings', href: '/security', icon: ShieldCheck, minRole: 'moderator' as const },
   { name: 'Settings', href: '/settings', icon: Wrench, minRole: 'super_admin' as const },
 ];
 

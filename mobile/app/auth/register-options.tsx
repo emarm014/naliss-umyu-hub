@@ -11,7 +11,6 @@ import { NalissLogo } from '../../src/components/NalissLogo';
 import { supabase } from '../../src/api/supabase/client';
 import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { useSignupStore } from '../../src/stores/signup.store';
-import { useSettingsStore } from '../../src/stores/settings.store';
 import { useNetworkStore } from '../../src/stores/network.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature } from '../../src/utils/sentry';
@@ -21,8 +20,8 @@ export default function RegisterOptions() {
   useSentryScreen('RegisterOptions');
   const router = useRouter();
 
-  // Read from store — will update in real-time via the subscription below
-  const { allowRegistration, fetchSettings, initializeListener } = useSettingsStore();
+  // Local state for registration flag — fetched directly as anon (no session needed)
+  const [allowRegistration, setAllowRegistration] = useState(true);
 
   // Track whether the initial fresh fetch has completed
   const [isFetching, setIsFetching] = useState(true);
@@ -32,18 +31,45 @@ export default function RegisterOptions() {
   useEffect(() => {
     isMounted.current = true;
 
-    // 1. Always fetch fresh from DB on mount — bypasses stale AsyncStorage cache
-    fetchSettings().finally(() => {
-      if (isMounted.current) setIsFetching(false);
-    });
+    // 1. Fetch allow_registration directly as anonymous user (no session guard)
+    const fetchRegistrationStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', 'allow_registration')
+          .maybeSingle();
 
-    // 2. Start a dedicated realtime subscription for this screen so changes
-    //    from the admin panel reflect instantly without needing a refresh
-    const unsubscribe = initializeListener();
+        if (!error && data && isMounted.current) {
+          setAllowRegistration(data.value !== 'false');
+        }
+      } catch {
+        // On error, default to true — server-side trigger is the final guard
+      } finally {
+        if (isMounted.current) setIsFetching(false);
+      }
+    };
+
+    fetchRegistrationStatus();
+
+    // 2. Realtime subscription — works without auth, listens for admin changes
+    const channel = supabase
+      .channel('reg_options_settings')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'system_settings', filter: 'key=eq.allow_registration' },
+        (payload) => {
+          const record = payload.new as any;
+          if (record?.key === 'allow_registration' && isMounted.current) {
+            setAllowRegistration(record.value !== 'false');
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
       isMounted.current = false;
-      unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -260,10 +286,10 @@ export default function RegisterOptions() {
                 </LinearGradient>
                 <View style={styles.optionText}>
                   <Text style={styles.optionTitle}>Sign up with Email</Text>
-                  <Text style={styles.optionSub}>Use your institutional address</Text>
+                  <Text style={styles.optionSub}>{allowRegistration ? 'Use your institutional address' : 'Currently locked'}</Text>
                 </View>
                 <View style={styles.optionArrow}>
-                  <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
+                  <Ionicons name={allowRegistration ? 'chevron-forward' : 'lock-closed'} size={16} color={allowRegistration ? '#94a3b8' : '#b91c1c'} />
                 </View>
               </TouchableOpacity>
 
@@ -286,10 +312,10 @@ export default function RegisterOptions() {
                 </LinearGradient>
                 <View style={styles.optionText}>
                   <Text style={styles.optionTitle}>Continue with Google</Text>
-                  <Text style={styles.optionSub}>Fast and secure access</Text>
+                  <Text style={styles.optionSub}>{allowRegistration ? 'Fast and secure access' : 'Currently locked'}</Text>
                 </View>
                 <View style={styles.optionArrow}>
-                  <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
+                  <Ionicons name={allowRegistration ? 'chevron-forward' : 'lock-closed'} size={16} color={allowRegistration ? '#94a3b8' : '#b91c1c'} />
                 </View>
               </TouchableOpacity>
             </View>

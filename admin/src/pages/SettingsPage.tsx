@@ -62,9 +62,6 @@ export default function SettingsPage() {
   const [showTransitionModal, setShowTransitionModal] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Per-toggle saving lock — prevents double-clicks and shows spinner
-  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
-
   const [formData, setFormData] = useState<FormData>({
     maintenance_mode: false,
     maintenance_message: '',
@@ -77,6 +74,10 @@ export default function SettingsPage() {
   // Keep a ref to formData so async callbacks always read the latest value
   const formDataRef = useRef(formData);
   useEffect(() => { formDataRef.current = formData; }, [formData]);
+
+  // Track submitting state in a ref to avoid stale closures in realtime listener
+  const isSubmittingRef = useRef(isSubmitting);
+  useEffect(() => { isSubmittingRef.current = isSubmitting; }, [isSubmitting]);
 
   // ── Fetch from DB ────────────────────────────────────────────────────────────
   const fetchSettings = async (silent = false) => {
@@ -102,7 +103,6 @@ export default function SettingsPage() {
     fetchSettings();
 
     // Realtime subscription — updates UI instantly when DB changes.
-    // We guard against updating keys that are mid-save to prevent race conditions.
     const channel = supabase
       .channel('admin_settings_live')
       .on(
@@ -113,20 +113,17 @@ export default function SettingsPage() {
           if (!record?.key) return;
           const { key, value } = record;
 
-          // Skip if we are currently saving this key (our own save triggered this event)
-          setSavingKeys(current => {
-            if (current.has(key)) return current; // no change, just read
-            // Not saving this key — safe to apply the realtime update
-            setFormData(prev => {
-              if (key === 'maintenance_mode') return { ...prev, maintenance_mode: value === 'true' };
-              if (key === 'read_only_mode') return { ...prev, read_only_mode: value === 'true' };
-              if (key === 'allow_registration') return { ...prev, allow_registration: value !== 'false' };
-              if (key === 'maintenance_message') return { ...prev, maintenance_message: value ?? '' };
-              if (key === 'maintenance_estimated_end') return { ...prev, maintenance_estimated_end: value ?? '' };
-              if (key === 'current_academic_year') return { ...prev, current_academic_year: value ?? '' };
-              return prev;
-            });
-            return current;
+          // If we are currently saving changes, ignore realtime updates to prevent race conditions
+          if (isSubmittingRef.current) return;
+
+          setFormData(prev => {
+            if (key === 'maintenance_mode') return { ...prev, maintenance_mode: value === 'true' };
+            if (key === 'read_only_mode') return { ...prev, read_only_mode: value === 'true' };
+            if (key === 'allow_registration') return { ...prev, allow_registration: value !== 'false' };
+            if (key === 'maintenance_message') return { ...prev, maintenance_message: value ?? '' };
+            if (key === 'maintenance_estimated_end') return { ...prev, maintenance_estimated_end: value ?? '' };
+            if (key === 'current_academic_year') return { ...prev, current_academic_year: value ?? '' };
+            return prev;
           });
         }
       )
@@ -146,55 +143,9 @@ export default function SettingsPage() {
     if (error) throw error;
   };
 
-  // ── Toggle handler — fully hardened ─────────────────────────────────────────
-  const handleToggle = async (key: 'maintenance_mode' | 'read_only_mode' | 'allow_registration') => {
-    // Prevent concurrent saves on the same key
-    if (savingKeys.has(key)) return;
-
-    // Read current value from ref (always fresh, no stale closure)
-    const currentValue = formDataRef.current[key] as boolean;
-    const newValue = !currentValue;
-
-    // 1. Optimistic UI update
-    setFormData(prev => ({ ...prev, [key]: newValue }));
-    // 2. Lock the toggle
-    setSavingKeys(prev => new Set(prev).add(key));
-    clearMessages();
-
-    try {
-      // 3. Write to DB
-      await saveSetting(key, String(newValue));
-
-      // 4. Re-fetch this single key from DB to confirm what was actually stored
-      const { data, error: verifyError } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', key)
-        .single();
-
-      if (verifyError) throw verifyError;
-
-      // 5. Set UI to the confirmed DB value (not the optimistic one)
-      const confirmedValue = key === 'allow_registration'
-        ? data.value !== 'false'
-        : data.value === 'true';
-
-      setFormData(prev => ({ ...prev, [key]: confirmedValue }));
-
-      if (confirmedValue === newValue) {
-        showSuccess(`${key.replace(/_/g, ' ')} ${confirmedValue ? 'enabled' : 'disabled'}`);
-      } else {
-        // DB returned a different value — show warning
-        showError('Setting saved but DB returned a different value. Check permissions.');
-      }
-    } catch (err: unknown) {
-      // Revert to original value on any error
-      setFormData(prev => ({ ...prev, [key]: currentValue }));
-      showError('Failed to save: ' + ((err as any)?.message || 'Unknown error'));
-    } finally {
-      // 6. Unlock the toggle
-      setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
-    }
+  // ── Toggle handler — updates state locally, saved on button click ───────────
+  const handleToggle = (key: 'maintenance_mode' | 'read_only_mode' | 'allow_registration') => {
+    setFormData(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   // ── Flash helpers ────────────────────────────────────────────────────────────
@@ -234,7 +185,7 @@ export default function SettingsPage() {
     }
   };
 
-  // ── Save text fields ─────────────────────────────────────────────────────────
+  // ── Save all settings and toggles ───────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -242,11 +193,14 @@ export default function SettingsPage() {
 
     try {
       await Promise.all([
+        saveSetting('maintenance_mode', String(formData.maintenance_mode)),
         saveSetting('maintenance_message', formData.maintenance_message),
         saveSetting('maintenance_estimated_end', formData.maintenance_estimated_end),
+        saveSetting('read_only_mode', String(formData.read_only_mode)),
+        saveSetting('allow_registration', String(formData.allow_registration)),
         saveSetting('current_academic_year', formData.current_academic_year),
       ]);
-      showSuccess('Text settings saved successfully!');
+      showSuccess('Settings saved successfully!');
       fetchSettings(true); // silent re-fetch to confirm
     } catch {
       showError('Failed to save settings. Please ensure you have administrative permissions.');
@@ -310,17 +264,11 @@ export default function SettingsPage() {
                 <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-widest italic group-hover/card:text-amber-600 transition-colors">System Access Control</p>
               </div>
               <div className="flex items-center gap-3">
-                {savingKeys.has('maintenance_mode') && (
-                  <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest animate-pulse flex items-center gap-1">
-                    <Zap className="w-3 h-3" /> Saving...
-                  </span>
-                )}
                 <button
                   type="button"
                   onClick={() => handleToggle('maintenance_mode')}
-                  disabled={savingKeys.has('maintenance_mode')}
                   aria-pressed={formData.maintenance_mode}
-                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors shadow-inner disabled:opacity-70 disabled:cursor-not-allowed ${
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors shadow-inner ${
                     formData.maintenance_mode ? 'bg-amber-600' : 'bg-gray-200'
                   }`}
                 >
@@ -384,17 +332,11 @@ export default function SettingsPage() {
                 <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-widest italic group-hover/card:text-primary-600 transition-colors">New Student Access</p>
               </div>
               <div className="flex items-center gap-3">
-                {savingKeys.has('allow_registration') && (
-                  <span className="text-[9px] font-black text-primary-600 uppercase tracking-widest animate-pulse flex items-center gap-1">
-                    <Zap className="w-3 h-3" /> Saving...
-                  </span>
-                )}
                 <button
                   type="button"
                   onClick={() => handleToggle('allow_registration')}
-                  disabled={savingKeys.has('allow_registration')}
                   aria-pressed={formData.allow_registration}
-                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors shadow-inner disabled:opacity-70 disabled:cursor-not-allowed ${
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors shadow-inner ${
                     formData.allow_registration ? 'bg-primary-950' : 'bg-gray-200'
                   }`}
                 >
@@ -429,17 +371,11 @@ export default function SettingsPage() {
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Block all posts and uploads</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {savingKeys.has('read_only_mode') && (
-                      <span className="text-[9px] font-black text-primary-600 uppercase tracking-widest animate-pulse flex items-center gap-1">
-                        <Zap className="w-3 h-3" /> Saving...
-                      </span>
-                    )}
                     <button
                       type="button"
                       onClick={() => handleToggle('read_only_mode')}
-                      disabled={savingKeys.has('read_only_mode')}
                       aria-pressed={formData.read_only_mode}
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shadow-inner disabled:opacity-70 disabled:cursor-not-allowed ${
+                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shadow-inner ${
                         formData.read_only_mode ? 'bg-primary-950' : 'bg-gray-200'
                       }`}
                     >
@@ -490,7 +426,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3 px-2">
               <Zap className="w-4 h-4 text-green-500" />
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">
-                Toggles save instantly. Use Save for text fields.
+                Review your changes above before clicking Save.
               </p>
             </div>
           )}
@@ -500,7 +436,7 @@ export default function SettingsPage() {
             className="w-full sm:w-auto flex items-center justify-center gap-3 px-10 py-5 bg-primary-950 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-primary-900 disabled:opacity-50 transition-all shadow-2xl shadow-primary-950/20 active:scale-95"
           >
             <Save className="w-5 h-5" />
-            {isSubmitting ? 'Saving...' : 'Save Text Fields'}
+            {isSubmitting ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </form>

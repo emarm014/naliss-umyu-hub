@@ -14,6 +14,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { PosterImage } from '../../src/components/PosterImage';
 
 const { width } = Dimensions.get('window');
 
@@ -209,12 +210,12 @@ function AnnouncementCard({ announcement, user, onDelete }: { announcement: any;
         >
             {/* Full-bleed cover or gradient header */}
             <View style={styles.annCardTop}>
-                {hasCover ? (
-                    <Image source={{ uri: getOptimizedCloudinaryUrl(announcement.cover_image_url, 800) }}
-                        style={StyleSheet.absoluteFillObject} resizeMode='cover' />
-                ) : (
-                    <LinearGradient colors={cat.gradient} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
-                )}
+                <PosterImage
+                    uri={announcement.cover_image_url ? getOptimizedCloudinaryUrl(announcement.cover_image_url, 800) : undefined}
+                    fallbackUri={announcement.cover_image_url || undefined}
+                    style={StyleSheet.absoluteFillObject}
+                    gradientColors={cat.gradient}
+                />
                 {/* Dark overlay for text readability */}
                 <LinearGradient colors={['transparent', 'rgba(0,0,0,0.72)']} style={styles.annCardOverlay} />
 
@@ -285,12 +286,12 @@ function EventCard({ event }: { event: any }) {
         >
             {/* Hero image or gradient */}
             <View style={styles.eventHero}>
-                {hasCover ? (
-                    <Image source={{ uri: getOptimizedCloudinaryUrl(event.cover_image_url, 800) }}
-                        style={StyleSheet.absoluteFillObject} resizeMode='cover' />
-                ) : (
-                    <LinearGradient colors={eventGradient} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
-                )}
+                <PosterImage
+                    uri={event.cover_image_url ? getOptimizedCloudinaryUrl(event.cover_image_url, 800) : undefined}
+                    fallbackUri={event.cover_image_url || undefined}
+                    style={StyleSheet.absoluteFillObject}
+                    gradientColors={eventGradient}
+                />
                 <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={styles.eventHeroOverlay} />
 
                 {/* Status + virtual badges */}

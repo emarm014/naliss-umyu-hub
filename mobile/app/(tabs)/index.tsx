@@ -15,88 +15,9 @@ import { useAnnouncementStore, useEventStore, useResourceStore, useAuthStore } f
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
+import { PosterImage } from '../../src/components/PosterImage';
 
 const { width } = Dimensions.get('window');
-
-// ── PosterImage — robust image with loading shimmer + error retry ─────────────
-// Replaces bare <Image> in poster cards. Never shows blank:
-//  - While loading: animated shimmer gradient
-//  - On error: solid gradient placeholder with icon + silent retry after 3s
-//  - On success: the actual image, fading in
-function PosterImage({
-  uri,
-  fallbackUri,
-  style,
-  gradientColors,
-}: {
-  uri: string | null | undefined;
-  fallbackUri?: string;
-  style: any;
-  gradientColors: [string, string];
-}) {
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
-  const [retryKey, setRetryKey] = useState(0);
-  const [currentUri, setCurrentUri] = useState(uri || fallbackUri || '');
-
-  // When the URI prop changes (e.g. after a store refresh), reset and reload
-  useEffect(() => {
-    const next = uri || fallbackUri || '';
-    if (next !== currentUri) {
-      setCurrentUri(next);
-      setStatus('loading');
-    }
-  }, [uri, fallbackUri]);
-
-  // Auto-retry once after 3s on error — handles transient network blips
-  useEffect(() => {
-    if (status !== 'error') return;
-    const t = setTimeout(() => {
-      setStatus('loading');
-      setRetryKey(k => k + 1);
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [status]);
-
-  const handleError = useCallback(() => {
-    // If the optimized URL failed, try the raw fallback URI
-    if (currentUri !== fallbackUri && fallbackUri) {
-      setCurrentUri(fallbackUri);
-      setStatus('loading');
-    } else {
-      setStatus('error');
-    }
-  }, [currentUri, fallbackUri]);
-
-  return (
-    <View style={[style, { overflow: 'hidden' }]}>
-      {/* Placeholder gradient — always rendered underneath, visible while loading or on error */}
-      <LinearGradient
-        colors={gradientColors}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      />
-
-      {/* Shimmer overlay while loading */}
-      {status === 'loading' && (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
-      )}
-
-      {/* Actual image — only rendered when we have a URI */}
-      {currentUri ? (
-        <Image
-          key={`${currentUri}-${retryKey}`}
-          source={{ uri: currentUri, cache: 'force-cache' }}
-          style={[StyleSheet.absoluteFill, { opacity: status === 'loaded' ? 1 : 0 }]}
-          resizeMode="cover"
-          onLoad={() => setStatus('loaded')}
-          onError={handleError}
-          fadeDuration={200}
-        />
-      ) : null}
-    </View>
-  );
-}
 
 // ── Per-level theme config ────────────────────────────────────────────────────
 const LEVEL_THEMES: Record<string, {
@@ -423,9 +344,9 @@ export default function HomeScreen() {
                 return (
                   <TouchableOpacity
                     key={item.id}
-                    style={[styles.posterCard, !isRead && { borderWidth: 2, borderColor: theme.accentColor }]}
-                    onPress={async () => {
-                      await markAsRead(item.id);
+                    style={styles.posterCard}
+                    onPress={() => {
+                      markAsRead(item.id).catch(() => {});
                       router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any);
                     }}
                   >
@@ -449,6 +370,19 @@ export default function HomeScreen() {
                         <Text style={styles.posterSeeMore}>See more →</Text>
                       </View>
                     </View>
+                    {/* Unread Border Overlay */}
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        StyleSheet.absoluteFillObject,
+                        {
+                          borderWidth: 2,
+                          borderColor: isRead ? 'transparent' : theme.accentColor,
+                          borderRadius: 24,
+                          zIndex: 10,
+                        }
+                      ]}
+                    />
                   </TouchableOpacity>
                 );
               })}
@@ -635,9 +569,17 @@ const styles = StyleSheet.create({
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1, shadowRadius: 10,
   },
-  posterImage: { width: '100%', height: '100%', position: 'absolute' },
-  posterGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '100%' },
-  posterContent: { flex: 1, justifyContent: 'flex-end', padding: 20 },
+  posterImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  posterGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 },
+  posterContent: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'flex-end',
+    padding: 20,
+  },
   posterTagRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   posterTag: {
     backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4,

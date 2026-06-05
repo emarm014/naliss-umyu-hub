@@ -705,7 +705,9 @@ export default function StudentsPage() {
                          {user.status === 'suspended' && user.suspended_until && new Date(user.suspended_until) > new Date() && (
                            <SuspensionCountdown until={new Date(user.suspended_until)} />
                          )}
-                           <td className="px-8 py-5 text-right">
+                       </div>
+                    </td>
+                    <td className="px-8 py-5 text-right">
                        <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => { setSelectedUser(user); setShowModal('view'); }}

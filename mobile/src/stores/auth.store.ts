@@ -308,7 +308,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { data, error } = await supabase
             .from('users')
-            .select('registration_number, level')
+            .select('registration_number, level, role')
             .eq('id', userId)
             .maybeSingle();
 
@@ -316,7 +316,10 @@ export const useAuthStore = create<AuthState>()(
           
           // Profile is complete only when BOTH registration_number AND level are set
           // (matches the same check in ProtectedRoute's onAuthStateChange)
-          const complete = !!(data?.registration_number && data?.level);
+          // Super admins and system owners bypass student checks.
+          const complete = data?.role === 'super_admin' || 
+                           data?.role === 'system_owner' || 
+                           !!(data?.registration_number && data?.level);
           set({ isProfileComplete: complete });
 
           // ── SELF-HEALING: If no profile row but user is logged in, attempt repair ──
@@ -424,8 +427,9 @@ export const useAuthStore = create<AuthState>()(
           // immediately — no network call needed, no spinner, instant app access
           if (
             state.session &&
-            state.profile?.registration_number &&
-            state.profile?.level
+            ((state.profile?.role as string) === 'super_admin' ||
+             (state.profile?.role as string) === 'system_owner' ||
+             (state.profile?.registration_number && state.profile?.level))
           ) {
             // Trust the cache — isProfileComplete is definitively true
             state.isProfileComplete = true;

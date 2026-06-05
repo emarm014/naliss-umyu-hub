@@ -450,7 +450,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
             // Atomic check: Is profile record complete?
             // Everyone (including moderators) must have both fields — moderators are promoted students
-            if (profileData.registration_number && profileData.level) {
+            // Super admins and system owners bypass student checks.
+            if (
+              profileData.role === 'super_admin' ||
+              profileData.role === 'system_owner' ||
+              (profileData.registration_number && profileData.level)
+            ) {
               useAuthStore.getState().setIsProfileComplete(true);
             } else {
               useAuthStore.getState().setIsProfileComplete(false);

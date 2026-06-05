@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -326,7 +326,7 @@ export default function ChatScreen() {
                 .from('messages')
                 .select(`
                     *,
-                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level),
+                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
                     reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
                 `)
                 .eq('group_id', id)
@@ -395,7 +395,7 @@ export default function ChatScreen() {
                 .from('messages')
                 .select(`
                     *,
-                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level),
+                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
                     reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
                 `)
                 .eq('group_id', id)
@@ -550,7 +550,7 @@ export default function ChatScreen() {
                                 .from('messages')
                                 .select(`
                                     *,
-                                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level),
+                                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
                                     reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
                                 `)
                                 .eq('id', newMsg.id)
@@ -651,6 +651,7 @@ export default function ChatScreen() {
                                     avatar_url: updatedUser.avatar_url ?? m.user?.avatar_url,
                                     username: updatedUser.username ?? m.user?.username,
                                     full_name: updatedUser.full_name ?? m.user?.full_name,
+                                    role: updatedUser.role ?? m.user?.role,
                                 },
                             }
                             : m
@@ -1314,14 +1315,17 @@ export default function ChatScreen() {
                                     </Text>
                                 </View>
                             )}
-                            {/* Online presence dot — green if active in last 5 min, grey otherwise */}
-                            <View style={[
-                                styles.presenceDot,
-                                { 
-                                    backgroundColor: item.isOnline ? '#10B981' : '#94a3b8',
-                                    borderColor: isDark ? '#0f172a' : '#e8ecf1'
-                                }
-                            ]} />
+                            {/* Crown badge for moderators */}
+                            {(item.user?.role === 'moderator' || item.user?.role === 'super_admin') && (
+                                <View style={[
+                                    styles.modBadge,
+                                    {
+                                        borderColor: isDark ? '#0f172a' : '#e8ecf1'
+                                    }
+                                ]}>
+                                    <MaterialCommunityIcons name="crown" size={10} color="#FFD700" />
+                                </View>
+                            )}
                         </TouchableOpacity>
                     )}
 
@@ -3034,16 +3038,18 @@ const styles = StyleSheet.create({
         alignItems: 'center', justifyContent: 'center',
     },
     messageAvatarText: { fontFamily: 'Inter-Bold', fontSize: 14, color: '#FFF' },
-    // Online presence dot — shown on avatar bottom-right
-    presenceDot: {
+    // Moderator king icon badge
+    modBadge: {
         position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        borderWidth: 2,
-        borderColor: '#e8ecf1', // matches chat background
+        bottom: -2,
+        right: -2,
+        backgroundColor: '#1f2937', // dark charcoal background
+        width: 15,
+        height: 15,
+        borderRadius: 7.5,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1.5,
     },
     messageContentWrapper: { maxWidth: '80%' },
     senderInfoCol: { flexDirection: 'column', alignItems: 'flex-start', paddingLeft: 4, marginBottom: 2 },

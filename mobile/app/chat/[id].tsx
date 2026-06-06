@@ -630,66 +630,49 @@ export default function ChatScreen() {
                     }
                 }
             )
-            // ── User presence + profile updates: avatar/username changes ────────
+            // ── User presence tracking using Supabase Realtime Presence ──────────
             .on(
-                'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'users' },
-                (payload) => {
-                    const updatedUser = payload.new as any;
-                    const isNowOnline = updatedUser.last_active_at
-                        ? (new Date().getTime() - new Date(updatedUser.last_active_at).getTime() < 60000)
-                        : false;
+                'presence',
+                { event: 'sync' },
+                () => {
+                    const presenceState = channel.presenceState();
+                    const onlineUserIds = new Set<string>();
 
-                    // Patch all messages from this user — avatar, username, online status
-                    setMessages(prev => prev.map(m =>
-                        m.sender_id === updatedUser.id
-                            ? {
-                                ...m,
-                                isOnline: isNowOnline,
-                                user: {
-                                    ...m.user,
-                                    last_active_at: updatedUser.last_active_at,
-                                    avatar_url: updatedUser.avatar_url ?? m.user?.avatar_url,
-                                    username: updatedUser.username ?? m.user?.username,
-                                    full_name: updatedUser.full_name ?? m.user?.full_name,
-                                    role: updatedUser.role ?? m.user?.role,
-                                },
+                    Object.values(presenceState).forEach((presences: any) => {
+                        presences.forEach((p: any) => {
+                            if (p.user_id) {
+                                onlineUserIds.add(p.user_id);
                             }
-                            : m
-                    ));
+                        });
+                    });
 
-                    // Also patch the members list so the members modal shows fresh avatar
-                    const updatedMembers = membersRef.current.map(m =>
-                        m.id === updatedUser.id
-                            ? {
-                                ...m,
-                                avatar_url: updatedUser.avatar_url ?? m.avatar_url,
-                                username: updatedUser.username ?? m.username,
-                                full_name: updatedUser.full_name ?? m.full_name,
-                                last_active_at: updatedUser.last_active_at,
-                            }
-                            : m
-                    );
+                    // Patch all messages from active users — online status
+                    setMessages(prev => prev.map(m => {
+                        const isOnline = onlineUserIds.has(m.sender_id);
+                        if (m.isOnline === isOnline) return m;
+                        return { ...m, isOnline };
+                    }));
+
+                    // Also patch the members list online status
+                    const updatedMembers = membersRef.current.map(m => {
+                        const isOnline = onlineUserIds.has(m.id);
+                        if (m.isOnline === isOnline) return m;
+                        return { ...m, isOnline };
+                    });
                     setMembersWithRef(updatedMembers);
                     setGroupMembers(id, updatedMembers);
-
-                    // If this user's profile is currently being viewed, update it live
-                    setViewingProfile((prev: any) => {
-                        if (!prev || prev.id !== updatedUser.id) return prev;
-                        return {
-                            ...prev,
-                            avatar_url: updatedUser.avatar_url ?? prev.avatar_url,
-                            username: updatedUser.username ?? prev.username,
-                            full_name: updatedUser.full_name ?? prev.full_name,
-                            biography: updatedUser.biography ?? prev.biography,
-                            motivation: updatedUser.motivation ?? prev.motivation,
-                            hobbies: updatedUser.hobbies ?? prev.hobbies,
-                            last_active_at: updatedUser.last_active_at,
-                        };
-                    });
                 }
             )
-            .subscribe();
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    if (currentUser?.id) {
+                        await channel.track({
+                            user_id: currentUser.id,
+                            online_at: new Date().toISOString()
+                        });
+                    }
+                }
+            });
 
         // Store channel ref for proper cleanup
         realtimeChannelRef.current = channel;
@@ -1040,11 +1023,31 @@ export default function ChatScreen() {
             });
 
             for (const file of files) {
-                const limit = file.type === 'video' ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
-                const label = file.type === 'video' ? '20MB' : '10MB';
-                if (file.size && file.size > limit) {
-                    Alert.alert('File Too Large', `Please select files smaller than ${label}.`);
+                const mime = file.mimeType?.toLowerCase() || '';
+                const isImage = mime.startsWith('image/');
+                const isVideo = mime.startsWith('video/');
+
+                if (!isImage && !isVideo) {
+                    Alert.alert('Invalid File Type', 'Unsupported media type selected. Only images and videos are allowed.');
                     return;
+                }
+
+                if (isImage) {
+                    const sizeLimit = 5 * 1024 * 1024; // 5MB
+                    if (file.size && file.size > sizeLimit) {
+                        Alert.alert('File Too Large', 'Please select images smaller than 5MB.');
+                        return;
+                    }
+                    if (file.width && file.height && (file.width > 4096 || file.height > 4096)) {
+                        Alert.alert('Resolution Too High', 'Image resolution must not exceed 4096x4096px.');
+                        return;
+                    }
+                } else if (isVideo) {
+                    const sizeLimit = 15 * 1024 * 1024; // 15MB
+                    if (file.size && file.size > sizeLimit) {
+                        Alert.alert('File Too Large', 'Please select videos smaller than 15MB.');
+                        return;
+                    }
                 }
             }
 
@@ -1709,6 +1712,11 @@ export default function ChatScreen() {
                 });
 
                 for (const file of files) {
+                    const mime = file.mimeType?.toLowerCase() || '';
+                    if (mime !== 'application/pdf' && mime !== 'application/msword' && mime !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                        Alert.alert('Invalid File Type', 'Unsupported document format. Only PDF and Word documents are allowed.');
+                        return;
+                    }
                     if (file.size && file.size > 5 * 1024 * 1024) {
                         Alert.alert('File Too Large', 'Please select files smaller than 5MB.');
                         return;
@@ -1754,8 +1762,15 @@ export default function ChatScreen() {
 
                 for (const file of files) {
                     const isAudio = file.type === 'audio';
-                    const sizeLimit = isAudio ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
-                    const sizeLabelMB = isAudio ? '5MB' : '20MB';
+                    const sizeLimit = isAudio ? 5 * 1024 * 1024 : 15 * 1024 * 1024;
+                    const sizeLabelMB = isAudio ? '5MB' : '15MB';
+
+                    const mime = file.mimeType?.toLowerCase() || '';
+                    if (!mime.startsWith('audio/') && !mime.startsWith('video/')) {
+                        Alert.alert('Invalid File Type', 'Unsupported media type selected. Only audio and video files are allowed.');
+                        return;
+                    }
+
                     if (file.size && file.size > sizeLimit) {
                         Alert.alert('File Too Large', `Please select files smaller than ${sizeLabelMB}.`);
                         return;

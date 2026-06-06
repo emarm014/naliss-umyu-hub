@@ -308,21 +308,20 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
           useMessageStore.getState().removeMessage((oldRecord as any).group_id, oldRecord.id);
         }
       })
-      // ── Users ─────────────────────────────────────────────────────────────
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, (payload) => {
-        const { new: newRecord } = payload;
-        if (!newRecord?.id) return;
-        const currentUserId = useAuthStore.getState().user?.id;
-        if ((newRecord as any).id !== currentUserId) return;
-
-        // NOTE: Ban/suspend handling is done exclusively in ProtectedRoute's
-        // per-user realtime subscription. Do NOT call signOut() here — it races
-        // with ProtectedRoute and can cause the message cache to be cleared
-        // before the restriction screen is shown.
-        // Just refresh the profile so the app has the latest data.
-        useAuthStore.getState().fetchProfile(true);
+      // ── Presence API ──────────────────────────────────────────────────────
+      .on('presence', { event: 'sync' }, () => {
+        // Sync presence states globally if needed
       })
-      .subscribe((status) => {
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          const currentUserId = useAuthStore.getState().user?.id;
+          if (currentUserId) {
+            await channel.track({
+              user_id: currentUserId,
+              online_at: new Date().toISOString()
+            });
+          }
+        }
         if (status === 'CHANNEL_ERROR') {
           Sentry.addBreadcrumb({
             category: 'realtime',

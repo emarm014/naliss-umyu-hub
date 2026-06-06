@@ -584,6 +584,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         },
         (payload) => {
           const updated = payload.new as any;
+          // Refresh local profile store with the latest data
+          useAuthStore.getState().fetchProfile(true);
+
           if (updated.status === 'banned') {
             setRestrictionInfo({
               type: 'banned',

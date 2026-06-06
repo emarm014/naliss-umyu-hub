@@ -1,10 +1,28 @@
 /**
  * Cloudinary Upload Helper for Mobile
- * Uploads files directly to Cloudinary using an unsigned preset.
+ * Uploads files directly to Cloudinary using a secure signed preset with fallback.
+ * 
+ * ============================================================================
+ * SECURITY WARNING & PRODUCTION DEPLOYMENT NOTE:
+ * This helper utilizes a SIGNED upload preset ("naliss_signed_uploads") via
+ * signature token fetching from a secure Supabase Edge Function ("cloudinary-sign").
+ * Unsigned presets expose the upload_preset and cloud_name on the client-side.
+ * While convenient for development, unsigned presets allow malicious users to
+ * hijack the configuration and upload arbitrary files directly to our Cloudinary account.
+ * 
+ * AUTOMATIC FALLBACK CONFIGURATION:
+ * During testing and transition, if the Supabase Edge Function is offline or fails,
+ * this utility catches the error gracefully and falls back to the unsigned preset ("naliss_uploads")
+ * to guarantee 100% upload uptime and prevent app freezes.
+ * ============================================================================
  */
+
+import * as FileSystem from 'expo-file-system/legacy';
+import { supabase } from '../api/supabase/client';
 
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dno3wqlm3';
 const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'naliss_uploads';
+const CLOUDINARY_SIGNED_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_SIGNED_PRESET || 'naliss_signed_uploads';
 
 // Determine correct Cloudinary endpoint based on MIME type
 function getUploadUrl(mimeType: string): string {
@@ -23,6 +41,30 @@ function getUploadUrl(mimeType: string): string {
 const CLOUDINARY_IMAGE_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
 /**
+ * Fetch signed configuration from the Supabase Edge Function
+ */
+async function fetchUploadSignature(folder?: string): Promise<any> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('User is not authenticated');
+  }
+
+  const { data, error } = await supabase.functions.invoke('cloudinary-sign', {
+    method: 'POST',
+    body: {
+      upload_preset: CLOUDINARY_SIGNED_PRESET,
+      folder
+    }
+  });
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Failed to fetch signature');
+  }
+
+  return data;
+}
+
+/**
  * Upload a file blob directly to Cloudinary.
  * @param blob - The file blob to upload
  * @param folder - Optional folder name to organize assets
@@ -32,11 +74,55 @@ export async function uploadToCloudinary(
   blob: Blob,
   folder: string = 'mobile_uploads'
 ): Promise<string> {
+  const mimeType = blob.type.toLowerCase();
+  const size = blob.size;
+
+  const isImage = mimeType.startsWith('image/');
+  const isVideo = mimeType.startsWith('video/');
+  const isAudio = mimeType.startsWith('audio/');
+  const isDoc = mimeType === 'application/pdf' || 
+                mimeType === 'application/msword' || 
+                mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  if (!isImage && !isVideo && !isAudio && !isDoc) {
+    throw new Error(`Unsupported MIME type: ${mimeType || 'unknown'}`);
+  }
+
+  if (isImage && size > 5 * 1024 * 1024) {
+    throw new Error('Image file size exceeds the strict 5MB limit.');
+  }
+  if (isVideo && size > 15 * 1024 * 1024) {
+    throw new Error('Video file size exceeds the strict 15MB limit.');
+  }
+  if ((isAudio || isDoc) && size > 5 * 1024 * 1024) {
+    throw new Error('File size exceeds the strict 5MB limit.');
+  }
+
+  // 1. Attempt signed signature retrieval, fallback to unsigned preset if it fails
+  let signatureData: any = null;
+  try {
+    signatureData = await fetchUploadSignature(folder);
+  } catch (err) {
+    console.warn('Failed to fetch Cloudinary signed upload token, falling back to unsigned upload preset:', err);
+  }
+
   const formData = new FormData();
   formData.append('file', blob as any);
-  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-  if (folder) {
-    formData.append('folder', folder);
+
+  if (signatureData) {
+    formData.append('api_key', signatureData.api_key);
+    formData.append('timestamp', signatureData.timestamp);
+    formData.append('signature', signatureData.signature);
+    formData.append('upload_preset', CLOUDINARY_SIGNED_PRESET);
+    if (folder) {
+      formData.append('folder', folder);
+    }
+  } else {
+    // Fallback to unsigned preset
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    if (folder) {
+      formData.append('folder', folder);
+    }
   }
 
   // Use AbortController for a 60-second timeout
@@ -91,63 +177,103 @@ export async function uploadLocalFileToCloudinary(
   contentType: string = 'image/jpeg',
   onProgress?: (progress: number) => void
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const formData = new FormData();
+  const mimeType = contentType.toLowerCase();
+  const isImage = mimeType.startsWith('image/');
+  const isVideo = mimeType.startsWith('video/');
+  const isAudio = mimeType.startsWith('audio/');
+  const isDoc = mimeType === 'application/pdf' || 
+                mimeType === 'application/msword' || 
+                mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-    formData.append('file', {
-      uri: localUri,
-      name: fileName,
-      type: contentType,
-    } as any);
+  if (!isImage && !isVideo && !isAudio && !isDoc) {
+    throw new Error(`Unsupported MIME type: ${mimeType || 'unknown'}`);
+  }
 
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    if (folder) formData.append('folder', folder);
-    // NOTE: resource_type, eager, and other transformation params are NOT allowed
-    // in unsigned uploads — they cause HTTP 400. The preset handles resource_type.
+  return new Promise(async (resolve, reject) => {
+    // 1. Attempt signed signature retrieval, fallback to unsigned preset if it fails
+    let signatureData: any = null;
+    try {
+      signatureData = await fetchUploadSignature(folder);
+    } catch (err) {
+      console.warn('Failed to fetch Cloudinary signed upload token, falling back to unsigned upload preset:', err);
+    }
 
-    const xhr = new XMLHttpRequest();
-    xhr.timeout = 180000; // 3 minutes for large files
-
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable && onProgress) {
-        // Cap at 99 during upload — 100 is only set after server confirms success
-        const pct = Math.min(Math.round((event.loaded / event.total) * 100), 99);
-        onProgress(pct);
+    FileSystem.getInfoAsync(localUri).then((fileInfo) => {
+      if (!fileInfo.exists) {
+        return reject(new Error('Selected file does not exist on this device.'));
       }
-    });
+      
+      const size = fileInfo.size || 0;
+      if (isImage && size > 5 * 1024 * 1024) {
+        return reject(new Error('Image file size exceeds the 5MB limit.'));
+      }
+      if (isVideo && size > 15 * 1024 * 1024) {
+        return reject(new Error('Video file size exceeds the 15MB limit.'));
+      }
+      if ((isAudio || isDoc) && size > 5 * 1024 * 1024) {
+        return reject(new Error('File size exceeds the 5MB limit.'));
+      }
 
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const result = JSON.parse(xhr.responseText);
-          if (result.secure_url) {
-            resolve(result.secure_url);
-          } else {
-            reject(new Error(result.error?.message || 'Upload failed. Please try again.'));
-          }
-        } catch {
-          reject(new Error('Upload failed. Please try again.'));
-        }
+      const formData = new FormData();
+      formData.append('file', {
+        uri: localUri,
+        name: fileName,
+        type: contentType,
+      } as any);
+
+      if (signatureData) {
+        formData.append('api_key', signatureData.api_key);
+        formData.append('timestamp', signatureData.timestamp);
+        formData.append('signature', signatureData.signature);
+        formData.append('upload_preset', CLOUDINARY_SIGNED_PRESET);
+        if (folder) formData.append('folder', folder);
       } else {
-        // Parse Cloudinary error for better debugging
-        try {
-          const err = JSON.parse(xhr.responseText);
-          reject(new Error(err.error?.message || `Upload failed (${xhr.status}). Please try again.`));
-        } catch {
-          reject(new Error(`Upload failed (${xhr.status}). Please try again.`));
-        }
+        // Fallback to unsigned preset
+        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+        if (folder) formData.append('folder', folder);
       }
-    });
 
-    xhr.addEventListener('error', () => reject(new Error('Upload failed. Please check your connection.')));
-    xhr.addEventListener('abort', () => reject(new Error('Upload cancelled.')));
-    xhr.addEventListener('timeout', () => reject(new Error('Upload timed out. Please try again on a faster connection.')));
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = 180000; // 3 minutes for large files
 
-    // Use correct endpoint based on content type — PDFs/docs go to /raw/upload/
-    const uploadUrl = getUploadUrl(contentType);
-    xhr.open('POST', uploadUrl);
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.send(formData);
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          const pct = Math.min(Math.round((event.loaded / event.total) * 100), 99);
+          onProgress(pct);
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const result = JSON.parse(xhr.responseText);
+            if (result.secure_url) {
+              resolve(result.secure_url);
+            } else {
+              reject(new Error(result.error?.message || 'Upload failed. Please try again.'));
+            }
+          } catch {
+            reject(new Error('Upload failed. Please try again.'));
+          }
+        } else {
+          try {
+            const err = JSON.parse(xhr.responseText);
+            reject(new Error(err.error?.message || `Upload failed (${xhr.status}). Please try again.`));
+          } catch {
+            reject(new Error(`Upload failed (${xhr.status}). Please try again.`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Upload failed. Please check your connection.')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled.')));
+      xhr.addEventListener('timeout', () => reject(new Error('Upload timed out. Please try again on a faster connection.')));
+
+      const uploadUrl = getUploadUrl(contentType);
+      xhr.open('POST', uploadUrl);
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.send(formData);
+    }).catch(reject);
   });
 }
 
@@ -171,8 +297,6 @@ export function getOptimizedCloudinaryUrl(
   const parts = url.split(splitPattern);
   if (parts.length !== 2) return url;
 
-  // q_auto:good = better compression than q_auto with minimal quality loss
-  // f_auto = serve WebP on Android, HEIC on iOS — smaller files, same quality
   let transformations = `f_auto,q_auto:good,w_${width},c_${crop}`;
   if (height) transformations += `,h_${height}`;
 

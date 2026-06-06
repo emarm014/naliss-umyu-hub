@@ -1,12 +1,10 @@
-/**
- * Cloudinary Upload Helper for Admin Panel
- * Uploads files directly to Cloudinary using an unsigned preset.
- * Uses the correct resource_type endpoint per file MIME type so files
- * are always stored under the right path (/image/, /video/, /raw/).
- */
+import { supabase } from './supabase';
+import * as Sentry from '@sentry/react';
+
 
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dno3wqlm3';
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'naliss_uploads';
+const CLOUDINARY_SIGNED_PRESET = import.meta.env.VITE_CLOUDINARY_SIGNED_PRESET || 'naliss_signed_uploads';
 
 /**
  * Determine the correct Cloudinary resource_type for a file.
@@ -25,6 +23,33 @@ function getResourceType(file: File): 'image' | 'video' | 'raw' {
 }
 
 /**
+ * Fetch signed configuration from the Supabase Edge Function
+ */
+async function fetchUploadSignature(folder?: string): Promise<any> {
+  if (!supabase) {
+    throw new Error('Supabase client is not initialized');
+  }
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('User is not authenticated');
+  }
+
+  const { data, error } = await supabase.functions.invoke('cloudinary-sign', {
+    method: 'POST',
+    body: {
+      upload_preset: CLOUDINARY_SIGNED_PRESET,
+      folder
+    }
+  });
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Failed to fetch signature');
+  }
+
+  return data;
+}
+
+/**
  * Upload a file directly to Cloudinary using the correct resource type.
  * This ensures PDFs go to /raw/upload/ not /image/upload/.
  */
@@ -35,18 +60,67 @@ export async function uploadToCloudinary(
   const resourceType = getResourceType(file);
   const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`;
 
+  // 1. Attempt signed signature retrieval, fallback to unsigned preset if it fails
+  let signatureData: any = null;
+  Sentry.addBreadcrumb({
+    category: 'upload.signature',
+    message: 'Requesting cryptographic signature from Supabase Edge Function',
+    level: 'info',
+    data: { preset: CLOUDINARY_SIGNED_PRESET }
+  });
+
+  try {
+    signatureData = await fetchUploadSignature(folder);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    Sentry.addBreadcrumb({
+      category: 'upload.fallback',
+      message: 'Signed upload signature fetch failed. Triggering unsigned fallback.',
+      level: 'warning',
+      data: { error: errMsg }
+    });
+    console.warn('Failed to fetch Cloudinary signed upload token, falling back to unsigned upload preset:', err);
+  }
+
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-  if (folder) {
-    formData.append('folder', folder);
+
+  if (signatureData) {
+    formData.append('api_key', signatureData.api_key);
+    formData.append('timestamp', signatureData.timestamp);
+    formData.append('signature', signatureData.signature);
+    formData.append('upload_preset', CLOUDINARY_SIGNED_PRESET);
+    if (folder) {
+      formData.append('folder', folder);
+    }
+  } else {
+    // Fallback to unsigned preset
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    if (folder) {
+      formData.append('folder', folder);
+    }
   }
+
+  Sentry.addBreadcrumb({
+    category: 'upload.dispatch',
+    message: `Dispatching payload to Cloudinary API (${resourceType})`,
+    level: 'info',
+    data: {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      folder,
+      resourceType,
+      isSigned: !!signatureData
+    }
+  });
 
   try {
     const response = await fetch(uploadUrl, {
       method: 'POST',
       body: formData,
     });
+
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));

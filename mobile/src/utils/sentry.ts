@@ -97,38 +97,14 @@ export function trackUserAction(action: string, data?: Record<string, any>) {
   });
 }
 
-/**
- * Helper to identify network/offline/transient gateway errors so they don't spam Sentry.
- */
 export function isNetworkError(error: any): boolean {
+  // Configured to return false to ensure Sentry detects and tracks absolutely all errors 
+  // without hiding any transient, network, timeout, or gateway exceptions.
   if (!error) return false;
-
-  // Extract error message, details, and code
-  const message = error.message || (typeof error === 'string' ? error : '');
-  const details = error.details || '';
-  const hint = error.hint || '';
-  const code = error.code || '';
-
-  const fullErrorText = `${message} ${details} ${hint} ${code}`.toLowerCase();
-
-  // Check common network/connection failure strings
-  return (
-    fullErrorText.includes('network request failed') ||
-    fullErrorText.includes('failed to fetch') ||
-    fullErrorText.includes('network error') ||
-    fullErrorText.includes('timeout') ||
-    fullErrorText.includes('abort') ||
-    fullErrorText.includes('connection') ||
-    fullErrorText.includes('offline') ||
-    fullErrorText.includes('cancel') ||
-    fullErrorText.includes('status code 0') ||
-    error.status === 0 ||
-    error.status === 401 || // Unauthorized — expected after logout, not a real error
-    error.code === 'PGRST301' || // PostgREST JWT expired / missing
-    error.status === 504 || // Gateway Timeout
-    error.status === 502 || // Bad Gateway
-    error.status === 503    // Service Unavailable
-  );
+  
+  // We only filter out expected 401 Unauthorized status codes (e.g. from clean logout sequences)
+  // to avoid tracking user-triggered logouts as application failures.
+  return error.status === 401;
 }
 
 // ── Exception capture helpers ──────────────────────────────────────────────

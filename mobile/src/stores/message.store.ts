@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { Logger } from '../utils/logger';
 interface MessageCache {
     [groupId: string]: any[];
@@ -173,9 +173,9 @@ export const useMessageStore = create<MessageState>()(
         }),
         {
             name: 'message-cache-storage',
-            storage: createJSONStorage(() => AsyncStorage),
+            storage: createJSONStorage(() => mmkvStorage),
             // Persist ALL messages — no cap, no limit.
-            // Every message ever received stays in AsyncStorage indefinitely,
+            // Every message ever received stays in MMKV indefinitely,
             // accessible offline forever, exactly like WhatsApp.
             partialize: (state) => ({
                 cache: state.cache,

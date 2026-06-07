@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as Network from 'expo-network';
 import { trackNetworkChange } from '../utils/sentry';
+import { useMutationQueueStore } from './mutationQueue.store';
 
 interface NetworkState {
   isOnline: boolean;
@@ -101,3 +102,8 @@ export const useNetworkStatus = () => {
   const checkNetworkStatus = useNetworkStore((state) => state.checkNetworkStatus);
   return { isOnline, isOffline: !isOnline, checkNetworkStatus };
 };
+
+// Replay queued offline mutations automatically upon online recovery
+registerOnlineCallback(() => {
+  useMutationQueueStore.getState().processQueue().catch(() => {});
+});

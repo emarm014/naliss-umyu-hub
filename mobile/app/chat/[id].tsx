@@ -1150,7 +1150,7 @@ export default function ChatScreen() {
     };
 
     const lastPressRef = useRef<{ id: string; timestamp: number } | null>(null);
-    const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const clickTimeoutRef = useRef<any>(null);
 
     const handleDoubleTapReply = (message: any, singleTapAction?: () => void) => {
         const now = Date.now();
@@ -1421,10 +1421,10 @@ export default function ChatScreen() {
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <Image
-                                        source={{ uri: item.content }}
-                                        style={[styles.messageImage, !isMe && !downloadedIds[item.id] && { opacity: 0.55 }]}
+                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, `image_${item.id}.jpg`) : (item.content?.startsWith('http') ? item.content : (item._localUri || item.content)) }}
+                                        style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
-                                        blurRadius={!isMe && !downloadedIds[item.id] ? 3 : 0}
+                                        blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
                                     />
 
                                     {/* Upload progress — sender while uploading */}
@@ -1508,9 +1508,9 @@ export default function ChatScreen() {
                                             }
                                         })}                                    >
                                         {/* Cloudinary video thumbnail — generated automatically */}
-                                        {item.content?.startsWith('http') ? (
+                                        {item.content?.startsWith('http') || downloadedIds[item.id] || item._localUri ? (
                                             <Image
-                                                source={{ uri: item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') }}
+                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `video_${item.id}.mp4`) : (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item._localUri || item.content)) }}
                                                 style={styles.videoThumb}
                                                 resizeMode="cover"
                                             />

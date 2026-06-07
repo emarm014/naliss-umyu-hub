@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Material, Course, MaterialType, AcademicLevel, SemesterType, PastQuestion } from '../types';
 import { checkFileExists, extractFileNameFromUrl } from '../utils/download';
@@ -260,7 +260,7 @@ export const useResourceStore = create<ResourceState>()(
         }),
         {
             name: 'resource-storage',
-            storage: createJSONStorage(() => AsyncStorage),
+            storage: createJSONStorage(() => mmkvStorage),
             partialize: (state) => ({
                 materials: state.materials,
                 pastQuestions: state.pastQuestions,

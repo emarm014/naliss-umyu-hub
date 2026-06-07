@@ -178,22 +178,35 @@ export default function LoginScreen() {
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 
-      if (result.type === 'success' && result.url) {
-        // Robust token parsing — handles both #hash and ?query formats
-        const url = result.url;
-        const hashPart = url.split('#')[1] || '';
-        const queryPart = url.split('?')[1]?.split('#')[0] || '';
-        const hashParams = new URLSearchParams(hashPart);
-        const queryParams = new URLSearchParams(queryPart);
-        const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
+      // Check if session got set in the background during deep link redirect
+      const { data: { session: activeSession } } = await supabase.auth.getSession();
+
+      if ((result.type === 'success' && (result as any).url) || activeSession) {
+        let user = activeSession?.user || null;
+        let accessToken = activeSession?.access_token || null;
+        let refreshToken = activeSession?.refresh_token || null;
+
+        if (!accessToken || !refreshToken) {
+          if ((result as any).url) {
+            const url = (result as any).url;
+            const hashPart = url.split('#')[1] || '';
+            const queryPart = url.split('?')[1]?.split('#')[0] || '';
+            const hashParams = new URLSearchParams(hashPart);
+            const queryParams = new URLSearchParams(queryPart);
+            accessToken = hashParams.get('access_token') || queryParams.get('access_token');
+            refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
+          }
+        }
 
         if (accessToken && refreshToken) {
-          const { data: { user }, error: sessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          if (sessionError) throw sessionError;
+          if (!activeSession) {
+            const { data: { user: sessionUser }, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) throw sessionError;
+            user = sessionUser;
+          }
 
           if (user?.email && !INSTITUTIONAL_EMAIL_REGEX.test(user.email)) {
             await AuthGuardian.recordFailure(user.email);

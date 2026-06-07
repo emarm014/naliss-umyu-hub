@@ -107,7 +107,10 @@ export default function RegisterOptions() {
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 2: Opening OAuth browser', level: 'info' });
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 
-      if (result.type !== 'success' || !result.url) {
+      // Check if session got set in the background during deep link redirect
+      const { data: { session: activeSession } } = await supabase.auth.getSession();
+
+      if ((result.type !== 'success' || !(result as any).url) && !activeSession) {
         Sentry.addBreadcrumb({ category: 'signup.google', message: 'OAuth cancelled by user', level: 'info' });
         store.setIsGoogleDelaying(false);
         store.reset();
@@ -119,16 +122,25 @@ export default function RegisterOptions() {
 
       // ── STEP 3: Parse tokens ──────────────────────────────────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 3: Parsing OAuth tokens', level: 'info' });
-      const url = result.url;
-      const hashPart = url.split('#')[1] || '';
-      const queryPart = url.split('?')[1]?.split('#')[0] || '';
-      const hashParams = new URLSearchParams(hashPart);
-      const queryParams = new URLSearchParams(queryPart);
-      const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
+      
+      let user = activeSession?.user || null;
+      let accessToken = activeSession?.access_token || null;
+      let refreshToken = activeSession?.refresh_token || null;
 
       if (!accessToken || !refreshToken) {
-        Sentry.captureMessage('Google OAuth: missing tokens in redirect URL', 'warning');
+        if ((result as any).url) {
+          const url = (result as any).url;
+          const hashPart = url.split('#')[1] || '';
+          const queryPart = url.split('?')[1]?.split('#')[0] || '';
+          const hashParams = new URLSearchParams(hashPart);
+          const queryParams = new URLSearchParams(queryPart);
+          accessToken = hashParams.get('access_token') || queryParams.get('access_token');
+          refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
+        }
+      }
+
+      if (!accessToken || !refreshToken) {
+        Sentry.captureMessage('Google OAuth: missing tokens in redirect URL and no active session', 'warning');
         store.setIsGoogleDelaying(false);
         store.reset();
         if (isMounted.current) {
@@ -139,13 +151,17 @@ export default function RegisterOptions() {
       }
 
       // ── STEP 4: Set session ───────────────────────────────────────────────
-      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 4: Setting Supabase session', level: 'info' });
-      const { data: { user }, error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
+      if (!activeSession) {
+        Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 4: Setting Supabase session', level: 'info' });
+        const { data: { user: sessionUser }, error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
 
-      if (sessionError) throw sessionError;
+        if (sessionError) throw sessionError;
+        user = sessionUser;
+      }
+
       if (!user) throw new Error('No user returned from Google');
 
       // ── STEP 5: Validate email domain ─────────────────────────────────────

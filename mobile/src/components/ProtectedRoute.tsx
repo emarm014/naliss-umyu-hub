@@ -296,6 +296,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         level: 'info',
       });
 
+      if (event === 'PASSWORD_RECOVERY') {
+        // Force instant, non-blocking absolute routing to the update password form
+        router.replace('/auth/update-password' as any);
+        return;
+      }
+
       // ── SIGNED_OUT intercept ──────────────────────────────────────────────
       // Supabase may fire SIGNED_OUT when the server invalidates a session
       // (e.g. after a ban/suspend). Before clearing state and redirecting to

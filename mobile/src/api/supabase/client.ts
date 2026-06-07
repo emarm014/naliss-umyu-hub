@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { mmkvStorage } from '../../stores/mmkv.storage';
 import { Database } from './database.types';
 import * as Sentry from '@sentry/react-native';
 
@@ -104,7 +105,7 @@ const fetchWithRetry = async (
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: mmkvStorage as any,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

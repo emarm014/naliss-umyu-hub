@@ -115,12 +115,12 @@ export default function UpdatePassword() {
           </View>
           <Text style={styles.stateTitle}>Password Updated</Text>
           <Text style={styles.stateSub}>
-            Your password has been changed successfully.{'\n'}You can now sign in with your new password.
+            Your password has been changed successfully.{'\n'}You can now access your dashboard.
           </Text>
-          <TouchableOpacity style={styles.btn} onPress={() => router.replace('/auth/login')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btn} onPress={() => router.replace('/(tabs)' as any)} activeOpacity={0.85}>
             <View style={styles.btnInner}>
-              <Ionicons name="log-in-outline" size={18} color="#fff" />
-              <Text style={styles.btnText}>Sign In</Text>
+              <Ionicons name="home-outline" size={18} color="#fff" />
+              <Text style={styles.btnText}>Continue to Home</Text>
             </View>
           </TouchableOpacity>
         </View>

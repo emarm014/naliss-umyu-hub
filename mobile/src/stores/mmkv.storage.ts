@@ -53,6 +53,8 @@ export const migrateAsyncStorageToMMKV = async () => {
     Logger.info('mmkv.storage', 'Starting AsyncStorage to MMKV migration check...');
 
     const keysToMigrate = [
+      'supabase.auth.token',
+      'sb-omrtbnywneezpaozbvzd-auth-token',
       'message-cache-storage',
       'resource-storage',
       'auth-storage',

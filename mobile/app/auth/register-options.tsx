@@ -11,6 +11,7 @@ import { NalissLogo } from '../../src/components/NalissLogo';
 import { supabase } from '../../src/api/supabase/client';
 import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { useSignupStore } from '../../src/stores/signup.store';
+import { useAuthStore } from '../../src/stores/auth.store';
 import { useNetworkStore } from '../../src/stores/network.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature } from '../../src/utils/sentry';
@@ -200,6 +201,8 @@ export default function RegisterOptions() {
         }
         if (accountStatus === 'google') {
           Sentry.addBreadcrumb({ category: 'signup.google', message: 'Existing Google account — redirecting to tabs', level: 'info' });
+          await useAuthStore.getState().fetchProfile(true);
+          await useAuthStore.getState().checkProfileComplete(user.id);
           store.setIsGoogleDelaying(false);
           if (isMounted.current) setIsGoogleLoading(false);
           return;
@@ -218,6 +221,7 @@ export default function RegisterOptions() {
       store.setGoogleTokens(user.email!, accessToken, refreshToken);
       store.setCurrentStep(2);
       store.touchActivity();
+      useAuthStore.getState().setIsProfileComplete(false);
       store.setIsGoogleDelaying(false);
 
       if (isMounted.current) {

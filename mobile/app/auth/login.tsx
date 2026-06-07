@@ -14,6 +14,7 @@ import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { useAuthStore } from '../../src/stores/auth.store';
+import { useSignupStore } from '../../src/stores/signup.store';
 import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { AuthGuardian } from '../../src/utils/auth-guardian';
 import { useNetworkStore } from '../../src/stores/network.store';
@@ -167,6 +168,8 @@ export default function LoginScreen() {
         return;
       }
 
+      useSignupStore.getState().setIsGoogleDelaying(true);
+
       const redirectUrl = Linking.createURL('/');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -212,6 +215,7 @@ export default function LoginScreen() {
             await AuthGuardian.recordFailure(user.email);
             Alert.alert('Access Denied', 'Only institutional student emails are allowed.');
             await supabase.auth.signOut();
+            useSignupStore.getState().setIsGoogleDelaying(false);
             return;
           }
 
@@ -230,16 +234,26 @@ export default function LoginScreen() {
                 [{ text: 'OK', style: 'default' }]
               );
               await supabase.auth.signOut();
+              useSignupStore.getState().setIsGoogleDelaying(false);
               return;
             }
           }
+
+          // Fetch profile and check completeness before releasing isGoogleDelaying
+          await useAuthStore.getState().fetchProfile(true);
+          await useAuthStore.getState().checkProfileComplete(user!.id);
+          useSignupStore.getState().setIsGoogleDelaying(false);
         } else {
           // Tokens not found in redirect URL — silent fail, user likely cancelled
+          useSignupStore.getState().setIsGoogleDelaying(false);
           setIsGoogleLoading(false);
           return;
         }
+      } else {
+        useSignupStore.getState().setIsGoogleDelaying(false);
       }
     } catch (err: any) {
+      useSignupStore.getState().setIsGoogleDelaying(false);
       // Log Google auth failure (best-effort)
       (async () => { try { await supabase.from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: 'Failed Google sign-in attempt', metadata: { reason: err?.message || 'Unknown', method: 'google' } }); } catch (_) {} })();
       Alert.alert('Google Sign-In Failed', 'Sign-in failed. Please try again.');

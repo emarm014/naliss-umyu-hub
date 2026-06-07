@@ -350,15 +350,19 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       useAuthStore.getState().setSession(currentSession);
       useAuthStore.getState().setUser(currentSession?.user ?? null);
 
-      // Sentry: attach user identity on every active session event
       if (currentSession?.user) {
+        // Sentry: attach user identity on every active session event
         Sentry.setUser({
           id: currentSession.user.id,
           email: currentSession.user.email ?? undefined,
         });
-      }
-      
-      if (currentSession?.user) {
+
+        // If we are actively completing Google OAuth, return early and let the
+        // login/register screen validate the session and handle redirection.
+        if (useSignupStore.getState().isGoogleDelaying) {
+          return;
+        }
+        
         // Domain validation — block non-institutional emails
         // Google OAuth users in the middle of signup are allowed through temporarily
         const signupState = useSignupStore.getState();

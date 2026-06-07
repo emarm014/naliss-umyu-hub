@@ -245,14 +245,28 @@ export default function NotificationsScreen() {
 
                 <View style={styles.textContainer}>
                   <View style={styles.titleRow}>
-                    <Text style={[styles.title, { color: colors.text }, !notification.isRead && styles.unreadText]} numberOfLines={2}>
+                    <Text 
+                      style={[
+                        styles.title, 
+                        { color: colors.text }, 
+                        !notification.isRead && [styles.unreadText, { color: isDark ? '#4ade80' : '#064E3B' }]
+                      ]} 
+                      numberOfLines={2}
+                    >
                       {notification.title}
                     </Text>
                     <Text style={[styles.timeText, { color: colors.textMuted }]}>
                       {notification.date ? (() => { try { return format(new Date(notification.date), 'MMM d, h:mm a'); } catch { return ''; } })() : ''}
                     </Text>
                   </View>
-                  <Text style={[styles.message, { color: colors.textSecondary }]} numberOfLines={2}>
+                  <Text 
+                    style={[
+                      styles.message, 
+                      { color: colors.textSecondary },
+                      !notification.isRead && { fontFamily: 'Inter-SemiBold', color: isDark ? '#f1f5f9' : '#1e293b' }
+                    ]} 
+                    numberOfLines={2}
+                  >
                     {notification.message}
                   </Text>
                 </View>

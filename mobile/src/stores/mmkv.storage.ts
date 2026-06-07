@@ -65,7 +65,7 @@ export const migrateAsyncStorageToMMKV = async () => {
       'directory-storage',
       'settings-storage',
       'signup-storage',
-      'notification-storage'
+      'naliss-notification-storage'
     ];
 
     const pairs = await AsyncStorage.multiGet(keysToMigrate);

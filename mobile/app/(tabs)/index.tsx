@@ -11,7 +11,7 @@ import { NetworkStatusDot } from '../_layout';
 import { format } from 'date-fns';
 import { COLORS } from '../../src/constants/Colors';
 import { NalissLogo } from '../../src/components/NalissLogo';
-import { useAnnouncementStore, useEventStore, useResourceStore, useAuthStore } from '../../src/stores';
+import { useAnnouncementStore, useEventStore, useResourceStore, useAuthStore, useNotificationStore } from '../../src/stores';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
@@ -126,7 +126,8 @@ export default function HomeScreen() {
   const fetchCourses = useResourceStore(s => s.fetchCourses);
   const markAsRead = useAnnouncementStore(s => s.markAsRead);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [unreadCount, setUnreadCount] = React.useState(0);
+  const notifications = useNotificationStore(s => s.notifications);
+  const unreadCount = notifications.filter(n => !n.isRead).length;
   const { colors, isDark } = useTheme();
 
   const theme = LEVEL_THEMES[user?.level || ''] || DEFAULT_THEME;
@@ -145,14 +146,7 @@ export default function HomeScreen() {
       fetchMaterials({ level }),
       fetchCourses(level),
     ]);
-    const oneDayAgo = new Date();
-    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-    let count = 0;
-    if (user?.notif_announcements) {
-      count += announcements.filter(a => new Date(a.created_at) > oneDayAgo).length;
-    }
-    setUnreadCount(count);
-  }, [user?.level, user?.notif_announcements, announcements, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses]);
+  }, [user?.level, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses]);
 
   useEffect(() => {
     fetchProfile();
@@ -214,6 +208,18 @@ export default function HomeScreen() {
           <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.surface }]} onPress={() => router.push('/search')}>
             <Ionicons name="search" size={20} color={colors.text} />
           </TouchableOpacity>
+          {unreadCount > 0 && (
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: colors.surface }]}
+              onPress={async () => {
+                useNotificationStore.getState().markAllAsRead();
+                await useAnnouncementStore.getState().markAllAsRead(user?.level);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="checkmark-done" size={20} color={colors.text} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.surface }]} onPress={() => router.push('/notifications')}>
             <Ionicons name="notifications" size={20} color={colors.text} />
             {unreadCount > 0 && (

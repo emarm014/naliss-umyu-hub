@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 
 export interface AppNotification {
     id: string;
@@ -90,7 +90,7 @@ export const useNotificationStore = create<NotificationState>()(
         }),
         {
             name: 'naliss-notification-storage',
-            storage: createJSONStorage(() => AsyncStorage),
+            storage: createJSONStorage(() => mmkvStorage),
             partialize: (state) => ({
                 notifications: state.notifications,
             }),

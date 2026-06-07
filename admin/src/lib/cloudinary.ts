@@ -66,7 +66,7 @@ export async function uploadToCloudinary(
     category: 'upload.signature',
     message: 'Requesting cryptographic signature from Supabase Edge Function',
     level: 'info',
-    data: { preset: CLOUDINARY_SIGNED_PRESET }
+    data: { preset: import.meta.env.VITE_CLOUDINARY_SIGNED_PRESET }
   });
 
   try {
@@ -75,7 +75,7 @@ export async function uploadToCloudinary(
     const errMsg = err?.message || String(err);
     Sentry.addBreadcrumb({
       category: 'upload.fallback',
-      message: 'Signed upload signature fetch failed. Triggering unsigned fallback.',
+      message: `Signed upload signature fetch failed: ${errMsg}. Triggering fallback to legacy preset: ${import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET}`,
       level: 'warning',
       data: { error: errMsg }
     });

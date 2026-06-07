@@ -9,7 +9,7 @@
     "scheme": "naliss",
     "sdkVersion": "54.0.0",
     "updates": {
-      "url": "https://u.expo.dev/6d1bcc1c-20b2-4de4-a5e4-4b7f26e34eb8",
+      "url": "https://u.expo.dev/9eb7911b-09b9-4238-a5c9-7979713f409c",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
@@ -42,6 +42,12 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",

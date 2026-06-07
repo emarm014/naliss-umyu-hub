@@ -219,6 +219,18 @@ export default function LoginScreen() {
             return;
           }
 
+          // Strict account separation: Block Google logins if the account was originally registered via Email/Password
+          if (user?.app_metadata?.provider === 'email') {
+            Alert.alert(
+              'Use Email Sign-In',
+              'This account is registered via Email and Password. Please sign in using your password.',
+              [{ text: 'OK', style: 'default' }]
+            );
+            await supabase.auth.signOut();
+            useSignupStore.getState().setIsGoogleDelaying(false);
+            return;
+          }
+
           // Check if this Google account belongs to a graduated student
           if (user?.id) {
             const { data: profileCheck } = await supabase

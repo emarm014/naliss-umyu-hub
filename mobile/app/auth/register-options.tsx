@@ -192,7 +192,7 @@ export default function RegisterOptions() {
           if (isMounted.current) { setIsGoogleLoading(false); Alert.alert('Account Graduated', 'This email belongs to a graduated student. Access is restricted to active students only.'); }
           return;
         }
-        if (accountStatus === 'email') {
+        if (accountStatus === 'email' || user?.app_metadata?.provider === 'email') {
           store.setIsGoogleDelaying(false);
           await supabase.auth.signOut();
           store.reset();

@@ -1,26 +1,50 @@
-import { createMMKV } from 'react-native-mmkv';
 import { StateStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Logger } from '../utils/logger';
 
-export const storage = createMMKV({ id: 'naliss-app-storage' });
+let storage: any = null;
+let useFallback = false;
 
-// Custom StateStorage adapter wrapping MMKV
+try {
+  // Dynamic require ensures no crashes in environments where native C++ module isn't loaded (like Expo Go)
+  const { createMMKV } = require('react-native-mmkv');
+  storage = createMMKV({ id: 'naliss-app-storage' });
+} catch {
+  Logger.warn('mmkv.storage', 'MMKV could not be initialized (likely running in standard Expo Go). Falling back to AsyncStorage.');
+  useFallback = true;
+}
+
+// Custom StateStorage adapter wrapping MMKV with AsyncStorage fallback
 export const mmkvStorage: StateStorage = {
   setItem: (name, value) => {
-    storage.set(name, value);
+    if (useFallback) {
+      AsyncStorage.setItem(name, value).catch(() => {});
+    } else {
+      storage.set(name, value);
+    }
   },
   getItem: (name) => {
-    const value = storage.getString(name);
-    return value ?? null;
+    if (useFallback) {
+      // Zustand createJSONStorage supports Promise return values for asynchronous storage engines
+      return AsyncStorage.getItem(name);
+    } else {
+      const value = storage.getString(name);
+      return value ?? null;
+    }
   },
   removeItem: (name) => {
-    storage.remove(name);
+    if (useFallback) {
+      AsyncStorage.removeItem(name).catch(() => {});
+    } else {
+      storage.remove(name);
+    }
   },
 };
 
-// Programmatic migration check from AsyncStorage to MMKV
+// Programmatic migration check from AsyncStorage to MMKV (only runs if MMKV is active)
 export const migrateAsyncStorageToMMKV = async () => {
+  if (useFallback || !storage) return;
+
   try {
     const MIGRATED_FLAG = 'migrated_from_asyncstorage';
     const hasMigrated = storage.getBoolean(MIGRATED_FLAG);

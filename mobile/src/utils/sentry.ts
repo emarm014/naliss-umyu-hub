@@ -114,7 +114,7 @@ export function isNetworkError(error: any): boolean {
  * Error instance so Sentry can fingerprint and display it correctly instead of
  * showing "Object captured as exception with keys: code, details, hint, message".
  */
-function normalizeError(error: unknown): Error {
+export function normalizeError(error: unknown): Error {
   if (error instanceof Error) return error;
   if (error && typeof error === 'object' && 'message' in error) {
     const obj = error as Record<string, any>;

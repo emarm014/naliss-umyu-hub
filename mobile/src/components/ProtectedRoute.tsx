@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../components/NalissLogo';
 import { SplashLoadingScreen } from './SplashLoadingScreen';
 import { getOrCreateDeviceId, fetchIpAddress } from '../utils/device';
+import { normalizeError } from '../utils/sentry';
 const MinimalLoader = () => {
   const { colors } = useTheme();
   return (
@@ -69,7 +70,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             .eq('user_id', session.user.id)
             .eq('is_active', true);
 
-          if (fetchErr) throw fetchErr;
+          if (fetchErr) throw normalizeError(fetchErr);
           if (!isSubscribed) return;
 
           const activeIds = (activeSessions as any[])?.map(s => s.device_id) || [];
@@ -97,7 +98,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               last_active_at: new Date().toISOString()
             }, { onConflict: 'user_id,device_id' });
 
-          if (upsertErr) throw upsertErr;
+          if (upsertErr) throw normalizeError(upsertErr);
 
           if (isSubscribed) {
             setSessionError(null);
@@ -406,7 +407,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             .eq('id', currentSession.user.id)
             .maybeSingle() as any;
 
-          if (profileError) throw profileError;
+          if (profileError) throw normalizeError(profileError);
           if (profileData) {
             useAuthStore.getState().setProfile(profileData as any);
 
@@ -496,7 +497,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           }
         } catch (profileErr) {
           // Sentry: capture silent profile fetch failures — previously invisible
-          Sentry.captureException(profileErr, {
+          Sentry.captureException(normalizeError(profileErr), {
             tags: { location: 'ProtectedRoute.onAuthStateChange.profileFetch' },
             extra: {
               userId: currentSession?.user?.id,

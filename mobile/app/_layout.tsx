@@ -83,7 +83,6 @@ import { NalissLogo } from '../src/components/NalissLogo';
 // because the app never signals that the auth session is complete.
 WebBrowser.maybeCompleteAuthSession();
 import { ProtectedRoute } from '../src/components/ProtectedRoute';
-import { SplashLoadingScreen } from '../src/components/SplashLoadingScreen';
 import { supabase } from '../src/api/supabase/client';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -191,15 +190,7 @@ const queryClient = new QueryClient({
 
 function RootLayoutNav() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
-  const [isSplashDelayActive, setIsSplashDelayActive] = useState(true);
   const { isDark } = useThemeStore();
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsSplashDelayActive(false);
-    }, 2200); // Keep animated splash for 2.2 seconds to display the beautiful branding
-    return () => clearTimeout(timer);
-  }, []);
   
   // Register Institutional Signal (Push Notifications)
   usePushNotifications();
@@ -382,8 +373,8 @@ function RootLayoutNav() {
     return () => subscription.remove();
   }, []);
 
-  if (!fontsLoaded || isSplashDelayActive) {
-    return <SplashLoadingScreen />;
+  if (!fontsLoaded) {
+    return null;
   }
 
   // Check for critical environment variables before mounting the app

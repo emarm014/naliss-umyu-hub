@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { useRouter, useSegments, usePathname } from 'expo-router';
 import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
-import { useAuthStore, useSettingsStore } from '../stores';
+import { useAuthStore, useSettingsStore, useTheme } from '../stores';
 import MaintenanceScreen from '../../app/maintenance';
 import { useSignupStore, useGlobalSyncStore } from '../stores';
 import { cleanupIncompleteSignup } from '../utils/signup-cleanup';
@@ -15,6 +15,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../components/NalissLogo';
 import { SplashLoadingScreen } from './SplashLoadingScreen';
 import { getOrCreateDeviceId, fetchIpAddress } from '../utils/device';
+const MinimalLoader = () => {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
+      <ActivityIndicator size="large" color={COLORS.primary} />
+    </View>
+  );
+};
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // ── Zustand selectors — subscribe to individual properties, NOT the whole store.
@@ -917,7 +925,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // and causing a login redirect that immediately reverses to tabs.
   // On a real device AsyncStorage reads in ~10-50ms — imperceptible.
   if (!_hasHydrated) {
-    return <SplashLoadingScreen message="Checking authorization..." />;
+    return null;
   }
 
   // Still waiting for profile check AND not yet unblocked by offline timeout
@@ -934,12 +942,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     // Also skip spinner if a signup transition is actively in progress
     const signupState = useSignupStore.getState();
     if (signupState.isGoogleDelaying) return <>{children}</>;
-    return <SplashLoadingScreen message="Verifying profile..." />;
-  }
-
-  // Still verifying device session status
-  if (session && isProfileComplete === true && !deviceSessionChecked) {
-    return <SplashLoadingScreen message="Securing device connection..." />;
+    return <MinimalLoader />;
   }
 
   // BLOCK: 5-Device limit exceeded screen

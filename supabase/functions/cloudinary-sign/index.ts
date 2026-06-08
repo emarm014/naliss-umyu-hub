@@ -67,9 +67,13 @@ Deno.serve(async (req: Request) => {
     const sortedKeys = Object.keys(paramsToSign).sort();
     
     // Construct query string: key1=value1&key2=value2...
-    const signatureString = sortedKeys
+    const stringToSign = sortedKeys
       .map(key => `${key}=${paramsToSign[key]}`)
-      .join('&') + API_SECRET;
+      .join('&');
+      
+    console.log("String to sign:", stringToSign);
+    
+    const signatureString = stringToSign + API_SECRET;
 
     // Generate SHA-1 Hash using Web Crypto API
     const msgBuffer = new TextEncoder().encode(signatureString);

@@ -52,8 +52,8 @@ async function fetchUploadSignature(folder?: string): Promise<any> {
   const { data, error } = await supabase.functions.invoke('cloudinary-sign', {
     method: 'POST',
     body: {
-      upload_preset: CLOUDINARY_SIGNED_PRESET,
-      folder
+      folder,
+      upload_preset: CLOUDINARY_SIGNED_PRESET
     }
   });
 
@@ -110,13 +110,18 @@ export async function uploadToCloudinary(
   formData.append('file', blob as any);
 
   if (signatureData) {
-    formData.append('api_key', signatureData.api_key);
-    formData.append('timestamp', signatureData.timestamp);
-    formData.append('signature', signatureData.signature);
-    formData.append('upload_preset', CLOUDINARY_SIGNED_PRESET);
-    if (folder) {
-      formData.append('folder', folder);
+    // 1. folder
+    if (signatureData.folder) {
+      formData.append('folder', signatureData.folder);
     }
+    // 2. timestamp
+    formData.append('timestamp', signatureData.timestamp);
+    // 3. upload_preset
+    formData.append('upload_preset', signatureData.upload_preset || CLOUDINARY_SIGNED_PRESET);
+
+    // Other required parameters
+    formData.append('api_key', signatureData.api_key);
+    formData.append('signature', signatureData.signature);
   } else {
     // Fallback to unsigned preset
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
@@ -222,11 +227,18 @@ export async function uploadLocalFileToCloudinary(
       } as any);
 
       if (signatureData) {
-        formData.append('api_key', signatureData.api_key);
+        // 1. folder
+        if (signatureData.folder) {
+          formData.append('folder', signatureData.folder);
+        }
+        // 2. timestamp
         formData.append('timestamp', signatureData.timestamp);
+        // 3. upload_preset
+        formData.append('upload_preset', signatureData.upload_preset || CLOUDINARY_SIGNED_PRESET);
+
+        // Other required parameters
+        formData.append('api_key', signatureData.api_key);
         formData.append('signature', signatureData.signature);
-        formData.append('upload_preset', CLOUDINARY_SIGNED_PRESET);
-        if (folder) formData.append('folder', folder);
       } else {
         // Fallback to unsigned preset
         formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);

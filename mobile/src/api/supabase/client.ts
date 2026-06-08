@@ -14,6 +14,23 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 // - Keep-alive headers to reuse TCP connections (reduces handshake overhead)
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const isTransientError = (err: any): boolean => {
+  if (!err) return false;
+  const name = err.name || '';
+  const msg = err.message || '';
+  return (
+    name === 'AbortError' ||
+    name === 'TimeoutError' ||
+    msg.includes('network') ||
+    msg.includes('fetch') ||
+    msg.includes('abort') ||
+    msg.includes('timed out') ||
+    msg.includes('timeout') ||
+    msg.includes('connection') ||
+    msg.includes('offline')
+  );
+};
+
 const fetchWithRetry = async (
   url: RequestInfo | URL,
   options: RequestInit = {},
@@ -94,11 +111,13 @@ const fetchWithRetry = async (
       await sleep(300 * Math.pow(2, attempt));
       return fetchWithRetry(url, options, attempt + 1);
     }
-    // Non-retryable or exhausted retries — capture as exception
-    Sentry.captureException(err, {
-      tags: { location: 'supabase.fetchWithRetry', path: urlPath },
-      extra: { path: urlPath, method: options.method, durationMs, attempt },
-    });
+    // Non-retryable or exhausted retries — capture as exception if not transient
+    if (!isTransientError(err)) {
+      Sentry.captureException(err, {
+        tags: { location: 'supabase.fetchWithRetry', path: urlPath },
+        extra: { path: urlPath, method: options.method, durationMs, attempt },
+      });
+    }
     throw err;
   }
 };

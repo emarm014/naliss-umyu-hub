@@ -34,11 +34,15 @@ const getBrowserAndOS = () => {
 };
 
 const fetchIpAddress = async (): Promise<string> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
   try {
-    const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) });
+    const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await res.json();
     return data.ip || 'Unknown IP';
   } catch (err) {
+    clearTimeout(timeoutId);
     console.warn('Could not fetch IP:', err);
     return 'Unknown IP';
   }

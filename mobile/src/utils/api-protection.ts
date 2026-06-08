@@ -1,12 +1,24 @@
 import { Logger } from './logger';
 import { isNetworkError } from './sentry';
 
-export class TimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TimeoutError';
-  }
+export interface TimeoutError extends Error {
+  name: 'TimeoutError';
 }
+
+function TimeoutErrorFn(this: any, message: string) {
+  const instance = new Error(message);
+  Object.setPrototypeOf(instance, TimeoutError.prototype);
+  instance.name = 'TimeoutError';
+  return instance;
+}
+
+TimeoutErrorFn.prototype = Object.create(Error.prototype);
+TimeoutErrorFn.prototype.constructor = TimeoutErrorFn;
+
+export const TimeoutError = TimeoutErrorFn as any as {
+  new (message: string): TimeoutError;
+  prototype: TimeoutError;
+};
 
 /**
  * Wraps a promise in a strict timeout.

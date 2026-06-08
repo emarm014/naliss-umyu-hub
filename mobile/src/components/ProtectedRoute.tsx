@@ -634,6 +634,58 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     };
   }, [session?.user?.id]);
 
+  // ── REALTIME: Detect remote logout while user is already logged in ───────
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId || !deviceSessionChecked || sessionError) return;
+
+    let isSubscribed = true;
+    let channel: any = null;
+
+    const setupSessionWatcher = async () => {
+      try {
+        const deviceId = await getOrCreateDeviceId();
+        
+        channel = supabase
+          .channel(`user-session-watch-${userId}-${deviceId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'user_sessions',
+              filter: `user_id=eq.${userId}`,
+            },
+            async (payload) => {
+              const updated = payload.new as any;
+              if (updated && updated.device_id === deviceId && !updated.is_active) {
+                if (isSubscribed) {
+                  Alert.alert('Session Terminated', 'This device has been logged out remotely.');
+                  await supabase.auth.signOut();
+                  useAuthStore.getState().setSession(null);
+                  useAuthStore.getState().setUser(null);
+                  useAuthStore.getState().setIsProfileComplete(null);
+                  useAuthStore.getState().setProfile(null);
+                }
+              }
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.error('Failed to setup session watcher:', err);
+      }
+    };
+
+    setupSessionWatcher();
+
+    return () => {
+      isSubscribed = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [session?.user?.id, deviceSessionChecked, sessionError]);
+
   const pathname = usePathname();
   // Cooldown-based navigation guard — prevents infinite loops by throttling
   // navigations to at most once per 500ms and blocking duplicate targets.

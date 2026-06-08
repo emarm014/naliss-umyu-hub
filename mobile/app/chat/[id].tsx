@@ -244,7 +244,11 @@ export default function ChatScreen() {
         const markActive = async () => {
             // Use the throttled RPC — only updates if last_active_at is older than 60s
             // This prevents 33 writes/second at 1000 concurrent users
-            await (supabase.rpc('update_last_active' as any) as any).catch(() => {});
+            try {
+                await supabase.rpc('update_last_active' as any);
+            } catch (err) {
+                // silent catch
+            }
         };
 
         markActive();

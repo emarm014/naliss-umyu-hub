@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { Platform, Text } from 'react-native';
 import { useTheme } from '../../src/stores/theme.store';
 import { trackScreen } from '../../src/utils/sentry';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +30,25 @@ export default function TabsLayout() {
   const badgeValue = showBadge ? unreadGroupsCount : undefined;
 
   const TabsComponent = Tabs as any;
+
+  const renderTabLabel = (text: string) => ({ color, focused }: { color: string; focused: boolean }) => (
+    <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit={true}
+      minimumFontScale={0.8}
+      style={{
+        color,
+        fontSize: 10,
+        fontWeight: focused ? '600' : '400',
+        fontFamily: 'Inter-SemiBold',
+        textAlign: 'center',
+        letterSpacing: -0.2, // Slightly squeezes letters to fit within boundary
+        marginTop: 2,
+      }}
+    >
+      {text}
+    </Text>
+  );
 
   return (
     <TabsComponent
@@ -87,7 +106,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'HOME',
+          tabBarLabel: renderTabLabel('HOME'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
           ),
@@ -96,7 +115,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="announcements"
         options={{
-          title: 'UPDATES',
+          tabBarLabel: renderTabLabel('UPDATES'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'megaphone' : 'megaphone-outline'} size={24} color={color} />
           ),
@@ -111,7 +130,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="messages"
         options={{
-          title: 'CHAT',
+          tabBarLabel: renderTabLabel('CHAT'),
           tabBarBadge: badgeValue,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={24} color={color} />
@@ -121,16 +140,16 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="resources"
         options={{
-          title: 'RESOURCES',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'folder' : 'folder-outline'} size={24} color={color} />
           ),
+          tabBarLabel: renderTabLabel('RESOURCES'),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'PROFILE',
+          tabBarLabel: renderTabLabel('PROFILE'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
           ),

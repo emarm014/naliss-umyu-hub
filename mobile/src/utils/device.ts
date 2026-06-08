@@ -28,11 +28,15 @@ export async function getOrCreateDeviceId(): Promise<string> {
  * Falls back gracefully if offline or request fails.
  */
 export async function fetchIpAddress(): Promise<string> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
   try {
-    const response = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) });
+    const response = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await response.json();
     return data.ip || 'Unknown IP';
   } catch (err) {
+    clearTimeout(timeoutId);
     console.warn('Could not fetch public IP address:', err);
     return 'Offline / Unknown';
   }

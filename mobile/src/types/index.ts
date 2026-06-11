@@ -128,6 +128,7 @@ export interface Executive {
   start_date: string | null;
   end_date: string | null;
   is_active: boolean;
+  is_alumni?: boolean;
   display_order: number;
   created_at: string;
   updated_at: string;
@@ -322,6 +323,11 @@ export interface Message {
   attachment_size: number | null;
   attachment_mime_type: string | null;
   reply_to_id: string | null;
+  reply_from_meta?: {
+    sender_name: string;
+    content: string;
+    content_type: string;
+  } | null;
   is_edited: boolean;
   edited_at: string | null;
   is_deleted: boolean;

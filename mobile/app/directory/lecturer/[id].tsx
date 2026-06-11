@@ -10,12 +10,15 @@ import { COLORS } from '../../../src/constants/Colors';
 import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { getCleanAvatarUrl } from '../../../src/utils';
+import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
+import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 
 export default function LecturerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { lecturers } = useDirectoryStore();
   const [lecturer, setLecturer] = useState<any>(null);
+  const [viewerVisible, setViewerVisible] = useState(false);
 
   useEffect(() => {
     const found = lecturers.find(l => l.id === id);
@@ -66,31 +69,12 @@ export default function LecturerDetailScreen() {
         </SafeAreaView>
 
         {/* Avatar */}
-        <View style={styles.avatarSection}>
-          <View style={styles.avatarRing}>
-            {(() => {
-              const cleanUrl = getCleanAvatarUrl(lecturer.avatar_url);
-              return cleanUrl ? (
-                <Image
-                  source={{ uri: getOptimizedCloudinaryUrl(cleanUrl, 300, 300) }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarInitials}>{initials}</Text>
-                </View>
-              );
-            })()}
-          </View>
-
-          {/* Title badge */}
-          <View style={styles.titleBadge}>
-            <Ionicons name="school" size={10} color="#fbbf24" />
-            <Text style={styles.titleBadgeText}>
-              {(lecturer.title || 'Lecturer').toUpperCase()}
-            </Text>
-          </View>
-        </View>
+        <LecturerHeroAvatar
+          avatarUrl={lecturer.avatar_url}
+          initials={initials}
+          title={lecturer.title}
+          onPressAvatar={() => setViewerVisible(true)}
+        />
 
         {/* Name & info */}
         <Text style={styles.heroName}>{lecturer.full_name}</Text>
@@ -224,6 +208,53 @@ export default function LecturerDetailScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <UniversalViewer
+        isVisible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        fileUri={getCleanAvatarUrl(lecturer.avatar_url) || ''}
+        fileType="image"
+        fileName={lecturer.full_name}
+        showDownload={false}
+      />
+    </View>
+  );
+}
+
+function LecturerHeroAvatar({ avatarUrl, initials, title, onPressAvatar }: {
+  avatarUrl: string | null;
+  initials: string;
+  title: string | null;
+  onPressAvatar: () => void;
+}) {
+  const cleanUrl = getCleanAvatarUrl(avatarUrl);
+  const optimizedUrl = cleanUrl ? getOptimizedCloudinaryUrl(cleanUrl, 300, 300) : null;
+  const cachedUri = useOfflineImage(optimizedUrl);
+
+  return (
+    <View style={styles.avatarSection}>
+      <TouchableOpacity
+        style={styles.avatarRing}
+        onPress={onPressAvatar}
+        disabled={!cachedUri}
+        activeOpacity={0.8}
+      >
+        {cachedUri ? (
+          <Image source={{ uri: cachedUri }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarPlaceholder}>
+            <Text style={styles.avatarInitials}>{initials}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Title badge */}
+      <View style={styles.titleBadge}>
+        <Ionicons name="school" size={10} color="#fbbf24" />
+        <Text style={styles.titleBadgeText}>
+          {(title || 'Lecturer').toUpperCase()}
+        </Text>
+      </View>
     </View>
   );
 }

@@ -139,6 +139,21 @@ export default function ExecutivesPage() {
     }
   };
 
+  const handleArchiveTenure = async (executive: Executive) => {
+    if (!window.confirm(`Are you sure you want to end the tenure for ${executive.full_name} and shift them to Alumni?`)) return;
+    
+    try {
+      const { error } = await supabase.rpc('archive_executive_tenure', { target_id: executive.id });
+      if (error) throw error;
+      setSuccessMessage(`${executive.full_name} has been shifted to Alumni.`);
+      syncAll(true);
+      refreshAnalytics();
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err: unknown) {
+      setFormError('Failed to archive tenure: ' + ((err as any)?.message || 'Unknown error'));
+    }
+  };
+
   const openCreateModal = () => {
     setCustomPosition('');
     setFormData({
@@ -402,14 +417,26 @@ export default function ExecutivesPage() {
                      })}
                   </div>
 
-                  <div className="mt-4 flex items-center justify-between">
-                    <button onClick={() => handleToggleCurrent(executive)} className={`btn-institutional-sm ${executive.is_current ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
-                      {executive.is_current ? 'Archive Profile' : 'Restore'}
-                    </button>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => openEditModal(executive)} className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200"><Edit className="h-4 w-4" /></button>
-                      <button onClick={() => handleDelete(executive.id)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                  <div className="mt-4 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <button onClick={() => handleToggleCurrent(executive)} className={`btn-institutional-sm ${executive.is_current ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                        {executive.is_current ? 'Archive Profile' : 'Restore'}
+                      </button>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => openEditModal(executive)} className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200"><Edit className="h-4 w-4" /></button>
+                        <button onClick={() => handleDelete(executive.id)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                      </div>
                     </div>
+                    {executive.is_current && !executive.is_alumni && (
+                      <button onClick={() => handleArchiveTenure(executive)} className="w-full py-2 bg-primary-100 text-primary-700 hover:bg-primary-200 rounded-lg text-xs font-bold transition-colors">
+                        End Tenure / Shift to Alumni
+                      </button>
+                    )}
+                    {executive.is_alumni && (
+                      <div className="w-full py-1.5 bg-slate-100 text-slate-500 rounded-lg text-xs font-bold text-center">
+                        Alumni Member
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

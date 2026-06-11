@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, Text } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { useTheme } from '../../src/stores/theme.store';
 import { trackScreen } from '../../src/utils/sentry';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,6 +50,22 @@ export default function TabsLayout() {
     </Text>
   );
 
+  const renderTabIcon = (iconName: string, outlineName: string) => ({ color, focused }: { color: string; focused: boolean }) => (
+    <View
+      style={{
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: focused ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)') : 'transparent',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      <Ionicons name={(focused ? iconName : outlineName) as any} size={24} color={color} />
+    </View>
+  );
+
   return (
     <TabsComponent
       screenListeners={{
@@ -67,7 +83,6 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: isDark ? '#2ea6ff' : colors.primary,
         tabBarInactiveTintColor: isDark ? '#64748b' : colors.textMuted,
-        tabBarActiveBackgroundColor: isDark ? '#1c2d3a' : '#f1f5f9',
         
         tabBarStyle: {
           position: 'absolute',
@@ -89,7 +104,6 @@ export default function TabsLayout() {
           paddingTop: 0,
         },
         tabBarItemStyle: {
-          borderRadius: 28,
           marginVertical: 8,
           marginHorizontal: 6,
           paddingVertical: 4,
@@ -107,18 +121,14 @@ export default function TabsLayout() {
         name="index"
         options={{
           tabBarLabel: renderTabLabel('HOME'),
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: renderTabIcon('home', 'home-outline'),
         }}
       />
       <Tabs.Screen
         name="announcements"
         options={{
           tabBarLabel: renderTabLabel('UPDATES'),
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'megaphone' : 'megaphone-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: renderTabIcon('megaphone', 'megaphone-outline'),
         }}
       />
       <Tabs.Screen
@@ -132,17 +142,13 @@ export default function TabsLayout() {
         options={{
           tabBarLabel: renderTabLabel('CHAT'),
           tabBarBadge: badgeValue,
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: renderTabIcon('chatbubble-ellipses', 'chatbubble-ellipses-outline'),
         }}
       />
       <Tabs.Screen
         name="resources"
         options={{
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'folder' : 'folder-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: renderTabIcon('folder', 'folder-outline'),
           tabBarLabel: renderTabLabel('RESOURCES'),
         }}
       />
@@ -150,9 +156,7 @@ export default function TabsLayout() {
         name="profile"
         options={{
           tabBarLabel: renderTabLabel('PROFILE'),
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: renderTabIcon('person', 'person-outline'),
         }}
       />
       <Tabs.Screen

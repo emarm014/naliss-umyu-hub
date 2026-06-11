@@ -15,6 +15,7 @@ import {
   Alert,
   Linking,
   KeyboardAvoidingView,
+  useColorScheme,
 } from 'react-native';
 import { useResourceStore, useDirectoryStore, useAuthStore } from '../../src/stores';
 import { downloadFile, extractFileNameFromUrl } from '../../src/utils/download';
@@ -34,6 +35,22 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
 
 const { width } = Dimensions.get('window');
+
+function useSemanticTheme() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  return {
+    isDark,
+    cardBg: isDark ? '#1E2638' : '#FFFFFF',
+    headerSectionBg: isDark ? '#1A202C' : '#F7FAFC',
+    textPrimary: isDark ? '#FFFFFF' : '#1A202C',
+    textSecondary: isDark ? '#E2E8F0' : '#4A5568',
+    textMuted: isDark ? '#A0AEC0' : '#718096',
+    border: isDark ? '#2D3748' : '#E2E8F0',
+    brandGreen: '#005A36'
+  };
+}
 
 type MainTab = 'materials' | 'courses' | 'past_q' | 'directory';
 type DirectoryTab = 'staff' | 'executives';
@@ -401,6 +418,7 @@ export default function ResourcesScreen() {
             onStaffPress={(l: Lecturer) => router.push({ pathname: '/directory/lecturer/[id]', params: { id: l.id } } as any)}
             onExecPress={(e: any) => router.push({ pathname: '/directory/executive/[id]', params: { id: e.id } } as any)}
             searchQuery={searchQuery}
+            isDark={isDark}
           />
         )}
       </ScrollView>
@@ -519,54 +537,78 @@ function CoursesTabContent({ loading, coursesBySemester, searchQuery }: any) {
   );
 }
 
-function DirectoryTabContent({ activeTab, setActiveTab, lecturers, executives, loading, onStaffPress, onExecPress, searchQuery }: any) {
+function DirectoryTabContent({ activeTab, setActiveTab, lecturers, executives, loading, onStaffPress, onExecPress, searchQuery, isDark }: any) {
+  const [executiveFilter, setExecutiveFilter] = useState<'current' | 'alumni'>('current');
+
   if (loading && lecturers.length === 0 && executives.length === 0) {
       return <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />;
   }
 
-  const currentListSize = activeTab === 'staff' ? lecturers.length : executives.length;
+  const displayedExecutives = executives.filter((exec: any) => 
+    executiveFilter === 'alumni' ? exec.is_alumni === true : !exec.is_alumni
+  );
+
+  const currentListSize = activeTab === 'staff' ? lecturers.length : displayedExecutives.length;
 
   return (
     <View style={styles.tabContent}>
       {/* Tab switcher */}
-      <View style={styles.directoryTabs}>
+      <View style={[styles.directoryTabs, isDark && { backgroundColor: '#1e293b' }]}>
         <TouchableOpacity
           style={[styles.dirTab, activeTab === 'staff' && styles.activeDirTab]}
           onPress={() => setActiveTab('staff')}
         >
-          <Ionicons name="school" size={14} color={activeTab === 'staff' ? '#fff' : '#64748b'} />
-          <Text style={[styles.dirTabText, activeTab === 'staff' && styles.activeDirTabText]}>Lecturers</Text>
+          <Ionicons name="school" size={14} color={activeTab === 'staff' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
+          <Text style={[styles.dirTabText, isDark && { color: '#94a3b8' }, activeTab === 'staff' && styles.activeDirTabText]}>Lecturers</Text>
           {lecturers.length > 0 && (
-            <View style={[styles.dirTabBadge, activeTab === 'staff' && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-              <Text style={[styles.dirTabBadgeText, activeTab === 'staff' && { color: '#fff' }]}>{lecturers.length}</Text>
+            <View style={[styles.dirTabBadge, isDark && { backgroundColor: '#334155' }, activeTab === 'staff' && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+              <Text style={[styles.dirTabBadgeText, isDark && { color: '#94a3b8' }, activeTab === 'staff' && { color: '#fff' }]}>{lecturers.length}</Text>
             </View>
           )}
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.dirTab, activeTab === 'executives' && styles.activeDirTabExec]}
+          style={[styles.dirTab, activeTab === 'executives' && styles.activeDirTab]}
           onPress={() => setActiveTab('executives')}
         >
-          <Ionicons name="star" size={14} color={activeTab === 'executives' ? '#fff' : '#64748b'} />
-          <Text style={[styles.dirTabText, activeTab === 'executives' && styles.activeDirTabText]}>Executives</Text>
+          <Ionicons name="star" size={14} color={activeTab === 'executives' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
+          <Text style={[styles.dirTabText, isDark && { color: '#94a3b8' }, activeTab === 'executives' && styles.activeDirTabText]}>Executives</Text>
           {executives.length > 0 && (
-            <View style={[styles.dirTabBadge, activeTab === 'executives' && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-              <Text style={[styles.dirTabBadgeText, activeTab === 'executives' && { color: '#fff' }]}>{executives.length}</Text>
+            <View style={[styles.dirTabBadge, isDark && { backgroundColor: '#334155' }, activeTab === 'executives' && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+              <Text style={[styles.dirTabBadgeText, isDark && { color: '#94a3b8' }, activeTab === 'executives' && { color: '#fff' }]}>{executives.length}</Text>
             </View>
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Executives Sub-toggle */}
+      {activeTab === 'executives' && (
+        <View style={[{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 12, padding: 4, marginBottom: 20 }]}>
+          <TouchableOpacity
+            style={[{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 }, executiveFilter === 'current' && { backgroundColor: '#005A36', shadowColor: '#005A36', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2 }]}
+            onPress={() => setExecutiveFilter('current')}
+          >
+            <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: isDark ? '#94a3b8' : '#64748b' }, executiveFilter === 'current' && { color: '#fff', fontFamily: 'Inter-Bold' }]}>Current</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 }, executiveFilter === 'alumni' && { backgroundColor: '#005A36', shadowColor: '#005A36', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2 }]}
+            onPress={() => setExecutiveFilter('alumni')}
+          >
+            <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: isDark ? '#94a3b8' : '#64748b' }, executiveFilter === 'alumni' && { color: '#fff', fontFamily: 'Inter-Bold' }]}>Alumni</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {currentListSize === 0 && !loading ? (
           <EmptySection query={searchQuery} />
       ) : activeTab === 'staff' ? (
         // Lecturers — single column, official card layout
         lecturers.map((l: Lecturer) => (
-          <StaffTile key={l.id} lecturer={l} onPress={() => onStaffPress(l)} />
+          <StaffTile key={l.id} lecturer={l} onPress={() => onStaffPress(l)} isDark={isDark} />
         ))
       ) : (
         // Executives — single column, same layout as lecturers
-        executives.map((e: any) => (
-          <ExecTile key={e.id} executive={e} onPress={() => onExecPress(e)} />
+        displayedExecutives.map((e: any) => (
+          <ExecTile key={e.id} executive={e} onPress={() => onExecPress(e)} isDark={isDark} />
         ))
       )}
     </View>
@@ -579,6 +621,7 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
   const [downloadProgress, setDownloadProgress] = React.useState<number | null>(null);
   const [localDownloaded, setLocalDownloaded] = React.useState(isDownloaded);
   const { profile } = useAuthStore();
+  const theme = useSemanticTheme();
   const isMountedRef = React.useRef(true);
 
   React.useEffect(() => {
@@ -655,7 +698,8 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
   return (
     <View style={[
       styles.resourceCard,
-      localDownloaded && styles.resourceCardDownloaded,
+      { backgroundColor: theme.cardBg, borderColor: theme.border },
+      localDownloaded && [styles.resourceCardDownloaded, { borderColor: theme.brandGreen }],
     ]}>
       {/* Left: file type icon */}
       <View style={[styles.resIconBox, { backgroundColor: fileTypeConfig.bg }]}>
@@ -667,9 +711,9 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
 
       {/* Center: info */}
       <View style={styles.resInfo}>
-        <Text style={styles.resTitle} numberOfLines={2}>{material.title}</Text>
+        <Text style={[styles.resTitle, { color: theme.textPrimary }]} numberOfLines={2}>{material.title}</Text>
         <View style={styles.resMetaRow}>
-          <Text style={styles.resMeta}>{fileSizeMB} MB</Text>
+          <Text style={[styles.resMeta, { color: theme.textMuted }]}>{fileSizeMB} MB</Text>
           {localDownloaded && (
             <View style={styles.offlinePill}>
               <Ionicons name="checkmark-circle" size={11} color="#166534" />
@@ -740,6 +784,7 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
 }
 
 function CourseTile({ course }: { course: Course }) {
+  const theme = useSemanticTheme();
   const code = course.code?.toUpperCase() || '';
   const creditNum = course.credit_units || 0;
   const level = String(course.level || '100');
@@ -758,7 +803,7 @@ function CourseTile({ course }: { course: Course }) {
   const lecturerName = (course as any).lecturer?.full_name || (course as any).lecturer_name || null;
 
   return (
-    <View style={styles.courseCard}>
+    <View style={[styles.courseCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
       {/* Gradient strip — left side */}
       <LinearGradient colors={palette.grad} style={styles.courseStrip} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
         <Text style={styles.courseStripCode} numberOfLines={2}>{code}</Text>
@@ -770,7 +815,7 @@ function CourseTile({ course }: { course: Course }) {
 
       {/* Content */}
       <View style={styles.courseContent}>
-        <Text style={styles.courseTitleNew} numberOfLines={2}>{course.title}</Text>
+        <Text style={[styles.courseTitleNew, { color: theme.textPrimary }]} numberOfLines={2}>{course.title}</Text>
 
         {/* Info pills row */}
         <View style={styles.coursePillRow}>
@@ -794,8 +839,8 @@ function CourseTile({ course }: { course: Course }) {
 
         {/* Lecturer */}
         <View style={styles.courseLecturerRow}>
-          <Ionicons name="person-circle-outline" size={13} color={COLORS.textMuted} />
-          <Text style={styles.courseLecturerText} numberOfLines={1}>
+          <Ionicons name="person-circle-outline" size={13} color={theme.textMuted} />
+          <Text style={[styles.courseLecturerText, { color: theme.textSecondary }]} numberOfLines={1}>
             {lecturerName || 'Staff Not Assigned'}
           </Text>
         </View>
@@ -804,14 +849,15 @@ function CourseTile({ course }: { course: Course }) {
   );
 }
 
-function StaffTile({ lecturer, onPress }: { lecturer: Lecturer, onPress: () => void }) {
+function StaffTile({ lecturer, onPress, isDark }: { lecturer: Lecturer, onPress: () => void, isDark?: boolean }) {
+  const theme = useSemanticTheme();
   const hasPhoto = !!lecturer.avatar_url;
   const initials = lecturer.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   const title = lecturer.title || 'Lecturer';
   const position = lecturer.position || 'Departmental Staff';
 
   return (
-    <TouchableOpacity style={styles.lecturerCard} onPress={onPress} activeOpacity={0.92}>
+    <TouchableOpacity style={[styles.lecturerCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={onPress} activeOpacity={0.92}>
       {/* Gradient header strip */}
       <LinearGradient
         colors={['#064e3b', '#1B5E20', '#2E7D32']}
@@ -839,38 +885,39 @@ function StaffTile({ lecturer, onPress }: { lecturer: Lecturer, onPress: () => v
 
       {/* Body */}
       <View style={styles.lecturerBody}>
-        <Text style={styles.lecturerName} numberOfLines={1}>{lecturer.full_name}</Text>
-        <Text style={styles.lecturerPosition} numberOfLines={1}>{position}</Text>
+        <Text style={[styles.lecturerName, { color: theme.textPrimary }]} numberOfLines={1}>{lecturer.full_name}</Text>
+        <Text style={[styles.lecturerPosition, { color: theme.textSecondary }]} numberOfLines={1}>{position}</Text>
 
         {/* Specialization pill */}
         {lecturer.specialization && (
-          <View style={styles.lecturerSpecPill}>
-            <Ionicons name="ribbon-outline" size={10} color="#166534" />
-            <Text style={styles.lecturerSpecText} numberOfLines={1}>{lecturer.specialization}</Text>
+          <View style={[styles.lecturerSpecPill, isDark && { backgroundColor: '#064e3b', borderColor: '#166534' }]}>
+            <Ionicons name="ribbon-outline" size={10} color={isDark ? '#4ade80' : '#166534'} />
+            <Text style={[styles.lecturerSpecText, isDark && { color: '#4ade80' }]} numberOfLines={1}>{lecturer.specialization}</Text>
           </View>
         )}
 
         {/* Contact row */}
         <View style={styles.lecturerContactRow}>
           {lecturer.email && (
-            <View style={styles.lecturerContactChip}>
-              <Ionicons name="mail-outline" size={11} color="#64748b" />
+            <View style={[styles.lecturerContactChip, isDark && { backgroundColor: '#334155' }]}>
+              <Ionicons name="mail-outline" size={11} color={isDark ? '#94a3b8' : '#64748b'} />
             </View>
           )}
           {lecturer.phone && (
-            <View style={styles.lecturerContactChip}>
-              <Ionicons name="call-outline" size={11} color="#64748b" />
+            <View style={[styles.lecturerContactChip, isDark && { backgroundColor: '#334155' }]}>
+              <Ionicons name="call-outline" size={11} color={isDark ? '#94a3b8' : '#64748b'} />
             </View>
           )}
           <View style={{ flex: 1 }} />
-          <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
+          <Ionicons name="chevron-forward" size={16} color={isDark ? '#475569' : '#cbd5e1'} />
         </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-function ExecTile({ executive, onPress }: { executive: any, onPress: () => void }) {
+function ExecTile({ executive, onPress, isDark }: { executive: any, onPress: () => void, isDark?: boolean }) {
+  const theme = useSemanticTheme();
   const name = executive.user?.full_name || executive.full_name || 'Executive';
   const avatar = executive.user?.avatar_url || executive.avatar_url;
   const hasPhoto = !!avatar;
@@ -879,7 +926,7 @@ function ExecTile({ executive, onPress }: { executive: any, onPress: () => void 
   const session = executive.academic_session || 'Current';
 
   return (
-    <TouchableOpacity style={styles.execCard} onPress={onPress} activeOpacity={0.92}>
+    <TouchableOpacity style={[styles.execCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={onPress} activeOpacity={0.92}>
       {/* Green gradient header — same style as lecturer card */}
       <LinearGradient
         colors={['#064e3b', '#1B5E20', '#2d6a4f']}
@@ -907,20 +954,20 @@ function ExecTile({ executive, onPress }: { executive: any, onPress: () => void 
 
       {/* Body — full width, left aligned like lecturer */}
       <View style={styles.execBody}>
-        <Text style={styles.execName} numberOfLines={1}>{name}</Text>
-        <View style={styles.execPositionPill}>
-          <Ionicons name="star" size={10} color="#059669" />
-          <Text style={styles.execPositionText} numberOfLines={1}>{position}</Text>
+        <Text style={[styles.execName, { color: theme.textPrimary }]} numberOfLines={1}>{name}</Text>
+        <View style={[styles.execPositionPill, isDark && { backgroundColor: '#064e3b', borderColor: '#166534' }]}>
+          <Ionicons name="star" size={10} color={isDark ? '#4ade80' : '#059669'} />
+          <Text style={[styles.execPositionText, isDark && { color: '#4ade80' }]} numberOfLines={1}>{position}</Text>
         </View>
 
         <View style={styles.execContactRow}>
           {(executive.user?.email || executive.email) && (
-            <View style={styles.execContactChip}>
-              <Ionicons name="mail-outline" size={11} color="#64748b" />
+            <View style={[styles.execContactChip, isDark && { backgroundColor: '#334155' }]}>
+              <Ionicons name="mail-outline" size={11} color={isDark ? '#94a3b8' : '#64748b'} />
             </View>
           )}
           <View style={{ flex: 1 }} />
-          <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
+          <Ionicons name="chevron-forward" size={16} color={isDark ? '#475569' : '#cbd5e1'} />
         </View>
       </View>
     </TouchableOpacity>
@@ -928,9 +975,10 @@ function ExecTile({ executive, onPress }: { executive: any, onPress: () => void 
 }
 
 function SectionHead({ title, count }: { title: string, count: number }) {
+  const theme = useSemanticTheme();
   return (
-    <View style={styles.sectionHead}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={[styles.sectionHead, { backgroundColor: theme.headerSectionBg }]}>
+      <Text style={[styles.sectionTitle, { color: theme.brandGreen }]}>{title}</Text>
       <View style={styles.sectionBadge}>
           <Text style={styles.sectionCountText}>{count}</Text>
       </View>
@@ -952,7 +1000,7 @@ function EmptySection({ query }: { query?: string }) {
 
 function DetailModal({ visible, onClose, title, subtitle, image, details, isExec }: any) {
     const gradColors: [string, string] = isExec
-        ? ['#4c1d95', '#7c3aed']
+        ? ['#064e3b', '#166534']
         : ['#064e3b', '#1B5E20'];
     const initials = title.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
 
@@ -1527,8 +1575,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Bold', fontSize: 9, color: '#64748b',
   },
   activeDirTabExec: {
-    backgroundColor: '#7c3aed',
-    shadowColor: '#7c3aed', shadowOffset: { width: 0, height: 2 },
+    backgroundColor: '#1B5E20',
+    shadowColor: '#1B5E20', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3, shadowRadius: 6, elevation: 3,
   },
   emptyCard: {

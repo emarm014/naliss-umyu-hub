@@ -21,6 +21,7 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
 import * as Sentry from '@sentry/react-native';
+import { saveCategorizedFileToDevice } from '../../utils/fileSaver';
 
 const { width, height } = Dimensions.get('window');
 
@@ -474,92 +475,22 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       if (!localFile || (!localFile.startsWith('file://') && !localFile.startsWith('/'))) {
         // Not a local file — need to download first
         Alert.alert('Preparing file…', 'Downloading file before saving. Please wait.');
-        return; // The viewer's download flow handles this — user should wait for it to finish
+        return; 
       }
 
       // Normalize to file:// URI
       const fileUriNorm = localFile.startsWith('file://') ? localFile : `file://${localFile}`;
       const realFileName = extractFileNameFromUrl(fileUri, fileName);
 
-      const MediaLibrary = await import('expo-media-library');
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      // Call the new cross-platform public saving utility
+      await saveCategorizedFileToDevice(fileUriNorm, realFileName);
 
-      if (fileType === 'image') {
-        // Images → camera roll
-        if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant media library access to save images.');
-          return;
-        }
-        await MediaLibrary.saveToLibraryAsync(fileUriNorm);
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 3000);
-
-      } else if (fileType === 'video') {
-        // Videos → camera roll
-        if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant media library access to save videos.');
-          return;
-        }
-        await MediaLibrary.saveToLibraryAsync(fileUriNorm);
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 3000);
-
-      } else if (fileType === 'audio') {
-        // Audio → Music / Downloads
-        if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant media library access to save audio.');
-          return;
-        }
-        const safeName = realFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const destUri = `${FileSystem.documentDirectory}${safeName}`;
-        await FileSystem.copyAsync({ from: fileUriNorm, to: destUri });
-        const asset = await MediaLibrary.createAssetAsync(destUri);
-        try {
-          const album = await MediaLibrary.getAlbumAsync('Music') || await MediaLibrary.getAlbumAsync('Download');
-          if (album) {
-            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-          } else {
-            await MediaLibrary.createAlbumAsync('Music', asset, false);
-          }
-        } catch { /* album move best-effort */ }
-        await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 3000);
-
-      } else {
-        // PDF / document → Downloads folder
-        const safeName = realFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const destUri = `${FileSystem.documentDirectory}${safeName}`;
-        await FileSystem.copyAsync({ from: fileUriNorm, to: destUri });
-
-        if (status === 'granted') {
-          const asset = await MediaLibrary.createAssetAsync(destUri);
-          try {
-            const album = await MediaLibrary.getAlbumAsync('Download');
-            if (album) {
-              await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-            } else {
-              await MediaLibrary.createAlbumAsync('Download', asset, false);
-            }
-          } catch { /* album move best-effort */ }
-          await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
-          Alert.alert('Saved', `"${realFileName}" has been saved to your Downloads folder.`);
-        } else {
-          // No permission — share as fallback
-          if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(destUri, { dialogTitle: `Save ${realFileName}` });
-          } else {
-            Alert.alert('Permission needed', 'Please grant storage access to save files.');
-          }
-          await FileSystem.deleteAsync(destUri, { idempotent: true }).catch(() => {});
-          return;
-        }
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 3000);
-      }
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+      Alert.alert('Saved', `"${realFileName}" has been saved to your device.`);
     } catch (err: any) {
       Sentry.captureException(err, { tags: { location: 'UniversalViewer.saveToDevice' }, extra: { fileType, fileName } });
-      Alert.alert('Error', 'Could not save the file. Please try again.');
+      Alert.alert('Error', 'Could not save the file to public storage. Please try again.');
     }
   };
 
@@ -604,10 +535,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
               </View>
             </View>
 
-            {/* Right: Back navigation arrow */}
-            <TouchableOpacity onPress={onClose} style={styles.actionButton}>
-              <Ionicons name="chevron-back" size={26} color={COLORS.black} />
-            </TouchableOpacity>
+            {/* Right: Balance placeholder (removed redundant back arrow) */}
+            <View style={{ width: 40 }} />
           </View>
 
           {/* PDF Engine Switcher Bar */}
@@ -854,7 +783,7 @@ gap:12px;color:#ef4444;padding:24px;text-align:center;min-height:60vh}
     <View style={styles.videoContainer}>
       <WebView
         source={{ html }}
-        style={{ flex: 1, backgroundColor: '#000' }}
+        style={{ flex: 1, backgroundColor: '#000', width: '100%', alignSelf: 'stretch' }}
         originWhitelist={['*']}
         allowFileAccess
         allowFileAccessFromFileURLs
@@ -1156,8 +1085,13 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   webview: { flex: 1, width },
   image: { width, height: height * 0.75, backgroundColor: '#f1f5f9' },
-  videoContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
-  video: { width, height: width * (9 / 16) },
+  videoContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center' },
+  video: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: '#000000',
+    alignSelf: 'stretch',
+  },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   progressRing: { marginBottom: 16 },
   progressBarOuter: { width: '80%', height: 6, backgroundColor: '#e2e8f0', borderRadius: 3, overflow: 'hidden', marginTop: 12 },

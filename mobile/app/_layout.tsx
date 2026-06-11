@@ -398,6 +398,14 @@ function RootLayoutNav() {
         <Stack.Screen name="auth" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="+not-found" />
+        <Stack.Screen 
+          name="viewer" 
+          options={{
+            headerShown: false,
+            presentation: 'modal',
+            animation: 'slide_from_bottom'
+          }} 
+        />
       </Stack>
       <GroupMembershipHandler />
       <OfflineBanner />

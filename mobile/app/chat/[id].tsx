@@ -7,6 +7,8 @@ import {
     TouchableOpacity,
     TouchableWithoutFeedback,
     KeyboardAvoidingView,
+    SafeAreaView,
+    Keyboard,
     Platform,
     FlatList,
     Image,
@@ -29,9 +31,10 @@ import { format } from 'date-fns';
 import { supabase } from '../../src/api/supabase/client';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { useSettingsStore, useAuthStore, useMessageStore } from '../../src/stores';
+import { useSettingsStore, useAuthStore, useMessageStore, useMutationQueueStore, useNetworkStore } from '../../src/stores';
 import { useGroupStore } from '../../src/stores/group.store';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { Message } from '../../src/types';
 import { FileService } from '../../src/services/file.service';
 import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
 import { sendChatMessageNotification } from '../../src/utils/notifications';
@@ -104,6 +107,24 @@ export default function ChatScreen() {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
 
+    const [isKeyboardActive, setIsKeyboardActive] = useState(false);
+
+    useEffect(() => {
+        const showSubscription = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            () => setIsKeyboardActive(true)
+        );
+        const hideSubscription = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            () => setIsKeyboardActive(false)
+        );
+
+        return () => {
+            showSubscription.remove();
+            hideSubscription.remove();
+        };
+    }, []);
+
     // Use profile.role (from DB) — user_metadata.role is unreliable after profile updates
     const isStudent = profile?.role === 'student' || !['super_admin', 'moderator'].includes(profile?.role || '');
     const isChatRestricted = readOnlyMode && isStudent;
@@ -132,8 +153,9 @@ export default function ChatScreen() {
         setMembers(newMembers);
     };
     const [inputText, setInputText] = useState('');
-    const [replyingTo, setReplyingTo] = useState<any>(null);
+    const [activeReplyTarget, setActiveReplyTarget] = useState<any | null>(null);
     const [editingMessage, setEditingMessage] = useState<any>(null);
+    const inputRef = useRef<TextInput>(null);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [longPressedMessage, setLongPressedMessage] = useState<any>(null);
     const [viewerVisible, setViewerVisible] = useState(false);
@@ -493,7 +515,7 @@ export default function ChatScreen() {
                         // Priority 2: content + sender match (fallback for text only)
                         // NEVER match by content alone for media (content changes after upload)
                         const findTempMsg = (prev: any[]) => prev.find(m =>
-                            m.status === 'sending' &&
+                            (m.status === 'sending' || m.status === 'unsent' || m.status === 'failed' || m.status === 'error') &&
                             m.sender_id === newMsg.sender_id && (
                                 (newMsg.metadata?.tempId && m.id === newMsg.metadata.tempId)
                             )
@@ -748,6 +770,13 @@ export default function ChatScreen() {
                 }
             }
 
+            const replyToId = activeReplyTarget?.id || null;
+            const replyFromMeta = activeReplyTarget ? {
+                sender_name: activeReplyTarget.user?.username || activeReplyTarget.username || 'user',
+                content: activeReplyTarget.content,
+                content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text'
+            } : null;
+
             const newMessage = {
                 id: tempId,
                 content,
@@ -759,10 +788,12 @@ export default function ChatScreen() {
                     level: profile?.level || currentUser.user_metadata?.level, 
                     avatar_url: profile?.avatar_url || currentUser.user_metadata?.avatar_url 
                 },
-                replyTo: replyingTo ? { 
-                    id: replyingTo.id, 
-                    username: replyingTo.user?.username || replyingTo.username, 
-                    content: (replyingTo.content || '').substring(0, 50) 
+                reply_to_id: replyToId,
+                reply_from_meta: replyFromMeta,
+                replyTo: activeReplyTarget ? { 
+                    id: activeReplyTarget.id, 
+                    username: activeReplyTarget.user?.username || activeReplyTarget.username || 'user', 
+                    content: (activeReplyTarget.content || '').substring(0, 50) 
                 } : null,
                 isEdited: false,
                 is_edited: false,
@@ -774,52 +805,68 @@ export default function ChatScreen() {
             setMessages(prev => [...prev, newMessage]);
             messageStore.addMessage(id, newMessage); // Optimistic cache update
             setInputText('');
-            setReplyingTo(null);
+            setActiveReplyTarget(null);
 
             setTimeout(() => {
                 flatListRef.current?.scrollToEnd({ animated: true });
             }, 100);
 
+            const payload = {
+                content,
+                sender_id: currentUser.id,
+                group_id: id,
+                reply_to_id: replyToId,
+                reply_from_meta: replyFromMeta,
+                message_type: 'text',
+                metadata: { tempId }
+            };
+
             try {
-                const { data, error } = await supabase
-                    .from('messages')
-                    .insert([{
-                        content,
-                        sender_id: currentUser.id,
-                        group_id: id,
-                        reply_to_id: replyingTo?.id || null,
-                        message_type: 'text',
-                        metadata: { tempId }
-                    }])
-                    .select()
-                    .single();
+                const isOnline = useNetworkStore.getState().isOnline;
+                if (!isOnline) {
+                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
+                    messageStore.updateMessage(id, tempId, { status: 'unsent' });
+                } else {
+                    const { data, error } = await supabase
+                        .from('messages')
+                        .insert([payload])
+                        .select()
+                        .single();
 
-                if (error) throw error;
+                    if (error) throw error;
 
-                // Confirm the temp message — but only if realtime hasn't already done it
-                // (realtime may have already swapped tempId → real ID)
-                setMessages(prev => {
-                    // If tempId still exists as 'sending', confirm it
-                    const stillPending = prev.find(m => m.id === tempId && m.status === 'sending');
-                    if (stillPending) {
-                        messageStore.updateMessage(id, tempId, { id: (data as any).id, status: 'sent' });
-                        return prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, status: 'sent' } : m);
-                    }
-                    // Realtime already confirmed it — nothing to do
-                    return prev;
-                });
+                    // Confirm the temp message — but only if realtime hasn't already done it
+                    // (realtime may have already swapped tempId → real ID)
+                    setMessages(prev => {
+                        // If tempId still exists as 'sending', confirm it
+                        const stillPending = prev.find(m => m.id === tempId && m.status === 'sending');
+                        if (stillPending) {
+                            messageStore.updateMessage(id, tempId, { id: (data as any).id, status: 'sent' });
+                            return prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, status: 'sent' } : m);
+                        }
+                        // Realtime already confirmed it — nothing to do
+                        return prev;
+                    });
 
-                // Fire push notification to all group members (except sender) — fire and forget
-                const senderName = profile?.username || profile?.full_name || 'Someone';
-                const groupName = group?.name || 'Group Chat';
-                const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
-                sendChatMessageNotification(id, groupName, senderName, preview, currentUser.id);
-
+                    // Fire push notification to all group members (except sender) — fire and forget
+                    const senderName = profile?.username || profile?.full_name || 'Someone';
+                    const groupName = group?.name || 'Group Chat';
+                    const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
+                    sendChatMessageNotification(id, groupName, senderName, preview, currentUser.id);
+                }
             } catch (err: any) {
-                captureUIError('ChatScreen.sendMessage', err, { groupId: id });
-                // Mark temp message as failed
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'error' } : m));
-                messageStore.updateMessage(id, tempId, { status: 'error' });
+                const isNetwork = err?.status === 0 || 
+                                  err?.message?.toLowerCase().includes('network request failed') || 
+                                  err?.message?.toLowerCase().includes('failed to fetch');
+                if (isNetwork) {
+                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
+                    messageStore.updateMessage(id, tempId, { status: 'unsent' });
+                } else {
+                    captureUIError('ChatScreen.sendMessage', err, { groupId: id });
+                    // Mark temp message as failed
+                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
+                    messageStore.updateMessage(id, tempId, { status: 'unsent' });
+                }
             }
         } finally {
             setIsSending(false);
@@ -836,8 +883,8 @@ export default function ChatScreen() {
         // content is still a local URI or temp filename — need to re-upload to Cloudinary first
         if (msg.message_type !== 'text' && msg.message_type !== 'sticker') {
             if (!msg.content?.startsWith('http')) {
-                // We have the local URI stored in _localUri — use it to re-upload
-                const localUri = msg._localUri || msg.content;
+                // We have the local URI stored in fileUri — use it to re-upload
+                const localUri = msg.fileUri || msg.content;
 
                 // If no local URI available (e.g. app was killed mid-upload), can't recover
                 if (!localUri || localUri.startsWith('http') === false && !localUri.startsWith('file://') && !localUri.startsWith('/')) {
@@ -935,11 +982,12 @@ export default function ChatScreen() {
                 m.id === resendTempId ? { ...m, id: data.id, status: 'sent' } : m
             ));
             messageStore.updateMessage(id, resendTempId, { id: data.id, status: 'sent' });
-        } catch {
+        } catch (err: any) {
+            const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed');
             setMessages(prev => prev.map(m =>
-                m.id === resendTempId ? { ...m, id: messageId, status: 'failed' } : m
+                m.id === resendTempId ? { ...m, id: messageId, status: isNetwork ? 'unsent' : 'failed' } : m
             ));
-            messageStore.updateMessage(id, resendTempId, { id: messageId, status: 'failed' });
+            messageStore.updateMessage(id, resendTempId, { id: messageId, status: isNetwork ? 'unsent' : 'failed' });
         }
     };
 
@@ -980,7 +1028,7 @@ export default function ChatScreen() {
                     sender_id: currentUser.id,
                     group_id: id,
                     message_type: 'sticker',
-                    metadata: { tempId },  // ← include tempId so realtime dedup works
+                    metadata: { tempId },
                 }])
                 .select()
                 .single() as any);
@@ -988,13 +1036,15 @@ export default function ChatScreen() {
             if (error) throw error;
             setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id, status: 'sent' } : m));
             messageStore.updateMessage(id, tempId, { id: data.id, status: 'sent' });
-        } catch {
-            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
-            messageStore.updateMessage(id, tempId, { status: 'failed' });
+        } catch (err: any) {
+            captureUIError('ChatScreen.sendSticker', err, { groupId: id });
+            const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed');
+            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: isNetwork ? 'unsent' : 'failed' } : m));
+            messageStore.updateMessage(id, tempId, { status: isNetwork ? 'unsent' : 'failed' });
         }
     };
 
-    const handlePickImage = async () => {
+    const handlePickAndCropImage = async () => {
         if (isChatRestricted) {
             Alert.alert('Read-Only Mode', 'Image uploads are disabled in read-only mode.');
             return;
@@ -1002,62 +1052,34 @@ export default function ChatScreen() {
         if (!currentUser) return;
         setShowAttachmentMenu(false);
 
+        // Step 1: Launch System Gallery / Camera Access View
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.All,
-            allowsMultipleSelection: true,
-            selectionLimit: 3,
-            quality: 0.7,
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,     // ⚡ MANDATORY: Automatically launches native cropping grid box
+            quality: 1,              // Preserve crisp max resolution
         });
 
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-            const assets = result.assets.slice(0, 3);
-            const files: SelectedFile[] = assets.map(asset => {
-                const mime = asset.mimeType || '';
-                const type = mime.startsWith('video') ? 'video' : 'image';
-                const name = asset.fileName || asset.uri.split('/').pop() || (type === 'video' ? 'video.mp4' : 'image.jpg');
-                return {
-                    uri: asset.uri,
-                    name,
-                    size: asset.fileSize,
-                    mimeType: asset.mimeType,
-                    type,
-                    width: asset.width,
-                    height: asset.height
-                };
-            });
+        if (result.canceled || !result.assets[0]) return;
 
-            for (const file of files) {
-                const mime = file.mimeType?.toLowerCase() || '';
-                const isImage = mime.startsWith('image/');
-                const isVideo = mime.startsWith('video/');
+        // Step 2: Extract the freshly cropped asset URI location
+        const croppedUri = result.assets[0].uri;
 
-                if (!isImage && !isVideo) {
-                    Alert.alert('Invalid File Type', 'Unsupported media type selected. Only images and videos are allowed.');
-                    return;
-                }
-
-                if (isImage) {
-                    const sizeLimit = 5 * 1024 * 1024; // 5MB
-                    if (file.size && file.size > sizeLimit) {
-                        Alert.alert('File Too Large', 'Please select images smaller than 5MB.');
-                        return;
-                    }
-                    if (file.width && file.height && (file.width > 4096 || file.height > 4096)) {
-                        Alert.alert('Resolution Too High', 'Image resolution must not exceed 4096x4096px.');
-                        return;
-                    }
-                } else if (isVideo) {
-                    const sizeLimit = 15 * 1024 * 1024; // 15MB
-                    if (file.size && file.size > sizeLimit) {
-                        Alert.alert('File Too Large', 'Please select videos smaller than 15MB.');
-                        return;
-                    }
-                }
+        // Step 3: Route the cropped URI into your attachment deck list state
+        // This pushes it right into your 'Selected Files' modal sheet layout for final preview and captioning
+        setSelectedFiles((prevFiles) => [
+            ...prevFiles,
+            {
+                uri: croppedUri,
+                name: result.assets[0].fileName || `image_${Date.now()}.jpg`,
+                size: result.assets[0].fileSize,
+                mimeType: result.assets[0].mimeType || 'image/jpeg',
+                type: 'image',
+                width: result.assets[0].width,
+                height: result.assets[0].height,
+                caption: ''
             }
-
-            setSelectedFiles(files);
-            setIsPreviewVisible(true);
-        }
+        ]);
+        setIsPreviewVisible(true);
     };
 
     const handleDelete = async (messageId: string) => {
@@ -1066,7 +1088,7 @@ export default function ChatScreen() {
         // Failed/unsent messages (temp IDs or status=failed with no Cloudinary URL)
         // — remove locally only, no DB call needed since they were never saved
         const isUnsent = messageId.startsWith('temp-') ||
-            (msg?.status === 'failed' && !msg?.content?.startsWith('http'));
+            ((msg?.status === 'failed' || msg?.status === 'unsent') && !msg?.content?.startsWith('http'));
 
         // Optimistic removal — instant UI feedback
         setMessages(prev => prev.filter(m => m.id !== messageId));
@@ -1149,8 +1171,9 @@ export default function ChatScreen() {
     };
 
     const handleReply = (message: any) => {
-        setReplyingTo(message);
+        setActiveReplyTarget(message);
         setLongPressedMessage(null);
+        setTimeout(() => inputRef.current?.focus(), 1);
     };
 
     const lastPressRef = useRef<{ id: string; timestamp: number } | null>(null);
@@ -1182,7 +1205,7 @@ export default function ChatScreen() {
     };
 
     const cancelReplyOrEdit = () => {
-        setReplyingTo(null);
+        setActiveReplyTarget(null);
         setEditingMessage(null);
         setInputText('');
     };
@@ -1239,7 +1262,7 @@ export default function ChatScreen() {
     };
 
     // Delivery status icon
-    const StatusIcon = ({ status, uploadProgress }: { status: 'sending' | 'sent' | 'failed', uploadProgress?: number }) => {
+    const StatusIcon = ({ status, uploadProgress, messageId }: { status: 'sending' | 'sent' | 'failed' | 'unsent', uploadProgress?: number, messageId: string }) => {
         // If uploading media — show WhatsApp-style circular progress
         if (status === 'sending' && uploadProgress !== undefined) {
             const size = 28;
@@ -1276,9 +1299,13 @@ export default function ChatScreen() {
         if (status === 'sent') {
             return <Ionicons name="checkmark-outline" size={13} color="#059669" style={{ marginLeft: 4 }} />;
         }
-        // Failed — red alert, tap to retry
-        if (status === 'failed') {
-            return <Ionicons name="alert-circle-outline" size={13} color="#ef4444" style={{ marginLeft: 4 }} />;
+        // Failed/Unsent — red alert, tap to retry
+        if (status === 'failed' || status === 'unsent') {
+            return (
+                <TouchableOpacity onPress={() => handleResend(messageId)} style={{ padding: 2 }}>
+                    <Ionicons name="refresh-circle" size={16} color="#ef4444" />
+                </TouchableOpacity>
+            );
         }
         return null;
     };
@@ -1296,10 +1323,26 @@ export default function ChatScreen() {
         }
     };
 
-    const renderMessage = ({ item }: { item: any }) => {
+    const displayedMessages = isSearching ? messages.filter(m => {
+        const matchUser = !searchParams.username || (m.user?.username || '').toLowerCase().includes(searchParams.username.toLowerCase().replace('@', ''));
+        const matchBody = !searchParams.body || (m.content || '').toLowerCase().includes(searchParams.body.toLowerCase());
+        const matchDate = !searchParams.date || (m.created_at || '').startsWith(searchParams.date);
+        return matchUser && matchBody && matchDate;
+    }) : messages;
+
+    const renderMessage = ({ item, index }: { item: any; index: number }) => {
         const isMe = item.sender_id === currentUser?.id;
         const isSystem = item.sender_id === 'system';
         const isHighlighted = item.id === highlightedMessageId;
+
+        const prevMsg = index > 0 ? displayedMessages[index - 1] : null;
+        const isConsecutive = !!(prevMsg && prevMsg.sender_id === item.sender_id && item.sender_id !== 'system');
+        const isWithinTimeThreshold = !!(
+            prevMsg?.created_at &&
+            item.created_at &&
+            (new Date(item.created_at).getTime() - new Date(prevMsg.created_at).getTime()) < 5 * 60 * 1000
+        );
+        const shouldGroupMessages = isConsecutive && isWithinTimeThreshold;
 
         return (
             <Pressable
@@ -1310,38 +1353,46 @@ export default function ChatScreen() {
                 <View style={[
                     styles.messageWrapper, 
                     isMe ? styles.messageWrapperRight : styles.messageWrapperLeft,
+                    {
+                        marginTop: shouldGroupMessages ? 4 : 16,
+                        marginBottom: 0,
+                    },
                     isHighlighted && { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.18)' : 'rgba(14, 165, 233, 0.12)' }
                 ]}>
                     {!isMe && !isSystem && (
-                        <TouchableOpacity style={styles.messageAvatarContainer} onPress={() => openProfile(item.sender_id)}>
-                            {(() => {
-                                const cleanUrl = getCleanAvatarUrl(item.user?.avatar_url);
-                                return cleanUrl ? (
-                                    <Image source={{ uri: cleanUrl }} style={styles.messageAvatarImage} />
-                                ) : (
-                                    <View style={styles.messageAvatarPlaceholder}>
-                                        <Text style={styles.messageAvatarText}>
-                                            {item.user?.username?.charAt(0)?.toUpperCase() || 'U'}
-                                        </Text>
+                        shouldGroupMessages ? (
+                            <View style={{ width: 36, marginRight: 8 }} />
+                        ) : (
+                            <TouchableOpacity style={styles.messageAvatarContainer} onPress={() => openProfile(item.sender_id)}>
+                                {(() => {
+                                    const cleanUrl = getCleanAvatarUrl(item.user?.avatar_url);
+                                    return cleanUrl ? (
+                                        <Image source={{ uri: cleanUrl }} style={styles.messageAvatarImage} />
+                                    ) : (
+                                        <View style={styles.messageAvatarPlaceholder}>
+                                            <Text style={styles.messageAvatarText}>
+                                                {item.user?.username?.charAt(0)?.toUpperCase() || 'U'}
+                                            </Text>
+                                        </View>
+                                    );
+                                })()}
+                                {/* Crown badge for moderators */}
+                                {(item.user?.role === 'moderator' || item.user?.role === 'super_admin') && (
+                                    <View style={[
+                                        styles.modBadge,
+                                        {
+                                            borderColor: isDark ? '#0f172a' : '#e8ecf1'
+                                        }
+                                    ]}>
+                                        <MaterialCommunityIcons name="crown" size={10} color="#FFD700" />
                                     </View>
-                                );
-                            })()}
-                            {/* Crown badge for moderators */}
-                            {(item.user?.role === 'moderator' || item.user?.role === 'super_admin') && (
-                                <View style={[
-                                    styles.modBadge,
-                                    {
-                                        borderColor: isDark ? '#0f172a' : '#e8ecf1'
-                                    }
-                                ]}>
-                                    <MaterialCommunityIcons name="crown" size={10} color="#FFD700" />
-                                </View>
-                            )}
-                        </TouchableOpacity>
+                                )}
+                            </TouchableOpacity>
+                        )
                     )}
 
                     <View style={styles.messageContentWrapper}>
-                        {!isMe && !isSystem && (
+                        {!isMe && !isSystem && !shouldGroupMessages && (
                             <View style={styles.senderInfoCol}>
                                 <View style={styles.senderInfoRow}>
                                     <TouchableOpacity onPress={() => openProfile(item.sender_id)}>
@@ -1359,28 +1410,39 @@ export default function ChatScreen() {
                             </View>
                         )}
 
-                        {item.reply_to_id && item.replyTo && (item.replyTo.content || item.replyTo.username) && (
-                            <TouchableOpacity 
+                        {item.reply_to_id && (item.reply_from_meta || item.replyTo) && (
+                            <Pressable 
                                 style={[
                                     styles.replyPreview, 
                                     { 
-                                        backgroundColor: isMe 
-                                            ? (isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.05)') 
-                                            : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)') 
+                                        backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.06)' 
                                     }
                                 ]}
-                                onPress={() => scrollToMessage(item.reply_to_id)}
+                                onPress={() => {
+                                    if (item.reply_to_id) {
+                                        scrollToMessage(item.reply_to_id);
+                                    }
+                                }}
                             >
                                 <View style={[styles.replyBar, { backgroundColor: isMe ? '#10b981' : '#059669' }]} />
                                 <View style={styles.replyContent}>
                                     <Text style={[styles.replyUsername, { color: isMe ? '#10b981' : '#059669' }]}>
-                                        {item.replyTo.username}
+                                        {item.reply_from_meta?.sender_name || item.replyTo?.username || 'user'}
                                     </Text>
                                     <Text style={[styles.replyText, { color: isDark ? '#cbd5e1' : '#64748b' }]} numberOfLines={1}>
-                                        {item.replyTo.content}
+                                        {(() => {
+                                            const replyType = item.reply_from_meta?.content_type || item.replyTo?.content_type || 'text';
+                                            const replyContent = item.reply_from_meta?.content || item.replyTo?.content || '';
+                                            if (replyType === 'image') return '📷 Photo';
+                                            if (replyType === 'video') return '🎥 Video';
+                                            if (replyType === 'audio') return '🎵 Audio';
+                                            if (replyType === 'document') return '📄 Document';
+                                            if (replyType === 'sticker') return '✨ Sticker';
+                                            return replyContent;
+                                        })()}
                                     </Text>
                                 </View>
-                            </TouchableOpacity>
+                            </Pressable>
                         )}
 
                         {item.message_type === 'sticker' ? (
@@ -1390,7 +1452,7 @@ export default function ChatScreen() {
                                     <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
                                         {item.created_at ? format(new Date(item.created_at), 'p') : ''}
                                     </Text>
-                                    {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} />}
+                                    {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} messageId={item.id} />}
                                 </View>
                             </View>
                         ) : item.message_type === 'image' ? (
@@ -1400,32 +1462,13 @@ export default function ChatScreen() {
                                 delayLongPress={400}
                                 onLongPress={() => setLongPressedMessage(item)}
                                 onPress={() => handleDoubleTapReply(item, () => {
-                                    if (isMe) {
-                                        // Sender: prefer Cloudinary URL (confirmed); fall back to local URI with file:// prefix
-                                        const viewUri = item.content?.startsWith('http')
-                                            ? item.content
-                                            : item._localUri
-                                                ? (item._localUri.startsWith('file://') ? item._localUri : `file://${item._localUri}`)
-                                                : item.content;
-                                        setViewerFile({ uri: viewUri, type: 'image', name: `image_${item.id}.jpg` });
-                                        setViewerVisible(true);
-                                        return;
-                                    }
-                                    if (downloadedIds[item.id]) {
-                                        // Already downloaded — open instantly from vault
-                                        const localUri = FileService.getLocalUri(item.id, `image_${item.id}.jpg`);
-                                        setViewerFile({ uri: localUri, type: 'image', name: `image_${item.id}.jpg` });
-                                        setViewerVisible(true);
-                                    } else if (downloadingIds[item.id] === undefined) {
-                                        // Not downloaded — start download, open when done
-                                        handleDownloadAndOpen(item.id, item.content, `image_${item.id}.jpg`, 'image');
-                                    }
+                                    handleOpenSwipeableMedia(item.id);
                                 })}
                             >
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <Image
-                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, `image_${item.id}.jpg`) : (item.content?.startsWith('http') ? item.content : (item._localUri || item.content)) }}
+                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, `image_${item.id}.jpg`) : (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content)) }}
                                         style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
@@ -1465,7 +1508,7 @@ export default function ChatScreen() {
                                     )}
 
                                     {item.caption ? (
-                                        <Text style={[styles.mediaCaptionText, { color: isDark ? '#e2e8f0' : '#0f172a' }]}>
+                                        <Text style={[styles.mediaCaptionText, { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') }]}>
                                             {item.caption}
                                         </Text>
                                     ) : null}
@@ -1474,7 +1517,7 @@ export default function ChatScreen() {
                                         <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
                                             {item.created_at ? format(new Date(item.created_at), 'p') : ''}
                                         </Text>
-                                        {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} />}
+                                        {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} messageId={item.id} />}
                                     </View>
                                 </View>
                             </TouchableOpacity>
@@ -1493,28 +1536,12 @@ export default function ChatScreen() {
                                         delayLongPress={400}
                                         onLongPress={() => setLongPressedMessage(item)}
                                         onPress={() => handleDoubleTapReply(item, () => {
-                                            if (isMe) {
-                                                // Sender: prefer Cloudinary URL; fall back to local URI with file:// prefix
-                                                const videoUri = item.content?.startsWith('http')
-                                                    ? item.content
-                                                    : item._localUri
-                                                        ? (item._localUri.startsWith('file://') ? item._localUri : `file://${item._localUri}`)
-                                                        : item.content;
-                                                setViewerFile({ uri: videoUri, type: 'video', name: item.metadata?.name || `video_${item.id}.mp4` });
-                                                setViewerVisible(true);
-                                                return;
-                                            }
-                                            const fileName = item.metadata?.name || `video_${item.id}.mp4`;
-                                            if (downloadedIds[item.id]) {
-                                                handleOpenMedia(item.id, fileName, 'video');
-                                            } else if (downloadingIds[item.id] === undefined) {
-                                                handleDownloadAndOpen(item.id, item.content, fileName, 'video');
-                                            }
+                                            handleOpenSwipeableMedia(item.id);
                                         })}                                    >
                                         {/* Cloudinary video thumbnail — generated automatically */}
-                                        {item.content?.startsWith('http') || downloadedIds[item.id] || item._localUri ? (
+                                        {item.content?.startsWith('http') || downloadedIds[item.id] || item.fileUri ? (
                                             <Image
-                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `video_${item.id}.mp4`) : (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item._localUri || item.content)) }}
+                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `video_${item.id}.mp4`) : (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content)) }}
                                                 style={styles.videoThumb}
                                                 resizeMode="cover"
                                             />
@@ -1557,7 +1584,7 @@ export default function ChatScreen() {
                                         )}
 
                                         {item.caption ? (
-                                            <Text style={[styles.mediaCaptionText, { color: isDark ? '#e2e8f0' : '#0f172a' }]}>
+                                            <Text style={[styles.mediaCaptionText, { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') }]}>
                                                 {item.caption}
                                             </Text>
                                         ) : null}
@@ -1566,7 +1593,7 @@ export default function ChatScreen() {
                                             <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
                                                 {item.created_at ? format(new Date(item.created_at), 'p') : ''}
                                             </Text>
-                                            {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} />}
+                                            {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} messageId={item.id} />}
                                         </View>
                                     </TouchableOpacity>
                                 ) : item.message_type === 'document' || item.message_type === 'audio' ? (
@@ -1638,7 +1665,11 @@ export default function ChatScreen() {
                                         ) : null}
                                     </TouchableOpacity>
                                     {item.caption ? (
-                                        <Text style={[styles.mediaCaptionText, { color: isDark ? '#e2e8f0' : '#0f172a' }]}>
+                                        <Text style={[
+                                            styles.mediaCaptionText, 
+                                            { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') },
+                                            item.reply_to_id && { color: isDark ? '#cbd5e1' : '#374151', opacity: 0.9 }
+                                        ]}>
                                             {item.caption}
                                         </Text>
                                     ) : null}
@@ -1648,7 +1679,8 @@ export default function ChatScreen() {
                                         styles.messageText,
                                         isMe ? [styles.messageTextMe, { color: isDark ? '#e2e8f0' : '#0f172a' }]
                                              : [styles.messageTextOther, { color: colors.text }],
-                                        isSystem && styles.messageTextSystem
+                                        isSystem && styles.messageTextSystem,
+                                        item.reply_to_id && { color: isDark ? '#cbd5e1' : '#374151', opacity: 0.9 }
                                     ]}>
                                         {renderMessageContent(item.content)}
                                     </Text>
@@ -1664,17 +1696,9 @@ export default function ChatScreen() {
                                           {item.created_at ? format(new Date(item.created_at), 'p') : ''}
                                       </Text>
                                     )}
-                                    {isMe && item.message_type !== 'video' && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} />}
+                                    {isMe && item.message_type !== 'video' && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} messageId={item.id} />}
                                 </View>
                             </View>
-                        )}
-
-                        {/* Resend button for failed messages */}
-                        {isMe && item.status === 'failed' && (
-                            <TouchableOpacity style={styles.resendButton} onPress={() => handleResend(item.id)}>
-                                <Ionicons name="refresh" size={14} color="#ef4444" />
-                                <Text style={styles.resendText}>Tap to resend</Text>
-                            </TouchableOpacity>
                         )}
                     </View>
                 </View>
@@ -1978,7 +2002,7 @@ export default function ChatScreen() {
             const newMessage = {
                 id: tempId,
                 content: file.type === 'image' ? file.uri : originalName,
-                _localUri: file.uri,
+                fileUri: file.uri,
                 created_at: new Date().toISOString(),
                 sender_id: currentUser!.id,
                 user: {
@@ -2034,8 +2058,9 @@ export default function ChatScreen() {
             } catch (err: any) {
                 captureUIError('ChatScreen.sendSelectedFileQueue', err, { groupId: id });
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
-                messageStore.updateMessage(id, tempId, { status: 'failed' });
+                const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed') || err?.message?.toLowerCase().includes('network error');
+                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: isNetwork ? 'unsent' : 'failed' } : m));
+                messageStore.updateMessage(id, tempId, { status: isNetwork ? 'unsent' : 'failed' });
             }
         }
     };
@@ -2187,15 +2212,47 @@ export default function ChatScreen() {
         setViewerVisible(true);
     };
 
+    const handleOpenSwipeableMedia = (targetMessageId: string) => {
+        const mediaMessages = messages.filter(m => !m.is_deleted && (m.message_type === 'image' || m.message_type === 'video'));
+        const mediaArray = mediaMessages.map(m => {
+            const isDownloaded = downloadedIds[m.id];
+            const isMe = m.sender_id === currentUser?.id;
+            let mediaUrl = m.content;
+            if (isDownloaded) {
+                mediaUrl = FileService.getLocalUri(m.id, m.metadata?.name || `${m.message_type}_${m.id}.${m.message_type === 'video' ? 'mp4' : 'jpg'}`);
+            } else if (isMe) {
+                mediaUrl = m.content?.startsWith('http') ? m.content : (m.fileUri?.startsWith('file://') ? m.fileUri : `file://${m.fileUri}`);
+            }
+
+            return {
+                id: m.id,
+                media_url: mediaUrl,
+                content_type: m.message_type,
+                name: m.metadata?.name || `${m.message_type}_${m.id}.${m.message_type === 'video' ? 'mp4' : 'jpg'}`,
+            };
+        });
+
+        const selectedIndex = mediaArray.findIndex(m => m.id === targetMessageId);
+        
+        router.push({
+            pathname: '/viewer',
+            params: {
+                mediaArray: JSON.stringify(mediaArray),
+                selectedIndex: Math.max(0, selectedIndex).toString()
+            }
+        });
+    };
+
     const [activeVideo, setActiveVideo] = useState<string | null>(null);
 
     return (
         <ScreenErrorBoundary>
-            <KeyboardAvoidingView
-                style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={0}
-            >
+            <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }}>
+                <KeyboardAvoidingView
+                    style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+                >
             {/* Header */}
             <View style={[styles.header, styles.headerLight, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 <TouchableOpacity style={styles.backButton} onPress={goBack}>
@@ -2300,12 +2357,7 @@ export default function ChatScreen() {
             {/* Messages List */}
             <FlatList
                 ref={flatListRef}
-                data={isSearching ? messages.filter(m => {
-                    const matchUser = !searchParams.username || (m.user?.username || '').toLowerCase().includes(searchParams.username.toLowerCase().replace('@', ''));
-                    const matchBody = !searchParams.body || (m.content || '').toLowerCase().includes(searchParams.body.toLowerCase());
-                    const matchDate = !searchParams.date || (m.created_at || '').startsWith(searchParams.date);
-                    return matchUser && matchBody && matchDate;
-                }) : messages}
+                data={displayedMessages}
                 keyExtractor={(item) => item.id}
                 renderItem={renderMessage}
                 contentContainerStyle={styles.messagesList}
@@ -2358,7 +2410,7 @@ export default function ChatScreen() {
                                             <Ionicons name="trash-outline" size={20} color="#ef4444" />
                                             <Text style={[styles.contextItemText, { color: '#ef4444' }]}>Delete</Text>
                                         </TouchableOpacity>
-                                        {longPressedMessage.status === 'failed' && (
+                                        {(longPressedMessage.status === 'failed' || longPressedMessage.status === 'unsent') && (
                                             <TouchableOpacity style={styles.contextItem} onPress={() => {
                                                 handleResend(longPressedMessage.id);
                                                 setLongPressedMessage(null);
@@ -2660,7 +2712,7 @@ export default function ChatScreen() {
                 <TouchableWithoutFeedback onPress={() => setShowAttachmentMenu(false)}>
                     <View style={styles.attachmentOverlay}>
                         <View style={styles.attachmentMenu}>
-                            <TouchableOpacity style={styles.attachmentItem} onPress={() => { setShowAttachmentMenu(false); handlePickImage(); }}>
+                            <TouchableOpacity style={styles.attachmentItem} onPress={() => { setShowAttachmentMenu(false); handlePickAndCropImage(); }}>
                                 <View style={[styles.attachmentIcon, { backgroundColor: '#3b82f6' }]}>
                                     <Ionicons name="image" size={22} color="#FFF" />
                                 </View>
@@ -2936,16 +2988,28 @@ export default function ChatScreen() {
             )}
 
             {/* Reply / Edit banner */}
-            {(replyingTo || editingMessage) && (
+            {(activeReplyTarget || editingMessage) && (
                 <View style={[styles.replyBanner, { backgroundColor: isDark ? '#000000' : '#FFF', borderTopColor: isDark ? '#121212' : '#f1f5f9' }]}>
                     <View style={styles.replyBannerLeft}>
-                        <Ionicons name={editingMessage ? "create-outline" : "arrow-undo"} size={18} color="#059669" />
-                        <View style={{ marginLeft: 10, flex: 1 }}>
-                            <Text style={styles.replyBannerLabel}>
-                                {editingMessage ? 'Editing message' : `Replying to ${replyingTo?.user?.username}`}
+                        <View style={[styles.replyBar, { backgroundColor: activeReplyTarget ? '#059669' : '#10b981' }]} />
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.replyBannerLabel, { color: activeReplyTarget ? '#059669' : '#10b981' }]}>
+                                {editingMessage ? 'Editing message' : `Replying to ${activeReplyTarget?.user?.username || activeReplyTarget?.username || 'user'}`}
                             </Text>
-                            <Text style={[styles.replyBannerContent, { color: colors.textSecondary }]} numberOfLines={1}>
-                                {editingMessage?.content || replyingTo?.content}
+                            <Text style={[styles.replyBannerContent, { color: isDark ? '#cbd5e1' : '#64748b' }]} numberOfLines={1}>
+                                {editingMessage
+                                    ? editingMessage.content
+                                    : (activeReplyTarget?.message_type === 'image'
+                                        ? '📷 Photo'
+                                        : activeReplyTarget?.message_type === 'video'
+                                            ? '🎥 Video'
+                                            : activeReplyTarget?.message_type === 'audio'
+                                                ? '🎵 Audio'
+                                                : activeReplyTarget?.message_type === 'document'
+                                                    ? '📄 Document'
+                                                    : activeReplyTarget?.message_type === 'sticker'
+                                                        ? '✨ Sticker'
+                                                        : activeReplyTarget?.content)}
                             </Text>
                         </View>
                     </View>
@@ -2971,9 +3035,11 @@ export default function ChatScreen() {
                     <View style={[styles.inputContainer, { 
                         backgroundColor: isDark ? '#000000' : colors.card, 
                         borderTopColor: isDark ? '#121212' : colors.border,
-                        paddingBottom: Platform.OS === 'ios'
-                            ? (insets.bottom > 0 ? insets.bottom + 8 : 16)
-                            : (insets.bottom > 0 ? insets.bottom + 12 : 16)
+                        paddingBottom: isKeyboardActive
+                            ? 0
+                            : (Platform.OS === 'ios'
+                                ? (insets.bottom > 0 ? insets.bottom + 8 : 16)
+                                : (insets.bottom > 0 ? insets.bottom + 12 : 16))
                     }]}>
                         <TouchableOpacity 
                             style={styles.stickerButton}
@@ -2991,6 +3057,7 @@ export default function ChatScreen() {
 
                         <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#000000' : '#f1f5f9', borderRadius: 24 }]}>
                             <TextInput
+                                ref={inputRef}
                                 style={[styles.input, { 
                                     backgroundColor: isDark ? '#000000' : '#f1f5f9', 
                                     color: isDark ? '#ffffff' : colors.text 
@@ -3036,7 +3103,8 @@ export default function ChatScreen() {
                 fileType={viewerFile.type}
                 fileName={viewerFile.name}
             />
-        </KeyboardAvoidingView>
+                </KeyboardAvoidingView>
+            </SafeAreaView>
         </ScreenErrorBoundary>
     );
 }
@@ -3845,10 +3913,11 @@ const styles = StyleSheet.create({
     // Media Message Bubble Captions
     mediaCaptionText: {
         fontFamily: 'Inter-Regular',
-        fontSize: 14,
-        paddingHorizontal: 8,
-        paddingTop: 6,
-        paddingBottom: 2,
+        fontSize: 16,
+        lineHeight: 22,
+        fontWeight: '400',
+        marginTop: 8,
+        paddingHorizontal: 4,
     },
     // Preview Modal Caption styles
     captionSectionContainer: {

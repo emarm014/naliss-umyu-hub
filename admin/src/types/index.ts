@@ -497,6 +497,7 @@ export interface Executive {
   start_date: string | null;
   end_date: string | null;
   is_current: boolean;
+  is_alumni?: boolean;
   display_order: number;
   is_active: boolean;
   created_at: string;

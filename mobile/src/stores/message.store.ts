@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { Logger } from '../utils/logger';
+import { supabase } from '../api/supabase/client';
+import { uploadLocalFileToCloudinary } from '../lib/cloudinary';
+import { useNetworkStore } from './network.store';
 interface MessageCache {
     [groupId: string]: any[];
 }
@@ -29,6 +32,14 @@ interface MessageState {
     // Update the last-seen timestamp for a group
     touchLastSeen: (groupId: string, timestamp: string) => void;
     getLastSeenAt: (groupId: string) => string | null;
+
+    // Offline Queue Architecture
+    uploadProgress: Record<string, number>;
+    isFlushing: boolean;
+    sendGroupMessage: (groupId: string, msgPayload: any, fileUri?: string) => Promise<void>;
+    processUnifiedQueueItem: (groupId: string, msg: any) => Promise<void>;
+    flushUnsentMessageQueue: () => Promise<void>;
+    setUploadProgress: (messageId: string, progress: number) => void;
 }
 
 export const useMessageStore = create<MessageState>()(
@@ -38,6 +49,8 @@ export const useMessageStore = create<MessageState>()(
             lastSeenAt: {},
             isLoading: false,
             error: null,
+            uploadProgress: {},
+            isFlushing: false,
 
             // Store up to 300 messages per group to prevent AsyncStorage stringify crashes
             // and memory leaks on large, active groups.
@@ -169,6 +182,144 @@ export const useMessageStore = create<MessageState>()(
 
             getLastSeenAt: (groupId) => {
                 return get().lastSeenAt[groupId] || null;
+            },
+
+            setUploadProgress: (messageId, progress) => {
+                set((state) => {
+                    const next = { ...state.uploadProgress };
+                    if (progress === 100 || progress < 0) {
+                        delete next[messageId];
+                    } else {
+                        next[messageId] = progress;
+                    }
+                    return { uploadProgress: next };
+                });
+            },
+
+            sendGroupMessage: async (groupId, msgPayload, fileUri) => {
+                const { isOnline } = useNetworkStore.getState();
+                const tempId = msgPayload.id || `temp-${Date.now()}`;
+                
+                // Construct the local message state with status
+                const localMsg = { 
+                    ...msgPayload, 
+                    id: tempId, 
+                    status: isOnline ? 'sending' : 'unsent',
+                    fileUri: fileUri // Keep a reference to the local file for offline recovery
+                };
+                
+                // Append instantly for zero-latency UX
+                get().addMessage(groupId, localMsg);
+
+                if (!isOnline) {
+                    Logger.warn('message.store', 'Offline mode: Message queued locally as unsent', { tempId });
+                    return;
+                }
+
+                try {
+                    await get().processUnifiedQueueItem(groupId, localMsg);
+                } catch (error) {
+                    // Revert to unsent on true network failures, error otherwise
+                    const isNetwork = (error as any)?.status === 0 || (error as any)?.message?.toLowerCase().includes('network');
+                    get().updateMessage(groupId, tempId, { status: isNetwork ? 'unsent' : 'error' });
+                }
+            },
+
+            processUnifiedQueueItem: async (groupId: string, msg: any) => {
+                let finalContentUrl = msg.content;
+                let payload = {
+                    content: msg.content,
+                    sender_id: msg.sender_id,
+                    group_id: groupId,
+                    reply_to_id: msg.reply_to_id || msg.replyTo?.id || null,
+                    reply_from_meta: msg.reply_from_meta || null,
+                    message_type: msg.message_type || 'text',
+                    metadata: { ...msg.metadata, tempId: msg.id }
+                };
+
+                const isMediaMessage = msg.media_url || msg.fileUri;
+
+                // Handle Cloudinary Media Upload first
+                if (msg.message_type !== 'text' && msg.message_type !== 'sticker' && isMediaMessage) {
+                    const type = msg.message_type;
+                    const mimeType = type === 'image' ? 'image/jpeg'
+                        : type === 'video' ? 'video/mp4'
+                        : type === 'audio' ? 'audio/mpeg'
+                        : 'application/octet-stream';
+                    
+                    const folder = type === 'image' ? 'chat-images'
+                        : type === 'video' ? 'chat-videos'
+                        : type === 'audio' ? 'chat-audios'
+                        : 'chat-docs';
+
+                    const uploadName = `${Date.now()}-${msg.metadata?.name || 'file'}`;
+                    const localUri = msg.fileUri || msg.media_url;
+
+                    finalContentUrl = await uploadLocalFileToCloudinary(
+                        localUri,
+                        uploadName,
+                        folder,
+                        mimeType,
+                        (p) => get().setUploadProgress(msg.id, Math.min(Math.round(p), 99))
+                    );
+
+                    get().setUploadProgress(msg.id, 100);
+                    msg.media_url = finalContentUrl;
+                    msg.fileUri = undefined;
+                    payload.content = finalContentUrl;
+                }
+
+                // Insert to Supabase DB
+                const { data, error } = await supabase
+                    .from('messages')
+                    .insert([payload])
+                    .select()
+                    .single();
+
+                if (error) throw error;
+
+                // Confirm and map tempId to real DB id
+                get().updateMessage(groupId, msg.id, { id: (data as any).id, content: finalContentUrl, status: 'sent', fileUri: undefined });
+            },
+
+            flushUnsentMessageQueue: async () => {
+                if (get().isFlushing) return;
+                set({ isFlushing: true });
+
+                try {
+                    Logger.info('message.store', 'Starting background flush of unsent messages...');
+                    const allGroups = get().cache;
+                    
+                    for (const groupId of Object.keys(allGroups)) {
+                        const unsentMessages = allGroups[groupId].filter(m => m.status === 'unsent');
+                        if (unsentMessages.length === 0) continue;
+
+                        Logger.info('message.store', `Flushing ${unsentMessages.length} unsent messages for group ${groupId}`);
+
+                        for (const msg of unsentMessages) {
+                            if (!useNetworkStore.getState().isOnline) {
+                                Logger.warn('message.store', 'Network dropped mid-flush. Aborting queue.');
+                                set({ isFlushing: false });
+                                return;
+                            }
+
+                            get().updateMessage(groupId, msg.id, { status: 'sending' });
+
+                            try {
+                                await get().processUnifiedQueueItem(groupId, msg);
+                            } catch (err: any) {
+                                const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network');
+                                get().updateMessage(groupId, msg.id, { status: isNetwork ? 'unsent' : 'error' });
+                                if (isNetwork) {
+                                    set({ isFlushing: false });
+                                    return; // Halt entire loop
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    set({ isFlushing: false });
+                }
             },
         }),
         {

@@ -152,54 +152,46 @@ export default function RegisterOTP() {
     return () => clearTimeout(t);
   }, [otp]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Android clipboard polling ─────────────────────────────────────────────
-  // iOS handles auto-fill natively via textContentType="oneTimeCode".
-  // On Android we poll the clipboard every 1.5s when the screen is active.
-  // If a 6-digit number is found, fill the boxes and auto-verify.
+  // ── Unified Clipboard Parsing ─────────────────────────────────────────────
+  // We aggressively check the clipboard when the component mounts and whenever
+  // the app transitions from the background to active state (e.g. returning from email).
   const latestOtpRef = useRef(otp);
   useEffect(() => { latestOtpRef.current = otp; }, [otp]);
 
+  const checkClipboardForAuthCode = async () => {
+    if (!isMounted.current || isLoading) return;
+    try {
+      const text = await Clipboard.getStringAsync();
+      // Extract the first 6 digits. This handles both "123456" and the full push 
+      // notification text "[123456] is your NALISS HUB verification code"
+      const digits = text?.replace(/\D/g, '').slice(0, OTP_LENGTH);
+      
+      if (digits?.length === OTP_LENGTH) {
+        const current = latestOtpRef.current.join('');
+        if (current === digits) return; // already filled
+        
+        const newOtp = digits.split('');
+        setOtp(newOtp);
+        // Clear clipboard so we don't re-trigger accidentally on the same code later
+        await Clipboard.setStringAsync('');
+      }
+    } catch {
+      // silent — clipboard access is best-effort
+    }
+  };
+
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
+    // Check immediately on mount
+    checkClipboardForAuthCode();
 
-    let clipboardInterval: ReturnType<typeof setInterval> | null = null;
-
-    const startPolling = () => {
-      if (clipboardInterval) return;
-      clipboardInterval = setInterval(async () => {
-        if (!isMounted.current || isLoading) return;
-        try {
-          const text = await Clipboard.getStringAsync();
-          const digits = text?.replace(/\D/g, '').slice(0, OTP_LENGTH);
-          if (digits?.length === OTP_LENGTH) {
-            // Use ref to get latest otp — avoids stale closure
-            const current = latestOtpRef.current.join('');
-            if (current === digits) return; // already filled with this code
-            const newOtp = digits.split('');
-            setOtp(newOtp);
-            // Clear clipboard so we don't re-trigger on the same code
-            await Clipboard.setStringAsync('');
-          }
-        } catch {
-          // silent — clipboard access is best-effort
-        }
-      }, 1500);
-    };
-
-    const stopPolling = () => {
-      if (clipboardInterval) { clearInterval(clipboardInterval); clipboardInterval = null; }
-    };
-
-    // Start polling immediately, stop when screen unmounts or verification done
-    startPolling();
-
+    // Check again whenever the app comes to the foreground
     const appStateSub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') startPolling();
-      else stopPolling();
+      if (state === 'active') {
+        checkClipboardForAuthCode();
+      }
     });
 
     return () => {
-      stopPolling();
       appStateSub.remove();
     };
   }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps

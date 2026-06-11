@@ -11,12 +11,15 @@ import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { format } from 'date-fns';
 import { getCleanAvatarUrl } from '../../../src/utils';
+import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
+import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 
 export default function ExecutiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { executives } = useDirectoryStore();
   const [exec, setExec] = useState<any>(null);
+  const [viewerVisible, setViewerVisible] = useState(false);
 
   useEffect(() => {
     const found = executives.find((e: any) => e.id === id);
@@ -66,29 +69,12 @@ export default function ExecutiveDetailScreen() {
         </SafeAreaView>
 
         {/* Avatar */}
-        <View style={styles.avatarSection}>
-          <View style={styles.avatarRing}>
-            {(() => {
-              const cleanUrl = getCleanAvatarUrl(avatarUrl);
-              return cleanUrl ? (
-                <Image
-                  source={{ uri: getOptimizedCloudinaryUrl(cleanUrl, 300, 300) }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarInitials}>{initials}</Text>
-                </View>
-              );
-            })()}
-          </View>
-
-          {/* Status badge */}
-          <View style={[styles.statusBadge, isActive ? styles.statusActive : styles.statusInactive]}>
-            <View style={[styles.statusDot, { backgroundColor: isActive ? '#4ade80' : '#94a3b8' }]} />
-            <Text style={styles.statusText}>{isActive ? 'CURRENT OFFICIAL' : 'FORMER OFFICIAL'}</Text>
-          </View>
-        </View>
+        <ExecutiveHeroAvatar
+          avatarUrl={avatarUrl}
+          initials={initials}
+          isActive={isActive}
+          onPressAvatar={() => setViewerVisible(true)}
+        />
 
         <Text style={styles.heroName}>{name}</Text>
         <Text style={styles.heroPosition}>{exec.position}</Text>
@@ -220,6 +206,51 @@ export default function ExecutiveDetailScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <UniversalViewer
+        isVisible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        fileUri={getCleanAvatarUrl(avatarUrl) || ''}
+        fileType="image"
+        fileName={name}
+        showDownload={false}
+      />
+    </View>
+  );
+}
+
+function ExecutiveHeroAvatar({ avatarUrl, initials, isActive, onPressAvatar }: {
+  avatarUrl: string | null;
+  initials: string;
+  isActive: boolean;
+  onPressAvatar: () => void;
+}) {
+  const cleanUrl = getCleanAvatarUrl(avatarUrl);
+  const optimizedUrl = cleanUrl ? getOptimizedCloudinaryUrl(cleanUrl, 300, 300) : null;
+  const cachedUri = useOfflineImage(optimizedUrl);
+
+  return (
+    <View style={styles.avatarSection}>
+      <TouchableOpacity
+        style={styles.avatarRing}
+        onPress={onPressAvatar}
+        disabled={!cachedUri}
+        activeOpacity={0.8}
+      >
+        {cachedUri ? (
+          <Image source={{ uri: cachedUri }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarPlaceholder}>
+            <Text style={styles.avatarInitials}>{initials}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Status badge */}
+      <View style={[styles.statusBadge, isActive ? styles.statusActive : styles.statusInactive]}>
+        <View style={[styles.statusDot, { backgroundColor: isActive ? '#4ade80' : '#94a3b8' }]} />
+        <Text style={styles.statusText}>{isActive ? 'CURRENT OFFICIAL' : 'FORMER OFFICIAL'}</Text>
+      </View>
     </View>
   );
 }

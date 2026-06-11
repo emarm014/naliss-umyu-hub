@@ -140,9 +140,7 @@ export default function SearchScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Search Results</Text>
-        <TouchableOpacity style={styles.optionsButton}>
-          <Ionicons name="ellipsis-vertical" size={24} color={COLORS.text} />
-        </TouchableOpacity>
+        <View style={{ width: 24, padding: 5 }} /> {/* Placeholder to balance the flex layout */}
       </View>
 
       {/* Search Input Area */}

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as Network from 'expo-network';
 import { trackNetworkChange } from '../utils/sentry';
 import { useMutationQueueStore } from './mutationQueue.store';
+import { useMessageStore } from './message.store';
 
 interface NetworkState {
   isOnline: boolean;
@@ -106,4 +107,6 @@ export const useNetworkStatus = () => {
 // Replay queued offline mutations automatically upon online recovery
 registerOnlineCallback(() => {
   useMutationQueueStore.getState().processQueue().catch(() => {});
+  // Also flush our dedicated chat message queue
+  useMessageStore.getState().flushUnsentMessageQueue().catch(() => {});
 });

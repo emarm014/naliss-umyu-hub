@@ -9,6 +9,7 @@ import {
   Image,
   ActivityIndicator,
   Animated,
+  useColorScheme,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,7 +31,20 @@ export default function MessagesScreen() {
   const groups = useGroupStore(s => s.groups);
   const isLoading = useGroupStore(s => s.isLoading);
   const fetchGroups = useGroupStore(s => s.fetchGroups);
-  const { colors, isDark } = useTheme();
+  const { colors, isDark: storeIsDark } = useTheme();
+
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const theme = {
+    cardBg: isDark ? '#1E2638' : '#FFFFFF',
+    headerSectionBg: isDark ? '#1A202C' : '#F7FAFC',
+    textPrimary: isDark ? '#FFFFFF' : '#1A202C',
+    textSecondary: isDark ? '#E2E8F0' : '#4A5568',
+    textMuted: isDark ? '#A0AEC0' : '#718096',
+    border: isDark ? '#2D3748' : '#E2E8F0',
+    brandGreen: '#005A36'
+  };
 
   const isStudent = !['super_admin', 'moderator'].includes(profile?.role || '');
   const showReadOnlyBanner = readOnlyMode && isStudent;
@@ -90,9 +104,9 @@ export default function MessagesScreen() {
         ) : (
           <>
             {levelGroups.length > 0 && (
-              <View style={styles.sectionHeader}>
-                <Ionicons name="school-outline" size={18} color={COLORS.primary} />
-                <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>LEVEL GROUPS</Text>
+              <View style={[styles.sectionHeader, { backgroundColor: theme.headerSectionBg }]}>
+                <Ionicons name="school-outline" size={18} color={theme.brandGreen} />
+                <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>LEVEL GROUPS</Text>
               </View>
             )}
             {levelGroups.map((conversation) => (
@@ -113,9 +127,9 @@ export default function MessagesScreen() {
             ))}
 
             {generalGroups.length > 0 && (
-              <View style={[styles.sectionHeader, { marginTop: 12 }]}>
-                <Ionicons name="people-outline" size={18} color={COLORS.primary} />
-                <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>GENERAL GROUPS</Text>
+              <View style={[styles.sectionHeader, { marginTop: 12, backgroundColor: theme.headerSectionBg }]}>
+                <Ionicons name="people-outline" size={18} color={theme.brandGreen} />
+                <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>GENERAL GROUPS</Text>
               </View>
             )}
             {generalGroups.map((conversation) => (

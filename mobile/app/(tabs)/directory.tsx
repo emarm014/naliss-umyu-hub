@@ -194,19 +194,21 @@ export default function DirectoryScreen() {
 }
 
 import { getCleanAvatarUrl } from '../../src/utils';
+import { useOfflineImage } from '../../src/hooks/useOfflineImage';
 
 function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (uri: string, name: string) => void }) {
     const cleanAvatar = getCleanAvatarUrl(staff.avatar_url);
+    const cachedUri = useOfflineImage(cleanAvatar);
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cleanAvatar && onPressAvatar(cleanAvatar, staff.full_name)}
-                    disabled={!cleanAvatar}
+                    onPress={() => cachedUri && onPressAvatar(cachedUri, staff.full_name)}
+                    disabled={!cachedUri}
                 >
-                    {cleanAvatar ? (
-                        <Image source={{ uri: cleanAvatar }} style={styles.avatar} />
+                    {cachedUri ? (
+                        <Image source={{ uri: cachedUri }} style={styles.avatar} />
                     ) : (
                         <View style={[styles.avatar, styles.placeholderAvatar]}>
                             <Text style={styles.avatarPlaceholderText}>
@@ -256,17 +258,18 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
     const fullName = executive.full_name || executive.user?.full_name || 'NALISS Executive';
     const rawAvatarUrl = executive.avatar_url || executive.user?.avatar_url;
     const cleanAvatar = getCleanAvatarUrl(rawAvatarUrl);
+    const cachedUri = useOfflineImage(cleanAvatar);
 
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cleanAvatar && onPressAvatar(cleanAvatar, fullName)}
-                    disabled={!cleanAvatar}
+                    onPress={() => cachedUri && onPressAvatar(cachedUri, fullName)}
+                    disabled={!cachedUri}
                 >
-                    {cleanAvatar ? (
-                        <Image source={{ uri: cleanAvatar }} style={styles.avatar} />
+                    {cachedUri ? (
+                        <Image source={{ uri: cachedUri }} style={styles.avatar} />
                     ) : (
                         <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: COLORS.secondary + '20' }]}>
                             <Text style={[styles.avatarPlaceholderText, { color: COLORS.secondary }]}>

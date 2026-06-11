@@ -632,42 +632,57 @@ export default function ProfileScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.5 }}
       >
-        <TouchableOpacity
-          style={styles.avatarContainer}
-          onPress={handleAvatarPress}
-          disabled={isLoading || isUpdatingAvatar}
-        >
-          {/* Always show an avatar — confirmedAvatarUrl is the iron-clad source,
-              falls back to profile.avatar_url, then DiceBear sticker. Never blank. */}
+        <View style={styles.avatarContainer}>
+          {/* ACTION 1: Tap Avatar to View Image */}
           {(() => {
             const avatarUri = getCleanAvatarUrl(localAvatarUrl
               || confirmedAvatarUrl
               || storeProfile?.avatar_url)
               || (storeProfile?.id ? `https://api.dicebear.com/9.x/fun-emoji/png?seed=${storeProfile.id}&size=200` : null);
-            return avatarUri ? (
-              <Image
-                key={`${avatarUri}-${lastLocalProfileUpdateAt || 0}`}
-                source={{ uri: avatarUri, cache: 'force-cache' }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarText}>
-                  {(storeProfile?.full_name || '?').charAt(0).toUpperCase()}
-                </Text>
-              </View>
+            return (
+              <TouchableOpacity
+                onPress={() => {
+                  if (avatarUri) {
+                    router.push({
+                      pathname: '/viewer',
+                      params: { uri: avatarUri, name: `${storeProfile?.full_name || 'Profile'}'s Avatar`, type: 'image' }
+                    });
+                  }
+                }}
+                activeOpacity={0.8}
+                disabled={isLoading}
+              >
+                {avatarUri ? (
+                  <Image
+                    key={`${avatarUri}-${lastLocalProfileUpdateAt || 0}`}
+                    source={{ uri: avatarUri, cache: 'force-cache' }}
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.avatarText}>
+                      {(storeProfile?.full_name || '?').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             );
           })()}
-          {isUpdatingAvatar ? (
-            <View style={[styles.editBadge, { backgroundColor: '#059669' }]}>
+
+          {/* ACTION 2: Tap Camera to Update/Upload Image */}
+          <TouchableOpacity
+            onPress={handleAvatarPress}
+            disabled={isLoading || isUpdatingAvatar}
+            style={styles.editBadge}
+            activeOpacity={0.7}
+          >
+            {isUpdatingAvatar ? (
               <ActivityIndicator size="small" color="#FFF" />
-            </View>
-          ) : (
-            <View style={styles.editBadge}>
+            ) : (
               <Ionicons name="camera" size={14} color="#FFF" />
-            </View>
-          )}
-        </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.userName}>{storeProfile?.full_name}</Text>
         {storeProfile?.username && (
@@ -1624,8 +1639,8 @@ const styles = StyleSheet.create({
     right: -4,
     width: 32,
     height: 32,
-    borderRadius: 12,
-    backgroundColor: COLORS.secondary,
+    borderRadius: 16,
+    backgroundColor: '#005A36', // Primary accent theme color
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,

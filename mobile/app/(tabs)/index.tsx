@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, TouchableOpacity,
   Image, RefreshControl, ActivityIndicator, Dimensions,
-  StatusBar, Platform,
+  StatusBar, Platform, Modal, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,11 +12,13 @@ import { format } from 'date-fns';
 import { COLORS } from '../../src/constants/Colors';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { useAnnouncementStore, useEventStore, useResourceStore, useAuthStore, useNotificationStore } from '../../src/stores';
-import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
+import { getOptimizedCloudinaryUrl, uploadLocalFileToCloudinary, uploadToCloudinary } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
 import { getCleanAvatarUrl } from '../../src/utils';
+import * as ImagePicker from 'expo-image-picker';
+import { trackFeature, captureUIError } from '../../src/utils/sentry';
 
 const { width } = Dimensions.get('window');
 
@@ -99,7 +101,7 @@ const getUserRank = (points: number) => {
 };
 
 const quickActions = [
-  { id: 'announcements', name: 'Announcements', icon: 'megaphone', color: '#0369a1', bg: '#f0f9ff', route: '/(tabs)/announcements' },
+  { id: 'notepad', name: 'Notepad', icon: 'document-text', color: '#005A36', bg: '#e6f4ea', route: '/notepad' },
   { id: 'events', name: 'Events', icon: 'calendar', color: '#059669', bg: '#ecfdf5', route: '/(tabs)/announcements?tab=Events' },
   { id: 'materials', name: 'Materials', icon: 'folder', color: '#7c3aed', bg: '#f5f3ff', route: '/(tabs)/resources?tab=materials' },
   { id: 'courses', name: 'Courses', icon: 'library', color: '#ea580c', bg: '#fff7ed', route: '/(tabs)/resources?tab=courses' },
@@ -129,6 +131,121 @@ export default function HomeScreen() {
   const notifications = useNotificationStore(s => s.notifications);
   const unreadCount = notifications.filter(n => !n.isRead).length;
   const { colors, isDark } = useTheme();
+
+  const updateProfile = useAuthStore(s => s.updateProfile);
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+  const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
+  const [showAvatarConfirm, setShowAvatarConfirm] = useState(false);
+
+  const handleAvatarPress = () => {
+    Alert.alert('Update Profile Picture', 'How would you like to update your avatar?', [
+      { text: 'Pick from Gallery', onPress: pickImage },
+      { text: 'Generate Random Sticker', onPress: generateSticker },
+      { text: 'Cancel', style: 'cancel' }
+    ], { cancelable: true });
+  };
+
+  const generateSticker = async () => {
+    if (!user?.id) return;
+    trackFeature('profile', 'generate_sticker_home', { userId: user.id });
+    setIsUpdatingAvatar(true);
+    try {
+      const randomSeed = Math.random().toString(36).substring(7);
+      const stickerUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${randomSeed}&size=200`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let response: Response;
+      try {
+        response = await fetch(stickerUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId);
+        if (fetchErr?.name === 'AbortError') {
+          throw new Error('Request timed out. Please check your connection and try again.');
+        }
+        throw fetchErr;
+      }
+
+      if (!response.ok) throw new Error(`Failed to fetch sticker (${response.status})`);
+      const blob = await response.blob();
+
+      const hostedUrl = await uploadToCloudinary(blob, 'avatars');
+
+      await updateProfile({ avatar_url: hostedUrl });
+
+      Alert.alert('Done!', 'Your profile picture has been updated.');
+    } catch (err: any) {
+      captureUIError('HomeScreen.generateSticker', err, { userId: user?.id });
+      const isNetwork = err?.message?.includes('fetch') ||
+        err?.message?.includes('network') ||
+        err?.message?.includes('timed out') ||
+        err?.name === 'AbortError';
+      if (isNetwork) {
+        Alert.alert('Connection Error', 'Could not generate sticker. Please check your internet connection and try again.');
+      } else {
+        Alert.alert('Error', err?.message || 'Failed to generate sticker. Please try again.');
+      }
+    } finally {
+      setIsUpdatingAvatar(false);
+    }
+  };
+
+  const pickImage = async () => {
+    if (!user?.id) return;
+
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please grant photo library access to change your avatar.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      setTempAvatarUri(result.assets[0].uri);
+      setShowAvatarConfirm(true);
+    }
+  };
+
+  const confirmAndUploadAvatar = async () => {
+    if (!tempAvatarUri || !user?.id) return;
+
+    const uri = tempAvatarUri;
+    const fileName = `${user.id}-avatar-${Date.now()}.jpg`;
+
+    setIsUpdatingAvatar(true);
+    setShowAvatarConfirm(false);
+    setTempAvatarUri(null);
+
+    try {
+      const avatarUrl = await uploadLocalFileToCloudinary(uri, fileName, 'avatars', 'image/jpeg');
+
+      await updateProfile({ avatar_url: avatarUrl });
+
+      Alert.alert('Success', 'Profile photo updated successfully!');
+    } catch (err: any) {
+      captureUIError('HomeScreen.confirmAndUploadAvatar', err, { userId: user?.id });
+      const isNetworkError = err?.message?.includes('fetch') ||
+        err?.message?.includes('network') ||
+        err?.message?.includes('timed out') ||
+        err?.message?.includes('connection') ||
+        err?.name === 'AbortError';
+
+      if (isNetworkError) {
+        Alert.alert('Slow Connection', 'Your photo was sent but the connection is slow. It may take a moment to appear.');
+      } else {
+        Alert.alert('Error', `Failed to upload profile photo: ${err?.message || 'Please try again.'}`);
+      }
+    } finally {
+      setIsUpdatingAvatar(false);
+    }
+  };
 
   const theme = LEVEL_THEMES[user?.level || ''] || DEFAULT_THEME;
 
@@ -259,10 +376,50 @@ export default function HomeScreen() {
           {/* Avatar + identity */}
           <View style={styles.headerBody}>
             <View style={styles.avatarSection}>
-              <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
-                <Image key={avatarKey} source={{ uri: avatar, cache: 'force-cache' }} style={styles.avatar} />
-              </View>
-              <View style={[styles.onlineDot, { borderColor: theme.gradient[1], backgroundColor: '#10b981' }]} />
+              {/* ACTION 1: Tap Avatar to View Image */}
+              <TouchableOpacity
+                onPress={() => {
+                  if (avatar) {
+                    router.push({
+                      pathname: '/viewer',
+                      params: { uri: avatar, name: `${user.full_name || 'Profile'}'s Avatar`, type: 'image' }
+                    });
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
+                  <Image key={avatarKey} source={{ uri: avatar, cache: 'force-cache' }} style={styles.avatar} />
+                </View>
+              </TouchableOpacity>
+              <View style={[styles.onlineDot, { borderColor: theme.gradient[1], backgroundColor: '#10b981', left: 4, right: undefined }]} />
+
+              {/* ACTION 2: Tap Camera to Update/Upload Image */}
+              <TouchableOpacity
+                onPress={handleAvatarPress}
+                disabled={isUpdatingAvatar}
+                style={{
+                  position: 'absolute',
+                  bottom: -2,
+                  right: -2,
+                  backgroundColor: '#005A36', // Primary accent theme color
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderWidth: 2,
+                  borderColor: '#FFFFFF',
+                  zIndex: 20,
+                }}
+                activeOpacity={0.7}
+              >
+                {isUpdatingAvatar ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Ionicons name="camera" size={12} color="#FFF" />
+                )}
+              </TouchableOpacity>
             </View>
 
             <View style={styles.identitySection}>
@@ -450,6 +607,56 @@ export default function HomeScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Avatar Confirmation Modal */}
+      <Modal
+        visible={showAvatarConfirm}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAvatarConfirm(false)}
+      >
+        <View style={styles.avatarModalOverlay}>
+          <View style={[styles.avatarModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.avatarModalHeader}>
+              <Text style={[styles.avatarModalTitle, { color: colors.text }]}>Confirm New Photo</Text>
+              <TouchableOpacity onPress={() => setShowAvatarConfirm(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.previewContainer}>
+              {tempAvatarUri && (
+                <Image source={{ uri: tempAvatarUri }} style={styles.avatarPreview} />
+              )}
+            </View>
+
+            <Text style={[styles.modalDescription, { color: colors.textMuted }]}>
+              This will be visible to everyone in the NALISS community.
+            </Text>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.cancelButton, { flex: 1, borderColor: colors.border, backgroundColor: colors.surface }]}
+                onPress={() => setShowAvatarConfirm(false)}
+                disabled={isUpdatingAvatar}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, { flex: 1, marginLeft: 0, marginTop: 0, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 }]}
+                onPress={confirmAndUploadAvatar}
+                disabled={isUpdatingAvatar}
+              >
+                {isUpdatingAvatar ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={[styles.saveButtonText, { fontSize: 13 }]}>SAVE AND UPLOAD</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -616,4 +823,80 @@ const styles = StyleSheet.create({
     padding: 16, marginHorizontal: 20, borderRadius: 16, marginBottom: 8, gap: 12,
   },
   adminBannerTitle: { flex: 1, fontFamily: 'Inter-Bold', fontSize: 14, color: '#064E3B' },
+  avatarModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  avatarModalContent: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  avatarModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  avatarModalTitle: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 18,
+  },
+  previewContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+  },
+  avatarPreview: {
+    width: 200,
+    height: 200,
+    borderRadius: 24,
+    backgroundColor: '#f1f5f9',
+  },
+  modalDescription: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginVertical: 15,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 14,
+  },
+  saveButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveButtonText: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 14,
+    color: '#FFF',
+  },
 });

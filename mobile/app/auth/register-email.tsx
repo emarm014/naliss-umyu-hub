@@ -13,6 +13,7 @@ import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature } from '../../src/utils/sentry';
 import * as Sentry from '@sentry/react-native';
+import { useRegistrationLimiter } from '../../src/stores/registration-limiter.store';
 
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
@@ -141,7 +142,11 @@ export default function RegisterEmail() {
         Alert.alert('Account Graduated', 'This email belongs to a graduated student. Access is restricted to active students only.');
         return;
       }
-      if (provider === 'email') {
+      if (provider === 'incomplete') {
+        // Idempotent Garbage Collection: Purge the ghost account so we can start fresh
+        Sentry.addBreadcrumb({ category: 'signup.email', message: 'Purging incomplete ghost account', level: 'info' });
+        await supabase.rpc('purge_incomplete_account', { email_addr: trimmedEmail });
+      } else if (provider === 'email') {
         Alert.alert(
           'Already Registered',
           'This email already has an account. Please sign in instead.',
@@ -153,7 +158,17 @@ export default function RegisterEmail() {
         return;
       }
 
-      // STEP 4: Save email and send OTP
+      // STEP 4: Check Rate Limiter, Save email and send OTP
+      const limiter = useRegistrationLimiter.getState();
+      if (limiter.checkLimit()) {
+        const mins = limiter.getRemainingTime() || 60;
+        Alert.alert(
+          '⚠️ Registration attempt limit reached',
+          `Please wait for your limit to reset before trying again. (${mins} min remaining)`
+        );
+        return;
+      }
+
       const store = useSignupStore.getState();
       store.setCredentials(trimmedEmail, undefined);
 
@@ -164,6 +179,9 @@ export default function RegisterEmail() {
         options: { shouldCreateUser: true },
       });
       if (otpError) throw otpError;
+
+      // OTP Sent Successfully -> Track Attempt
+      limiter.incrementAttempt();
 
       if (!isMounted.current) return;
 

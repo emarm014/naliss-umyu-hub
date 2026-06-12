@@ -16,6 +16,7 @@ import { useNetworkStore } from '../../src/stores/network.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature } from '../../src/utils/sentry';
 import * as Sentry from '@sentry/react-native';
+import { useRegistrationLimiter } from '../../src/stores/registration-limiter.store';
 
 export default function RegisterOptions() {
   useSentryScreen('RegisterOptions');
@@ -88,8 +89,36 @@ export default function RegisterOptions() {
       }
 
       const store = useSignupStore.getState();
+      const limiter = useRegistrationLimiter.getState();
+
+      if (limiter.checkLimit()) {
+        const mins = limiter.getRemainingTime() || 60;
+        Alert.alert(
+          '⚠️ Registration attempt limit reached',
+          `Please wait for your limit to reset before trying again. (${mins} min remaining)`
+        );
+        if (isMounted.current) setIsGoogleLoading(false);
+        return;
+      }
+
+      // Pre-enrollment garbage collection: If they started an email flow, backed out, and chose Google,
+      // purge the incomplete email auth record to prevent provider identity collisions during OAuth.
+      const cachedEmail = store.email;
+      if (cachedEmail) {
+        try {
+          const { data: status } = await supabase.rpc('check_existing_account', { email_addr: cachedEmail });
+          if (status === 'incomplete') {
+            Sentry.addBreadcrumb({ category: 'signup.google', message: 'Pre-purging incomplete cached email', level: 'info' });
+            await supabase.rpc('purge_incomplete_account', { email_addr: cachedEmail });
+          }
+        } catch { /* silent best-effort */ }
+      }
+
       store.reset();
       store.touchActivity();
+
+      // Track the attempt
+      limiter.incrementAttempt();
 
       // ── STEP 1: Get OAuth URL ─────────────────────────────────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 1: Getting OAuth URL', level: 'info' });

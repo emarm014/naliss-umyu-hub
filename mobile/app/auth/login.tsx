@@ -98,6 +98,19 @@ export default function LoginScreen() {
           return;
         }
 
+        if (provider === 'incomplete') {
+          Alert.alert(
+            'Registration Incomplete',
+            'Your account registration was not completed. Please create an account to finish setting up your profile.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Create Account', onPress: () => router.push('/auth/eligibility' as any) },
+            ]
+          );
+          setIsLoading(false);
+          return;
+        }
+
         if (provider === 'none') {
           Alert.alert(
             'Account Not Found',
@@ -235,7 +248,7 @@ export default function LoginScreen() {
           if (user?.id) {
             const { data: profileCheck } = await supabase
               .from('users')
-              .select('status')
+              .select('status, level')
               .eq('id', user.id)
               .maybeSingle();
 
@@ -244,6 +257,20 @@ export default function LoginScreen() {
                 'Account Graduated',
                 'This account belongs to a graduated student. The NALISS UMYU Hub is only for currently enrolled students.\n\nYour alumni record is preserved in the system.',
                 [{ text: 'OK', style: 'default' }]
+              );
+              await supabase.auth.signOut();
+              useSignupStore.getState().setIsGoogleDelaying(false);
+              return;
+            }
+
+            if (!profileCheck || !profileCheck.level) {
+              Alert.alert(
+                'Registration Incomplete',
+                'Your account registration was not completed. Please create an account to finish setting up your profile.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Create Account', onPress: () => router.push('/auth/eligibility' as any) },
+                ]
               );
               await supabase.auth.signOut();
               useSignupStore.getState().setIsGoogleDelaying(false);

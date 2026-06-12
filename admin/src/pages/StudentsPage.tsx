@@ -1494,11 +1494,11 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Username (@handle)</label>
                    <input
                      type="text"
-                     required
+                     required={formData.role !== 'moderator'}
                      value={formData.username}
                      onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 transition-all placeholder:text-slate-400"
-                     placeholder="abuyusuf"
+                     placeholder={formData.role === 'moderator' ? "Optional for moderators" : "abuyusuf"}
                    />
                 </div>
              </div>
@@ -1519,23 +1519,27 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Reg Number</label>
                    <input
                      type="text"
-                     required
+                     required={formData.role !== 'moderator'}
                      value={formData.registration_number}
                      onChange={(e) => setFormData({ ...formData, registration_number: e.target.value })}
                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 transition-all placeholder:text-slate-400"
-                     placeholder="U1/23/BLIS/0000"
+                     placeholder={formData.role === 'moderator' ? "Optional for moderators" : "U1/23/BLIS/0000"}
                    />
                 </div>
              </div>
 
              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Level</label>
+                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">
+                     {formData.role === 'moderator' ? 'Assigned Level' : 'Current Level'}
+                   </label>
                    <select
                      value={formData.level}
-                     onChange={(e) => setFormData({ ...formData, level: e.target.value as AcademicLevel })}
+                     required
+                     onChange={(e) => setFormData({ ...formData, level: e.target.value as any })}
                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 appearance-none transition-all"
                    >
+                     <option value="" disabled>Select Level</option>
                      {['100', '200', '300', '400'].map(level => (
                        <option key={level} value={level}>LEVEL {level}</option>
                      ))}

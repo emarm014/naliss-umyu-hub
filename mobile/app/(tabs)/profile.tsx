@@ -104,6 +104,17 @@ export default function ProfileScreen() {
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const [showConfirmPasswordVisible, setShowConfirmPasswordVisible] = useState(false);
 
+  // New states for Advanced Session Revocation
+  const [showManageSessions, setShowManageSessions] = useState(false);
+  const [includeCurrentDevice, setIncludeCurrentDevice] = useState(false);
+  const [isRevokingSessions, setIsRevokingSessions] = useState(false);
+
+  // New states for Password Modification OTP Checkpoint
+  const [passwordChangeStep, setPasswordChangeStep] = useState<'init' | 'verify' | 'new_password'>('init');
+  const [otpToken, setOtpToken] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
   React.useEffect(() => {
     const loadDeviceId = async () => {
       try {
@@ -523,6 +534,90 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleRevokeAllSessions = async () => {
+    setIsRevokingSessions(true);
+    try {
+      if (includeCurrentDevice) {
+        // Global logout
+        await supabase.auth.signOut({ scope: 'global' });
+        
+        // Flush local store
+        useAuthStore.getState().setSession(null);
+        useAuthStore.getState().setUser(null);
+        useAuthStore.getState().setIsProfileComplete(null);
+        useAuthStore.getState().setProfile(null);
+        
+        setShowManageSessions(false);
+        router.replace('/auth/login');
+      } else {
+        // Log out of other devices
+        await supabase.auth.signOut({ scope: 'others' });
+        
+        if (storeProfile?.id && currentDeviceId) {
+          const { error } = await (supabase as any)
+            .from('user_sessions')
+            .update({ is_active: false })
+            .eq('user_id', storeProfile.id)
+            .neq('device_id', currentDeviceId);
+            
+          if (error) throw error;
+        }
+        
+        setShowManageSessions(false);
+        setIncludeCurrentDevice(false);
+        Alert.alert('Success', 'Successfully logged out of all other devices.');
+      }
+    } catch (err: any) {
+      console.error('Failed to revoke sessions:', err);
+      Alert.alert('Error', err.message || 'Failed to revoke sessions. Please try again.');
+    } finally {
+      setIsRevokingSessions(false);
+    }
+  };
+
+  const handleInitiatePasswordChange = async () => {
+    if (!storeProfile?.email) return;
+    setIsSendingOtp(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(storeProfile.email);
+      if (error) throw error;
+      
+      setPasswordChangeStep('verify');
+    } catch (err: any) {
+      console.error('Failed to send OTP:', err);
+      Alert.alert('Error', err.message || 'Failed to send verification code. Please try again.');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleVerifyPasswordOtp = async () => {
+    if (!otpToken || otpToken.length !== 6) {
+      Alert.alert('Invalid Code', 'Please enter the 6-digit verification code.');
+      return;
+    }
+    if (!storeProfile?.email) return;
+
+    setIsVerifyingOtp(true);
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: storeProfile.email,
+        token: otpToken,
+        type: 'recovery'
+      });
+      
+      if (error) throw error;
+      
+      // OTP verified successfully, unlock password change fields
+      setPasswordChangeStep('new_password');
+    } catch (err: any) {
+      console.error('Failed to verify OTP:', err);
+      Alert.alert('Verification Failed', err.message || 'Invalid verification code. Please try again.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
   const handleChangePassword = async () => {
     const { newPassword, confirmPassword } = passwordData;
 
@@ -557,7 +652,9 @@ export default function ProfileScreen() {
 
       setPasswordData({ newPassword: '', confirmPassword: '' });
       setShowChangePassword(false);
-      Alert.alert('Password Changed', 'Your password has been updated successfully. Use it next time you sign in.');
+      setPasswordChangeStep('init');
+      setOtpToken('');
+      Alert.alert('Success', '🔑 Password updated successfully.');
     } catch (err: any) {
       captureUIError('ProfileScreen.handleChangePassword', err);
       const msg = err?.message || '';
@@ -992,91 +1089,152 @@ export default function ProfileScreen() {
                     </View>
 
                     <ScrollView style={styles.modalForm}>
-                        <View style={styles.securityInfoCard}>
-                            <Ionicons name="shield-checkmark" size={24} color="#059669" />
-                            <Text style={styles.securityInfoText}>
-                              Use a strong password with at least 8 characters. Mix letters, numbers, and symbols for best security.
+                        {passwordChangeStep === 'init' && (
+                          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 }}>
+                            <View style={styles.securityInfoCard}>
+                                <Ionicons name="mail" size={24} color="#059669" />
+                                <Text style={styles.securityInfoText}>
+                                  To change your password, we'll send a secure 6-digit verification code to your institutional email.
+                                </Text>
+                            </View>
+                            <TouchableOpacity
+                                style={[styles.saveButton, { marginTop: 20, width: '100%' }]}
+                                onPress={handleInitiatePasswordChange}
+                                disabled={isSendingOtp}
+                            >
+                                {isSendingOtp ? (
+                                    <ActivityIndicator color="#FFF" />
+                                ) : (
+                                    <Text style={styles.saveButtonText}>Send Verification Code</Text>
+                                )}
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        {passwordChangeStep === 'verify' && (
+                          <View style={{ flex: 1, paddingVertical: 10 }}>
+                            <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 16, textAlign: 'center' }]}>
+                              For your security, enter the verification code sent to your registered institutional email address.
                             </Text>
-                        </View>
+                            <TextInput
+                                style={[styles.textInput, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border, textAlign: 'center', fontSize: 24, letterSpacing: 8 }]}
+                                value={otpToken}
+                                onChangeText={setOtpToken}
+                                placeholder="000000"
+                                placeholderTextColor={colors.textMuted}
+                                keyboardType="number-pad"
+                                maxLength={6}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
+                            />
+                            <TouchableOpacity
+                                style={[styles.saveButton, { marginTop: 20, width: '100%' }]}
+                                onPress={handleVerifyPasswordOtp}
+                                disabled={isVerifyingOtp}
+                            >
+                                {isVerifyingOtp ? (
+                                    <ActivityIndicator color="#FFF" />
+                                ) : (
+                                    <Text style={styles.saveButtonText}>Verify Code</Text>
+                                )}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{ marginTop: 16, padding: 10 }}
+                                onPress={() => { setPasswordChangeStep('init'); setOtpToken(''); }}
+                            >
+                                <Text style={{ color: colors.textMuted, textAlign: 'center', fontFamily: 'Inter-Medium' }}>Cancel</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
 
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>New Password</Text>
-                        <View style={{ position: 'relative' }}>
-                          <TextInput
-                              style={[styles.textInput, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border, paddingRight: 48 }]}
-                              value={passwordData.newPassword}
-                              onChangeText={(text) => setPasswordData({ ...passwordData, newPassword: text })}
-                              placeholder="At least 8 characters"
-                              placeholderTextColor={colors.textMuted}
-                              secureTextEntry={!showPasswordVisible}
-                              autoCapitalize="none"
-                              autoCorrect={false}
-                              keyboardAppearance={isDark ? 'dark' : 'light'}
-                          />
-                          <TouchableOpacity
-                              onPress={() => setShowPasswordVisible(v => !v)}
-                              style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
-                          >
-                              <Ionicons name={showPasswordVisible ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
-                          </TouchableOpacity>
-                        </View>
-                        {/* Password strength indicator */}
-                        {passwordData.newPassword.length > 0 && (() => {
-                          const len = passwordData.newPassword.length;
-                          const strength = len < 8 ? 1 : len < 12 ? 2 : 3;
-                          const colors2 = ['#ef4444', '#f59e0b', '#16a34a'];
-                          const labels = ['Weak', 'Fair', 'Strong'];
-                          return (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 4 }}>
-                              {[1,2,3].map(s => (
-                                <View key={s} style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: strength >= s ? colors2[strength - 1] : (isDark ? '#334155' : '#e2e8f0') }} />
-                              ))}
-                              <Text style={{ fontSize: 11, fontFamily: 'Inter-SemiBold', color: colors2[strength - 1], width: 44, textAlign: 'right' }}>{labels[strength - 1]}</Text>
+                        {passwordChangeStep === 'new_password' && (
+                          <View>
+                            <View style={styles.securityInfoCard}>
+                                <Ionicons name="shield-checkmark" size={24} color="#059669" />
+                                <Text style={styles.securityInfoText}>
+                                  Use a strong password with at least 8 characters. Mix letters, numbers, and symbols for best security.
+                                </Text>
                             </View>
-                          );
-                        })()}
 
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 8 }]}>Confirm New Password</Text>
-                        <View style={{ position: 'relative' }}>
-                          <TextInput
-                              style={[styles.textInput, {
-                                backgroundColor: isDark ? '#1e293b' : '#f8fafc',
-                                color: colors.text,
-                                borderColor: passwordData.confirmPassword.length > 0
-                                  ? (passwordData.confirmPassword === passwordData.newPassword ? '#16a34a' : '#ef4444')
-                                  : colors.border,
-                                paddingRight: 48,
-                              }]}
-                              value={passwordData.confirmPassword}
-                              onChangeText={(text) => setPasswordData({ ...passwordData, confirmPassword: text })}
-                              placeholder="Re-enter your password"
-                              placeholderTextColor={colors.textMuted}
-                              secureTextEntry={!showPasswordVisible}
-                              autoCapitalize="none"
-                              autoCorrect={false}
-                              keyboardAppearance={isDark ? 'dark' : 'light'}
-                          />
-                          {passwordData.confirmPassword.length > 0 && (
-                            <View style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}>
-                              <Ionicons
-                                name={passwordData.confirmPassword === passwordData.newPassword ? 'checkmark-circle' : 'close-circle'}
-                                size={20}
-                                color={passwordData.confirmPassword === passwordData.newPassword ? '#16a34a' : '#ef4444'}
+                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>New Password</Text>
+                            <View style={{ position: 'relative' }}>
+                              <TextInput
+                                  style={[styles.textInput, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border, paddingRight: 48 }]}
+                                  value={passwordData.newPassword}
+                                  onChangeText={(text) => setPasswordData({ ...passwordData, newPassword: text })}
+                                  placeholder="At least 8 characters"
+                                  placeholderTextColor={colors.textMuted}
+                                  secureTextEntry={!showPasswordVisible}
+                                  autoCapitalize="none"
+                                  autoCorrect={false}
+                                  keyboardAppearance={isDark ? 'dark' : 'light'}
                               />
+                              <TouchableOpacity
+                                  onPress={() => setShowPasswordVisible(v => !v)}
+                                  style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                              >
+                                  <Ionicons name={showPasswordVisible ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
+                              </TouchableOpacity>
                             </View>
-                          )}
-                        </View>
+                            {/* Password strength indicator */}
+                            {passwordData.newPassword.length > 0 && (() => {
+                              const len = passwordData.newPassword.length;
+                              const strength = len < 8 ? 1 : len < 12 ? 2 : 3;
+                              const colors2 = ['#ef4444', '#f59e0b', '#16a34a'];
+                              const labels = ['Weak', 'Fair', 'Strong'];
+                              return (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 4 }}>
+                                  {[1,2,3].map(s => (
+                                    <View key={s} style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: strength >= s ? colors2[strength - 1] : (isDark ? '#334155' : '#e2e8f0') }} />
+                                  ))}
+                                  <Text style={{ fontSize: 11, fontFamily: 'Inter-SemiBold', color: colors2[strength - 1], width: 44, textAlign: 'right' }}>{labels[strength - 1]}</Text>
+                                </View>
+                              );
+                            })()}
 
-                        <TouchableOpacity
-                            style={[styles.saveButton, { marginTop: 20 }]}
-                            onPress={handleChangePassword}
-                            disabled={isChangingPassword}
-                        >
-                            {isChangingPassword ? (
-                                <ActivityIndicator color="#FFF" />
-                            ) : (
-                                <Text style={styles.saveButtonText}>Change Password</Text>
-                            )}
-                        </TouchableOpacity>
+                            <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 8 }]}>Confirm New Password</Text>
+                            <View style={{ position: 'relative' }}>
+                              <TextInput
+                                  style={[styles.textInput, {
+                                    backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                                    color: colors.text,
+                                    borderColor: passwordData.confirmPassword.length > 0
+                                      ? (passwordData.confirmPassword === passwordData.newPassword ? '#16a34a' : '#ef4444')
+                                      : colors.border,
+                                    paddingRight: 48,
+                                  }]}
+                                  value={passwordData.confirmPassword}
+                                  onChangeText={(text) => setPasswordData({ ...passwordData, confirmPassword: text })}
+                                  placeholder="Re-enter your password"
+                                  placeholderTextColor={colors.textMuted}
+                                  secureTextEntry={!showPasswordVisible}
+                                  autoCapitalize="none"
+                                  autoCorrect={false}
+                                  keyboardAppearance={isDark ? 'dark' : 'light'}
+                              />
+                              {passwordData.confirmPassword.length > 0 && (
+                                <View style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}>
+                                  <Ionicons
+                                    name={passwordData.confirmPassword === passwordData.newPassword ? 'checkmark-circle' : 'close-circle'}
+                                    size={20}
+                                    color={passwordData.confirmPassword === passwordData.newPassword ? '#16a34a' : '#ef4444'}
+                                  />
+                                </View>
+                              )}
+                            </View>
+
+                            <TouchableOpacity
+                                style={[styles.saveButton, { marginTop: 20 }]}
+                                onPress={handleChangePassword}
+                                disabled={isChangingPassword}
+                            >
+                                {isChangingPassword ? (
+                                    <ActivityIndicator color="#FFF" />
+                                ) : (
+                                    <Text style={styles.saveButtonText}>Change Password</Text>
+                                )}
+                            </TouchableOpacity>
+                          </View>
+                        )}
                         <View style={{ height: 40 }} />
                     </ScrollView>
                 </View>
@@ -1112,6 +1270,17 @@ export default function ProfileScreen() {
                           colors={colors}
                         />
                         <MenuItem 
+                          icon="settings" 
+                          iconColor="#ea580c" 
+                          iconBg={COLORS.actionOrange} 
+                          label="Manage Active Sessions" 
+                          onPress={() => {
+                            setShowSecurityMenu(false);
+                            setShowManageSessions(true);
+                          }}
+                          colors={colors}
+                        />
+                        <MenuItem 
                           icon="phone-portrait" 
                           iconColor="#059669" 
                           iconBg={COLORS.actionMint} 
@@ -1124,6 +1293,63 @@ export default function ProfileScreen() {
                           isLast
                           colors={colors}
                         />
+                    </View>
+                </View>
+            </View>
+        </Modal>
+
+        {/* Manage Active Sessions Modal */}
+        <Modal
+            visible={showManageSessions}
+            animationType="fade"
+            transparent={true}
+            onRequestClose={() => setShowManageSessions(false)}
+        >
+            <View style={styles.modalOverlay}>
+                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                    <View style={styles.modalHeader}>
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>Manage Active Sessions</Text>
+                        <TouchableOpacity onPress={() => setShowManageSessions(false)} disabled={isRevokingSessions}>
+                            <Ionicons name="close" size={24} color={colors.text} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <Text style={[styles.modalDescription, { color: colors.textMuted, marginBottom: 20 }]}>
+                        Do you want to log out of all active sessions across all devices? This will invalidate active login tokens immediately.
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30, backgroundColor: isDark ? '#1e293b' : '#f8fafc', padding: 16, borderRadius: 12, borderColor: colors.border, borderWidth: 1 }}>
+                        <Text style={{ fontFamily: 'Inter-Medium', color: colors.text, fontSize: 14, flex: 1 }}>
+                            Include my current active device
+                        </Text>
+                        <Switch
+                            value={includeCurrentDevice}
+                            onValueChange={setIncludeCurrentDevice}
+                            trackColor={{ false: '#94a3b8', true: COLORS.primary }}
+                            thumbColor={includeCurrentDevice ? '#ffffff' : '#f1f5f9'}
+                            disabled={isRevokingSessions}
+                        />
+                    </View>
+
+                    <View style={styles.modalFooter}>
+                        <TouchableOpacity
+                            style={[styles.cancelButton, { flex: 1, borderColor: colors.border, backgroundColor: colors.surface }]}
+                            onPress={() => setShowManageSessions(false)}
+                            disabled={isRevokingSessions}
+                        >
+                            <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.saveButton, { flex: 1, marginLeft: 0, marginTop: 0, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: COLORS.error }]}
+                            onPress={handleRevokeAllSessions}
+                            disabled={isRevokingSessions}
+                        >
+                            {isRevokingSessions ? (
+                                <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                                <Text style={[styles.saveButtonText, { fontSize: 13 }]}>LOGOUT SESSIONS</Text>
+                            )}
+                        </TouchableOpacity>
                     </View>
                 </View>
             </View>

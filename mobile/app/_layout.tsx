@@ -40,6 +40,22 @@ Sentry.init({
   debug: !IS_PROD,
 });
 
+// ── Global console.error interception ──────────────────────────────────────
+// Force all manual console.error() calls to be reported to Sentry as exceptions
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  originalConsoleError(...args); // Keep logging to terminal/bundler
+  
+  // Find if an actual Error object was passed
+  const err = args.find(a => a instanceof Error);
+  if (err) {
+    Sentry.captureException(err, { tags: { source: 'console.error' } });
+  } else {
+    // Stringify everything else
+    Sentry.captureMessage(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '), 'error');
+  }
+};
+
 import { useEffect, useState, useRef } from 'react';
 import { LogBox } from 'react-native';
 LogBox.ignoreLogs([

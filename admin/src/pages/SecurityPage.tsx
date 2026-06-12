@@ -162,11 +162,30 @@ export default function SecurityPage() {
 
     setIsUpdatingEmail(true);
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
-        email: newEmail,
+      // Use direct fetch to bypass potential gotrue-js lock deadlocks
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ email: newEmail }),
+        signal: controller.signal
       });
-
-      if (updateError) throw updateError;
+      
+      clearTimeout(timeoutId);
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.message || data.error_description || 'Failed to initiate email change.');
+      }
 
       setIsAwaitingEmailOtp(true);
       setEmailSuccess(`An OTP has been sent to ${newEmail}. Please enter it below.`);
@@ -436,13 +455,23 @@ export default function SecurityPage() {
                       required
                     />
                   </div>
-                  <button
-                    type="submit"
-                    disabled={isUpdatingEmail}
-                    className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20 active:scale-95 mt-4"
-                  >
-                    {isUpdatingEmail ? 'Requesting...' : 'Request Email Change'}
-                  </button>
+                  <div className="flex gap-4 mt-4">
+                    <button
+                      type="button"
+                      onClick={() => { setIsAwaitingEmailOtp(true); setEmailError(''); setEmailSuccess(''); }}
+                      disabled={isUpdatingEmail}
+                      className="flex-1 py-5 bg-gray-50 text-gray-500 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-200 shadow-sm active:scale-95"
+                    >
+                      Already have code?
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isUpdatingEmail}
+                      className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20 active:scale-95"
+                    >
+                      {isUpdatingEmail ? 'Requesting...' : 'Request Change'}
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <form onSubmit={handleOtpVerification} className="space-y-6">

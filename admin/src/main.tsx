@@ -10,6 +10,7 @@ Sentry.init({
   integrations: [
     Sentry.browserTracingIntegration(),
     Sentry.replayIntegration(),
+    Sentry.captureConsoleIntegration({ levels: ['error'] }),
   ],
   // Performance Monitoring
   tracesSampleRate: 1.0, 

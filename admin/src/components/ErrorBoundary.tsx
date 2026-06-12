@@ -1,5 +1,5 @@
-﻿import { Component, type ErrorInfo, type ReactNode } from "react";
-
+import { Component, type ErrorInfo, type ReactNode } from "react";
+import * as Sentry from "@sentry/react";
 interface Props {
     children?: ReactNode;
 }
@@ -15,8 +15,8 @@ export class ErrorBoundary extends Component<Props, State> {
         return { hasError: true };
     }
 
-    public componentDidCatch(_error: Error, _errorInfo: ErrorInfo): void {
-        // Errors are captured silently — no raw stack traces exposed
+    public componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+        Sentry.captureException(error, { contexts: { react: { componentStack: errorInfo.componentStack } } });
     }
 
     public render() {

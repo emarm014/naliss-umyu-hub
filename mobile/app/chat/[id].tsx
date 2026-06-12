@@ -18,6 +18,7 @@ import {
     ScrollView,
     ActivityIndicator,
     PanResponder,
+    Linking,
 } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -237,7 +238,11 @@ export default function ChatScreen() {
                 }
 
                 // 2. Mark group as read immediately
-                markGroupAsRead(id);
+                if (typeof markGroupAsRead === 'function') {
+                    markGroupAsRead(id).catch(() => {});
+                } else {
+                    console.warn("Warning: 'markGroupAsRead' action method is not defined or initialized yet inside useGroupStore.");
+                }
 
                 // 3. Fetch members FIRST so membersRef is populated before realtime starts
                 // This prevents unnecessary extra DB fetches for sender info on first messages
@@ -253,9 +258,9 @@ export default function ChatScreen() {
                 fetchGroupDetails();
                 // Only show loading spinner if cache was empty
                 if (cached.length === 0) {
-                    await fetchMessages();
+                    await fetchMessages(searchParams, false, false);
                 } else {
-                    fetchMessages(); // Silent background refresh
+                    fetchMessages(searchParams, false, true); // Silent background refresh
                 }
             }
         };
@@ -267,15 +272,17 @@ export default function ChatScreen() {
             // Use the throttled RPC — only updates if last_active_at is older than 60s
             // This prevents 33 writes/second at 1000 concurrent users
             try {
-                await supabase.rpc('update_last_active' as any);
+                if (supabase && typeof supabase.rpc === 'function') {
+                    await supabase.rpc('update_last_active' as any);
+                }
             } catch (err) {
                 // silent catch
             }
         };
 
-        markActive();
+        markActive().catch(() => {});
         // Keep presence alive every 30 seconds while in chat (more responsive than 2 min)
-        const heartbeat = setInterval(markActive, 30000);
+        const heartbeat = setInterval(() => { markActive().catch(() => {}); }, 30000);
 
         return () => {
             isMounted.current = false;
@@ -284,14 +291,18 @@ export default function ChatScreen() {
                 clearTimeout(clickTimeoutRef.current);
             }
             // Mark user as inactive when they leave the chat
-            supabase.auth.getUser().then(({ data: { user } }) => {
-                if (user) {
-                    supabase.from('users')
-                        .update({ last_active_at: new Date(Date.now() - 400000).toISOString() })
-                        .eq('id', user.id)
-                        .then(() => {});
+            (async () => {
+                try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user && supabase && typeof supabase.from === 'function') {
+                        await supabase.from('users')
+                            .update({ last_active_at: new Date(Date.now() - 400000).toISOString() })
+                            .eq('id', user.id);
+                    }
+                } catch (err) {
+                    // silent catch
                 }
-            });
+            })();
             if (realtimeChannelRef.current) {
                 supabase.removeChannel(realtimeChannelRef.current);
                 realtimeChannelRef.current = null;
@@ -346,8 +357,8 @@ export default function ChatScreen() {
         }
     };
 
-    const fetchMessages = async (params = searchParams, loadMore = false) => {
-        setIsLoading(true);
+    const fetchMessages = async (params = searchParams, loadMore = false, silent = false) => {
+        if (!silent) setIsLoading(true);
         try {
             let query = supabase
                 .from('messages')
@@ -1246,13 +1257,22 @@ export default function ChatScreen() {
         }
     };
 
-    // Render @mentions as tappable
+    // Render @mentions and URLs as tappable
     const renderMessageContent = (text: string) => {
-        const parts = text.split(/(@\w+)/g);
+        if (!text) return null;
+        // Split by mentions OR urls
+        const parts = text.split(/(@\w+|https?:\/\/[^\s]+)/g);
         return parts.map((part, idx) => {
             if (part.startsWith('@')) {
                 return (
                     <Text key={idx} style={styles.mentionText} onPress={() => openProfileByUsername(part)}>
+                        {part}
+                    </Text>
+                );
+            }
+            if (part.match(/^https?:\/\//)) {
+                return (
+                    <Text key={idx} style={styles.urlText} onPress={() => Linking.openURL(part).catch(() => {})}>
                         {part}
                     </Text>
                 );
@@ -3216,6 +3236,7 @@ const styles = StyleSheet.create({
     messageTextOther: { color: '#0f172a' },
     messageTextSystem: { color: COLORS.textMuted, fontSize: 12, textAlign: 'center', fontStyle: 'italic' },
     mentionText: { color: '#059669', fontFamily: 'Inter-Bold' },
+    urlText: { color: '#2563eb', textDecorationLine: 'underline' },
     timeEditRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 2, gap: 4 },
     editedLabel: { fontFamily: 'Inter-Regular', fontSize: 9, color: '#94a3b8', fontStyle: 'italic' },
     messageTime: { fontFamily: 'Inter-Medium', fontSize: 10 },

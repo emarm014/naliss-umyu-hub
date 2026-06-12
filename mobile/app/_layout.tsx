@@ -148,8 +148,7 @@ export function NetworkStatusDot() {
   );
 }
 
-// Keep OfflineBanner as a no-op — replaced by NetworkStatusDot in headers
-function OfflineBanner() { return null; }
+
 
 // ── Deep Link Session Handler ─────────────────────────────────────────────────
 // Extracts Supabase auth tokens from redirect URLs (e.g. after OAuth or reset)
@@ -189,7 +188,7 @@ const queryClient = new QueryClient({
 });
 
 function RootLayoutNav() {
-  const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const { isDark } = useThemeStore();
   
   // Register Institutional Signal (Push Notifications)
@@ -240,28 +239,37 @@ function RootLayoutNav() {
     return () => sub.remove();
   }, []);
   useEffect(() => {
-    async function prepare() {
+    async function prepareAppLifecycle() {
       try {
-        await Font.loadAsync({
-          'Inter-Regular': Inter_400Regular,
-          'Inter-Medium': Inter_500Medium,
-          'Inter-SemiBold': Inter_600SemiBold,
-          'Inter-Bold': Inter_700Bold,
-        });
-      } catch {
-        // silent — fonts fall back to system fonts
+        // Keep the Splash Screen active while we read local data from the phone's chip
+        await Promise.all([
+          (async () => {
+             // Load local font vectors in the background
+             await Font.loadAsync({
+               'Inter-Regular': Inter_400Regular,
+               'Inter-Medium': Inter_500Medium,
+               'Inter-SemiBold': Inter_600SemiBold,
+               'Inter-Bold': Inter_700Bold,
+             });
+             
+             // Mount local MMKV states synchronously
+             useThemeStore.getState();
+             useSignupStore.getState();
+             useNetworkStore.getState();
+          })(),
+          new Promise(resolve => setTimeout(resolve, 1200)) // Explicit intentional branding beat
+        ]);
+      } catch (error) {
+        console.warn("Silent Boot Warning: Isolated local configuration anomaly.", error);
       } finally {
-        setFontsLoaded(true);
+        // Smoothly drop the splash screen to reveal the UI dashboard instantly
+        setIsReady(true);
+        await SplashScreen.hideAsync();
       }
     }
-    prepare();
+    
+    prepareAppLifecycle();
   }, []);
-
-  useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded]);
 
   useEffect(() => {
     const check = () => useNetworkStore.getState().checkNetworkStatus();
@@ -373,7 +381,7 @@ function RootLayoutNav() {
     return () => subscription.remove();
   }, []);
 
-  if (!fontsLoaded) {
+  if (!isReady) {
     return null;
   }
 
@@ -408,7 +416,6 @@ function RootLayoutNav() {
         />
       </Stack>
       <GroupMembershipHandler />
-      <OfflineBanner />
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </ProtectedRoute>
   );

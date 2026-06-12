@@ -136,6 +136,7 @@ export default function HomeScreen() {
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
   const [showAvatarConfirm, setShowAvatarConfirm] = useState(false);
+  const localAvatarUrl = useAuthStore(s => s.localAvatarUrl);
 
   const handleAvatarPress = () => {
     Alert.alert('Update Profile Picture', 'How would you like to update your avatar?', [
@@ -296,7 +297,6 @@ export default function HomeScreen() {
   }
 
   const displayName = user.username || user.full_name?.split(' ')[0] || 'Student';
-  const localAvatarUrl = useAuthStore(s => s.localAvatarUrl);
   // localAvatarUrl is the local file URI, falling back to confirmedAvatarUrl (the iron-clad source),
   // then user.avatar_url (from DB), then to the DiceBear sticker seed.
   // Never shows blank — always has a valid URI.

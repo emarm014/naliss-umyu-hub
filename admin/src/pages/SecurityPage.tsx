@@ -16,6 +16,7 @@ import {
   CheckCircle,
   Eye,
   EyeOff,
+  Mail,
 } from 'lucide-react';
 
 interface UserSession {
@@ -42,6 +43,14 @@ export default function SecurityPage() {
   const [sessions, setSessions] = useState<UserSession[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string>('');
 
+  // Email Change state
+  const [newEmail, setNewEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [isAwaitingEmailOtp, setIsAwaitingEmailOtp] = useState(false);
+  const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState('');
+  const [emailError, setEmailError] = useState('');
+
   // Password Change state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -66,6 +75,8 @@ export default function SecurityPage() {
   const clearMessages = () => {
     setPasswordSuccess('');
     setPasswordError('');
+    setEmailSuccess('');
+    setEmailError('');
     if (flashTimer.current) clearTimeout(flashTimer.current);
   };
 
@@ -137,6 +148,73 @@ export default function SecurityPage() {
       if (flashTimer.current) clearTimeout(flashTimer.current);
     };
   }, [profile]);
+
+  // ── Email Update Handlers ──────────────────────────────────────────────────
+  const handleEmailChangeRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailError('');
+    setEmailSuccess('');
+
+    if (!newEmail || newEmail === profile?.email) {
+      setEmailError('Please enter a new valid email address.');
+      return;
+    }
+
+    setIsUpdatingEmail(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        email: newEmail,
+      });
+
+      if (updateError) throw updateError;
+
+      setIsAwaitingEmailOtp(true);
+      setEmailSuccess(`An OTP has been sent to ${newEmail}. Please enter it below.`);
+    } catch (err: any) {
+      console.error('Failed to request email change:', err);
+      setEmailError(err.message || 'Failed to initiate email change.');
+    } finally {
+      setIsUpdatingEmail(false);
+    }
+  };
+
+  const handleOtpVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailError('');
+    setEmailSuccess('');
+
+    if (!otpCode || otpCode.length !== 6) {
+      setEmailError('Please enter a valid 6-digit OTP code.');
+      return;
+    }
+
+    setIsUpdatingEmail(true);
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        email: newEmail,
+        token: otpCode,
+        type: 'email_change',
+      });
+
+      if (verifyError) throw verifyError;
+
+      // Update public.users
+      if (profile?.id) {
+        await supabase.from('users').update({ email: newEmail }).eq('id', profile.id);
+        useAuthStore.getState().updateProfile({ email: newEmail });
+      }
+
+      setEmailSuccess('Email address updated successfully!');
+      setIsAwaitingEmailOtp(false);
+      setNewEmail('');
+      setOtpCode('');
+    } catch (err: any) {
+      console.error('Failed to verify OTP:', err);
+      setEmailError(err.message || 'Invalid or expired OTP.');
+    } finally {
+      setIsUpdatingEmail(false);
+    }
+  };
 
   // ── Password Update Handler ────────────────────────────────────────────────
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -304,8 +382,105 @@ export default function SecurityPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* ── Password Change Card ── */}
-        <div className="lg:col-span-5 bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col group/card hover:shadow-xl transition-all duration-500">
+        {/* ── Settings Column ── */}
+        <div className="lg:col-span-5 flex flex-col gap-8">
+          
+          {/* ── Email Change Card ── */}
+          <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col group/card hover:shadow-xl transition-all duration-500">
+            <div className="px-8 py-8 bg-blue-50/50 border-b border-blue-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-gray-900 flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-xl">
+                    <Mail className="w-5 h-5 text-blue-600" />
+                  </div>
+                  Change Email
+                </h2>
+                <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-widest italic group-hover/card:text-blue-600 transition-colors">Identity Update</p>
+              </div>
+            </div>
+
+            <div className="p-8 space-y-6 flex-1">
+              {emailSuccess && (
+                <div className="p-4 bg-green-50 border border-green-100 text-green-700 rounded-2xl flex items-center gap-3 text-sm font-bold animate-in zoom-in duration-300">
+                  <CheckCircle className="w-5 h-5 shrink-0" />
+                  <span>{emailSuccess}</span>
+                </div>
+              )}
+
+              {emailError && (
+                <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex items-center gap-3 text-sm font-bold animate-in zoom-in duration-300">
+                  <AlertTriangle className="w-5 h-5 shrink-0" />
+                  <span>{emailError}</span>
+                </div>
+              )}
+
+              {!isAwaitingEmailOtp ? (
+                <form onSubmit={handleEmailChangeRequest} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Current Email</label>
+                    <input
+                      type="text"
+                      value={profile?.email || ''}
+                      disabled
+                      className="w-full px-5 py-4 bg-gray-100 border-none rounded-2xl text-sm font-semibold text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">New Email</label>
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800"
+                      placeholder="admin@example.com"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isUpdatingEmail}
+                    className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20 active:scale-95 mt-4"
+                  >
+                    {isUpdatingEmail ? 'Requesting...' : 'Request Email Change'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleOtpVerification} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Verification Code (OTP)</label>
+                    <input
+                      type="text"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800 tracking-widest text-center text-lg"
+                      placeholder="000000"
+                      maxLength={6}
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => { setIsAwaitingEmailOtp(false); setEmailError(''); setEmailSuccess(''); }}
+                      className="flex-1 py-5 bg-gray-50 text-gray-400 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isUpdatingEmail}
+                      className="flex-1 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20"
+                    >
+                      {isUpdatingEmail ? 'Verifying...' : 'Verify OTP'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+
+          {/* ── Password Change Card ── */}
+          <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col group/card hover:shadow-xl transition-all duration-500">
           <div className="px-8 py-8 bg-primary-50/50 border-b border-primary-100 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-black text-gray-900 flex items-center gap-3">
@@ -404,6 +579,7 @@ export default function SecurityPage() {
               {isUpdatingPassword ? 'Updating...' : 'Update Password'}
             </button>
           </form>
+        </div>
         </div>
 
         {/* ── Device Sessions Card ── */}

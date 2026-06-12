@@ -37,7 +37,7 @@ const fetchWithRetry = async (
   attempt = 0
 ): Promise<Response> => {
   const controller = new AbortController();
-  const timeoutMs = attempt === 0 ? 12000 : 20000;
+  const timeoutMs = 8000; // Max 8 seconds absolute timeout to prevent API deadlocks
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   // Safely convert headers to a plain object regardless of input type
@@ -108,7 +108,9 @@ const fetchWithRetry = async (
         data: { path: urlPath, error: err.message, durationMs },
         level: 'warning',
       });
-      await sleep(300 * Math.pow(2, attempt));
+      // Inject randomized network backoff jitter to prevent synchronized retry storms
+      const jitter = Math.random() * 1000;
+      await sleep(300 * Math.pow(2, attempt) + jitter);
       return fetchWithRetry(url, options, attempt + 1);
     }
     // Non-retryable or exhausted retries — capture as exception if not transient

@@ -112,10 +112,10 @@ export default function ResourcesScreen() {
 
   const isAdmin = user?.role === 'super_admin' || user?.role === ('system_owner' as any);
 
-  const isLoading = (resourcesLoading || directoryLoading) && 
-                    materials.length === 0 && 
-                    courses.length === 0 && 
-                    lecturers.length === 0;
+  const isMaterialsLoading = resourcesLoading && materials.length === 0;
+  const isPastQLoading = resourcesLoading && pastQuestions.length === 0;
+  const isCoursesLoading = resourcesLoading && courses.length === 0;
+  const isDirectoryLoading = directoryLoading && lecturers.length === 0 && executives.length === 0;
 
   const loadData = useCallback(async (silent = false) => {
     // Always fetch ALL levels — filtering is done client-side from the cache.
@@ -397,7 +397,7 @@ export default function ResourcesScreen() {
       >
         {activeMainTab === 'materials' || activeMainTab === 'past_q' ? (
           <MaterialsTabContent 
-            loading={isLoading} 
+            loading={activeMainTab === 'materials' ? isMaterialsLoading : isPastQLoading} 
             materialsBySemester={materialsBySemester} 
             downloadedIds={downloadedIds}
             handleDownload={handleDownload}
@@ -407,14 +407,14 @@ export default function ResourcesScreen() {
             searchQuery={searchQuery}
           />
         ) : activeMainTab === 'courses' ? (
-          <CoursesTabContent loading={isLoading} coursesBySemester={coursesBySemester} searchQuery={searchQuery} />
+          <CoursesTabContent loading={isCoursesLoading} coursesBySemester={coursesBySemester} searchQuery={searchQuery} />
         ) : (
           <DirectoryTabContent 
             activeTab={activeDirectoryTab} 
             setActiveTab={setActiveDirectoryTab}
             lecturers={filteredLecturers}
             executives={filteredExecutives}
-            loading={isLoading}
+            loading={isDirectoryLoading}
             onStaffPress={(l: Lecturer) => router.push({ pathname: '/directory/lecturer/[id]', params: { id: l.id } } as any)}
             onExecPress={(e: any) => router.push({ pathname: '/directory/executive/[id]', params: { id: e.id } } as any)}
             searchQuery={searchQuery}
@@ -459,9 +459,9 @@ function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, hand
               <ResourceCard 
                 key={m.id} 
                 material={m} 
-                isDownloaded={downloadedIds.includes(m.id)}
-                onDownload={() => handleDownload(m)} 
-                onRead={() => handleRead(m)}
+                downloadedIds={downloadedIds}
+                onDownload={handleDownload} 
+                onRead={handleRead}
                 onDelete={() => handleDelete(m.id, type === 'past_q' ? 'past_questions' : 'materials')}
               />
             ))}
@@ -475,9 +475,9 @@ function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, hand
               <ResourceCard 
                 key={m.id} 
                 material={m} 
-                isDownloaded={downloadedIds.includes(m.id)}
-                onDownload={() => handleDownload(m)} 
-                onRead={() => handleRead(m)}
+                downloadedIds={downloadedIds}
+                onDownload={handleDownload} 
+                onRead={handleRead}
                 onDelete={() => handleDelete(m.id, type === 'past_q' ? 'past_questions' : 'materials')}
               />
             ))}
@@ -491,9 +491,9 @@ function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, hand
                 <ResourceCard 
                     key={m.id} 
                     material={m} 
-                    isDownloaded={downloadedIds.includes(m.id)}
-                    onDownload={() => handleDownload(m)} 
-                    onRead={() => handleRead(m)}
+                    downloadedIds={downloadedIds}
+                    onDownload={handleDownload} 
+                    onRead={handleRead}
                     onDelete={() => handleDelete(m.id, type === 'past_q' ? 'past_questions' : 'materials')}
                 />
             ))}
@@ -615,12 +615,55 @@ function DirectoryTabContent({ activeTab, setActiveTab, lecturers, executives, l
   );
 }
 
-function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: { material: Material, isDownloaded: boolean, onDownload: () => void, onRead: () => void, onDelete: () => void }) {
-  const url = (material.file_url || '').toLowerCase();
-  const mime = (material.file_mime_type || '').toLowerCase();
+function ResourceCard({ material, downloadedIds, onDownload, onRead, onDelete }: any) {
+  const theme = useSemanticTheme();
+  const { profile } = useAuthStore();
+  
+  const files = material.files && material.files.length > 0 
+    ? material.files 
+    : (material.file_url ? [{ url: material.file_url, name: material.file_name || 'Attached File', size: material.file_size || 0, type: material.file_mime_type || '' }] : []);
+
+  if (files.length === 0) return null;
+
+  return (
+    <View style={[styles.resourceCard, { backgroundColor: theme.cardBg, borderColor: theme.border, flexDirection: 'column', alignItems: 'stretch' }]}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 12 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.resTitle, { color: theme.textPrimary }]} numberOfLines={2}>{material.title}</Text>
+          {material.description ? <Text style={[{ color: theme.textMuted, fontSize: 12, marginTop: 4, fontFamily: 'Inter-Medium' }]} numberOfLines={2}>{material.description}</Text> : null}
+        </View>
+        {profile?.role === 'super_admin' && (
+          <TouchableOpacity
+            onPress={() => Alert.alert('Delete Resource', 'Permanently remove this item?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: onDelete },
+            ])}
+            style={[styles.resActionBtn, { backgroundColor: '#FEF2F2', marginLeft: 8 }]}
+          >
+            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+          </TouchableOpacity>
+        )}
+      </View>
+      
+      {files.map((fileAsset: any, index: number) => (
+         <FileAssetItem 
+            key={index} 
+            material={material} 
+            fileAsset={fileAsset} 
+            isDownloaded={downloadedIds.includes(material.id)}
+            onDownload={() => onDownload({ ...material, file_url: fileAsset.url, file_name: fileAsset.name, file_size: fileAsset.size, file_mime_type: fileAsset.type })}
+            onRead={() => onRead({ ...material, file_url: fileAsset.url, file_name: fileAsset.name, file_size: fileAsset.size, file_mime_type: fileAsset.type })}
+         />
+      ))}
+    </View>
+  );
+}
+
+function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }: any) {
+  const url = (fileAsset.url || '').toLowerCase();
+  const mime = (fileAsset.type || '').toLowerCase();
   const [downloadProgress, setDownloadProgress] = React.useState<number | null>(null);
   const [localDownloaded, setLocalDownloaded] = React.useState(isDownloaded);
-  const { profile } = useAuthStore();
   const theme = useSemanticTheme();
   const isMountedRef = React.useRef(true);
 
@@ -629,10 +672,8 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
     return () => { isMountedRef.current = false; };
   }, []);
 
-  // Sync with parent's downloadedIds
   React.useEffect(() => { setLocalDownloaded(isDownloaded); }, [isDownloaded]);
 
-  // Detect file type
   const isPdf = mime.includes('pdf') || url.endsWith('.pdf');
   const isImage = mime.includes('image') || url.match(/\.(jpg|jpeg|png|webp|gif|svg)$/) !== null;
   const isVideo = mime.includes('video') || url.match(/\.(mp4|mov|avi|webm)$/) !== null;
@@ -651,43 +692,39 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
     ? { label: 'PPT', bg: '#FFF7ED', color: '#EA580C', icon: 'easel' }
     : { label: 'FILE', bg: '#F1F5F9', color: '#64748B', icon: 'attach' };
 
-  const fileSizeMB = ((material.file_size || 0) / 1024 / 1024).toFixed(1);
+  const fileSizeMB = ((fileAsset.size || 0) / 1024 / 1024).toFixed(1);
 
   const handleDownloadPress = async () => {
     if (localDownloaded) {
-      // Already downloaded — open directly
       onRead();
       return;
     }
-    if (downloadProgress !== null) return; // Already downloading
+    if (downloadProgress !== null) return; 
 
-    setDownloadProgress(1); // show bar immediately
+    setDownloadProgress(1); 
     try {
       const { downloadFile: dl } = require('../../src/utils/download');
-      const displayName = material.file_name || extractFileNameFromUrl(material.file_url!, material.id);
+      const displayName = fileAsset.name || extractFileNameFromUrl(fileAsset.url, material.id);
 
       const resultUri = await dl(
-        material.file_url!,
+        fileAsset.url,
         material.id,
         displayName,
         (p: number) => {
-          // p is 0-1 from downloadFile — show real progress 1-100%
           const pct = Math.round(p * 100);
           setDownloadProgress(Math.max(pct, 1));
         }
       );
 
       if (resultUri) {
-        // Real file downloaded and validated — show 100% briefly then mark done
         setDownloadProgress(100);
         setTimeout(() => {
-          if (!isMountedRef.current) return; // guard against unmounted component
+          if (!isMountedRef.current) return; 
           setLocalDownloaded(true);
           setDownloadProgress(null);
           onDownload();
         }, 400);
       } else {
-        // null = download failed — downloadFile already showed the error alert
         if (isMountedRef.current) setDownloadProgress(null);
       }
     } catch {
@@ -696,33 +733,23 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
   };
 
   return (
-    <View style={[
-      styles.resourceCard,
-      { backgroundColor: theme.cardBg, borderColor: theme.border },
-      localDownloaded && [styles.resourceCardDownloaded, { borderColor: theme.brandGreen }],
-    ]}>
-      {/* Left: file type icon */}
-      <View style={[styles.resIconBox, { backgroundColor: fileTypeConfig.bg }]}>
-        <Ionicons name={fileTypeConfig.icon as any} size={22} color={fileTypeConfig.color} />
-        <View style={[styles.resTypeBadge, { backgroundColor: fileTypeConfig.color }]}>
-          <Text style={styles.resTypeBadgeText}>{fileTypeConfig.label}</Text>
-        </View>
+    <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? '#2D3748' : '#F8FAFC', padding: 12, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: theme.isDark ? '#4A5568' : '#E2E8F0' }, localDownloaded && { borderColor: theme.brandGreen, backgroundColor: theme.isDark ? '#1C4532' : '#F0FDF4' }]}>
+      <View style={[styles.resIconBox, { backgroundColor: fileTypeConfig.bg, width: 44, height: 44, borderRadius: 12 }]}>
+        <Ionicons name={fileTypeConfig.icon as any} size={20} color={fileTypeConfig.color} />
       </View>
-
-      {/* Center: info */}
-      <View style={styles.resInfo}>
-        <Text style={[styles.resTitle, { color: theme.textPrimary }]} numberOfLines={2}>{material.title}</Text>
+      
+      <View style={[styles.resInfo, { marginLeft: 12, flex: 1 }]}>
+        <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: theme.textPrimary }]} numberOfLines={1}>{fileAsset.name}</Text>
         <View style={styles.resMetaRow}>
           <Text style={[styles.resMeta, { color: theme.textMuted }]}>{fileSizeMB} MB</Text>
           {localDownloaded && (
-            <View style={styles.offlinePill}>
-              <Ionicons name="checkmark-circle" size={11} color="#166534" />
+            <View style={[styles.offlinePill, { marginLeft: 6 }]}>
+              <Ionicons name="checkmark-circle" size={10} color="#166534" />
               <Text style={styles.offlinePillText}>Saved offline</Text>
             </View>
           )}
         </View>
-
-        {/* Download progress bar */}
+        
         {downloadProgress !== null && (
           <View style={styles.progressBarOuter}>
             <View style={[styles.progressBarInner, { width: `${downloadProgress}%` as any }]} />
@@ -731,51 +758,24 @@ function ResourceCard({ material, isDownloaded, onDownload, onRead, onDelete }: 
         )}
       </View>
 
-      {/* Right: actions */}
-      <View style={styles.resActions}>
-        {/* Delete button — super_admin only, never shown to students or moderators */}
-        {profile?.role === 'super_admin' && (
-          <TouchableOpacity
-            onPress={() => Alert.alert('Delete Resource', 'Permanently remove this item?', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: onDelete },
-            ])}
-            style={[styles.resActionBtn, { backgroundColor: '#FEF2F2' }]}
-          >
-            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-          </TouchableOpacity>
-        )}
-
-        {/* Read/Open button */}
-        <TouchableOpacity
-          onPress={onRead}
-          style={[styles.resActionBtn, { backgroundColor: localDownloaded ? '#f0fdf4' : COLORS.actionBlue }]}
-        >
-          <Ionicons
-            name={localDownloaded ? 'book' : 'eye-outline'}
-            size={18}
-            color={localDownloaded ? '#166534' : COLORS.primary}
-          />
+      <View style={[styles.resActions, { marginLeft: 8 }]}>
+        <TouchableOpacity onPress={onRead} style={[styles.resActionBtn, { backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : COLORS.actionBlue }]}>
+          <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? '#166534' : COLORS.primary} />
         </TouchableOpacity>
-
-        {/* Download / Saved button */}
+        
         <TouchableOpacity
           onPress={handleDownloadPress}
           disabled={downloadProgress !== null}
-          style={[
-            styles.resDownloadBtn,
-            localDownloaded && styles.resDownloadBtnDone,
-            downloadProgress !== null && styles.resDownloadBtnActive,
-          ]}
+          style={[styles.resDownloadBtn, localDownloaded && styles.resDownloadBtnDone, downloadProgress !== null && styles.resDownloadBtnActive]}
         >
           {downloadProgress !== null ? (
             <View style={styles.downloadCircle}>
               <Text style={styles.downloadCircleText}>{downloadProgress}%</Text>
             </View>
           ) : localDownloaded ? (
-            <Ionicons name="checkmark-circle" size={20} color="#166534" />
+            <Ionicons name="checkmark-circle" size={18} color="#166534" />
           ) : (
-            <Ionicons name="cloud-download-outline" size={20} color="#fff" />
+            <Ionicons name="cloud-download-outline" size={18} color="#fff" />
           )}
         </TouchableOpacity>
       </View>

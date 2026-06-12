@@ -1,246 +1,176 @@
-# NALISS UMYU HUB
+# Supabase CLI (v1)
 
-A modern cross-platform mobile application for Library and Information Science (LIS) students at UMYU. The system provides academic resources, real-time messaging, departmental information, and leadership transparency through a secure, identity-bound digital ecosystem.
+[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main)
 
-## Project Structure
+[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
 
-```
-naliss-umyu-hub/
-├── mobile/                    # React Native Expo App (iOS & Android)
-├── admin/                     # React Web Admin Panel
-├── supabase/                  # Database migrations
-│   └── migrations/           # SQL migration files
-└── docs/                      # Documentation
-```
+This repository contains all the functionality for Supabase CLI.
 
-## Tech Stack
+- [x] Running Supabase locally
+- [x] Managing database migrations
+- [x] Creating and deploying Supabase Functions
+- [x] Generating types directly from your database schema
+- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
 
-### Mobile App
-- **React Native** with Expo (Managed Workflow)
-- **Expo Router** for file-based navigation
-- **Supabase** for backend (Database, Auth, Realtime, Storage)
-- **Zustand** for client state management
-- **React Query** for server state management
-- **SQLite** for offline storage
+## Getting started
 
-### Admin Panel
-- **React** with Vite
-- **React Router** for navigation
-- **Tailwind CSS** for styling
-- **Supabase** for backend
-- **Zustand** + **React Query** for state management
+### Install the CLI
 
-### Backend (Supabase)
-- PostgreSQL database with Row-Level Security
-- Authentication (Email/Password + Google OAuth)
-- Real-time subscriptions for messaging
-- Storage buckets for file uploads
-
-## Features
-
-### Authentication & Security
-- Institutional email validation (blis/lis[digits]@students.umyu.edu.ng)
-- Academic identity binding with registration number
-- 4-tier role hierarchy (Student → Moderator → Super Admin → System Owner)
-- Row-Level Security on all tables
-- Automatic ban enforcement
-
-### Mobile App Features
-- Dashboard with announcements, events, courses
-- Mini-LMS with offline support
-- Real-time messaging with presence
-- Event registration and calendar
-- Profile management
-- Push notifications
-
-### Admin Panel Features
-- Dashboard with system statistics
-- Student management (view, ban, assign roles)
-- Content management (announcements, events, materials)
-- Messaging moderation
-- Lecturer & executive profiles
-- Activity logs and audit trail
-- System settings (System Owner only)
-
-## Getting Started
-
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-- Expo CLI (`npm install -g expo-cli`)
-- Supabase account
-
-### 1. Supabase Setup
-
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor and run migrations in order:
-   ```
-   supabase/migrations/001_enums.sql
-   supabase/migrations/002_core_tables.sql
-   supabase/migrations/003_lms_tables.sql
-   supabase/migrations/004_events_announcements.sql
-   supabase/migrations/005_messaging.sql
-   supabase/migrations/006_triggers.sql
-   supabase/migrations/007_rls_policies.sql
-   supabase/migrations/008_governance_functions.sql
-   supabase/migrations/009_storage_policies.sql
-   ```
-3. Create storage buckets:
-   - `avatars`
-   - `materials`
-   - `event-covers`
-   - `announcement-media`
-   - `message-attachments`
-4. Configure Google OAuth (optional) in Authentication → Providers
-5. Get your project URL and anon key from Settings → API
-
-### 2. Mobile App Setup
+Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
 
 ```bash
-cd mobile
-
-# Install dependencies
-npm install
-
-# Create .env file
-cp .env.example .env
-
-# Edit .env with your Supabase credentials
-# EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-# EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-
-# Start development server
-npx expo start
+npm i supabase --save-dev
 ```
 
-### 3. Admin Panel Setup
+To install the beta release channel:
 
 ```bash
-cd admin
-
-# Install dependencies
-npm install
-
-# Create .env file
-cp .env.example .env
-
-# Edit .env with your Supabase credentials
-# VITE_SUPABASE_URL=https://your-project.supabase.co
-# VITE_SUPABASE_ANON_KEY=your-anon-key
-
-# Start development server
-npm run dev
+npm i supabase@beta --save-dev
 ```
 
-### 4. Create First Admin User
+> **Note**
+For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
 
-After setting up, you need to create the first System Owner:
+<details>
+  <summary><b>macOS</b></summary>
 
-1. Register a user through the mobile app
-2. In Supabase SQL Editor, run:
-   ```sql
-   SELECT promote_initial_system_owner('user-uuid-here');
-   ```
+  Available via [Homebrew](https://brew.sh). To install:
 
-## Database Schema
+  ```sh
+  brew install supabase/tap/supabase
+  ```
 
-### Core Tables
-- `users` - Extended user profiles with role and status
-- `departments` - Department information
-- `lecturers` - Lecturer directory
-- `executives` - Student leadership
+  To install the beta release channel:
+  
+  ```sh
+  brew install supabase/tap/supabase-beta
+  brew link --overwrite supabase-beta
+  ```
+  
+  To upgrade:
 
-### LMS Tables
-- `levels` - Academic levels (100-500)
-- `semesters` - Semester definitions
-- `courses` - Course catalog
-- `materials` - Academic resources
-- `user_progress` - Progress tracking
+  ```sh
+  brew upgrade supabase
+  ```
+</details>
 
-### Communication Tables
-- `conversations` - Chat rooms
-- `messages` - Chat messages
-- `announcements` - System announcements
-- `events` - Events management
+<details>
+  <summary><b>Windows</b></summary>
 
-### Governance Tables
-- `activity_logs` - Audit trail
-- `push_tokens` - Notification tokens
-- `system_settings` - Configuration
+  Available via [Scoop](https://scoop.sh). To install:
 
-## Role Hierarchy
+  ```powershell
+  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+  scoop install supabase
+  ```
 
-| Role | Level | Permissions |
-|------|-------|-------------|
-| Student | 1 | View content, send messages |
-| Moderator | 2 | Content moderation, announcements |
-| Super Admin | 3 | User management, full content access |
-| System Owner | 4 | Admin management, system settings |
+  To upgrade:
 
-## Security Features
+  ```powershell
+  scoop update supabase
+  ```
+</details>
 
-- **Email Validation**: Only `blis/lis[digits]@students.umyu.edu.ng` emails allowed
-- **Registration Binding**: Cross-validation with email suffix
-- **Ban Enforcement**: Automatic access revocation
-- **RLS Policies**: Row-level security on all tables
-- **Audit Logging**: All admin actions logged
+<details>
+  <summary><b>Linux</b></summary>
 
-## Building for Production
+  Available via [Homebrew](https://brew.sh) and Linux packages.
 
-### Mobile App
+  #### via Homebrew
+
+  To install:
+
+  ```sh
+  brew install supabase/tap/supabase
+  ```
+
+  To upgrade:
+
+  ```sh
+  brew upgrade supabase
+  ```
+
+  #### via Linux packages
+
+  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
+
+  ```sh
+  sudo apk add --allow-untrusted <...>.apk
+  ```
+
+  ```sh
+  sudo dpkg -i <...>.deb
+  ```
+
+  ```sh
+  sudo rpm -i <...>.rpm
+  ```
+
+  ```sh
+  sudo pacman -U <...>.pkg.tar.zst
+  ```
+</details>
+
+<details>
+  <summary><b>Other Platforms</b></summary>
+
+  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
+
+  ```sh
+  go install github.com/supabase/cli@latest
+  ```
+
+  Add a symlink to the binary in `$PATH` for easier access:
+
+  ```sh
+  ln -s "$(go env GOPATH)/cli" /usr/bin/supabase
+  ```
+
+  This works on other non-standard Linux distros.
+</details>
+
+<details>
+  <summary><b>Community Maintained Packages</b></summary>
+
+  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
+  To install in your working directory:
+
+  ```bash
+  pkgx install supabase
+  ```
+
+  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
+</details>
+
+### Run the CLI
 
 ```bash
-cd mobile
-
-# Configure EAS
-eas build:configure
-
-# Build for Android
-eas build --platform android
-
-# Build for iOS
-eas build --platform ios
+supabase bootstrap
 ```
 
-### Admin Panel
+Or using npx:
 
 ```bash
-cd admin
-
-# Build for production
-npm run build
-
-# Deploy to Vercel
-vercel --prod
+npx supabase bootstrap
 ```
 
-## Environment Variables
+The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
 
-### Mobile App (.env)
+## Docs
+
+Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
+
+## Breaking changes
+
+We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
+
+However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
+
+## Developing
+
+To run from source:
+
+```sh
+# Go >= 1.22
+go run . help
 ```
-EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-EXPO_PUBLIC_APP_ENV=production
-```
-
-### Admin Panel (.env)
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-This project is proprietary software for NALISS UMYU.
-
-## Support
-
-For support, contact the development team or create an issue in the repository.

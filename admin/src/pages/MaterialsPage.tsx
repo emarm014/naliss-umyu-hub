@@ -83,6 +83,7 @@ export default function MaterialsPage() {
     file_name: '',
     file_size: 0,
     file_mime_type: null as string | null,
+    files: [] as Array<{url: string, name: string, size: number, type?: string}>,
     level: assignedLevel || '',
     semester: '',
     is_public: true,
@@ -202,6 +203,7 @@ export default function MaterialsPage() {
       file_name: '',
       file_size: 0,
       file_mime_type: null,
+      files: [],
       level: assignedLevel || '',
       semester: '',
       is_public: true,
@@ -251,6 +253,7 @@ export default function MaterialsPage() {
       file_name: material.file_name || '',
       file_size: material.file_size || 0,
       file_mime_type: (material as any).file_mime_type || null,
+      files: (material as any).files || [],
       level: material.level || '',
       semester: material.semester || '',
       is_public: material.is_public,
@@ -275,7 +278,7 @@ export default function MaterialsPage() {
     if (!formData.level) { setFormError('Please select an Academic Level.'); return; }
     if (!formData.semester) { setFormError('Please select a Semester.'); return; }
     if (!formData.course_id) { setFormError('Please select a Course.'); return; }
-    if (!formData.file_url && formData.material_type !== 'link') { setFormError('Please upload a file.'); return; }
+    if (!formData.file_url && formData.files.length === 0 && formData.material_type !== 'link') { setFormError('Please upload a file.'); return; }
     if (formData.material_type === 'link' && !formData.file_url) { setFormError('Please enter a resource URL.'); return; }
 
     setIsSubmitting(true);
@@ -290,6 +293,7 @@ export default function MaterialsPage() {
         file_name: formData.file_name || null,
         file_size: formData.file_size,
         file_mime_type: formData.file_mime_type || null,
+        files: formData.files,
         level: formData.level,
         semester: formData.semester,
         is_public: true,        // Always public — students must always be able to access materials
@@ -789,7 +793,20 @@ export default function MaterialsPage() {
                           formData.material_type === 'video' ? 'video/*' : '*/*'
                         }
                         folder="materials"
+                        multiple={true}
                         onUploadComplete={(url: string, file: File, originalFilename?: string) => setFormData({ ...formData, file_url: url, file_name: originalFilename || file.name, file_size: file.size, file_mime_type: file.type || null })}
+                        onMultiUploadComplete={(results) => {
+                          const first = results[0];
+                          const newFiles = results.map(r => ({ url: r.url, name: r.originalFilename || r.file.name, size: r.file.size, type: r.file.type }));
+                          setFormData({
+                            ...formData, 
+                            file_url: first.url, 
+                            file_name: first.originalFilename || first.file.name, 
+                            file_size: first.file.size, 
+                            file_mime_type: first.file.type,
+                            files: newFiles
+                          });
+                        }}
                         currentFileUrl={formData.file_url}
                         label="Source Attachment"
                       />

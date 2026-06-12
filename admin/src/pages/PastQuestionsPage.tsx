@@ -94,6 +94,7 @@ export default function PastQuestionsPage() {
     level: '' as string,
     semester: '' as string,
     file_size: 0,
+    files: [] as Array<{url: string, name: string, size: number, type?: string}>,
   });
 
   useEffect(() => {
@@ -111,6 +112,7 @@ export default function PastQuestionsPage() {
               title: asset.title || prev.title,
               file_url: asset.url,
               file_size: asset.size || 0,
+              files: [],
           }));
           setShowModal('create');
           // Clean up location state to prevent re-opening on refresh
@@ -205,6 +207,7 @@ export default function PastQuestionsPage() {
       level: assignedLevel || '',
       semester: '',
       file_size: 0,
+      files: [],
     });
     setShowModal('create');
   };
@@ -224,6 +227,7 @@ export default function PastQuestionsPage() {
       level: pq.level || '',
       semester: pq.semester || '',
       file_size: pq.file_size || 0,
+      files: (pq as any).files || [],
     });
     setShowModal('edit');
   };
@@ -253,6 +257,7 @@ export default function PastQuestionsPage() {
         is_featured: formData.is_featured,
         level: formData.level || null,
         semester: formData.semester || null,
+        files: formData.files,
         uploaded_by: profile?.id,
       };
 
@@ -797,6 +802,7 @@ export default function PastQuestionsPage() {
                         <FileUpload 
                           accept=".pdf,.png,.jpg,.jpeg" 
                           folder="past-questions" 
+                          multiple={true}
                           onUploadComplete={(url, file) => {
                             setFormData({ 
                               ...formData, 
@@ -804,6 +810,18 @@ export default function PastQuestionsPage() {
                               file_size: file.size,
                               file_name: file.name,
                               file_mime_type: file.type
+                            });
+                          }}
+                          onMultiUploadComplete={(results) => {
+                            const first = results[0];
+                            const newFiles = results.map(r => ({ url: r.url, name: r.originalFilename || r.file.name, size: r.file.size, type: r.file.type }));
+                            setFormData({
+                              ...formData,
+                              file_url: first.url,
+                              file_size: first.file.size,
+                              file_name: first.originalFilename || first.file.name,
+                              file_mime_type: first.file.type,
+                              files: newFiles
                             });
                           }}
                           currentFileUrl={formData.file_url} 

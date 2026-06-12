@@ -75,24 +75,27 @@ export default function CreateNoteScreen() {
             return;
         }
 
-        if (editingId) {
-            updateNote(editingId, {
-                subject: subject.trim(),
-                courseCode: courseCode.trim().toUpperCase(),
-                courseLevel,
-                content: content.trim(),
-                mediaPaths
-            });
-        } else {
-            addNote({
-                subject: subject.trim(),
-                courseCode: courseCode.trim().toUpperCase(),
-                courseLevel,
-                content: content.trim(),
-                mediaPaths
-            });
-        }
         router.back();
+
+        setTimeout(() => {
+            if (editingId) {
+                updateNote(editingId, {
+                    subject: subject.trim(),
+                    courseCode: courseCode.trim().toUpperCase(),
+                    courseLevel,
+                    content: content.trim(),
+                    mediaPaths
+                });
+            } else {
+                addNote({
+                    subject: subject.trim(),
+                    courseCode: courseCode.trim().toUpperCase(),
+                    courseLevel,
+                    content: content.trim(),
+                    mediaPaths
+                });
+            }
+        }, 0);
     };
 
     const handleDelete = () => {
@@ -106,8 +109,8 @@ export default function CreateNoteScreen() {
                     text: "Delete", 
                     style: "destructive", 
                     onPress: () => {
-                        deleteNote(editingId);
                         router.back();
+                        setTimeout(() => deleteNote(editingId), 0);
                     }
                 }
             ]
@@ -174,9 +177,9 @@ export default function CreateNoteScreen() {
             paddingHorizontal: 16,
             paddingVertical: 8,
             borderRadius: 20,
-            backgroundColor: isDark ? '#2D2D2D' : '#E2E8F0',
+            backgroundColor: isDark ? '#1E1E1E' : '#E2E8F0',
             borderWidth: 1,
-            borderColor: 'transparent',
+            borderColor: isDark ? '#2D2D2D' : 'transparent',
         },
         levelPillActive: {
             backgroundColor: '#005A36',
@@ -201,7 +204,9 @@ export default function CreateNoteScreen() {
             width: 100,
             height: 100,
             borderRadius: 8,
-            backgroundColor: isDark ? '#2D2D2D' : '#E2E8F0',
+            backgroundColor: isDark ? '#1E1E1E' : '#E2E8F0',
+            borderWidth: 1,
+            borderColor: isDark ? '#2D2D2D' : 'transparent',
         },
         removeMediaBtn: {
             position: 'absolute',

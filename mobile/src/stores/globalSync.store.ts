@@ -60,15 +60,21 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
 
   // Called when network comes back online — always force re-sync + fresh channels
   resubscribe: () => {
-    // Remove all dead channels
-    get()._channels.forEach(channel => supabase.removeChannel(channel));
-    set({ _channels: [] });
-    // Small delay to let Supabase client reset before re-subscribing
-    setTimeout(() => {
-      get()._openChannels();
-      // Sync after channels are established
-      setTimeout(() => get().syncAll(true), 500);
-    }, 200);
+    (async () => {
+      // Safely await removal of all dead channels to prevent socket leaks
+      if (get()._channels.length > 0) {
+        await Promise.all(get()._channels.map(channel => supabase.removeChannel(channel)));
+        set({ _channels: [] });
+      }
+      
+      // Small delay to let Supabase client reset before re-subscribing
+      setTimeout(() => {
+        get()._openChannels();
+        // Thundering herd prevention: stagger reconnection syncs across 5.5s
+        const jitterDelay = 500 + Math.random() * 5000;
+        setTimeout(() => get().syncAll(true), jitterDelay);
+      }, 200);
+    })();
   },
 
   syncAll: async (force = false) => {
@@ -117,7 +123,9 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
         // Force a fresh network check before syncing to avoid spamming failed requests
         const isOnline = await useNetworkStore.getState().checkNetworkStatus();
         if (isOnline) {
-          get().syncAll(true);
+          // Thundering herd prevention for app foreground transitions
+          const jitterDelay = Math.random() * 5000;
+          setTimeout(() => get().syncAll(true), jitterDelay);
         }
       }
     });
@@ -136,10 +144,10 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
   // ── Realtime channels ─────────────────────────────────────────────────────
   // Single multiplexed channel for all tables — far more efficient than 11 separate channels.
   // One WebSocket connection, one handshake, one heartbeat.
-  _openChannels: () => {
-    // If channels already exist, remove them first to prevent duplicates
+  _openChannels: async () => {
+    // If channels already exist, safely await their removal first to prevent ghost socket leaks
     if (get()._channels.length > 0) {
-      get()._channels.forEach(channel => supabase.removeChannel(channel));
+      await Promise.all(get()._channels.map(channel => supabase.removeChannel(channel)));
       set({ _channels: [] });
     }
 

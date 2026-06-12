@@ -13,6 +13,7 @@ interface AuthState {
   isAdminOrModerator: boolean;
   initialize: () => Promise<(() => void) | void>;
   signOut: () => Promise<void>;
+  updateProfile: (updates: Partial<User>) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -77,6 +78,12 @@ export const useAuthStore = create<AuthState>()(
           set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, error: null, isLoading: false });
           window.location.href = '/login';
         }
+      },
+
+      updateProfile: (updates) => {
+        set((state) => ({
+          profile: state.profile ? { ...state.profile, ...updates } : null,
+        }));
       },
     }),
     {

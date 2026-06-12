@@ -1,40 +1,79 @@
 import { StateStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { Logger } from '../utils/logger';
 
 let storage: any = null;
 let useFallback = false;
+let initPromise: Promise<void> | null = null;
 
-try {
-  // Dynamic require ensures no crashes in environments where native C++ module isn't loaded (like Expo Go)
-  const { createMMKV } = require('react-native-mmkv');
-  storage = createMMKV({ id: 'naliss-app-storage' });
-} catch {
-  Logger.warn('mmkv.storage', 'MMKV could not be initialized (likely running in standard Expo Go). Falling back to AsyncStorage.');
-  useFallback = true;
-}
+const SECURE_KEY_NAME = 'naliss_secure_mmkv_key';
+
+const generateSecureKey = () => {
+  let result = '';
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+=-{}[]|:;<>,.?/~';
+  const charactersLength = characters.length;
+  // Generate a 64-character key for high entropy
+  for (let i = 0; i < 64; i++) {
+      result += characters.charAt(Math.floor(Math.random() * charactersLength));
+  }
+  return result;
+};
+
+const initStorage = async () => {
+  try {
+    // Dynamic require ensures no crashes in environments where native C++ module isn't loaded (like Expo Go)
+    const { createMMKV } = require('react-native-mmkv');
+    
+    // 1. Fetch hardware encryption key from Secure Enclave / Keystore
+    let encryptionKey = await SecureStore.getItemAsync(SECURE_KEY_NAME);
+    
+    // 2. If it doesn't exist, generate a new secure random key and hardware-lock it
+    if (!encryptionKey) {
+      encryptionKey = generateSecureKey();
+      await SecureStore.setItemAsync(SECURE_KEY_NAME, encryptionKey, {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+      });
+      Logger.info('mmkv.storage', 'Generated and locked new hardware encryption key for MMKV.');
+    }
+
+    // 3. Initialize MMKV with the hardware-locked key
+    storage = createMMKV({ 
+      id: 'naliss-app-storage',
+      encryptionKey 
+    });
+  } catch (e) {
+    Logger.warn('mmkv.storage', 'MMKV/SecureStore could not be initialized. Falling back to AsyncStorage.');
+    useFallback = true;
+  }
+};
+
+initPromise = initStorage();
 
 // Custom StateStorage adapter wrapping MMKV with AsyncStorage fallback
+// Promisified to await the async SecureStore hardware unlock
 export const mmkvStorage: StateStorage = {
-  setItem: (name, value) => {
+  setItem: async (name, value) => {
+    await initPromise;
     if (useFallback) {
-      AsyncStorage.setItem(name, value).catch(() => {});
+      await AsyncStorage.setItem(name, value);
     } else {
       storage.set(name, value);
     }
   },
-  getItem: (name) => {
+  getItem: async (name) => {
+    await initPromise;
     if (useFallback) {
-      // Zustand createJSONStorage supports Promise return values for asynchronous storage engines
-      return AsyncStorage.getItem(name);
+      return await AsyncStorage.getItem(name);
     } else {
       const value = storage.getString(name);
       return value ?? null;
     }
   },
-  removeItem: (name) => {
+  removeItem: async (name) => {
+    await initPromise;
     if (useFallback) {
-      AsyncStorage.removeItem(name).catch(() => {});
+      await AsyncStorage.removeItem(name);
     } else {
       storage.remove(name);
     }
@@ -43,6 +82,7 @@ export const mmkvStorage: StateStorage = {
 
 // Programmatic migration check from AsyncStorage to MMKV (only runs if MMKV is active)
 export const migrateAsyncStorageToMMKV = async () => {
+  await initPromise;
   if (useFallback || !storage) return;
 
   try {

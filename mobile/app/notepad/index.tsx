@@ -46,9 +46,11 @@ export default function NotepadDashboard() {
             borderBottomColor: isDark ? '#2D2D2D' : '#E2E8F0',
         },
         searchInput: {
-            backgroundColor: isDark ? '#2D2D2D' : '#F1F5F9',
+            backgroundColor: isDark ? '#1E1E1E' : '#F1F5F9',
             color: isDark ? '#FFFFFF' : '#1E293B',
             borderRadius: 8,
+            borderWidth: 1,
+            borderColor: isDark ? '#2D2D2D' : 'transparent',
             height: 44,
             paddingHorizontal: 16,
         },
@@ -61,7 +63,9 @@ export default function NotepadDashboard() {
             paddingHorizontal: 16,
             paddingVertical: 6,
             borderRadius: 16,
-            backgroundColor: isDark ? '#2D2D2D' : '#E2E8F0',
+            backgroundColor: isDark ? '#1E1E1E' : '#E2E8F0',
+            borderWidth: 1,
+            borderColor: isDark ? '#2D2D2D' : 'transparent',
             marginRight: 8,
         },
         levelPillActive: {

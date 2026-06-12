@@ -869,12 +869,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       setRestrictionInfo(null);
       router.replace('/auth/login');
     };
-
-    const handleBackToLogin = async () => {
-      await useAuthStore.getState().signOut();
-      setRestrictionInfo(null);
-      router.replace('/auth/login');
-    };
     return (
       <SafeAreaView style={styles.restrictionSafeArea}>
         <View style={styles.restrictionContainer}>
@@ -956,15 +950,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             >
               <Ionicons name="log-out-outline" size={18} color="#ffffff" />
               <Text style={styles.signOutButtonText}>Sign Out</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.backToLoginButton}
-              onPress={handleBackToLogin}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="arrow-back-outline" size={18} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.backToLoginButtonText}>Back to Login</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1208,23 +1193,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#ffffff',
     letterSpacing: 0.3,
-  },
-  backToLoginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  backToLoginButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.6)',
-    letterSpacing: 0.2,
   },
 });

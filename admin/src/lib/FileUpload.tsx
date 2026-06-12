@@ -11,6 +11,8 @@ interface FileUploadProps {
     label?: string;
     description?: string;
     isImage?: boolean;
+    multiple?: boolean;
+    onMultiUploadComplete?: (results: Array<{url: string, file: File, originalFilename?: string}>) => void;
 }
 
 export default function FileUpload({
@@ -22,6 +24,8 @@ export default function FileUpload({
     label = 'Upload File',
     description = 'Select a file to upload',
     isImage = false,
+    multiple = false,
+    onMultiUploadComplete,
 }: FileUploadProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState<string>('');
@@ -29,31 +33,53 @@ export default function FileUpload({
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const filesList = e.target.files;
+        if (!filesList || filesList.length === 0) return;
 
-        // Type-aware size limits that match Cloudinary free plan caps:
-        //   Images  → 10 MB  (Cloudinary free plan hard limit for images)
-        //   All other files (docs, video, audio) → 100 MB
-        const isImageFile = file.type.startsWith('image/');
-        const MAX_FILE_SIZE = isImageFile ? 10 * 1024 * 1024 : 100 * 1024 * 1024;
-        const limitLabel = isImageFile ? '10 MB' : '100 MB';
+        const files = Array.from(filesList);
 
-        if (file.size > MAX_FILE_SIZE) {
-            setUploadError(`File is too large. Maximum allowed size for ${isImageFile ? 'images' : 'files'} is ${limitLabel}.`);
+        if (multiple && files.length > 5) {
+            setUploadError('⚠️ Maximum limit of 5 files exceeded.');
             if (fileInputRef.current) fileInputRef.current.value = '';
+            // Toast would ideally be triggered here, but returning error text is standard
             return;
         }
 
+        // Validate sizes
+        for (const file of files) {
+            const isImageFile = file.type.startsWith('image/');
+            const MAX_FILE_SIZE = isImageFile ? 10 * 1024 * 1024 : 100 * 1024 * 1024;
+            const limitLabel = isImageFile ? '10 MB' : '100 MB';
+
+            if (file.size > MAX_FILE_SIZE) {
+                setUploadError(`File ${file.name} is too large. Maximum allowed size is ${limitLabel}.`);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                return;
+            }
+        }
+
         setIsUploading(true);
-        setUploadProgress('Uploading to cloud storage...');
+        setUploadProgress(multiple ? `Uploading ${files.length} files...` : 'Uploading to cloud storage...');
         setUploadError('');
 
         try {
-            const result = await uploadToCloudinary(file, folder);
+            if (multiple && onMultiUploadComplete) {
+                const uploadPromises = files.map(file => uploadToCloudinary(file, folder).then(result => ({
+                    url: result.secure_url,
+                    file,
+                    originalFilename: result.original_filename || file.name
+                })));
+                
+                const results = await Promise.all(uploadPromises);
+                setUploadProgress('Upload complete!');
+                onMultiUploadComplete(results);
+            } else {
+                const file = files[0];
+                const result = await uploadToCloudinary(file, folder);
 
-            setUploadProgress('Upload complete!');
-            onUploadComplete(result.secure_url, file, result.original_filename);
+                setUploadProgress('Upload complete!');
+                onUploadComplete(result.secure_url, file, result.original_filename);
+            }
 
             setTimeout(() => setUploadProgress(''), 2000);
         } catch (error: unknown) {
@@ -80,6 +106,7 @@ export default function FileUpload({
                 <input
                     ref={fileInputRef}
                     type="file"
+                    multiple={multiple}
                     accept={accept}
                     onChange={handleFileSelect}
                     disabled={isUploading}

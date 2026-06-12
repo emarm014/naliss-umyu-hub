@@ -190,6 +190,12 @@ export interface Material {
   file_name: string | null;
   file_size: number | null;
   file_mime_type: string | null;
+  files?: Array<{
+    url: string;
+    name: string;
+    size: number;
+    type?: string;
+  }> | null;
   external_url: string | null;
   video_duration: number | null;
   video_thumbnail_url: string | null;
@@ -213,6 +219,12 @@ export interface PastQuestion {
   file_url: string | null;
   file_name: string | null;
   file_size: number | null;
+  files?: Array<{
+    url: string;
+    name: string;
+    size: number;
+    type?: string;
+  }> | null;
   level: AcademicLevel | null;
   semester: SemesterType | null;
   is_public: boolean;

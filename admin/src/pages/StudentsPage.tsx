@@ -1430,58 +1430,22 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
     setError(null);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: undefined, // No redirect — admin-created accounts
-          data: {
-            full_name: formData.full_name,
-            username: formData.username.toLowerCase().replace(/\s+/g, ''),
-            reg_number: formData.registration_number,
-            level: formData.level,
-          }
+      // Use the secure Edge Function to create the user directly
+      // This bypasses email confirmation restrictions and avoids signing out the current admin
+      const { data: authData, error: authError } = await supabase.functions.invoke('admin-create-user', {
+        body: {
+          email: formData.email,
+          password: formData.password,
+          full_name: formData.full_name,
+          username: formData.username.toLowerCase().replace(/\s+/g, ''),
+          registration_number: formData.registration_number,
+          level: formData.level,
+          role: formData.role
         }
       });
 
-      if (authError) throw authError;
-
-      // authData.user may be null if email confirmation is required by Supabase settings
-      // authData.session will be null too — that's expected for admin-created accounts
-      const userId = authData.user?.id;
-      if (!userId) {
-        // Account created but awaiting email confirmation — still update profile via admin
-        throw new Error('Account created. The student must confirm their email before logging in.');
-      }
-
-      if (authData.user) {
-        const { error: profileError } = await supabase
-          .from('users')
-          .update({
-            username: formData.username.toLowerCase().replace(/\s+/g, ''),
-            role: formData.role,
-            status: 'active',
-            registration_verified_at: new Date().toISOString(),
-          })
-          .eq('id', authData.user.id);
-
-        if (profileError) throw profileError;
-
-        // If created as moderator, seed a default permissions row
-        if (formData.role === 'moderator') {
-          await supabase
-            .from('moderator_permissions')
-            .upsert({
-              user_id: authData.user.id,
-              can_manage_announcements: false,
-              can_manage_materials: false,
-              can_manage_lecturers: false,
-              can_manage_executives: false,
-              can_manage_students: false,
-              assigned_level: null,
-              updated_at: new Date().toISOString(),
-            });
-        }
+      if (authError || authData?.error) {
+        throw new Error(authData?.error || authError?.message || 'Failed to create user via Edge Function');
       }
 
       onSave();

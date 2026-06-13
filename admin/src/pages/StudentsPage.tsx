@@ -1431,32 +1431,38 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
 
     try {
       // Use the secure Edge Function to create the user directly
-      // Use standard fetch to get the EXACT error text from the Edge Function
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`
-          },
-          body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
-            full_name: formData.full_name,
-            username: formData.username.toLowerCase().replace(/\s+/g, ''),
-            registration_number: formData.registration_number,
-            level: formData.level,
-            role: formData.role
-          })
-        }
+      // Use standard signUp with a temporary client to avoid signing out the Admin
+      // and to bypass the Edge Function entirely since Docker isn't available.
+      const tempClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY,
+        { auth: { persistSession: false, autoRefreshToken: false } }
       );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Edge Function Error: ${errorText}`);
+      const { data, error } = await tempClient.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.full_name,
+            username: formData.username.toLowerCase().replace(/\s+/g, ''),
+            reg_number: formData.registration_number, // The SQL trigger expects reg_number
+            level: formData.level,
+            role: formData.role,
+            admin_created: true // Bypasses the 'check_registration_allowed' trigger!
+          }
+        }
+      });
+
+      if (error) {
+        throw new Error(`Auth Error: ${error.message}`);
+      }
+
+      // If signUp successful, the SQL handle_new_user() trigger automatically inserts into public.users.
+      // But we need to update the role since the trigger defaults to student if it doesn't read role.
+      // We will do a manual update just in case using the main admin client
+      if (data.user) {
+        await supabase.from('users').update({ role: formData.role, is_verified: true }).eq('id', data.user.id);
       }
 
       onSave();

@@ -52,13 +52,38 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    // 6. Create the Auth user bypassing email confirmation loops
-    const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name, username, role, level }
-    })
+    // Check if registration is disabled globally
+    const { data: regSetting } = await supabaseAdmin
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'allow_registration')
+      .single()
+
+    const isRegistrationDisabled = regSetting?.value === 'false'
+
+    // Temporarily enable it to allow the Admin bypass
+    if (isRegistrationDisabled) {
+      await supabaseAdmin.from('system_settings').update({ value: 'true' }).eq('key', 'allow_registration')
+    }
+
+    let authData, createError;
+
+    try {
+      // 6. Create the Auth user bypassing email confirmation loops
+      const authRes = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name, username, role, level, admin_created: true }
+      })
+      authData = authRes.data;
+      createError = authRes.error;
+    } finally {
+      // ALWAYS restore the setting, even if creation fails!
+      if (isRegistrationDisabled) {
+        await supabaseAdmin.from('system_settings').update({ value: 'false' }).eq('key', 'allow_registration')
+      }
+    }
 
     if (createError) throw createError
     const newUserId = authData.user.id

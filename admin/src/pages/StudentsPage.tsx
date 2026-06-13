@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 import type { User, UserRole, AccountStatus, AcademicLevel } from '../types';
 import { ROLE_LABELS, STATUS_LABELS, LEVEL_LABELS } from '../types';
 import {

@@ -83,3 +83,28 @@ CREATE OR REPLACE FUNCTION public.purge_incomplete_account(email_addr text)
   $$;
 
 GRANT EXECUTE ON FUNCTION public.purge_incomplete_account(text) TO anon, authenticated;
+
+
+-- Updated check_registration_allowed to bypass service_role (Admins creating users)
+CREATE OR REPLACE FUNCTION check_registration_allowed()
+RETURNS trigger AS $$
+DECLARE
+  allow_reg TEXT;
+  req_role TEXT;
+BEGIN
+  -- Get the role making the request
+  req_role := current_setting('request.jwt.claim.role', true);
+  
+  -- Bypass the lock if it's the service_role (Edge Functions/Admins)
+  IF req_role = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
+  -- Check allow_registration setting from public.system_settings
+  SELECT value INTO allow_reg FROM public.system_settings WHERE key = 'allow_registration';
+  IF allow_reg = 'false' THEN
+    RAISE EXCEPTION 'Registration is currently disabled by the administrator.';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

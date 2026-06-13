@@ -228,17 +228,37 @@ export default function ModeratorsPage() {
     setIsSubmittingAction(true);
     setActionError(null);
     try {
-      const currentAdmin = (await supabase.auth.getUser()).data.user;
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentAdmin = session?.user;
+      
       // Step 1: Ban first — triggers realtime kick-out on mobile immediately
-      // so the user loses access even before the row is deleted
       await supabase.from('users').update({ status: 'banned', banned_reason: 'Account deleted by administrator' }).eq('id', user.id);
       // Step 2: Remove from all group memberships
       await supabase.from('group_members').delete().eq('user_id', user.id);
       // Step 3: Delete the public profile row
       const { error } = await supabase.from('users').delete().eq('id', user.id);
       if (error) throw error;
-      // Note: auth.users record requires Supabase dashboard or service-role key to delete.
-      // The ban in step 1 ensures the user cannot log in even if the auth record persists.
+      
+      // Step 4: Delete from Supabase Auth via Edge Function
+      if (session?.access_token) {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-user`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ target_user_id: user.id }),
+          }
+        );
+        if (!response.ok) {
+          const resData = await response.json().catch(() => ({}));
+          console.error("Auth deletion failed:", resData);
+          // We don't throw here so that the public deletion still succeeds and UI updates.
+        }
+      }
+
       await supabase.from('activity_logs').insert({
         user_id: currentAdmin?.id,
         action: 'user.delete',
@@ -400,6 +420,51 @@ export default function ModeratorsPage() {
       // Revert optimistic update
       useAdminDataStore.getState().updateStudent(user as any);
       setActionError((err as any)?.message || 'Role change failed. Please try again.');
+    } finally {
+      setIsSubmittingAction(false);
+    }
+  };
+
+  const handleRestrictToggle = async (user: UserWithDepartment, restrict: boolean) => {
+    if (isSubmittingAction) return;
+    setIsSubmittingAction(true);
+    setActionError(null);
+    try {
+      const currentAdmin = (await supabase.auth.getUser()).data.user;
+
+      const { error } = await supabase
+        .from('moderator_permissions')
+        .update({ is_restricted: restrict, updated_at: new Date().toISOString() })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Update store immediately
+      const currentPermissions = user.permissions || {
+        can_manage_announcements: false,
+        can_manage_materials: false,
+        can_manage_lecturers: false,
+        can_manage_executives: false,
+        can_manage_students: false,
+        assigned_level: null
+      };
+
+      useAdminDataStore.getState().updateStudent({
+        ...user,
+        permissions: { ...currentPermissions, is_restricted: restrict }
+      } as any);
+
+      await supabase.from('activity_logs').insert({
+        user_id: currentAdmin?.id,
+        action: restrict ? 'user.restrict' : 'user.unrestrict',
+        entity_id: user.id,
+        entity_type: 'user',
+        description: `${restrict ? 'Restricted' : 'Unrestricted'} moderator access for: ${user.full_name}`,
+      });
+
+      showSuccess(`${user.full_name}'s access has been ${restrict ? 'restricted' : 'restored'}.`);
+    } catch (err: unknown) {
+      setActionError((err as any)?.message || 'Restriction failed. Please try again.');
     } finally {
       setIsSubmittingAction(false);
     }
@@ -738,57 +803,91 @@ export default function ModeratorsPage() {
                           </button>
  
                           <div className="w-px h-6 bg-gray-200 mx-1" />
- 
-                          {user.status === 'pending_verification' ? (
+
+                          {user.role === 'moderator' && (
                             <button
-                              onClick={() => handleVerify(user.id)}
-                              className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-[10px] font-black rounded-xl hover:bg-green-700 transition-all shadow-md shadow-green-500/20"
+                              onClick={() => handleRestrictToggle(user, !user.permissions?.is_restricted)}
+                              disabled={isSubmittingAction}
+                              className={`p-2 rounded-xl transition-all disabled:opacity-50 border shadow-sm ${
+                                user.permissions?.is_restricted
+                                  ? 'bg-red-600 text-white border-red-700 hover:bg-red-700'
+                                  : 'text-red-600 bg-red-50 hover:bg-red-100 border-red-200'
+                              }`}
+                              title={user.permissions?.is_restricted ? 'Unrestrict Moderator' : 'Restrict Moderator'}
                             >
-                              VERIFY
-                            </button>
-                          ) : user.status === 'active' ? (
-                            <div className="flex items-center gap-1.5">
-                               <button
-                                 onClick={() => openConfirmModal(user, 'suspend')}
-                                 className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all"
-                                 title="Suspend User"
-                               >
-                                 <UserX className="w-5 h-5" />
-                               </button>
-                               <button
-                                 onClick={() => openConfirmModal(user, 'ban')}
-                                 className="p-2 text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all"
-                               >
-                                 <Ban className="w-5 h-5" />
-                               </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => openConfirmModal(user, 'activate')}
-                              className="inline-flex items-center px-4 py-2 bg-primary-950 text-white text-[10px] font-black rounded-xl hover:bg-primary-800 transition-all"
-                            >
-                              RESTORE
+                              <ShieldAlert className="w-5 h-5" />
                             </button>
                           )}
  
-                          {/* Role toggle — promote/demote moderator — super_admin only */}
-                          {profile?.role === 'super_admin' && user.role !== 'super_admin' && user.status === 'active' && (
-                            <button
-                              onClick={() => handleRoleChange(user, user.role === 'moderator' ? 'student' : 'moderator')}
-                              disabled={isSubmittingAction}
-                              className={`p-2 rounded-xl border transition-all disabled:opacity-50 ${
-                                user.role === 'moderator'
-                                  ? 'text-amber-700 bg-amber-100 border-amber-300 hover:bg-amber-200'
-                                  : 'text-gray-500 bg-gray-50 border-gray-200 hover:text-amber-700 hover:bg-amber-50 hover:border-amber-200'
-                              }`}
-                              title={
-                                user.role === 'moderator'
-                                  ? 'Demote to Student'
-                                  : `Promote to Moderator (Level ${user.level} — max 5 per level)`
-                              }
-                            >
-                              <Shield className="w-5 h-5" />
-                            </button>
+                          {!user.email.endsWith('@umyu.edu.ng') ? (
+                            profile?.role === 'super_admin' && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(`Permanently delete ${user.full_name}'s account? This will wipe them completely.`)) {
+                                    handleDeleteUser(user);
+                                  }
+                                }}
+                                disabled={isSubmittingAction}
+                                className="p-2 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all shadow-sm"
+                                title="Delete Moderator"
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
+                            )
+                          ) : (
+                            <>
+                              {user.status === 'pending_verification' ? (
+                                <button
+                                  onClick={() => handleVerify(user.id)}
+                                  className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-[10px] font-black rounded-xl hover:bg-green-700 transition-all shadow-md shadow-green-500/20"
+                                >
+                                  VERIFY
+                                </button>
+                              ) : user.status === 'active' ? (
+                                <div className="flex items-center gap-1.5">
+                                   <button
+                                     onClick={() => openConfirmModal(user, 'suspend')}
+                                     className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all"
+                                     title="Suspend User"
+                                   >
+                                     <UserX className="w-5 h-5" />
+                                   </button>
+                                   <button
+                                     onClick={() => openConfirmModal(user, 'ban')}
+                                     className="p-2 text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all"
+                                   >
+                                     <Ban className="w-5 h-5" />
+                                   </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => openConfirmModal(user, 'activate')}
+                                  className="inline-flex items-center px-4 py-2 bg-primary-950 text-white text-[10px] font-black rounded-xl hover:bg-primary-800 transition-all"
+                                >
+                                  RESTORE
+                                </button>
+                              )}
+     
+                              {/* Role toggle — promote/demote moderator — super_admin only */}
+                              {profile?.role === 'super_admin' && user.role !== 'super_admin' && user.status === 'active' && (
+                                <button
+                                  onClick={() => handleRoleChange(user, user.role === 'moderator' ? 'student' : 'moderator')}
+                                  disabled={isSubmittingAction}
+                                  className={`p-2 rounded-xl border transition-all disabled:opacity-50 ${
+                                    user.role === 'moderator'
+                                      ? 'text-amber-700 bg-amber-100 border-amber-300 hover:bg-amber-200'
+                                      : 'text-gray-500 bg-gray-50 border-gray-200 hover:text-amber-700 hover:bg-amber-50 hover:border-amber-200'
+                                  }`}
+                                  title={
+                                    user.role === 'moderator'
+                                      ? 'Demote to Student'
+                                      : `Promote to Moderator (Level ${user.level} — max 5 per level)`
+                                  }
+                                >
+                                  <Shield className="w-5 h-5" />
+                                </button>
+                              )}
+                            </>
                           )}
                        </div>
                     </td>

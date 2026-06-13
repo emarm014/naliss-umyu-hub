@@ -73,6 +73,7 @@ export interface User {
     can_manage_executives: boolean;
     can_manage_students: boolean;
     assigned_level: AcademicLevel | null;
+    is_restricted?: boolean;
   } | null;
 }
 

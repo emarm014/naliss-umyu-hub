@@ -321,6 +321,28 @@ export default function SettingsPage() {
                   <p className="text-xs font-black text-gray-400 uppercase tracking-widest italic">All systems operational</p>
                 </div>
               )}
+
+              <div className="pt-6 border-t border-gray-100 mt-auto flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-red-600 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-red-600" />
+                    Restrict Moderators
+                  </h3>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Block all moderator access globally</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggle('restrict_moderators')}
+                    aria-pressed={formData.restrict_moderators}
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shadow-inner ${
+                      formData.restrict_moderators ? 'bg-red-600' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span className={`h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${formData.restrict_moderators ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -365,28 +387,6 @@ export default function SettingsPage() {
                     <Clock className="absolute right-5 top-4 w-5 h-5 text-gray-300" />
                   </div>
                   <p className="text-[10px] font-bold text-gray-400 italic px-1 uppercase tracking-tight">Set this before starting the academic year transition.</p>
-                </div>
-
-                <div className="pt-6 border-t border-gray-100 mt-6 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-black text-red-600 flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-red-600" />
-                      Restrict Moderators
-                    </h3>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Block all moderator access globally</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleToggle('restrict_moderators')}
-                      aria-pressed={formData.restrict_moderators}
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shadow-inner ${
-                        formData.restrict_moderators ? 'bg-red-600' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span className={`h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${formData.restrict_moderators ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
-                  </div>
                 </div>
 
                 <div className="pt-6 border-t border-gray-100 mt-6 flex items-center justify-between">

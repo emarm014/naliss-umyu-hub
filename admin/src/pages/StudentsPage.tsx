@@ -1431,21 +1431,32 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
 
     try {
       // Use the secure Edge Function to create the user directly
-      // This bypasses email confirmation restrictions and avoids signing out the current admin
-      const { data: authData, error: authError } = await supabase.functions.invoke('admin-create-user', {
-        body: {
-          email: formData.email,
-          password: formData.password,
-          full_name: formData.full_name,
-          username: formData.username.toLowerCase().replace(/\s+/g, ''),
-          registration_number: formData.registration_number,
-          level: formData.level,
-          role: formData.role
+      // Use standard fetch to get the EXACT error text from the Edge Function
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+            full_name: formData.full_name,
+            username: formData.username.toLowerCase().replace(/\s+/g, ''),
+            registration_number: formData.registration_number,
+            level: formData.level,
+            role: formData.role
+          })
         }
-      });
+      );
 
-      if (authError || authData?.error) {
-        throw new Error(authData?.error || authError?.message || 'Failed to create user via Edge Function');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Edge Function Error: ${errorText}`);
       }
 
       onSave();

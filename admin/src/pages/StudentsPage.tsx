@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { createClient } from '@supabase/supabase-js';
 import type { User, UserRole, AccountStatus, AcademicLevel } from '../types';
 import { ROLE_LABELS, STATUS_LABELS, LEVEL_LABELS } from '../types';
 import {
@@ -115,7 +114,7 @@ export default function StudentsPage() {
     if (roleFilter !== 'all') {
       result = result.filter(u => u.role === roleFilter);
     } else {
-      result = result.filter(u => u.role !== 'super_admin');
+      result = result.filter(u => u.role === 'student');
     }
 
     if (searchQuery) {
@@ -143,10 +142,10 @@ export default function StudentsPage() {
   const users = filteredUsers.slice(from, to);
 
   const stats = {
-    total: (allStudents as UserWithDepartment[]).filter(u => u.role !== 'super_admin').length,
-    active: (allStudents as UserWithDepartment[]).filter(u => u.status === 'active' && u.role !== 'super_admin').length,
-    pending: (allStudents as UserWithDepartment[]).filter(u => u.status === 'pending_verification' && u.role !== 'super_admin').length,
-    risk: (allStudents as UserWithDepartment[]).filter(u => ['suspended', 'banned'].includes(u.status) && u.role !== 'super_admin').length
+    total: (allStudents as UserWithDepartment[]).filter(u => u.role === 'student').length,
+    active: (allStudents as UserWithDepartment[]).filter(u => u.status === 'active' && u.role === 'student').length,
+    pending: (allStudents as UserWithDepartment[]).filter(u => u.status === 'pending_verification' && u.role === 'student').length,
+    risk: (allStudents as UserWithDepartment[]).filter(u => ['suspended', 'banned'].includes(u.status) && u.role === 'student').length
   };
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
@@ -554,22 +553,6 @@ export default function StudentsPage() {
                 ))}
               </select>
             )}
-          </div>
-
-          <div className="flex items-center px-4 py-2 bg-gray-50 rounded-xl border border-gray-100">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-3">Responsibility</span>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
-              className="bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 cursor-pointer"
-            >
-              <option value="all">ALL ROLES</option>
-              {roleOptions.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABELS[role].toUpperCase()}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div className="h-10 w-px bg-gray-200 mx-2 hidden xl:block" />
@@ -1223,29 +1206,6 @@ function EditUserModal({ user, onClose, onSave }: { user: UserWithDepartment; on
 
       if (error) throw error;
 
-      // Handle moderator_permissions side-effects on role change
-      if (formData.role === 'moderator' && user.role !== 'moderator') {
-        // Promoted to moderator — ensure a default permissions row exists
-        await supabase
-          .from('moderator_permissions')
-          .upsert({
-            user_id: user.id,
-            can_manage_announcements: false,
-            can_manage_materials: false,
-            can_manage_lecturers: false,
-            can_manage_executives: false,
-            can_manage_students: false,
-            assigned_level: null,
-            updated_at: new Date().toISOString(),
-          });
-      } else if (formData.role !== 'moderator' && user.role === 'moderator') {
-        // Demoted from moderator — clean up permissions row
-        await supabase
-          .from('moderator_permissions')
-          .delete()
-          .eq('user_id', user.id);
-      }
-
       // Update store immediately for instant UI reflection
       useAdminDataStore.getState().updateStudent({ ...user, ...updateData } as any);
 
@@ -1432,38 +1392,32 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
 
     try {
       // Use the secure Edge Function to create the user directly
-      // Use standard signUp with a temporary client to avoid signing out the Admin
-      // and to bypass the Edge Function entirely since Docker isn't available.
-      const tempClient = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY,
-        { auth: { persistSession: false, autoRefreshToken: false } }
-      );
-
-      const { data, error } = await tempClient.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
+      // Use standard fetch to get the EXACT error text from the Edge Function
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
             full_name: formData.full_name,
             username: formData.username.toLowerCase().replace(/\s+/g, ''),
-            reg_number: formData.registration_number, // The SQL trigger expects reg_number
+            registration_number: formData.registration_number,
             level: formData.level,
-            role: formData.role,
-            admin_created: true // Bypasses the 'check_registration_allowed' trigger!
-          }
+            role: formData.role
+          })
         }
-      });
+      );
 
-      if (error) {
-        throw new Error(`Auth Error: ${error.message}`);
-      }
-
-      // If signUp successful, the SQL handle_new_user() trigger automatically inserts into public.users.
-      // But we need to update the role since the trigger defaults to student if it doesn't read role.
-      // We will do a manual update just in case using the main admin client
-      if (data.user) {
-        await supabase.from('users').update({ role: formData.role, is_verified: true }).eq('id', data.user.id);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Edge Function Error: ${errorText}`);
       }
 
       onSave();

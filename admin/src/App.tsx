@@ -15,6 +15,7 @@ import EventsPage from './pages/EventsPage';
 import MaterialsPage from './pages/MaterialsPage';
 import MessagingPage from './pages/MessagingPage';
 import LecturersPage from './pages/LecturersPage';
+import ModeratorsPage from './pages/ModeratorsPage';
 import ExecutivesPage from './pages/ExecutivesPage';
 import GraduatesPage from './pages/GraduatesPage';
 import GroupsPage from './pages/GroupsPage';
@@ -70,6 +71,7 @@ function App() {
               {/* Super Admin Restricted Only */}
               <Route element={<RoleProtectedRoute minRole="super_admin" />}>
                 <Route path="/" element={<DashboardPage />} />
+                <Route path="/moderators" element={<ModeratorsPage />} />
                 <Route path="/graduates" element={<GraduatesPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />

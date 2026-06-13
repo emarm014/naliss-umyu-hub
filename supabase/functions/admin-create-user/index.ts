@@ -20,10 +20,16 @@ serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
-    // 2. Validate the requester is logged in
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+    // 2. Validate the requester is logged in using the explicit JWT token
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      throw new Error('Missing Authorization header')
+    }
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
+
     if (authError || !user) {
-      throw new Error('Unauthorized - Please log in')
+      throw new Error(`Unauthorized - Please log in. Details: ${authError?.message || 'No user found'}`)
     }
 
     // 3. Optional: Verify they are a super_admin from public.users

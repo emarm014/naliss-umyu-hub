@@ -43,6 +43,7 @@ const navigation = [
   { name: 'Cloud Archive', href: '/resources', icon: Cloud, minRole: 'super_admin' as const },
   { name: 'Lecturers', href: '/lecturers', icon: GraduationCap, minRole: 'super_admin' as const },
   { name: 'Executives', href: '/executives', icon: Briefcase, minRole: 'super_admin' as const },
+  { name: 'Moderators', href: '/moderators', icon: ShieldCheck, minRole: 'super_admin' as const },
   { name: 'Graduates', href: '/graduates', icon: Archive, minRole: 'super_admin' as const },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, minRole: 'super_admin' as const },
   { name: 'Activity Logs', href: '/logs', icon: History, minRole: 'super_admin' as const },

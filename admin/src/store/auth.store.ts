@@ -58,7 +58,11 @@ export const useAuthStore = create<AuthState>()(
           set({ user: newUser });
 
           if (newUser) {
-            await fetchFullProfile(newUser.id, set);
+            try {
+              await fetchFullProfile(newUser.id, set);
+            } catch (err) {
+              console.error('Failed to fetch full profile:', err);
+            }
           } else {
             set({ profile: null, permissions: null, isAdminOrModerator: false });
           }
@@ -109,6 +113,15 @@ async function fetchFullProfile(userId: string, set: (state: Partial<AuthState>)
       .single();
 
     if (profileError) {
+      if (profileError.code === 'PGRST116') {
+        // PGRST116 = 0 rows returned. The user exists in Auth but not in public.users (Ghost User).
+        // They should be immediately signed out to resolve the desync.
+        await supabase.auth.signOut();
+        set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
+        window.location.href = '/login';
+        return;
+      }
+
       if (retryCount < 3) {
         await new Promise(resolve => setTimeout(resolve, 2000 * (retryCount + 1)));
         // Verify the session is still valid before retrying

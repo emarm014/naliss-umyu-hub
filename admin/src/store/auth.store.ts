@@ -147,6 +147,22 @@ async function fetchFullProfile(userId: string, set: (state: Partial<AuthState>)
 
       let permissions = null;
       if (role === 'moderator') {
+        // 1. Check if moderator access is globally restricted
+        const { data: restrictData } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', 'restrict_moderators')
+          .maybeSingle();
+          
+        if (restrictData?.value === 'true') {
+          await supabase.auth.signOut();
+          set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
+          alert('Access Restricted: Admin has temporarily restricted moderator access.');
+          window.location.href = '/login';
+          return;
+        }
+
+        // 2. Load moderator permissions
         const { data: permData } = await supabase
           .from('moderator_permissions')
           .select('*')

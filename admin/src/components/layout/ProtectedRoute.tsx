@@ -101,7 +101,7 @@ export default function ProtectedRoute() {
 
     checkAndRegisterSession();
 
-    // 3. Realtime subscription to log out instantly if session is terminated
+    // 3. Realtime subscription to log out instantly if session is terminated OR moderator restricted
     const channel = supabase
       .channel(`admin_session_guard_${deviceId}`)
       .on(
@@ -121,6 +121,28 @@ export default function ProtectedRoute() {
           ) {
             if (isSubscribed) {
               alert('Session Terminated: This device has been logged out remotely.');
+              await signOut();
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT or UPDATE
+          schema: 'public',
+          table: 'system_settings',
+          filter: 'key=eq.restrict_moderators',
+        },
+        async (payload) => {
+          const record = payload.new as any;
+          if (
+            record && 
+            record.value === 'true' && 
+            profile?.role === 'moderator'
+          ) {
+            if (isSubscribed) {
+              alert('Access Restricted: Admin has temporarily restricted moderator access.');
               await signOut();
             }
           }

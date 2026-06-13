@@ -28,6 +28,7 @@ interface FormData {
   maintenance_estimated_end: string;
   read_only_mode: boolean;
   allow_registration: boolean;
+  restrict_moderators: boolean;
   current_academic_year: string;
 }
 
@@ -37,6 +38,7 @@ const SETTING_KEYS = [
   'maintenance_estimated_end',
   'read_only_mode',
   'allow_registration',
+  'restrict_moderators',
   'current_academic_year',
 ] as const;
 
@@ -49,6 +51,7 @@ function parseSettings(rows: SettingRow[]): FormData {
     maintenance_estimated_end: map.maintenance_estimated_end ?? '',
     read_only_mode: map.read_only_mode === 'true',
     allow_registration: map.allow_registration !== 'false',
+    restrict_moderators: map.restrict_moderators === 'true',
     current_academic_year: map.current_academic_year ?? '2025/2026',
   };
 }
@@ -68,6 +71,7 @@ export default function SettingsPage() {
     maintenance_estimated_end: '',
     read_only_mode: false,
     allow_registration: true,
+    restrict_moderators: false,
     current_academic_year: '2025/2026',
   });
 
@@ -120,6 +124,7 @@ export default function SettingsPage() {
             if (key === 'maintenance_mode') return { ...prev, maintenance_mode: value === 'true' };
             if (key === 'read_only_mode') return { ...prev, read_only_mode: value === 'true' };
             if (key === 'allow_registration') return { ...prev, allow_registration: value !== 'false' };
+            if (key === 'restrict_moderators') return { ...prev, restrict_moderators: value === 'true' };
             if (key === 'maintenance_message') return { ...prev, maintenance_message: value ?? '' };
             if (key === 'maintenance_estimated_end') return { ...prev, maintenance_estimated_end: value ?? '' };
             if (key === 'current_academic_year') return { ...prev, current_academic_year: value ?? '' };
@@ -138,13 +143,12 @@ export default function SettingsPage() {
   const saveSetting = async (key: string, value: string): Promise<void> => {
     const { error } = await supabase
       .from('system_settings')
-      .update({ value, updated_at: new Date().toISOString() })
-      .eq('key', key);
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
     if (error) throw error;
   };
 
   // ── Toggle handler — updates state locally, saved on button click ───────────
-  const handleToggle = (key: 'maintenance_mode' | 'read_only_mode' | 'allow_registration') => {
+  const handleToggle = (key: 'maintenance_mode' | 'read_only_mode' | 'allow_registration' | 'restrict_moderators') => {
     setFormData(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -198,6 +202,7 @@ export default function SettingsPage() {
         saveSetting('maintenance_estimated_end', formData.maintenance_estimated_end),
         saveSetting('read_only_mode', String(formData.read_only_mode)),
         saveSetting('allow_registration', String(formData.allow_registration)),
+        saveSetting('restrict_moderators', String(formData.restrict_moderators)),
         saveSetting('current_academic_year', formData.current_academic_year),
       ]);
       showSuccess('Settings saved successfully!');
@@ -360,6 +365,28 @@ export default function SettingsPage() {
                     <Clock className="absolute right-5 top-4 w-5 h-5 text-gray-300" />
                   </div>
                   <p className="text-[10px] font-bold text-gray-400 italic px-1 uppercase tracking-tight">Set this before starting the academic year transition.</p>
+                </div>
+
+                <div className="pt-6 border-t border-gray-100 mt-6 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-red-600 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-red-600" />
+                      Restrict Moderators
+                    </h3>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Block all moderator access globally</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggle('restrict_moderators')}
+                      aria-pressed={formData.restrict_moderators}
+                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shadow-inner ${
+                        formData.restrict_moderators ? 'bg-red-600' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span className={`h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${formData.restrict_moderators ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="pt-6 border-t border-gray-100 mt-6 flex items-center justify-between">

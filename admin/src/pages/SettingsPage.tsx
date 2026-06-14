@@ -204,6 +204,7 @@ export default function SettingsPage() {
         saveSetting('allow_registration', String(formData.allow_registration)),
         saveSetting('restrict_moderators', String(formData.restrict_moderators)),
         saveSetting('current_academic_year', formData.current_academic_year),
+        supabase.from('moderator_permissions').update({ is_restricted: formData.restrict_moderators, updated_at: new Date().toISOString() }).not('user_id', 'is', null)
       ]);
       showSuccess('Settings saved successfully!');
       fetchSettings(true); // silent re-fetch to confirm

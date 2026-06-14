@@ -347,6 +347,10 @@ export default function ModeratorsPage() {
       if (error) throw error;
 
       if (newRole === 'moderator') {
+        // Check global restriction setting to set initial is_restricted state
+        const { data: restrictData } = await supabase.from('system_settings').select('value').eq('key', 'restrict_moderators').maybeSingle();
+        const isGloballyRestricted = restrictData?.value === 'true';
+
         // Enable all content permissions and set assigned_level from the moderator's own level
         await supabase.from('moderator_permissions').upsert(
           {
@@ -356,6 +360,7 @@ export default function ModeratorsPage() {
             can_manage_lecturers: false,
             can_manage_executives: false,
             can_manage_moderators: true,
+            is_restricted: isGloballyRestricted,
             assigned_level: user.level || null,
             updated_at: new Date().toISOString(),
           },

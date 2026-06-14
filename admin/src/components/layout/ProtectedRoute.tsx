@@ -126,23 +126,23 @@ export default function ProtectedRoute() {
           }
         }
       )
-      .on(
+        .on(
         'postgres_changes',
         {
-          event: '*', // INSERT or UPDATE
+          event: 'UPDATE',
           schema: 'public',
-          table: 'system_settings',
-          filter: 'key=eq.restrict_moderators',
+          table: 'moderator_permissions',
+          filter: `user_id=eq.${user.id}`,
         },
         async (payload) => {
           const record = payload.new as any;
           if (
             record && 
-            record.value === 'true' && 
+            record.is_restricted === true && 
             profile?.role === 'moderator'
           ) {
             if (isSubscribed) {
-              alert('Access Restricted: Admin has temporarily restricted moderator access.');
+              alert('Access Restricted: Your moderator access has been restricted by the administrator.');
               await signOut();
             }
           }

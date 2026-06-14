@@ -14,7 +14,7 @@ import {
   Linking,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useResourceStore, useAuthStore } from '../../src/stores';
+import { useResourceStore, useAuthStore, useNetworkStore } from '../../src/stores';
 import { AcademicLevel } from '../../src/types';
 import { getCleanAvatarUrl } from '../../src/utils';
 
@@ -59,6 +59,7 @@ export default function ProfileScreen() {
   const confirmedAvatarUrl = useAuthStore(s => s.confirmedAvatarUrl);
   const localAvatarUrl = useAuthStore(s => s.localAvatarUrl);
   const materials = useResourceStore(s => s.materials);
+  const isOnline = useNetworkStore(s => s.isOnline);
   const { colors, isDark } = useTheme();
   const { toggleTheme } = useThemeStore();
   // Keep local fields in sync with store profile — so any update via updateProfile
@@ -980,6 +981,12 @@ export default function ProfileScreen() {
                     </View>
 
                     <ScrollView style={styles.modalForm}>
+                        {!isOnline && (
+                            <View style={{ backgroundColor: '#FEF2F2', padding: 12, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#FCA5A5' }}>
+                                <Text style={{ color: '#DC2626', fontFamily: 'Inter-Bold', fontSize: 13 }}>⚠️ Network Connection Required</Text>
+                                <Text style={{ color: '#DC2626', fontFamily: 'Inter-Medium', fontSize: 12, marginTop: 4 }}>You must be connected to the internet to modify your institutional registration profile.</Text>
+                            </View>
+                        )}
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Full Name</Text>
                             <Ionicons name="lock-closed" size={12} color={colors.textMuted} style={{ marginLeft: 4, marginBottom: 8 }} />
@@ -1056,9 +1063,9 @@ export default function ProfileScreen() {
                         />
 
                         <TouchableOpacity
-                            style={styles.saveButton}
+                            style={[styles.saveButton, !isOnline && { opacity: 0.5, backgroundColor: colors.textMuted }]}
                             onPress={handleUpdateProfile}
-                            disabled={isSavingProfile}
+                            disabled={isSavingProfile || !isOnline}
                         >
                             {isSavingProfile ? (
                                 <ActivityIndicator color="#FFF" />

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { User as Profile } from '../types';
@@ -146,31 +146,10 @@ export const useAuthStore = create<AuthState>()(
 
       // Update profile fields and sync to auth metadata so chat shows updated info
       updateProfile: async (updates) => {
-        const { user, profile, pendingProfileUpdates } = get();
+        const { user, profile } = get();
         if (!user || !profile) return;
 
-        // Optimistic local update first — record it in pending so fetches don't overwrite
-        const newPending = { ...pendingProfileUpdates, ...(updates as any) };
-        set({
-          pendingProfileUpdates: newPending,
-          profile: { ...profile, ...(updates as any) } as Profile,
-          lastFetch: Date.now(),
-          lastLocalProfileUpdateAt: Date.now(),
-          // Lock in the new avatar immediately — no fetch can overwrite this
-          ...((updates as any).avatar_url ? { confirmedAvatarUrl: (updates as any).avatar_url } : {}),
-        });
-
-        if ((updates as any).avatar_url) {
-          cacheAvatarLocally(user.id, (updates as any).avatar_url).then(localUri => {
-            if (localUri) {
-              set({ localAvatarUrl: localUri });
-            }
-          }).catch(() => {});
-        }
-
         try {
-          // 1. Update public.users table
-          // Use .select() without .single() — avoids PGRST116 if RLS returns 0 rows
           const { data: rows, error: dbError } = await supabase
             .from('users')
             .update(updates as any)
@@ -178,43 +157,28 @@ export const useAuthStore = create<AuthState>()(
             .select();
 
           if (dbError) {
-            // Network errors — keep optimistic update in pending, sync on next fetch
-            if (!isNetworkError(dbError)) {
-              // Real DB error — revert optimistic update
-              const revertedPending = { ...get().pendingProfileUpdates };
-              Object.keys(updates).forEach(k => delete revertedPending[k]);
-              set({ profile, pendingProfileUpdates: revertedPending });
-              throw dbError;
+            if (isNetworkError(dbError)) {
+              throw new Error('Network Connection Required: You must be connected to the internet to modify your profile.');
             }
-            // Network error — optimistic update stays in pending
-            return;
+            throw dbError;
           }
 
-          // DB Success! Remove these fields from pending since server has them now
-          const resolvedPending = { ...get().pendingProfileUpdates };
-          Object.keys(updates).forEach(k => delete resolvedPending[k]);
-
-          // Confirm with the actual saved row if available
           const updatedRow = rows?.[0];
           if (updatedRow) {
-            // Always keep avatar_url from the optimistic update if it was just set —
-            // the DB row returned here is the confirmed value, but we trust our
-            // optimistic value since we just wrote it. This prevents a race where
-            // a concurrent fetchProfile overwrites the new avatar with the old one.
-            const avatarGuard = (updates as any).avatar_url
-              ? { avatar_url: (updates as any).avatar_url }
-              : {};
             set({ 
-              profile: { ...(updatedRow as any), ...resolvedPending, ...avatarGuard } as Profile, 
-              pendingProfileUpdates: resolvedPending,
+              profile: { ...(updatedRow as any) } as Profile, 
               lastFetch: Date.now(),
               lastLocalProfileUpdateAt: Date.now(),
             });
-          } else {
-            set({ pendingProfileUpdates: resolvedPending });
+            
+            if ((updates as any).avatar_url) {
+                set({ confirmedAvatarUrl: (updates as any).avatar_url });
+                cacheAvatarLocally(user.id, (updates as any).avatar_url).then(localUri => {
+                  if (localUri) set({ localAvatarUrl: localUri });
+                }).catch(() => {});
+            }
           }
 
-          // 2. Sync to auth metadata (best-effort — don't block on failure)
           const metaUpdates: Record<string, any> = {};
           if ((updates as any).username) metaUpdates.username = (updates as any).username;
           if ((updates as any).avatar_url) metaUpdates.avatar_url = (updates as any).avatar_url;
@@ -222,10 +186,9 @@ export const useAuthStore = create<AuthState>()(
           if ((updates as any).full_name) metaUpdates.full_name = (updates as any).full_name;
 
           if (Object.keys(metaUpdates).length > 0) {
-            supabase.auth.updateUser({ data: metaUpdates }).catch(() => {}); // fire and forget
+            supabase.auth.updateUser({ data: metaUpdates }).catch(() => {}); 
           }
 
-          // 3. Patch cached chat messages so username/avatar updates appear instantly
           const senderPatch: { username?: string; avatar_url?: string; full_name?: string } = {};
           if ((updates as any).username) senderPatch.username = (updates as any).username;
           if ((updates as any).avatar_url) senderPatch.avatar_url = (updates as any).avatar_url;
@@ -235,15 +198,7 @@ export const useAuthStore = create<AuthState>()(
             useMessageStore.getState().patchSenderInfo(user.id, senderPatch);
           }
         } catch (err: any) {
-          if (isNetworkError(err)) {
-            // Network failure — keep optimistic update
-            return;
-          }
-          // Real error — revert optimistic update
           captureStoreError('auth', 'updateProfile', err, { userId: user.id, updates: Object.keys(updates) });
-          const revertedPending = { ...get().pendingProfileUpdates };
-          Object.keys(updates).forEach(k => delete revertedPending[k]);
-          set({ profile, pendingProfileUpdates: revertedPending });
           throw err;
         }
       },
@@ -406,7 +361,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'naliss-auth-storage',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvStorage),
       partialize: (state) => ({ 
         session: state.session,
         user: state.user,
@@ -416,9 +371,6 @@ export const useAuthStore = create<AuthState>()(
         confirmedAvatarUrl: state.confirmedAvatarUrl,
         localAvatarUrl: state.localAvatarUrl,
       }),
-      // When store rehydrates from AsyncStorage (app open), immediately set
-      // isLoading=false so ProtectedRoute doesn't show blank spinner offline.
-      // onAuthStateChange will update isProfileComplete once Supabase responds.
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.isLoading = false;

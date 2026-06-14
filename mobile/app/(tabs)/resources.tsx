@@ -117,13 +117,12 @@ export default function ResourcesScreen() {
   const isCoursesLoading = resourcesLoading && courses.length === 0;
   const isDirectoryLoading = directoryLoading && lecturers.length === 0 && executives.length === 0;
 
-  const loadData = useCallback(async (silent = false) => {
-    // Always fetch ALL levels — filtering is done client-side from the cache.
-    // force=true ensures we always get all levels, not a cached subset.
+  const loadData = useCallback(async (silent = false, force = false) => {
+    // filtering is done client-side from the cache.
     const tasks = [];
-    if (activeMainTab === 'materials') tasks.push(fetchMaterials({}, true));
-    if (activeMainTab === 'past_q') tasks.push(fetchPastQuestions({}, true));
-    if (activeMainTab === 'courses') tasks.push(fetchCourses(undefined, true));
+    if (activeMainTab === 'materials') tasks.push(fetchMaterials({}, force));
+    if (activeMainTab === 'past_q') tasks.push(fetchPastQuestions({}, force));
+    if (activeMainTab === 'courses') tasks.push(fetchCourses(undefined, force));
     if (activeMainTab === 'directory') {
       if (activeDirectoryTab === 'staff') tasks.push(fetchLecturers());
       else tasks.push(fetchExecutives());
@@ -135,10 +134,11 @@ export default function ResourcesScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+  
   const onRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await loadData();
+      await loadData(false, true);
     } finally {
       setIsRefreshing(false);
     }

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useAuthStore } from './store/auth.store';
+import { useAdminDataStore } from './store/adminData.store';
 import { NetworkBanner } from './components/NetworkBanner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import DashboardLayout from './components/layout/DashboardLayout';
@@ -45,12 +46,23 @@ const queryClient = new QueryClient({
 
 function App() {
   const { initialize } = useAuthStore();
+  const { syncAll } = useAdminDataStore();
 
   useEffect(() => {
     const cleanupRef = { fn: undefined as (() => void) | void };
     initialize().then((fn) => { cleanupRef.fn = fn; });
-    return () => { if (cleanupRef.fn) cleanupRef.fn(); };
-  }, [initialize]);
+
+    const handleFocus = () => {
+      // Quiet background check to sync changes seamlessly without showing full-page blocking loaders
+      syncAll();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => { 
+      if (cleanupRef.fn) cleanupRef.fn(); 
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [initialize, syncAll]);
 
   return (
     <QueryClientProvider client={queryClient}>

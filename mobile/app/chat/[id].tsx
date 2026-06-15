@@ -867,8 +867,12 @@ export default function ChatScreen() {
                 }
             } catch (err: any) {
                 const isNetwork = err?.status === 0 || 
-                                  err?.message?.toLowerCase().includes('network request failed') || 
-                                  err?.message?.toLowerCase().includes('failed to fetch');
+                                  err?.name === 'AbortError' ||
+                                  err?.name === 'TimeoutError' ||
+                                  err?.message?.toLowerCase().includes('network') || 
+                                  err?.message?.toLowerCase().includes('fetch') ||
+                                  err?.message?.toLowerCase().includes('abort') ||
+                                  err?.message?.toLowerCase().includes('timeout');
                 if (isNetwork) {
                     setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
                     messageStore.updateMessage(id, tempId, { status: 'unsent' });

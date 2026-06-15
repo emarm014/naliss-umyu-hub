@@ -182,14 +182,17 @@ export default function MaterialsPage() {
     try {
       const { error } = await supabase.from('materials').delete().eq('id', material.id);
       if (error) {
-        syncAll(true);
+        useAdminDataStore.getState().addMaterial(material as any);
         setSuccessMessage(null);
+        setFormError('Failed to delete: ' + error.message);
       } else {
         // Fire-and-forget: clean up Cloudinary storage
         deleteFromCloudinary([material.file_url]);
       }
-    } catch {
-      syncAll(true);
+    } catch (err: any) {
+      useAdminDataStore.getState().addMaterial(material as any);
+      setSuccessMessage(null);
+      setFormError('Failed to delete: ' + err.message);
     }
   };
 

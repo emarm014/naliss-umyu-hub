@@ -159,9 +159,9 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
       }, 400); // reduced from 600ms → 400ms for snappier group list updates
     };
 
-    // One channel, all tables — multiplexed over a single WebSocket
+    // One channel, all tables — multiplexed over a single WebSocket globally across all clients
     const channel = supabase
-      .channel(`mobile:all:${Date.now()}`)
+      .channel(`mobile:global:broadcast`)
       // ── Announcements ──────────────────────────────────────────────────────
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, (payload) => {
         const { eventType, old: oldRecord, new: newRecord } = payload;

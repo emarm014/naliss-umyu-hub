@@ -77,6 +77,8 @@ interface AdminDataState {
   error: string | null;
 
   syncAll: (force?: boolean) => Promise<void>;
+  syncMaterialsOnly: () => Promise<void>;
+  syncUsersOnly: () => Promise<void>;
   clearData: () => void;
 
   // Incremental updaters — instant local patch, no re-fetch needed
@@ -166,14 +168,6 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
 
     set({ isSyncing: true, error: null });
 
-    // Safety valve — if the sync hangs for any reason, reset isSyncing after 30s
-    // so the admin is never permanently locked out without a page refresh
-    const safetyTimer = setTimeout(() => {
-      if (get().isSyncing) {
-        set({ isSyncing: false, error: null });
-      }
-    }, 30_000);
-
     try {
       // ALL queries fire simultaneously — users are fetched with pagination
       const [
@@ -234,8 +228,21 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     } catch (err: unknown) {
       set({ error: (err as Error).message });
     } finally {
-      clearTimeout(safetyTimer);
       set({ isSyncing: false });
+    }
+  },
+
+  syncMaterialsOnly: async () => {
+    const { data, error } = await supabase.from('materials').select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
+    if (!error && data) set({ materials: data });
+  },
+
+  syncUsersOnly: async () => {
+    try {
+      const users = await fetchAllUsers();
+      set({ students: users });
+    } catch (err) {
+      console.error('Failed to sync users:', err);
     }
   },
 

@@ -31,11 +31,37 @@ const isTransientError = (err: any): boolean => {
   );
 };
 
+// Global Throttle: Max 3 outbound mutation requests per second.
+let outboundTokens = 3;
+let lastTokenRefill = Date.now();
+
+const acquireOutboundToken = async () => {
+  while (true) {
+    const now = Date.now();
+    const elapsed = now - lastTokenRefill;
+    if (elapsed > 1000) {
+      outboundTokens = 3;
+      lastTokenRefill = now;
+    }
+    if (outboundTokens > 0) {
+      outboundTokens--;
+      return;
+    }
+    await sleep(Math.max(50, 1000 - elapsed));
+  }
+};
+
 const fetchWithRetry = async (
   url: RequestInfo | URL,
   options: RequestInit = {},
   attempt = 0
 ): Promise<Response> => {
+  // Throttle outbound mutations (POST, PUT, PATCH, DELETE) to max 3 per second
+  const method = options.method || 'GET';
+  if (method !== 'GET' && method !== 'HEAD') {
+    await acquireOutboundToken();
+  }
+
   const controller = new AbortController();
   const timeoutMs = 8000; // Max 8 seconds absolute timeout to prevent API deadlocks
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -149,4 +175,32 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 // Realtime channel helper
 export const createRealtimeChannel = (channelName: string) => {
   return supabase.channel(channelName);
+};
+
+// Batched Insert Array transaction memory queue (250ms debounce) for rapid micro-interactions (votes/likes)
+const batchQueues: Record<string, any[]> = {};
+const batchTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+export const batchedSupabaseInsert = async (table: string, payload: any) => {
+  return new Promise((resolve, reject) => {
+    if (!batchQueues[table]) batchQueues[table] = [];
+    batchQueues[table].push({ payload, resolve, reject });
+
+    if (batchTimers[table]) clearTimeout(batchTimers[table]);
+    
+    batchTimers[table] = setTimeout(async () => {
+      const items = batchQueues[table];
+      batchQueues[table] = [];
+      delete batchTimers[table];
+
+      try {
+        const payloads = items.map(i => i.payload);
+        const { data, error } = await supabase.from(table as any).insert(payloads).select();
+        if (error) throw error;
+        items.forEach((item, index) => item.resolve(data?.[index] || data));
+      } catch (err) {
+        items.forEach(item => item.reject(err));
+      }
+    }, 250);
+  });
 };

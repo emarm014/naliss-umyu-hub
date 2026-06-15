@@ -10,7 +10,14 @@ export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 const fetchWithTimeout = (url: RequestInfo | URL, options: RequestInit = {}): Promise<Response> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+  return fetch(url, { ...options, signal: controller.signal })
+    .catch(err => {
+      if (err.name === 'AbortError') {
+        return Promise.reject(new Error('Network Timeout'));
+      }
+      return Promise.reject(err);
+    })
+    .finally(() => clearTimeout(timeoutId));
 };
 
 // Create Supabase client (or null if not configured)

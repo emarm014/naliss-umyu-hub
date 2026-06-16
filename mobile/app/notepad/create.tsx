@@ -38,7 +38,7 @@ export default function CreateNoteScreen() {
     const [isImageModalVisible, setIsImageModalVisible] = useState(false);
     const { width: windowWidth } = Dimensions.get('window');
 
-    const levels = ['100L', '200L', '300L', '400L', '500L'];
+    const levels = ['100L', '200L', '300L', '400L'];
     const activeLevel = courseLevel.replace('L', '');
     const filteredCourses = courses.filter(c => c.level === activeLevel);
     

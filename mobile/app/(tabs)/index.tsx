@@ -136,6 +136,7 @@ export default function HomeScreen() {
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
   const [showAvatarConfirm, setShowAvatarConfirm] = useState(false);
+  const [showSnapshot, setShowSnapshot] = useState(false);
   const localAvatarUrl = useAuthStore(s => s.localAvatarUrl);
 
   const handleAvatarPress = () => {
@@ -376,49 +377,14 @@ export default function HomeScreen() {
           {/* Avatar + identity */}
           <View style={styles.headerBody}>
             <View style={styles.avatarSection}>
-              {/* ACTION 1: Tap Avatar to View Image */}
+              {/* ACTION 1: Tap Avatar to View Privacy Snapshot */}
               <TouchableOpacity
-                onPress={() => {
-                  if (avatar) {
-                    router.push({
-                      pathname: '/viewer',
-                      params: { uri: avatar, name: `${user.full_name || 'Profile'}'s Avatar`, type: 'image' }
-                    });
-                  }
-                }}
+                onPress={() => setShowSnapshot(true)}
                 activeOpacity={0.8}
               >
                 <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
                   <Image key={avatarKey} source={{ uri: avatar, cache: 'force-cache' }} style={styles.avatar} />
                 </View>
-              </TouchableOpacity>
-              <View style={[styles.onlineDot, { borderColor: theme.gradient[1], backgroundColor: '#10b981', left: 4, right: undefined }]} />
-
-              {/* ACTION 2: Tap Camera to Update/Upload Image */}
-              <TouchableOpacity
-                onPress={handleAvatarPress}
-                disabled={isUpdatingAvatar}
-                style={{
-                  position: 'absolute',
-                  bottom: -2,
-                  right: -2,
-                  backgroundColor: '#005A36', // Primary accent theme color
-                  width: 28,
-                  height: 28,
-                  borderRadius: 14,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  borderWidth: 2,
-                  borderColor: '#FFFFFF',
-                  zIndex: 20,
-                }}
-                activeOpacity={0.7}
-              >
-                {isUpdatingAvatar ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Ionicons name="camera" size={12} color="#FFF" />
-                )}
               </TouchableOpacity>
             </View>
 
@@ -657,6 +623,32 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Student Privacy Snapshot Modal */}
+      <Modal
+        visible={showSnapshot}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSnapshot(false)}
+      >
+        <View style={styles.avatarModalOverlay}>
+          <View style={[styles.avatarModalContent, { backgroundColor: colors.card, alignItems: 'center', paddingVertical: 40 }]}>
+            <Image 
+              source={{ uri: avatar, cache: 'force-cache' }} 
+              style={{ width: 160, height: 160, borderRadius: 80, marginBottom: 20, borderWidth: 4, borderColor: theme.accentColor + '50' }} 
+            />
+            <Text style={[styles.fullName, { color: colors.text, marginBottom: 4, textShadowRadius: 0 }]}>{user.full_name}</Text>
+            <Text style={[styles.handle, { color: colors.textMuted, marginBottom: 30 }]}>@{displayName.toLowerCase()}</Text>
+            
+            <TouchableOpacity
+              style={[styles.cancelButton, { borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 40 }]}
+              onPress={() => setShowSnapshot(false)}
+            >
+              <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -715,8 +707,9 @@ const styles = StyleSheet.create({
     borderWidth: 3, padding: 3,
     shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3, shadowRadius: 12, elevation: 10,
+    justifyContent: 'center', alignItems: 'center',
   },
-  avatar: { width: '100%', height: '100%', borderRadius: 42 },
+  avatar: { width: '100%', height: '100%', borderRadius: 45 },
   onlineDot: {
     position: 'absolute', bottom: 4, right: 4,
     width: 18, height: 18, borderRadius: 9, borderWidth: 3,

@@ -72,8 +72,7 @@ export const useAnnouncementStore = create<AnnouncementState>()(
         set({ error: null });
 
         try {
-          let query = supabase
-            .from('announcements')
+          let query = (supabase as any).from('announcements')
             .select('*')
             .eq('is_published', true)
             .order('is_pinned', { ascending: false })
@@ -115,8 +114,7 @@ export const useAnnouncementStore = create<AnnouncementState>()(
           const { data: { session } } = await supabase.auth.getSession();
           if (!session?.user) return;
 
-          const { data, error } = await (supabase
-            .from('user_announcement_reads' as any)
+          const { data, error } = await ((supabase as any).from('user_announcement_reads' as any)
             .select('announcement_id')
             .eq('user_id', session.user.id) as any);
 
@@ -132,7 +130,7 @@ export const useAnnouncementStore = create<AnnouncementState>()(
         // Optimistic update first
         set(state => ({ readIds: [...new Set([...state.readIds, announcementId])] }));
         try {
-          await (supabase.rpc('mark_announcement_as_read' as any, { a_id: announcementId }) as any);
+          await ((supabase as any).rpc('mark_announcement_as_read' as any, { a_id: announcementId }) as any);
         } catch {
           // silent — read tracking is non-critical
         }
@@ -143,7 +141,7 @@ export const useAnnouncementStore = create<AnnouncementState>()(
         const allIds = get().announcements.map(a => a.id);
         set(state => ({ readIds: [...new Set([...state.readIds, ...allIds])] }));
         try {
-          await (supabase.rpc('mark_all_announcements_as_read' as any, { u_level: level || null }) as any);
+          await ((supabase as any).rpc('mark_all_announcements_as_read' as any, { u_level: level || null }) as any);
         } catch {
           // silent — read tracking is non-critical
         }

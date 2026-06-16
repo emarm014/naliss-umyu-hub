@@ -9,6 +9,7 @@ export interface LocalNote {
     courseLevel?: string;
     content: string;
     mediaPaths: string[];
+    linkedMaterials?: string[];
     createdAt: string;
     updatedAt: string;
 }

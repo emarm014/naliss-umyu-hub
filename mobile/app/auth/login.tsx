@@ -71,7 +71,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     const finishTransaction = startTransaction('auth.login', { email: email.trim().toLowerCase() });
     try {
-      const { data: provider, error: providerError } = await supabase.rpc('check_existing_account', { email_addr: email.trim().toLowerCase() });
+      const { data: provider, error: providerError } = await (supabase as any).rpc('check_existing_account', { email_addr: email.trim().toLowerCase() });
 
       // Only block on known provider responses — if RPC errors, fall through to normal auth
       if (!providerError) {
@@ -143,7 +143,7 @@ export default function LoginScreen() {
       // Navigation handled by ProtectedRoute's onAuthStateChange
 
       // Log successful login (best-effort, fire-and-forget)
-      (async () => { try { await supabase.from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), method: 'email' } }); } catch (_) {} })();
+      (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), method: 'email' } }); } catch (_) {} })();
 
     } catch (err: any) {
       finishTransaction('error');
@@ -155,7 +155,7 @@ export default function LoginScreen() {
       });
 
       // Log failed login attempt server-side (best-effort, fire-and-forget)
-      (async () => { try { await supabase.from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), reason: msg, method: 'email' } }); } catch (_) {} })();
+      (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), reason: msg, method: 'email' } }); } catch (_) {} })();
 
       if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials')) {
         Alert.alert('Wrong Password', 'The password you entered is incorrect. Please try again.');
@@ -246,8 +246,7 @@ export default function LoginScreen() {
 
           // Check if this Google account belongs to a graduated student
           if (user?.id) {
-            const { data: profileCheck } = await supabase
-              .from('users')
+            const { data: profileCheck } = await (supabase as any).from('users')
               .select('status, level')
               .eq('id', user.id)
               .maybeSingle();
@@ -294,7 +293,7 @@ export default function LoginScreen() {
     } catch (err: any) {
       useSignupStore.getState().setIsGoogleDelaying(false);
       // Log Google auth failure (best-effort)
-      (async () => { try { await supabase.from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: 'Failed Google sign-in attempt', metadata: { reason: err?.message || 'Unknown', method: 'google' } }); } catch (_) {} })();
+      (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: 'Failed Google sign-in attempt', metadata: { reason: err?.message || 'Unknown', method: 'google' } }); } catch (_) {} })();
       Alert.alert('Google Sign-In Failed', 'Sign-in failed. Please try again.');
     } finally {
       setIsGoogleLoading(false);

@@ -272,8 +272,8 @@ export default function ChatScreen() {
             // Use the throttled RPC — only updates if last_active_at is older than 60s
             // This prevents 33 writes/second at 1000 concurrent users
             try {
-                if (supabase && typeof supabase.rpc === 'function') {
-                    await supabase.rpc('update_last_active' as any);
+                if (supabase && typeof (supabase as any).rpc === 'function') {
+                    await (supabase as any).rpc('update_last_active' as any);
                 }
             } catch (err) {
                 // silent catch
@@ -294,8 +294,8 @@ export default function ChatScreen() {
             (async () => {
                 try {
                     const { data: { user } } = await supabase.auth.getUser();
-                    if (user && supabase && typeof supabase.from === 'function') {
-                        await supabase.from('users')
+                    if (user && supabase && typeof (supabase as any).from === 'function') {
+                        await (supabase as any).from('users')
                             .update({ last_active_at: new Date(Date.now() - 400000).toISOString() })
                             .eq('id', user.id);
                     }
@@ -345,8 +345,7 @@ export default function ChatScreen() {
 
     const fetchGroupDetails = async () => {
         try {
-            const { data, error } = await supabase
-                .from('groups')
+            const { data, error } = await (supabase as any).from('groups')
                 .select('*')
                 .eq('id', id)
                 .single();
@@ -360,8 +359,7 @@ export default function ChatScreen() {
     const fetchMessages = async (params = searchParams, loadMore = false, silent = false) => {
         if (!silent) setIsLoading(true);
         try {
-            let query = supabase
-                .from('messages')
+            let query = (supabase as any).from('messages')
                 .select(`
                     *,
                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
@@ -429,8 +427,7 @@ export default function ChatScreen() {
         if (!lastSeen) return; // No prior history — full fetch will handle it
 
         try {
-            const { data, error } = await (supabase
-                .from('messages')
+            const { data, error } = await ((supabase as any).from('messages')
                 .select(`
                     *,
                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
@@ -486,8 +483,7 @@ export default function ChatScreen() {
         }
 
         try {
-            const { data, error } = await (supabase
-                .from('group_members')
+            const { data, error } = await ((supabase as any).from('group_members')
                 .select('*, user:users(*, department:departments(name))')
                 .eq('group_id', id) as any);
 
@@ -584,8 +580,7 @@ export default function ChatScreen() {
                         // Background: enrich sender profile and fetch joined reply details
                         const isOurs = newMsg.sender_id === currentUser?.id;
                         if (!isOurs) {
-                            const { data: fullData } = await supabase
-                                .from('messages')
+                            const { data: fullData } = await (supabase as any).from('messages')
                                 .select(`
                                     *,
                                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
@@ -651,8 +646,7 @@ export default function ChatScreen() {
                     } else if (payload.eventType === 'INSERT') {
                         // Fetch the new member's profile and add to list
                         const newUserId = (payload.new as any).user_id;
-                        const { data: userProfile } = await supabase
-                            .from('users')
+                        const { data: userProfile } = await (supabase as any).from('users')
                             .select('id, username, full_name, avatar_url, level, role')
                             .eq('id', newUserId)
                             .single();
@@ -754,8 +748,7 @@ export default function ChatScreen() {
                     setEditingMessage(null);
                     setInputText('');
 
-                    const { error } = await supabase
-                        .from('messages')
+                    const { error } = await (supabase as any).from('messages')
                         .update({ 
                             content, 
                             is_edited: true,
@@ -838,8 +831,7 @@ export default function ChatScreen() {
                     setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
                     messageStore.updateMessage(id, tempId, { status: 'unsent' });
                 } else {
-                    const { data, error } = await supabase
-                        .from('messages')
+                    const { data, error } = await (supabase as any).from('messages')
                         .insert([payload])
                         .select()
                         .single();
@@ -942,8 +934,7 @@ export default function ChatScreen() {
                     setUploadingIds(prev => { const next = { ...prev }; delete next[resendTempId]; return next; });
 
                     // Now insert to DB with the real Cloudinary URL
-                    const { data, error } = await (supabase
-                        .from('messages')
+                    const { data, error } = await ((supabase as any).from('messages')
                         .insert([{
                             content: fileUrl,
                             sender_id: currentUser.id,
@@ -979,8 +970,7 @@ export default function ChatScreen() {
         messageStore.updateMessage(id, messageId, { id: resendTempId, status: 'sending' });
 
         try {
-            const { data, error } = await (supabase
-                .from('messages')
+            const { data, error } = await ((supabase as any).from('messages')
                 .insert([{
                     content: msg.content,
                     sender_id: currentUser.id,
@@ -1036,8 +1026,7 @@ export default function ChatScreen() {
         setShowStickerPicker(false);
 
         try {
-            const { data, error } = await (supabase
-                .from('messages')
+            const { data, error } = await ((supabase as any).from('messages')
                 .insert([{
                     content: sticker,
                     sender_id: currentUser.id,
@@ -1115,8 +1104,7 @@ export default function ChatScreen() {
         }
 
         try {
-            const { error } = await supabase
-                .from('messages')
+            const { error } = await (supabase as any).from('messages')
                 .update({
                     is_deleted: true,
                     deleted_at: new Date().toISOString(),
@@ -1232,8 +1220,7 @@ export default function ChatScreen() {
         if (cached) setViewingProfile(cached);
 
         try {
-            const { data } = await supabase
-                .from('users')
+            const { data } = await (supabase as any).from('users')
                 .select('*, department:departments(name)')
                 .eq('id', userId)
                 .single();
@@ -1250,8 +1237,7 @@ export default function ChatScreen() {
         if (cached) setViewingProfile(cached);
 
         try {
-            const { data } = await supabase
-                .from('users')
+            const { data } = await (supabase as any).from('users')
                 .select('*, department:departments(name)')
                 .eq('username', clean)
                 .single();
@@ -1531,9 +1517,9 @@ export default function ChatScreen() {
                                         </View>
                                     )}
 
-                                    {item.caption ? (
+                                    {(item.caption || item.metadata?.caption) ? (
                                         <Text style={[styles.mediaCaptionText, { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') }]}>
-                                            {item.caption}
+                                            {item.caption || item.metadata?.caption}
                                         </Text>
                                     ) : null}
 
@@ -1607,9 +1593,9 @@ export default function ChatScreen() {
                                             </View>
                                         )}
 
-                                        {item.caption ? (
+                                        {(item.caption || item.metadata?.caption) ? (
                                             <Text style={[styles.mediaCaptionText, { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') }]}>
-                                                {item.caption}
+                                                {item.caption || item.metadata?.caption}
                                             </Text>
                                         ) : null}
 
@@ -1688,13 +1674,13 @@ export default function ChatScreen() {
                                             <Ionicons name="arrow-down-circle-outline" size={24} color="#64748b" />
                                         ) : null}
                                     </TouchableOpacity>
-                                    {item.caption ? (
+                                    {(item.caption || item.metadata?.caption) ? (
                                         <Text style={[
                                             styles.mediaCaptionText, 
                                             { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') },
                                             item.reply_to_id && { color: isDark ? '#cbd5e1' : '#374151', opacity: 0.9 }
                                         ]}>
-                                            {item.caption}
+                                            {item.caption || item.metadata?.caption}
                                         </Text>
                                     ) : null}
                                     </>
@@ -2056,16 +2042,14 @@ export default function ChatScreen() {
                     (p: number) => setUploadingIds(prev => ({ ...prev, [tempId]: Math.min(Math.round(p), 99) }))
                 );
 
-                const { data, error } = await supabase
-                    .from('messages')
+                const { data, error } = await (supabase as any).from('messages')
                     .insert([{
                         content: fileUrl,
                         sender_id: currentUser!.id,
                         group_id: id,
                         message_type: msgType,
                         content_type: msgType,
-                        metadata: { name: originalName, size: file.size, tempId },
-                        caption: fileCaption || null
+                        metadata: { name: originalName, size: file.size, tempId, caption: fileCaption || null }
                     }])
                     .select()
                     .single();

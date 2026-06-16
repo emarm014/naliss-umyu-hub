@@ -52,7 +52,7 @@ export async function sendChatMessageNotification(
 ): Promise<void> {
   try {
     // Fetch all group members except the sender
-    const { data: members } = await supabase
+    const { data: members } = await (supabase as any)
       .from('group_members')
       .select('user_id')
       .eq('group_id', groupId)
@@ -60,7 +60,7 @@ export async function sendChatMessageNotification(
 
     if (!members || members.length === 0) return;
 
-    const targetUserIds = members.map(m => m.user_id).filter(Boolean) as string[];
+    const targetUserIds = members.map((m: any) => m.user_id).filter(Boolean) as string[];
 
     await sendPushNotification({
       targetUserIds,

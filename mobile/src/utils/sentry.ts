@@ -184,7 +184,7 @@ export function captureApiError(
  * Creates a real span within the active transaction (if one exists) and also
  * records a breadcrumb with the duration for crash trail context.
  *
- * Usage: const result = await withSpan('store.fetchProfile', () => supabase.from(...))
+ * Usage: const result = await withSpan('store.fetchProfile', () => (supabase as any).from(...))
  */
 export async function withSpan<T>(
   name: string,

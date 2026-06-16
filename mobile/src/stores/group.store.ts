@@ -56,8 +56,7 @@ export const useGroupStore = create<GroupState>()(
                     if (!session?.user) { set({ isLoading: false }); return; }
 
                     // 1. Get groups the user is a member of
-                    const { data: memberships, error: memError } = await (supabase
-                        .from('group_members')
+                    const { data: memberships, error: memError } = await ((supabase as any).from('group_members')
                         .select('group_id')
                         .eq('user_id', session.user.id) as any);
 
@@ -71,13 +70,12 @@ export const useGroupStore = create<GroupState>()(
 
                     // 2. Fetch group details and unread counts in parallel
                     const [groupsResult, unreadResult] = await Promise.all([
-                        supabase
-                            .from('groups')
+                        (supabase as any).from('groups')
                             .select('id, name, group_type, level, is_official, is_active, avatar_url, created_at')
                             .in('id', groupIds)
                             .eq('is_active', true)
                             .order('name') as any,
-                        supabase.rpc('get_group_unread_counts', { p_user_id: session.user.id }) as any
+                        (supabase as any).rpc('get_group_unread_counts', { p_user_id: session.user.id }) as any
                     ]);
 
                     if (groupsResult.error) throw groupsResult.error;
@@ -88,8 +86,7 @@ export const useGroupStore = create<GroupState>()(
                     
                     if (groupIds.length > 0) {
                         const lastMsgPromises = groupIds.map(gId => 
-                            supabase
-                                .from('messages')
+                            (supabase as any).from('messages')
                                 .select('id, group_id, content, content_type, message_type, created_at, sender:users!messages_sender_id_fkey(username, full_name)')
                                 .eq('group_id', gId)
                                 .eq('is_deleted', false)
@@ -170,7 +167,7 @@ export const useGroupStore = create<GroupState>()(
                     )
                 }));
                 try {
-                    await supabase.rpc('mark_group_as_read', { p_group_id: groupId });
+                    await (supabase as any).rpc('mark_group_as_read', { p_group_id: groupId });
                 } catch {
                     // silent — read marking is non-critical
                 }

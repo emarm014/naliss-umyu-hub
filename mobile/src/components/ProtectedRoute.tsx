@@ -317,11 +317,22 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       // login, check if the user is actually banned/suspended — if so, show
       // the restriction screen instead of logging them out silently.
       if (event === 'SIGNED_OUT' && !currentSession) {
+        // OFFLINE GUARD: Supabase auto-refresh will throw AuthRetryableFetchError
+        // and trigger a SIGNED_OUT event if the network drops completely during a token refresh.
+        // We MUST ignore this false-positive logout if we are not online.
+        if (!useNetworkStore.getState().isOnline) {
+          Sentry.addBreadcrumb({ 
+            category: 'auth', 
+            message: 'Ignored SIGNED_OUT event due to offline state (preventing AuthRetryableFetchError false logout)',
+            level: 'warning'
+          });
+          return;
+        }
+
         const prevUserId = useAuthStore.getState().user?.id;
         if (prevUserId) {
           try {
-            const { data: statusCheck } = await supabase
-              .from('users')
+            const { data: statusCheck } = await (supabase as any).from('users')
               .select('status, banned_reason, suspended_until, suspension_reason')
               .eq('id', prevUserId)
               .maybeSingle() as any;
@@ -401,8 +412,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         }
 
         try {
-          const { data: profileData, error: profileError } = await supabase
-            .from('users')
+          const { data: profileData, error: profileError } = await (supabase as any).from('users')
             .select('registration_number, level, status, banned_reason, suspended_until, suspension_reason, role')
             .eq('id', currentSession.user.id)
             .maybeSingle() as any;
@@ -462,7 +472,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
                 return;
               } else {
                 // Suspension expired — auto-lift
-                await supabase.from('users').update({ status: 'active', suspended_until: null, suspension_reason: null }).eq('id', currentSession.user.id);
+                await (supabase as any).from('users').update({ status: 'active', suspended_until: null, suspension_reason: null }).eq('id', currentSession.user.id);
                 setRestrictionInfo(null);
               }
             }

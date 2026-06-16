@@ -130,7 +130,7 @@ export default function RegisterIdentity() {
       // If RPC fails for any reason, allow through — DB constraint at profile creation
       // is the real guard. This check is a convenience to give early feedback only.
       try {
-        const { data: matricAvailable, error: matricError } = await (supabase.rpc as any)(
+        const { data: matricAvailable, error: matricError } = await ((supabase as any).rpc as any)(
           'check_matric_availability',
           { p_matric_no: matricNo.trim(), p_email: activeEmail }
         );
@@ -148,7 +148,7 @@ export default function RegisterIdentity() {
       // 3b. Check username is not already taken
       // Same pattern — non-blocking on failure
       try {
-        const { data: usernameAvailable, error: usernameError } = await (supabase.rpc as any)(
+        const { data: usernameAvailable, error: usernameError } = await ((supabase as any).rpc as any)(
           'check_username_availability',
           { p_username: username.trim(), p_email: activeEmail }
         );

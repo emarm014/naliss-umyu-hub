@@ -75,7 +75,7 @@ function EventDetailsContent() {
 
     useEffect(() => {
         if (!event) return;
-        (supabase.rpc('increment_event_view_count' as any, { event_id: event.id }) as any).then(() => {});
+        ((supabase as any).rpc('increment_event_view_count' as any, { event_id: event.id }) as any).then(() => {});
     }, [event?.id]);
 
     if (!event) {

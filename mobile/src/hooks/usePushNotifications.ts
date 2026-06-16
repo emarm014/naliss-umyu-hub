@@ -161,8 +161,7 @@ export function usePushNotifications() {
     if (!user) return;
 
     try {
-      const { error } = await supabase
-        .from('users')
+      const { error } = await (supabase as any).from('users')
         .update({ push_token: token } as any)
         .eq('id', user.id);
 

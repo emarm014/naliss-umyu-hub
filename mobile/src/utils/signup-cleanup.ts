@@ -22,7 +22,7 @@ export async function cleanupIncompleteSignup(): Promise<void> {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
             // A session exists — delete the incomplete auth record
-            await supabase.rpc('delete_incomplete_signup');
+            await (supabase as any).rpc('delete_incomplete_signup');
             await supabase.auth.signOut();
         }
         // No session = steps 1-4 abandoned = nothing to delete from Supabase

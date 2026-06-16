@@ -333,8 +333,7 @@ function RootLayoutNav() {
           const lastSeen = messageStore.getLastSeenAt(group.id);
           if (!lastSeen) return;
           try {
-            const { data } = await supabase
-              .from('messages')
+            const { data } = await (supabase as any).from('messages')
               .select('*, user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role), reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))')
               .eq('group_id', group.id)
               .eq('is_deleted', false)

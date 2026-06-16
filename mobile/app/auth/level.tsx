@@ -245,7 +245,7 @@ export default function RegisterLevel() {
       const profileUserId = freshUser?.id || user.id;
       const profileEmail = freshUser?.email || user.email || activeEmail;
 
-      const { error: profileFnError } = await (supabase.rpc as any)('create_user_profile', {
+      const { error: profileFnError } = await ((supabase as any).rpc as any)('create_user_profile', {
         p_id: profileUserId,
         p_full_name: full_name || 'Student',
         p_email: profileEmail,

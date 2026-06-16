@@ -59,8 +59,7 @@ export const useResourceStore = create<ResourceState>()(
                 set({ error: null });
 
                 try {
-                    let query = supabase
-                        .from('materials')
+                    let query: any = (supabase as any).from('materials')
                         .select('*')
                         .eq('is_active', true);
 
@@ -99,8 +98,7 @@ export const useResourceStore = create<ResourceState>()(
                 set({ error: null });
 
                 try {
-                    let query = supabase
-                        .from('past_questions' as any)
+                    let query: any = (supabase as any).from('past_questions' as any)
                         .select('*, course:course_id(*)')
                         .eq('is_public', true);
 
@@ -135,7 +133,7 @@ export const useResourceStore = create<ResourceState>()(
                 if (courses.length === 0) set({ isLoading: true });
 
                 try {
-                    let query = supabase.from('courses')
+                    let query: any = (supabase as any).from('courses')
                         .select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)')
                         .eq('is_active', true);
                     const { data, error } = await query.order('code');
@@ -170,7 +168,7 @@ export const useResourceStore = create<ResourceState>()(
                     const rpcName = type === 'material' ? 'increment_material_download_count' : 'increment_pq_download_count';
                     const paramName = type === 'material' ? 'material_id' : 'pq_id';
                     
-                    const { error } = await supabase.rpc(rpcName as any, {
+                    const { error } = await (supabase as any).rpc(rpcName as any, {
                         [paramName]: id
                     });
                     if (error) throw error;
@@ -201,7 +199,7 @@ export const useResourceStore = create<ResourceState>()(
                     const rpcName = type === 'material' ? 'increment_material_view_count' : 'increment_pq_view_count';
                     const paramName = type === 'material' ? 'material_id' : 'pq_id';
                     
-                    const { error } = await supabase.rpc(rpcName as any, {
+                    const { error } = await (supabase as any).rpc(rpcName as any, {
                         [paramName]: id
                     });
                     if (error) throw error;

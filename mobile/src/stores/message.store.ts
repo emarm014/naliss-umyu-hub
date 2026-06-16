@@ -270,8 +270,7 @@ export const useMessageStore = create<MessageState>()(
                 }
 
                 // Insert to Supabase DB
-                const { data, error } = await supabase
-                    .from('messages')
+                const { data, error } = await (supabase as any).from('messages')
                     .insert([payload])
                     .select()
                     .single();

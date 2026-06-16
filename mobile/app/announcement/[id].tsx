@@ -99,7 +99,7 @@ function AnnouncementDetailsContent() {
         
         async function updateAnnouncementStats() {
             try {
-                await supabase.rpc('increment_announcement_view_count' as any, { 
+                await (supabase as any).rpc('increment_announcement_view_count' as any, { 
                     announcement_id: announcementId 
                 });
             } catch (error) {

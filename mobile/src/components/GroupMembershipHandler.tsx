@@ -21,8 +21,7 @@ export const GroupMembershipHandler: React.FC = () => {
                 // Just verify the profile exists — do NOT create it here
                 // Profile creation happens in level.tsx during registration
                 // Creating it here without a level would waste the auto-join trigger
-                const { data: userData } = await (supabase
-                    .from('users')
+                const { data: userData } = await ((supabase as any).from('users')
                     .select('id, level, status')
                     .eq('id', userId)
                     .maybeSingle() as any);

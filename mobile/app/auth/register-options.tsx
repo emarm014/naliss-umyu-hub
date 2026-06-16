@@ -36,8 +36,7 @@ export default function RegisterOptions() {
     // 1. Fetch allow_registration directly as anonymous user (no session guard)
     const fetchRegistrationStatus = async () => {
       try {
-        const { data, error } = await supabase
-          .from('system_settings')
+        const { data, error } = await (supabase as any).from('system_settings')
           .select('value')
           .eq('key', 'allow_registration')
           .maybeSingle();
@@ -106,10 +105,10 @@ export default function RegisterOptions() {
       const cachedEmail = store.email;
       if (cachedEmail) {
         try {
-          const { data: status } = await supabase.rpc('check_existing_account', { email_addr: cachedEmail });
+          const { data: status } = await (supabase as any).rpc('check_existing_account', { email_addr: cachedEmail });
           if (status === 'incomplete') {
             Sentry.addBreadcrumb({ category: 'signup.google', message: 'Pre-purging incomplete cached email', level: 'info' });
-            await supabase.rpc('purge_incomplete_account', { email_addr: cachedEmail });
+            await (supabase as any).rpc('purge_incomplete_account', { email_addr: cachedEmail });
           }
         } catch { /* silent best-effort */ }
       }
@@ -212,7 +211,7 @@ export default function RegisterOptions() {
       // ── STEP 6: Check account status ──────────────────────────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 6: Checking account status', level: 'info' });
       try {
-        const { data: accountStatus } = await supabase.rpc('check_existing_account', { email_addr: user.email });
+        const { data: accountStatus } = await (supabase as any).rpc('check_existing_account', { email_addr: user.email });
 
         if (accountStatus === 'graduated') {
           store.setIsGoogleDelaying(false);

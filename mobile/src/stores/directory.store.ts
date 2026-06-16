@@ -40,8 +40,7 @@ export const useDirectoryStore = create<DirectoryState>()(
 
                 if (lecturers.length === 0) set({ isLoading: true });
                 try {
-                    const { data, error } = await supabase
-                        .from('lecturers')
+                    const { data, error } = await (supabase as any).from('lecturers')
                         .select('*')
                         .eq('is_active', true)
                         .order('display_order');
@@ -63,8 +62,7 @@ export const useDirectoryStore = create<DirectoryState>()(
 
                 if (executives.length === 0) set({ isLoading: true });
                 try {
-                    const { data, error } = await supabase
-                        .from('executives')
+                    const { data, error } = await (supabase as any).from('executives')
                         .select(`*, user:users(full_name, avatar_url)`)
                         .eq('is_active', true)
                         .order('display_order');

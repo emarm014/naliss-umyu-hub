@@ -16,23 +16,17 @@ export default function NotepadDashboard() {
     const userLevel = profile?.level || 'All';
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedLevel, setSelectedLevel] = useState<string>(userLevel.includes('L') ? userLevel : (userLevel === 'All' ? 'All' : `${userLevel}L`));
-
-    const levels = ['All', '100L', '200L', '300L', '400L', '500L'];
 
     // O(1) performance lookup mapping (Memoized)
     const filteredNotes = useMemo(() => {
+        if (!searchQuery.trim()) return notes;
+        
         return notes.filter(note => {
-            const matchesSearch = 
-                note.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                note.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                note.courseCode?.toLowerCase().includes(searchQuery.toLowerCase());
-            
-            const matchesLevel = selectedLevel === 'All' || note.courseLevel === selectedLevel;
-
-            return matchesSearch && matchesLevel;
+            return note.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                   note.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                   note.courseCode?.toLowerCase().includes(searchQuery.toLowerCase());
         });
-    }, [notes, searchQuery, selectedLevel]);
+    }, [notes, searchQuery]);
 
     const styles = StyleSheet.create({
         container: {
@@ -92,7 +86,8 @@ export default function NotepadDashboard() {
             lineHeight: 24,
         },
         listContent: {
-            padding: 16,
+            paddingTop: 20,
+            paddingHorizontal: 16,
             paddingBottom: 100,
         },
         noteCard: {
@@ -180,25 +175,7 @@ export default function NotepadDashboard() {
                 />
             </View>
 
-            <View>
-                <FlatList
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.levelSelectorContainer}
-                    data={levels}
-                    keyExtractor={(item) => item}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity 
-                            style={[styles.levelPill, selectedLevel === item && styles.levelPillActive]}
-                            onPress={() => setSelectedLevel(item)}
-                        >
-                            <Text style={[styles.levelPillText, selectedLevel === item && styles.levelPillTextActive]}>
-                                {item}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-                />
-            </View>
+
 
             {filteredNotes.length === 0 ? (
                 <View style={styles.emptyContainer}>

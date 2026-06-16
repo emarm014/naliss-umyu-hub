@@ -48,7 +48,7 @@ export const useSettingsStore = create<SettingsState>()(
             return;
           }
 
-          const { data, error } = await supabase
+          const { data, error } = await (supabase as any)
             .from('system_settings')
             .select('key, value')
             .in('key', [
@@ -62,7 +62,7 @@ export const useSettingsStore = create<SettingsState>()(
           if (error) throw error;
           if (data && data.length > 0) {
             const map: Record<string, string> = {};
-            data.forEach((item) => { map[item.key] = item.value; });
+            data.forEach((item: any) => { map[item.key] = item.value; });
             set({
               maintenanceMode: parseBool(map.maintenance_mode, false),
               readOnlyMode: parseBool(map.read_only_mode, false),

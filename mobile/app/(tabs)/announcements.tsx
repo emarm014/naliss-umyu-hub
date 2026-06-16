@@ -78,7 +78,7 @@ export default function AnnouncementsScreen() {
     const handleDelete = async (id: string) => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
-            const { error } = await supabase.from('announcements').delete().eq('id', id);
+            const { error } = await (supabase as any).from('announcements').delete().eq('id', id);
             if (error) throw error;
             if (user) {
                 (supabase as any).from('activity_logs').insert({

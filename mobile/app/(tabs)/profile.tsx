@@ -169,8 +169,7 @@ export default function ProfileScreen() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { setIsLoading(false); return; }
 
-      const { data: profile, error } = await (supabase
-        .from('users').select('*').eq('id', authUser.id).single() as any);
+      const { data: profile, error } = await ((supabase as any).from('users').select('*').eq('id', authUser.id).single() as any);
 
       if (error && error.code === 'PGRST116') { setIsLoading(false); return; }
       else if (error) throw error;

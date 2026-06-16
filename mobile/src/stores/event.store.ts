@@ -63,8 +63,7 @@ export const useEventStore = create<EventState>()(
 
                 try {
                     const now = new Date().toISOString().split('T')[0];
-                    let query = supabase
-                        .from('events')
+                    let query = (supabase as any).from('events')
                         .select('*')
                         .in('status', ['published', 'ongoing'])
                         .gte('start_date', now);

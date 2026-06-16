@@ -97,8 +97,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { data, error } = await Logger.perf('auth.store', 'fetchProfile', () => 
             withRetry(async () => {
-              const result = await supabase
-                .from('users')
+              const result = await (supabase as any).from('users')
                 .select('*')
                 .eq('id', user.id)
                 .single();
@@ -150,8 +149,7 @@ export const useAuthStore = create<AuthState>()(
         if (!user || !profile) return;
 
         try {
-          const { data: rows, error: dbError } = await supabase
-            .from('users')
+          const { data: rows, error: dbError } = await (supabase as any).from('users')
             .update(updates as any)
             .eq('id', user.id)
             .select();
@@ -216,8 +214,7 @@ export const useAuthStore = create<AuthState>()(
         });
 
         try {
-          const { data: rows, error } = await supabase
-            .from('users')
+          const { data: rows, error } = await (supabase as any).from('users')
             .update(prefs as any)
             .eq('id', user.id)
             .select();
@@ -261,8 +258,7 @@ export const useAuthStore = create<AuthState>()(
 
       checkProfileComplete: async (userId: string) => {
         try {
-          const { data, error } = await supabase
-            .from('users')
+          const { data, error } = await (supabase as any).from('users')
             .select('registration_number, level, role')
             .eq('id', userId)
             .maybeSingle();
@@ -298,7 +294,7 @@ export const useAuthStore = create<AuthState>()(
         // If metadata has these basics, we can attempt to re-run the profile creation
         if (regNum && level) {
           try {
-            const { error: rpcError } = await (supabase.rpc as any)('create_user_profile', {
+            const { error: rpcError } = await ((supabase as any).rpc as any)('create_user_profile', {
               p_id: user.id,
               p_full_name: metadata.full_name || 'Student',
               p_email: user.email,
@@ -326,8 +322,7 @@ export const useAuthStore = create<AuthState>()(
         const userId = user?.id;
         if (userId) {
           // Clear push token from DB on sign out (best-effort — don't block signout)
-          supabase
-            .from('users')
+          (supabase as any).from('users')
             .update({ push_token: null } as any)
             .eq('id', userId)
             .then(

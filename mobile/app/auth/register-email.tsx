@@ -103,8 +103,7 @@ export default function RegisterEmail() {
 
       // STEP 2: Check if registration is open
       try {
-        const { data: regSetting, error: regError } = await supabase
-          .from('system_settings')
+        const { data: regSetting, error: regError } = await (supabase as any).from('system_settings')
           .select('value')
           .eq('key', 'allow_registration')
           .maybeSingle();
@@ -128,7 +127,7 @@ export default function RegisterEmail() {
       let provider = 'none';
       try {
         Sentry.addBreadcrumb({ category: 'signup.email', message: 'Step 3: Checking existing account', level: 'info', data: { email: trimmedEmail } });
-        const { data, error } = await supabase.rpc('check_existing_account', { email_addr: trimmedEmail });
+        const { data, error } = await (supabase as any).rpc('check_existing_account', { email_addr: trimmedEmail });
         if (!error && data) provider = data;
       } catch {
         // RPC failed — allow through
@@ -145,7 +144,7 @@ export default function RegisterEmail() {
       if (provider === 'incomplete') {
         // Idempotent Garbage Collection: Purge the ghost account so we can start fresh
         Sentry.addBreadcrumb({ category: 'signup.email', message: 'Purging incomplete ghost account', level: 'info' });
-        await supabase.rpc('purge_incomplete_account', { email_addr: trimmedEmail });
+        await (supabase as any).rpc('purge_incomplete_account', { email_addr: trimmedEmail });
       } else if (provider === 'email') {
         Alert.alert(
           'Already Registered',

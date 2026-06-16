@@ -156,6 +156,8 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // @ts-ignore
+    initializeSession: true,
   },
   global: {
     fetch: fetchWithRetry as any,
@@ -195,7 +197,7 @@ export const batchedSupabaseInsert = async (table: string, payload: any) => {
 
       try {
         const payloads = items.map(i => i.payload);
-        const { data, error } = await supabase.from(table as any).insert(payloads).select();
+        const { data, error } = await (supabase as any).from(table as any).insert(payloads).select();
         if (error) throw error;
         items.forEach((item, index) => item.resolve(data?.[index] || data));
       } catch (err) {

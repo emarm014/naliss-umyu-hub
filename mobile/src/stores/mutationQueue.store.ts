@@ -68,7 +68,7 @@ export const useMutationQueueStore = create<MutationQueueState>()(
           try {
             Logger.info('mutationQueue', `Replaying mutation: ${mut.action} on ${mut.table}`, { id: mut.id });
             
-            let query = supabase.from(mut.table as any);
+            let query = (supabase as any).from(mut.table as any);
 
             if (mut.action === 'insert') {
               const { error } = await query.insert(mut.payload);

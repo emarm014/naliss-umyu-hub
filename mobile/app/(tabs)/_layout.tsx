@@ -34,15 +34,15 @@ export default function TabsLayout() {
   const renderTabLabel = (text: string) => ({ color, focused }: { color: string; focused: boolean }) => (
     <Text
       numberOfLines={1}
-      adjustsFontSizeToFit={true}
-      minimumFontScale={0.8}
+      adjustsFontSizeToFit={false}
+      allowFontScaling={false}
       style={{
         color,
-        fontSize: 10,
-        fontWeight: focused ? '600' : '400',
+        fontSize: 12,
+        fontWeight: '600',
         fontFamily: 'Inter-SemiBold',
         textAlign: 'center',
-        letterSpacing: -0.2, // Slightly squeezes letters to fit within boundary
+        letterSpacing: -0.2,
         marginTop: 2,
       }}
     >
@@ -104,15 +104,17 @@ export default function TabsLayout() {
           paddingTop: 0,
         },
         tabBarItemStyle: {
+          flex: 1,
           marginVertical: 8,
-          marginHorizontal: 6,
+          paddingHorizontal: 10,
           paddingVertical: 4,
           justifyContent: 'center',
           alignItems: 'center',
         },
         tabBarLabelStyle: {
           fontFamily: 'Inter-SemiBold',
-          fontSize: 10,
+          fontSize: 12,
+          fontWeight: '600',
           marginTop: 2,
         },
       }}

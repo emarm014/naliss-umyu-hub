@@ -948,16 +948,17 @@ export default function ChatScreen() {
                     if (error) throw error;
 
                     setMessages(prev => prev.map(m =>
-                        m.id === resendTempId ? { ...m, id: data.id, content: fileUrl, status: 'sent' } : m
+                        m.id === resendTempId ? { ...m, id: data.id, content: fileUrl, status: 'sent', created_at: data.created_at } : m
                     ));
-                    messageStore.updateMessage(id, resendTempId, { id: data.id, content: fileUrl, status: 'sent' });
+                    messageStore.updateMessage(id, resendTempId, { id: data.id, content: fileUrl, status: 'sent', created_at: data.created_at });
                 } catch (err: any) {
                     captureUIError('ChatScreen.resendMessage', err, { groupId: id });
                     setUploadingIds(prev => { const next = { ...prev }; delete next[resendTempId]; return next; });
+                    const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network');
                     setMessages(prev => prev.map(m =>
-                        m.id === resendTempId ? { ...m, id: messageId, status: 'failed' } : m
+                        m.id === resendTempId ? { ...m, id: messageId, status: isNetwork ? 'unsent' : 'error' } : m
                     ));
-                    messageStore.updateMessage(id, resendTempId, { id: messageId, status: 'failed' });
+                    messageStore.updateMessage(id, resendTempId, { id: messageId, status: isNetwork ? 'unsent' : 'error' });
                 }
                 return;
             }
@@ -984,15 +985,15 @@ export default function ChatScreen() {
 
             if (error) throw error;
             setMessages(prev => prev.map(m =>
-                m.id === resendTempId ? { ...m, id: data.id, status: 'sent' } : m
+                m.id === resendTempId ? { ...m, id: data.id, status: 'sent', created_at: data.created_at } : m
             ));
-            messageStore.updateMessage(id, resendTempId, { id: data.id, status: 'sent' });
+            messageStore.updateMessage(id, resendTempId, { id: data.id, status: 'sent', created_at: data.created_at });
         } catch (err: any) {
             const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed');
             setMessages(prev => prev.map(m =>
-                m.id === resendTempId ? { ...m, id: messageId, status: isNetwork ? 'unsent' : 'failed' } : m
+                m.id === resendTempId ? { ...m, id: messageId, status: isNetwork ? 'unsent' : 'error' } : m
             ));
-            messageStore.updateMessage(id, resendTempId, { id: messageId, status: isNetwork ? 'unsent' : 'failed' });
+            messageStore.updateMessage(id, resendTempId, { id: messageId, status: isNetwork ? 'unsent' : 'error' });
         }
     };
 
@@ -2059,16 +2060,16 @@ export default function ChatScreen() {
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
                 setMessages(prev => prev.map(m =>
                     m.id === tempId
-                        ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null }
+                        ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null, created_at: (data as any).created_at }
                         : m
                 ));
-                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null });
+                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null, created_at: (data as any).created_at });
             } catch (err: any) {
                 captureUIError('ChatScreen.sendSelectedFileQueue', err, { groupId: id });
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
                 const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed') || err?.message?.toLowerCase().includes('network error');
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: isNetwork ? 'unsent' : 'failed' } : m));
-                messageStore.updateMessage(id, tempId, { status: isNetwork ? 'unsent' : 'failed' });
+                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: isNetwork ? 'unsent' : 'error' } : m));
+                messageStore.updateMessage(id, tempId, { status: isNetwork ? 'unsent' : 'error' });
             }
         }
     };

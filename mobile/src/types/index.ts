@@ -5,7 +5,7 @@ export type UserRole = 'student' | 'moderator' | 'super_admin';
 export type AccountStatus = 'active' | 'suspended' | 'banned' | 'pending_verification' | 'pending_onboarding' | 'graduated';
 
 // Academic Level Types
-export type AcademicLevel = '100' | '200' | '300' | '400' | 'postgraduate';
+export type AcademicLevel = '100' | '200' | '300' | '400';
 
 // Semester Types
 export type SemesterType = 'first' | 'second' | 'summer';

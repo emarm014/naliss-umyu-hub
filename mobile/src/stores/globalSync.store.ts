@@ -284,7 +284,7 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
           // Only increment unread for messages from others
           if (newRecord.sender_id !== currentUserId) {
             const senderName = (newRecord as any).sender?.username || 'Someone';
-            useGroupStore.getState().incrementUnread(newRecord.group_id, `${senderName}: ${preview}`, newRecord.created_at);
+            useGroupStore.getState().incrementUnread(newRecord.group_id, `${senderName}: ${preview}`, newRecord.created_at, newRecord);
           }
           debouncedGroupFetch();
         }

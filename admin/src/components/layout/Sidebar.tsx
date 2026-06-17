@@ -35,7 +35,7 @@ const navigation = [
   { name: 'Groups', href: '/groups', icon: UsersRound, minRole: 'moderator' as const },
   { name: 'Announcements', href: '/announcements', icon: FileText, minRole: 'moderator' as const },
   { name: 'Events', href: '/events', icon: Calendar, minRole: 'moderator' as const },
-  { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const },
+  { name: 'Archive', href: '/archive', icon: FolderOpen, minRole: 'moderator' as const },
   { name: 'Past Questions', href: '/past-questions', icon: HelpCircle, minRole: 'moderator' as const },
   { name: 'Messaging', href: '/messaging', icon: MessageSquare, minRole: 'moderator' as const },
   { name: 'Group Media', href: '/group-media', icon: Images, minRole: 'moderator' as const },
@@ -148,7 +148,7 @@ export default function Sidebar() {
               <NavLink
                 key={item.href}
                 to={item.href}
-                end={item.href === '/materials' || item.href === '/'}
+                end={item.href === '/archive' || item.href === '/'}
                 onClick={() => {
                   if (location.pathname === item.href) {
                     useAdminDataStore.getState().syncAll(true);

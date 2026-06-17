@@ -218,6 +218,35 @@ export default function ResourcesScreen() {
         // Vault check failed — fall back to Cloudinary URL (requires internet)
       }
 
+      if (fileType === 'pdf' || fileType === 'document') {
+        try {
+          let localUri = fileUri;
+          if (fileUri.startsWith('http')) {
+            const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase() || 'document.pdf';
+            const downloadDest = FileSystem.documentDirectory + safeName;
+            const downloadRes = await FileSystem.downloadAsync(fileUri, downloadDest);
+            localUri = downloadRes.uri;
+          }
+
+          let contentUri = localUri;
+          if (Platform.OS === 'android') {
+            contentUri = await FileSystem.getContentUriAsync(localUri);
+          }
+
+          await Sharing.shareAsync(contentUri, {
+            mimeType: fileType === 'pdf' ? 'application/pdf' : '*/*',
+            dialogTitle: 'Open document with...'
+          });
+
+          const type = (material as any).material_type ? 'material' : 'past_question';
+          await incrementViewCount(material.id, type);
+        } catch (error) {
+          captureUIError('ResourcesScreen.handleRead.NativeOpen', error, { materialId: material.id });
+          Alert.alert('Error', 'Could not open the document natively.');
+        }
+        return; // Gracefully handle navigation: return immediately so we drop straight back into the catalog!
+      }
+
       setReaderUrl(fileUri);
       setReaderFileType(fileType);
       setReaderTitle(displayName);
@@ -626,11 +655,11 @@ function ResourceCard({ material, downloadedIds, onDownload, onRead, onDelete }:
   if (files.length === 0) return null;
 
   return (
-    <View style={[styles.resourceCard, { backgroundColor: theme.cardBg, borderColor: theme.border, flexDirection: 'column', alignItems: 'stretch' }]}>
+    <View style={[styles.resourceCard, { backgroundColor: theme.isDark ? theme.cardBg : '#FFFFFF', borderColor: theme.border, flexDirection: 'column', alignItems: 'stretch' }]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 12 }}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.resTitle, { color: theme.textPrimary }]} numberOfLines={2}>{material.title}</Text>
-          {material.description ? <Text style={[{ color: theme.textMuted, fontSize: 12, marginTop: 4, fontFamily: 'Inter-Medium' }]} numberOfLines={2}>{material.description}</Text> : null}
+          <Text style={[styles.resTitle, { color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={2}>{material.title}</Text>
+          {material.description ? <Text style={[{ color: theme.isDark ? theme.textMuted : '#64748b', fontSize: 12, marginTop: 4, fontFamily: 'Inter-Medium' }]} numberOfLines={2}>{material.description}</Text> : null}
         </View>
         {profile?.role === 'super_admin' && (
           <TouchableOpacity
@@ -739,9 +768,9 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }
       </View>
       
       <View style={[styles.resInfo, { marginLeft: 12, flex: 1 }]}>
-        <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: theme.textPrimary }]} numberOfLines={1}>{fileAsset.name}</Text>
+        <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={1}>{fileAsset.name}</Text>
         <View style={styles.resMetaRow}>
-          <Text style={[styles.resMeta, { color: theme.textMuted }]}>{fileSizeMB} MB</Text>
+          <Text style={[styles.resMeta, { color: theme.isDark ? theme.textMuted : '#64748b' }]}>{fileSizeMB} MB</Text>
           {localDownloaded && (
             <View style={[styles.offlinePill, { marginLeft: 6 }]}>
               <Ionicons name="checkmark-circle" size={10} color="#166534" />
@@ -759,8 +788,8 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }
       </View>
 
       <View style={[styles.resActions, { marginLeft: 8 }]}>
-        <TouchableOpacity onPress={onRead} style={[styles.resActionBtn, { backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : COLORS.actionBlue }]}>
-          <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? '#166534' : COLORS.primary} />
+        <TouchableOpacity onPress={onRead} style={[styles.resActionBtn, { backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : (theme.isDark ? COLORS.actionBlue : '#f1f5f9') }]}>
+          <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? '#166534' : (theme.isDark ? COLORS.primary : '#475569')} />
         </TouchableOpacity>
         
         <TouchableOpacity
@@ -803,7 +832,7 @@ function CourseTile({ course }: { course: Course }) {
   const lecturerName = (course as any).lecturer?.full_name || (course as any).lecturer_name || null;
 
   return (
-    <View style={[styles.courseCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+    <View style={[styles.courseCard, { backgroundColor: theme.isDark ? theme.cardBg : '#FFFFFF', borderColor: theme.border }]}>
       {/* Gradient strip — left side */}
       <LinearGradient colors={palette.grad} style={styles.courseStrip} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
         <Text style={styles.courseStripCode} numberOfLines={2}>{code}</Text>
@@ -815,7 +844,7 @@ function CourseTile({ course }: { course: Course }) {
 
       {/* Content */}
       <View style={styles.courseContent}>
-        <Text style={[styles.courseTitleNew, { color: theme.textPrimary }]} numberOfLines={2}>{course.title}</Text>
+        <Text style={[styles.courseTitleNew, { color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={2}>{course.title}</Text>
 
         {/* Info pills row */}
         <View style={styles.coursePillRow}>
@@ -839,8 +868,8 @@ function CourseTile({ course }: { course: Course }) {
 
         {/* Lecturer */}
         <View style={styles.courseLecturerRow}>
-          <Ionicons name="person-circle-outline" size={13} color={theme.textMuted} />
-          <Text style={[styles.courseLecturerText, { color: theme.textSecondary }]} numberOfLines={1}>
+          <Ionicons name="person-circle-outline" size={13} color={theme.isDark ? theme.textMuted : '#94a3b8'} />
+          <Text style={[styles.courseLecturerText, { color: theme.isDark ? theme.textSecondary : '#64748b' }]} numberOfLines={1}>
             {lecturerName || 'Staff Not Assigned'}
           </Text>
         </View>
@@ -860,7 +889,7 @@ function StaffTile({ lecturer, onPress, isDark }: { lecturer: Lecturer, onPress:
     <TouchableOpacity style={[styles.lecturerCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={onPress} activeOpacity={0.92}>
       {/* Gradient header strip */}
       <LinearGradient
-        colors={['#064e3b', '#1B5E20', '#2E7D32']}
+        colors={theme.isDark ? ['#064e3b', '#1B5E20', '#2E7D32'] : ['#FFFFFF', '#FFFFFF', '#FFFFFF']}
         style={styles.lecturerHeader}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -870,46 +899,46 @@ function StaffTile({ lecturer, onPress, isDark }: { lecturer: Lecturer, onPress:
           {hasPhoto ? (
             <Image source={{ uri: getOptimizedCloudinaryUrl(lecturer.avatar_url!, 200, 200) }} style={styles.lecturerAvatar} />
           ) : (
-            <View style={styles.lecturerAvatarPlaceholder}>
-              <Text style={styles.lecturerInitials}>{initials}</Text>
+            <View style={[styles.lecturerAvatarPlaceholder, !theme.isDark && { backgroundColor: '#f8fafc' }]}>
+              <Text style={[styles.lecturerInitials, !theme.isDark && { color: COLORS.primary }]}>{initials}</Text>
             </View>
           )}
         </View>
 
         {/* Title badge */}
-        <View style={styles.lecturerTitleBadge}>
-          <Ionicons name="school" size={10} color="#fbbf24" />
-          <Text style={styles.lecturerTitleText}>{title.toUpperCase()}</Text>
+        <View style={[styles.lecturerTitleBadge, !theme.isDark && { borderColor: COLORS.primary, backgroundColor: 'transparent' }]}>
+          <Ionicons name="school" size={10} color={theme.isDark ? "#fbbf24" : COLORS.primary} />
+          <Text style={[styles.lecturerTitleText, !theme.isDark && { color: COLORS.primary }]}>{title.toUpperCase()}</Text>
         </View>
       </LinearGradient>
 
       {/* Body */}
-      <View style={styles.lecturerBody}>
-        <Text style={[styles.lecturerName, { color: theme.textPrimary }]} numberOfLines={1}>{lecturer.full_name}</Text>
-        <Text style={[styles.lecturerPosition, { color: theme.textSecondary }]} numberOfLines={1}>{position}</Text>
+      <View style={[styles.lecturerBody, !theme.isDark && { backgroundColor: COLORS.primary }]}>
+        <Text style={[styles.lecturerName, { color: theme.isDark ? theme.textPrimary : '#FFFFFF' }]} numberOfLines={1}>{lecturer.full_name}</Text>
+        <Text style={[styles.lecturerPosition, { color: theme.isDark ? theme.textSecondary : '#FFFFFF' }]} numberOfLines={1}>{position}</Text>
 
         {/* Specialization pill */}
         {lecturer.specialization && (
-          <View style={[styles.lecturerSpecPill, isDark && { backgroundColor: '#064e3b', borderColor: '#166534' }]}>
-            <Ionicons name="ribbon-outline" size={10} color={isDark ? '#4ade80' : '#166534'} />
-            <Text style={[styles.lecturerSpecText, isDark && { color: '#4ade80' }]} numberOfLines={1}>{lecturer.specialization}</Text>
+          <View style={[styles.lecturerSpecPill, theme.isDark ? { backgroundColor: '#064e3b', borderColor: '#166534' } : { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: '#FFFFFF' }]}>
+            <Ionicons name="ribbon-outline" size={10} color={theme.isDark ? '#4ade80' : '#FFFFFF'} />
+            <Text style={[styles.lecturerSpecText, theme.isDark ? { color: '#4ade80' } : { color: '#FFFFFF' }]} numberOfLines={1}>{lecturer.specialization}</Text>
           </View>
         )}
 
         {/* Contact row */}
         <View style={styles.lecturerContactRow}>
           {lecturer.email && (
-            <View style={[styles.lecturerContactChip, isDark && { backgroundColor: '#334155' }]}>
-              <Ionicons name="mail-outline" size={11} color={isDark ? '#94a3b8' : '#64748b'} />
+            <View style={[styles.lecturerContactChip, theme.isDark ? { backgroundColor: '#334155' } : { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <Ionicons name="mail-outline" size={11} color={theme.isDark ? '#94a3b8' : '#FFFFFF'} />
             </View>
           )}
           {lecturer.phone && (
-            <View style={[styles.lecturerContactChip, isDark && { backgroundColor: '#334155' }]}>
-              <Ionicons name="call-outline" size={11} color={isDark ? '#94a3b8' : '#64748b'} />
+            <View style={[styles.lecturerContactChip, theme.isDark ? { backgroundColor: '#334155' } : { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <Ionicons name="call-outline" size={11} color={theme.isDark ? '#94a3b8' : '#FFFFFF'} />
             </View>
           )}
           <View style={{ flex: 1 }} />
-          <Ionicons name="chevron-forward" size={16} color={isDark ? '#475569' : '#cbd5e1'} />
+          <Ionicons name="chevron-forward" size={16} color={theme.isDark ? '#475569' : '#FFFFFF'} />
         </View>
       </View>
     </TouchableOpacity>
@@ -929,7 +958,7 @@ function ExecTile({ executive, onPress, isDark }: { executive: any, onPress: () 
     <TouchableOpacity style={[styles.execCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={onPress} activeOpacity={0.92}>
       {/* Green gradient header — same style as lecturer card */}
       <LinearGradient
-        colors={['#064e3b', '#1B5E20', '#2d6a4f']}
+        colors={theme.isDark ? ['#064e3b', '#1B5E20', '#2d6a4f'] : ['#FFFFFF', '#FFFFFF', '#FFFFFF']}
         style={styles.execHeader}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -939,35 +968,35 @@ function ExecTile({ executive, onPress, isDark }: { executive: any, onPress: () 
           {hasPhoto ? (
             <Image source={{ uri: getOptimizedCloudinaryUrl(avatar, 200, 200) }} style={styles.execAvatar} />
           ) : (
-            <View style={styles.execAvatarPlaceholder}>
-              <Text style={styles.execInitials}>{initials}</Text>
+            <View style={[styles.execAvatarPlaceholder, !theme.isDark && { backgroundColor: '#f8fafc' }]}>
+              <Text style={[styles.execInitials, !theme.isDark && { color: COLORS.primary }]}>{initials}</Text>
             </View>
           )}
         </View>
 
         {/* Session badge — top right */}
-        <View style={styles.execSessionBadge}>
-          <Ionicons name="calendar" size={9} color="#fbbf24" />
-          <Text style={styles.execSessionText}>{session}</Text>
+        <View style={[styles.execSessionBadge, !theme.isDark && { borderColor: COLORS.primary, backgroundColor: 'transparent' }]}>
+          <Ionicons name="calendar" size={9} color={theme.isDark ? "#fbbf24" : COLORS.primary} />
+          <Text style={[styles.execSessionText, !theme.isDark && { color: COLORS.primary }]}>{session}</Text>
         </View>
       </LinearGradient>
 
       {/* Body — full width, left aligned like lecturer */}
-      <View style={styles.execBody}>
-        <Text style={[styles.execName, { color: theme.textPrimary }]} numberOfLines={1}>{name}</Text>
-        <View style={[styles.execPositionPill, isDark && { backgroundColor: '#064e3b', borderColor: '#166534' }]}>
-          <Ionicons name="star" size={10} color={isDark ? '#4ade80' : '#059669'} />
-          <Text style={[styles.execPositionText, isDark && { color: '#4ade80' }]} numberOfLines={1}>{position}</Text>
+      <View style={[styles.execBody, !theme.isDark && { backgroundColor: COLORS.primary }]}>
+        <Text style={[styles.execName, { color: theme.isDark ? theme.textPrimary : '#FFFFFF' }]} numberOfLines={1}>{name}</Text>
+        <View style={[styles.execPositionPill, theme.isDark ? { backgroundColor: '#064e3b', borderColor: '#166534' } : { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: '#FFFFFF' }]}>
+          <Ionicons name="star" size={10} color={theme.isDark ? '#4ade80' : '#FFFFFF'} />
+          <Text style={[styles.execPositionText, theme.isDark ? { color: '#4ade80' } : { color: '#FFFFFF' }]} numberOfLines={1}>{position}</Text>
         </View>
 
         <View style={styles.execContactRow}>
           {(executive.user?.email || executive.email) && (
-            <View style={[styles.execContactChip, isDark && { backgroundColor: '#334155' }]}>
-              <Ionicons name="mail-outline" size={11} color={isDark ? '#94a3b8' : '#64748b'} />
+            <View style={[styles.execContactChip, theme.isDark ? { backgroundColor: '#334155' } : { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <Ionicons name="mail-outline" size={11} color={theme.isDark ? '#94a3b8' : '#FFFFFF'} />
             </View>
           )}
           <View style={{ flex: 1 }} />
-          <Ionicons name="chevron-forward" size={16} color={isDark ? '#475569' : '#cbd5e1'} />
+          <Ionicons name="chevron-forward" size={16} color={theme.isDark ? '#475569' : '#FFFFFF'} />
         </View>
       </View>
     </TouchableOpacity>
@@ -987,11 +1016,12 @@ function SectionHead({ title, count }: { title: string, count: number }) {
 }
 
 function EmptySection({ query }: { query?: string }) {
+  const theme = useSemanticTheme();
   return (
-    <View style={styles.emptyCard}>
-      <Ionicons name="search-outline" size={40} color={COLORS.textMuted} style={{ marginBottom: 16 }} />
-      <Text style={styles.emptyTitle}>No results found</Text>
-      <Text style={styles.emptyText}>
+    <View style={[styles.emptyCard, { backgroundColor: theme.isDark ? 'transparent' : '#FFF', borderColor: theme.isDark ? 'transparent' : '#F1F5F9' }]}>
+      <Ionicons name="search-outline" size={40} color={theme.isDark ? '#4ade80' : COLORS.textMuted} style={{ marginBottom: 16 }} />
+      <Text style={[styles.emptyTitle, { color: theme.isDark ? '#FFFFFF' : COLORS.text }]}>No results found</Text>
+      <Text style={[styles.emptyText, { color: theme.isDark ? '#94a3b8' : COLORS.textMuted }]}>
         {query ? `We couldn't find anything matching "${query}"` : 'No items found in this category.'}
       </Text>
     </View>

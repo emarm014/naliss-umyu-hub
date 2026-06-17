@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  useWindowDimensions,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
@@ -22,6 +24,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
 import * as Sentry from '@sentry/react-native';
 import { saveCategorizedFileToDevice } from '../../utils/fileSaver';
+import Pdf from 'react-native-pdf';
 
 const { width, height } = Dimensions.get('window');
 
@@ -100,6 +103,7 @@ interface ViewerContentProps {
   onImageError: () => void;
   pdfEngine: 'local' | 'local_hd' | 'google' | 'microsoft';
   isOffline: boolean;
+  onSingleTap?: () => void;
 }
 
 interface ZoomableImageProps {
@@ -215,6 +219,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
   onImageError,
   pdfEngine,
   isOffline,
+  onSingleTap,
 }) => {
   if (isDownloading) {
     return (
@@ -270,10 +275,10 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
       return (
         <View style={{ flex: 1 }}>
           {pdfEngine === 'local' && (
-            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={2.2} />
+            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={2.2} onSingleTap={onSingleTap} />
           )}
           {pdfEngine === 'local_hd' && (
-            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={3.5} />
+            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={3.5} onSingleTap={onSingleTap} />
           )}
           {pdfEngine === 'google' && (
             <GooglePdfViewer remoteUrl={fileUri} isOffline={isOffline} />
@@ -319,6 +324,20 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   showDownload = true,
   showShare = true,
 }) => {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const [showControls, setShowControls] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isLandscape) {
+      setShowControls(false);
+    } else {
+      setShowControls(true);
+    }
+  }, [isLandscape]);
+
+  const shouldShowControls = !isLandscape || showControls;
+
   const [localUri, setLocalUri] = React.useState<string | null>(null);
   const [isDownloading, setIsDownloading] = React.useState(false);
   const [downloadProgress, setDownloadProgress] = React.useState(0);
@@ -514,9 +533,10 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   return (
     <Modal visible={isVisible} animationType="slide" transparent>
       <BlurView intensity={80} style={StyleSheet.absoluteFill}>
-        <View style={styles.container}>
+        <View style={[styles.container, isLandscape && { marginTop: 0, borderRadius: 0 }]}>
           {/* Header */}
-          <View style={styles.header}>
+          {shouldShowControls && (
+            <View style={[styles.header, isLandscape && styles.landscapeOverlayHeader]}>
             {/* Left: Cancel (X) */}
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={COLORS.black} />
@@ -537,11 +557,12 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
             {/* Right: Balance placeholder (removed redundant back arrow) */}
             <View style={{ width: 40 }} />
-          </View>
+            </View>
+          )}
 
           {/* PDF Engine Switcher Bar */}
-          {(fileType === 'pdf' || fileType === 'document') && (
-            <View style={engineStyles.bar}>
+          {shouldShowControls && (fileType === 'pdf' || fileType === 'document') && (
+            <View style={[engineStyles.bar, isLandscape && styles.landscapeOverlayTabs]}>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -591,31 +612,34 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           )}
 
           {/* Content */}
-          <View style={styles.content}>
-            <ViewerContent
-              isDownloading={isDownloading}
-              downloadProgress={downloadProgress}
-              downloadError={downloadError}
-              localUri={localUri}
-              fileType={fileType}
-              fileUri={fileUri}
-              fileName={fileName}
-              onRetry={() => {
-                setDownloadError(null);
-                setLocalUri(null);
-                setIsDownloading(true);
-                setDownloadProgress(0);
-                setRetryKey(k => k + 1);
-              }}
-              onImageError={() => setDownloadError('Image could not be displayed.')}
-              pdfEngine={pdfEngine}
-              isOffline={isOffline}
-            />
-          </View>
+          <TouchableWithoutFeedback onPress={() => setShowControls(!showControls)}>
+            <View style={[styles.content, isLandscape && { position: 'absolute', top: 0, left: 0, width, height, zIndex: 1 }]}>
+              <ViewerContent
+                isDownloading={isDownloading}
+                downloadProgress={downloadProgress}
+                downloadError={downloadError}
+                localUri={localUri}
+                fileType={fileType}
+                fileUri={fileUri}
+                fileName={fileName}
+                onRetry={() => {
+                  setDownloadError(null);
+                  setLocalUri(null);
+                  setIsDownloading(true);
+                  setDownloadProgress(0);
+                  setRetryKey(k => k + 1);
+                }}
+                onImageError={() => setDownloadError('Image could not be displayed.')}
+                pdfEngine={pdfEngine}
+                isOffline={isOffline}
+                onSingleTap={() => setShowControls(!showControls)}
+              />
+            </View>
+          </TouchableWithoutFeedback>
 
           {/* Footer — only shown when download/share is enabled */}
-          {showDownload && (
-            <View style={[styles.footer, !showShare && { justifyContent: 'center' }]}>
+          {shouldShowControls && showDownload && (
+            <View style={[styles.footer, !showShare && { justifyContent: 'center' }, isLandscape && styles.landscapeOverlayFooter]}>
               <TouchableOpacity
                 style={[styles.footerAction, (!localUri && isDownloading) && { opacity: 0.5 }]}
                 onPress={saveToDevice}
@@ -729,8 +753,9 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
           volume={1.0}
           isMuted={false}
           resizeMode={ResizeMode.CONTAIN}
-          shouldPlay={true}
-          useNativeControls
+          shouldPlay={false}
+          progressUpdateIntervalMillis={500}
+          useNativeControls={true}
           style={styles.video}
           onError={(err) => {
             Sentry.captureException(new Error(`expo-av Video error: ${JSON.stringify(err)}`), {
@@ -894,38 +919,37 @@ function MicrosoftPdfViewer({ remoteUrl, isOffline }: { remoteUrl: string; isOff
   );
 }
 
-// PDF.js Canvas Renderer - works on Android + iOS, online + offline
-function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 2.2 }: { localUri: string | null; remoteUrl: string; scaleMultiplier?: number }) {
-  const [html, setHtml] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+// react-native-pdf Hardware Accelerated Renderer - maximum vector clarity
+function PdfJsViewer({ localUri, remoteUrl, onSingleTap }: { localUri: string | null; remoteUrl: string; scaleMultiplier?: number; onSingleTap?: () => void }) {
+  // Ensure localUri is properly formatted for react-native-pdf if present
+  let source;
+  if (localUri) {
+    source = { uri: localUri.startsWith('file://') ? localUri : `file://${localUri}` };
+  } else {
+    source = { uri: remoteUrl, cache: true };
+  }
 
-  React.useEffect(() => {
-    let cancelled = false;
-    const build = async () => {
-      try {
-        let pdfSrc;
-        if (localUri) {
-          const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' });
-          pdfSrc = 'data:application/pdf;base64,' + base64;
-        } else {
-          pdfSrc = remoteUrl;
-        }
-        if (cancelled) return;
-        const srcJson = JSON.stringify(pdfSrc);
-        const htmlContent = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#1e293b;font-family:-apple-system,sans-serif}#toolbar{position:sticky;top:0;z-index:100;background:#0f172a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}#toolbar span{color:#94a3b8;font-size:12px;font-weight:600}#toolbar strong{color:#f1f5f9;font-size:13px}#pages{padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center}.pw{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.4);border-radius:8px;overflow:hidden}canvas{display:block;max-width:100%}.pn{position:absolute;bottom:8px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;color:#94a3b8}.sp{width:40px;height:40px;border:3px solid #334155;border-top-color:#064e3b;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#err{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;color:#ef4444;padding:24px;text-align:center}#err p{color:#94a3b8;font-size:13px;line-height:1.5}</style></head><body><div id="toolbar"><span>PDF VIEWER</span><strong id="pc">Loading...</strong></div><div id="loading"><div class="sp"></div><span>Rendering...</span></div><div id="err"><strong>Could not render PDF</strong><p id="em">The file may be corrupted.</p></div><div id="pages"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(async()=>{const ld=document.getElementById("loading"),er=document.getElementById("err"),em=document.getElementById("em"),pg=document.getElementById("pages"),pc=document.getElementById("pc");try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const src=' + srcJson + ';const pdf=await pdfjsLib.getDocument(src).promise;const tot=pdf.numPages;ld.style.display="none";pc.textContent=tot+" page"+(tot!==1?"s":"");const dpr=' + scaleMultiplier + ';const vw=window.innerWidth-32;for(let i=1;i<=tot;i++){const page=await pdf.getPage(i);const us=page.getViewport({scale:1});const sc=(vw/us.width)*dpr;const vp=page.getViewport({scale:sc});const wrap=document.createElement("div");wrap.className="pw";wrap.style.width=(vp.width/dpr)+"px";const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/dpr)+"px";cv.style.height=(vp.height/dpr)+"px";const ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";await page.render({canvasContext:ctx,viewport:vp}).promise;const num=document.createElement("div");num.className="pn";num.textContent=i+" / "+tot;wrap.appendChild(cv);wrap.appendChild(num);pg.appendChild(wrap);}}catch(e){ld.style.display="none";er.style.display="flex";em.textContent=e?.message||"Unknown error";}})()</script></body></html>';
-        if (!cancelled) { setHtml(htmlContent); setLoading(false); }
-      } catch (e: any) {
-        if (!cancelled) { setError(e?.message || 'Could not prepare PDF viewer.'); setLoading(false); }
-      }
-    };
-    build();
-    return () => { cancelled = true; };
-  }, [localUri, remoteUrl, scaleMultiplier]);
-
-  if (loading) return React.createElement(View, {style: styles.center}, React.createElement(ActivityIndicator, {size: 'large', color: COLORS.primary}), React.createElement(Text, {style: styles.loadingText}, 'Preparing PDF viewer...'));
-  if (error || !html) return React.createElement(View, {style: styles.center}, React.createElement(Ionicons, {name: 'alert-circle-outline', size: 48, color: '#ef4444'}), React.createElement(Text, {style: styles.errorText}, error || 'Render failed'));
-  return React.createElement(WebView, {source: {html}, style: styles.webview, originWhitelist: ['*'], allowFileAccess: true, allowFileAccessFromFileURLs: true, allowUniversalAccessFromFileURLs: true, mixedContentMode: 'always', javaScriptEnabled: true, domStorageEnabled: true, startInLoadingState: true, onError: () => setError('WebView failed to load.')});
+  return (
+    <View style={{ flex: 1, width: '100%', height: '100%', backgroundColor: '#1e293b' }}>
+      <Pdf
+        source={source}
+        style={{ flex: 1, width: '100%', height: '100%', backgroundColor: 'transparent' }}
+        scale={2.5}
+        minScale={1.0}
+        maxScale={5.0}
+        singlePage={false}
+        enableAntialiasing={true}
+        enablePaging={true}
+        fitPolicy={0}
+        onPageSingleTap={(page, x, y) => {
+          if (onSingleTap) onSingleTap();
+        }}
+        onError={(error) => {
+          Sentry.captureException(new Error(`PDF rendering error: ${error}`));
+        }}
+      />
+    </View>
+  );
 }
 
 function AudioPlayer({ uri, fileName }: { uri: string; fileName: string }) {
@@ -1106,4 +1130,28 @@ const styles = StyleSheet.create({
   placeholderContainer: { flex: 1, padding: 40, alignItems: 'center', justifyContent: 'center' },
   placeholderText: { fontSize: 14, color: '#64748b', marginTop: 10 },
   fileNameText: { fontSize: 18, fontWeight: '800', color: COLORS.black, marginVertical: 10, textAlign: 'center' },
+  landscapeOverlayHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  landscapeOverlayTabs: {
+    position: 'absolute',
+    top: 75,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    backgroundColor: 'rgba(241,245,249,0.95)',
+  },
+  landscapeOverlayFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
 });

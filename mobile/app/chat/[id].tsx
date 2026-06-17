@@ -363,7 +363,7 @@ export default function ChatScreen() {
                 .select(`
                     *,
                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                    reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
+                    reply_to_message:messages!reply_to_id(id, content, message_type, user:users!messages_sender_id_fkey(username, full_name))
                 `)
                 .eq('group_id', id)
                 .eq('is_deleted', false)
@@ -394,6 +394,8 @@ export default function ChatScreen() {
                 replyTo: msg.reply_to_message ? {
                     id: msg.reply_to_message.id,
                     username: msg.reply_to_message.user?.username,
+                    full_name: msg.reply_to_message.user?.full_name,
+                    content_type: msg.reply_to_message.message_type,
                     content: msg.reply_to_message.content?.substring(0, 50)
                 } : null,
                 status: 'sent',
@@ -431,7 +433,7 @@ export default function ChatScreen() {
                 .select(`
                     *,
                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                    reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
+                    reply_to_message:messages!reply_to_id(id, content, message_type, user:users!messages_sender_id_fkey(username, full_name))
                 `)
                 .eq('group_id', id)
                 .eq('is_deleted', false)
@@ -446,6 +448,8 @@ export default function ChatScreen() {
                 replyTo: msg.reply_to_message ? {
                     id: msg.reply_to_message.id,
                     username: msg.reply_to_message.user?.username,
+                    full_name: msg.reply_to_message.user?.full_name,
+                    content_type: msg.reply_to_message.message_type,
                     content: msg.reply_to_message.content?.substring(0, 50)
                 } : null,
                 status: 'sent',
@@ -561,6 +565,8 @@ export default function ChatScreen() {
                                     replyToData = {
                                         id: repliedMsg.id,
                                         username: repliedMsg.user?.username || repliedMsg.username || 'user',
+                                        full_name: repliedMsg.user?.full_name || repliedMsg.full_name || '',
+                                        content_type: repliedMsg.message_type || repliedMsg.content_type,
                                         content: repliedMsg.content?.substring(0, 50)
                                     };
                                 }
@@ -584,7 +590,7 @@ export default function ChatScreen() {
                                 .select(`
                                     *,
                                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                                    reply_to_message:messages!reply_to_id(id, content, user:users!messages_sender_id_fkey(username))
+                                    reply_to_message:messages!reply_to_id(id, content, message_type, user:users!messages_sender_id_fkey(username, full_name))
                                 `)
                                 .eq('id', newMsg.id)
                                 .single();
@@ -595,6 +601,8 @@ export default function ChatScreen() {
                                     replyTo: (fullData as any).reply_to_message ? {
                                         id: (fullData as any).reply_to_message.id,
                                         username: (fullData as any).reply_to_message.user?.username,
+                                        full_name: (fullData as any).reply_to_message.user?.full_name,
+                                        content_type: (fullData as any).reply_to_message.message_type,
                                         content: (fullData as any).reply_to_message.content?.substring(0, 50)
                                     } : null,
                                     status: 'sent',
@@ -776,7 +784,7 @@ export default function ChatScreen() {
 
             const replyToId = activeReplyTarget?.id || null;
             const replyFromMeta = activeReplyTarget ? {
-                sender_name: activeReplyTarget.user?.username || activeReplyTarget.username || 'user',
+                sender_name: activeReplyTarget.user?.full_name || activeReplyTarget.full_name || activeReplyTarget.user?.username || activeReplyTarget.username || 'user',
                 content: activeReplyTarget.content,
                 content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text'
             } : null;
@@ -796,7 +804,9 @@ export default function ChatScreen() {
                 reply_from_meta: replyFromMeta,
                 replyTo: activeReplyTarget ? { 
                     id: activeReplyTarget.id, 
-                    username: activeReplyTarget.user?.username || activeReplyTarget.username || 'user', 
+                    username: activeReplyTarget.user?.username || activeReplyTarget.username || 'user',
+                    full_name: activeReplyTarget.user?.full_name || activeReplyTarget.full_name || '',
+                    content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text',
                     content: (activeReplyTarget.content || '').substring(0, 50) 
                 } : null,
                 isEdited: false,
@@ -1426,7 +1436,10 @@ export default function ChatScreen() {
                                 style={[
                                     styles.replyPreview, 
                                     { 
-                                        backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.06)' 
+                                        backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.06)',
+                                        flexDirection: 'row',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
                                     }
                                 ]}
                                 onPress={() => {
@@ -1435,24 +1448,88 @@ export default function ChatScreen() {
                                     }
                                 }}
                             >
-                                <View style={[styles.replyBar, { backgroundColor: isMe ? '#10b981' : '#059669' }]} />
-                                <View style={styles.replyContent}>
-                                    <Text style={[styles.replyUsername, { color: isMe ? '#10b981' : '#059669' }]}>
-                                        {item.reply_from_meta?.sender_name || item.replyTo?.username || 'user'}
-                                    </Text>
-                                    <Text style={[styles.replyText, { color: isDark ? '#cbd5e1' : '#64748b' }]} numberOfLines={1}>
+                                <View style={{ flexDirection: 'row', flex: 1, paddingRight: 8 }}>
+                                    <View style={[styles.replyBar, { backgroundColor: isMe ? '#10b981' : '#059669' }]} />
+                                    <View style={[styles.replyContent, { flex: 1 }]}>
+                                        <Text style={[styles.replyUsername, { color: isMe ? '#10b981' : '#059669', fontFamily: 'Inter-Bold', fontWeight: 'bold' }]} numberOfLines={1}>
+                                            {item.reply_from_meta?.sender_name || item.replyTo?.full_name || item.replyTo?.username || 'user'}
+                                        </Text>
+                                        
                                         {(() => {
                                             const replyType = item.reply_from_meta?.content_type || item.replyTo?.content_type || 'text';
                                             const replyContent = item.reply_from_meta?.content || item.replyTo?.content || '';
-                                            if (replyType === 'image') return '📷 Photo';
-                                            if (replyType === 'video') return '🎥 Video';
-                                            if (replyType === 'audio') return '🎵 Audio';
-                                            if (replyType === 'document') return '📄 Document';
-                                            if (replyType === 'sticker') return '✨ Sticker';
-                                            return replyContent;
+                                            const textColor = isDark ? '#cbd5e1' : '#64748b';
+                                            
+                                            if (replyType === 'image') {
+                                                return (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                                        <Ionicons name="camera" size={14} color={textColor} />
+                                                        <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Photo</Text>
+                                                    </View>
+                                                );
+                                            }
+                                            if (replyType === 'document') {
+                                                return (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                                        <Ionicons name="document-text" size={14} color={textColor} />
+                                                        <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Document</Text>
+                                                    </View>
+                                                );
+                                            }
+                                            if (replyType === 'video') {
+                                                return (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                                        <Ionicons name="videocam" size={14} color={textColor} />
+                                                        <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Video</Text>
+                                                    </View>
+                                                );
+                                            }
+                                            if (replyType === 'audio') {
+                                                return (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                                        <Ionicons name="mic" size={14} color={textColor} />
+                                                        <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Audio</Text>
+                                                    </View>
+                                                );
+                                            }
+                                            if (replyType === 'sticker') {
+                                                return (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                                        <Ionicons name="star" size={14} color={textColor} />
+                                                        <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Sticker</Text>
+                                                    </View>
+                                                );
+                                            }
+                                            
+                                            return (
+                                                <Text style={[styles.replyText, { color: textColor, marginTop: 2 }]} numberOfLines={1}>
+                                                    {replyContent}
+                                                </Text>
+                                            );
                                         })()}
-                                    </Text>
+                                    </View>
                                 </View>
+                                
+                                {(() => {
+                                    const replyType = item.reply_from_meta?.content_type || item.replyTo?.content_type || 'text';
+                                    const replyContent = item.reply_from_meta?.content || item.replyTo?.content || '';
+                                    if (replyType === 'image' && replyContent && replyContent.startsWith('http')) {
+                                        return (
+                                            <Image 
+                                                source={{ uri: replyContent }} 
+                                                style={{ width: 36, height: 36, borderRadius: 4, marginRight: 8, marginVertical: 4 }} 
+                                            />
+                                        );
+                                    }
+                                    if (replyType === 'video' && replyContent) {
+                                        return (
+                                            <View style={{ width: 36, height: 36, borderRadius: 4, marginRight: 8, marginVertical: 4, backgroundColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center', alignItems: 'center' }}>
+                                                <Ionicons name="videocam" size={18} color={isDark ? '#94a3b8' : '#64748b'} />
+                                            </View>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                             </Pressable>
                         )}
 
@@ -2258,8 +2335,8 @@ export default function ChatScreen() {
         <ScreenErrorBoundary>
             <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }}>
                 <KeyboardAvoidingView
-                    style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    style={[{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                     keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
                 >
             {/* Header */}
@@ -3078,6 +3155,7 @@ export default function ChatScreen() {
                                 onChangeText={setInputText}
                                 maxLength={MAX_CHARS}
                                 keyboardAppearance={isDark ? 'dark' : 'light'}
+                                returnKeyType="send"
                             />
                             {charCount > MAX_CHARS * 0.8 && (
                                 <Text style={[styles.charCounter, isOverLimit && styles.charCounterOver]}>

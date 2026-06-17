@@ -15,7 +15,7 @@ interface GroupState {
 
     fetchGroups: (force?: boolean) => Promise<void>;
     markGroupAsRead: (groupId: string) => Promise<void>;
-    incrementUnread: (groupId: string, lastMessage?: string, lastMessageAt?: string) => void;
+    incrementUnread: (groupId: string, lastMessage?: string, lastMessageAt?: string, lastMessageObj?: any) => void;
     clearGroups: () => void;
     setGroupMembers: (groupId: string, members: any[]) => void;
     getGroupMembers: (groupId: string) => any[];
@@ -132,6 +132,7 @@ export const useGroupStore = create<GroupState>()(
                             is_direct: false,
                             avatar_url: group.avatar_url,
                             last_message: lastMsg ? lastMessageText : null,
+                            last_message_obj: lastMsg,
                             last_message_at: lastMsg ? lastMsg.created_at : null,
                             unread_count: unreadMap[group.id] || 0,
                         };
@@ -175,7 +176,7 @@ export const useGroupStore = create<GroupState>()(
 
             // Increment unread count for a group when a new message arrives
             // Called by globalSync when a message INSERT is detected
-            incrementUnread: (groupId: string, lastMessage?: string, lastMessageAt?: string) => {
+            incrementUnread: (groupId: string, lastMessage?: string, lastMessageAt?: string, lastMessageObj?: any) => {
                 set((state) => {
                     const isMessagesTab = state.currentTab === 'messages' || state.currentTab?.includes('messages') || state.currentTab?.includes('chat') || state.currentTab === 'CHAT';
                     return {
@@ -187,6 +188,7 @@ export const useGroupStore = create<GroupState>()(
                                     unread_count: (g.unread_count || 0) + 1,
                                     ...(lastMessage ? { last_message: lastMessage } : {}),
                                     ...(lastMessageAt ? { last_message_at: lastMessageAt } : {}),
+                                    ...(lastMessageObj ? { last_message_obj: lastMessageObj } : {}),
                                   }
                                 : g
                         )

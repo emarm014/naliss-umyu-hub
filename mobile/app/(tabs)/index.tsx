@@ -103,7 +103,7 @@ const getUserRank = (points: number) => {
 const quickActions = [
   { id: 'notepad', name: 'Notepad', icon: 'document-text', color: '#005A36', bg: '#e6f4ea', route: '/notepad' },
   { id: 'events', name: 'Events', icon: 'calendar', color: '#059669', bg: '#ecfdf5', route: '/(tabs)/announcements?tab=Events' },
-  { id: 'materials', name: 'Materials', icon: 'folder', color: '#7c3aed', bg: '#f5f3ff', route: '/(tabs)/resources?tab=materials' },
+  { id: 'archive', name: 'ARCHIVE', icon: 'library', color: '#059669', bg: '#ecfdf5', route: '/archive' },
   { id: 'courses', name: 'Courses', icon: 'library', color: '#ea580c', bg: '#fff7ed', route: '/(tabs)/resources?tab=courses' },
   { id: 'questions', name: 'Past Q', icon: 'school', color: '#db2777', bg: '#fdf2f8', route: '/(tabs)/resources?tab=past_q' },
   { id: 'directory', name: 'Directory', icon: 'people', color: '#0891b2', bg: '#ecfeff', route: '/(tabs)/resources?tab=directory' },

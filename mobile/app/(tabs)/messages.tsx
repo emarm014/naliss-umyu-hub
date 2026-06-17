@@ -77,7 +77,7 @@ export default function MessagesScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.headerTop}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>NALISS HUB</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>GROUPS</Text>
         </View>
       </View>
 
@@ -104,9 +104,9 @@ export default function MessagesScreen() {
         ) : (
           <>
             {levelGroups.length > 0 && (
-              <View style={[styles.sectionHeader, { backgroundColor: theme.headerSectionBg }]}>
-                <Ionicons name="school-outline" size={18} color={theme.brandGreen} />
-                <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>LEVEL GROUPS</Text>
+              <View style={[styles.sectionHeader, { backgroundColor: COLORS.primary }]}>
+                <Ionicons name="school-outline" size={18} color="#FFFFFF" />
+                <Text style={[styles.sectionTitle, { color: '#FFFFFF' }]}>LEVEL GROUPS</Text>
               </View>
             )}
             {levelGroups.map((conversation) => (
@@ -127,9 +127,9 @@ export default function MessagesScreen() {
             ))}
 
             {generalGroups.length > 0 && (
-              <View style={[styles.sectionHeader, { marginTop: 12, backgroundColor: theme.headerSectionBg }]}>
-                <Ionicons name="people-outline" size={18} color={theme.brandGreen} />
-                <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>GENERAL GROUPS</Text>
+              <View style={[styles.sectionHeader, { marginTop: 12, backgroundColor: COLORS.primary }]}>
+                <Ionicons name="people-outline" size={18} color="#FFFFFF" />
+                <Text style={[styles.sectionTitle, { color: '#FFFFFF' }]}>GENERAL GROUPS</Text>
               </View>
             )}
             {generalGroups.map((conversation) => (
@@ -171,24 +171,54 @@ export default function MessagesScreen() {
  * Convert raw Cloudinary URLs in last_message to friendly labels.
  * Handles legacy cached data where the URL was stored instead of the label.
  */
-function sanitizeLastMessage(msg: string | null | undefined): string {
+function sanitizeLastMessage(msg: string | null | undefined, lastMsgObj?: any): string {
+  if (lastMsgObj) {
+    const senderName = lastMsgObj.sender?.username || lastMsgObj.sender?.full_name || 'Member';
+    const msgType = lastMsgObj.content_type || lastMsgObj.message_type || 'text';
+    const content = lastMsgObj.content || '';
+
+    if (msgType === 'image') return `${senderName}: 📷 Photo`;
+    if (msgType === 'document') return `${senderName}: 📎 Document`;
+    if (msgType === 'video') return `${senderName}: 🎥 Video`;
+    if (msgType === 'audio') return `${senderName}: 🎵 Audio`;
+    if (msgType === 'sticker') return `${senderName}: 😊 Sticker`;
+
+    if (content.includes('cloudinary.com') || content.includes('res.cloudinary')) {
+      const lower = content.toLowerCase();
+      if (lower.includes('/video/upload/') || lower.includes('chat-videos') || lower.match(/\.(mp4|mov|avi|webm|mkv)$/)) return `${senderName}: 🎥 Video`;
+      if (lower.includes('/image/upload/') || lower.includes('chat-images') || lower.match(/\.(jpg|jpeg|png|gif|webp)$/)) return `${senderName}: 📷 Photo`;
+      if (lower.includes('chat-docs') || lower.match(/\.(pdf|doc|docx|ppt|pptx)$/)) return `${senderName}: 📎 Document`;
+      if (lower.includes('chat-audios') || lower.match(/\.(mp3|wav|ogg|aac|m4a)$/)) return `${senderName}: 🎵 Audio`;
+      return `${senderName}: 📎 Media`;
+    }
+    
+    return `${senderName}: ${content}`;
+  }
+
   if (!msg) return 'No messages yet';
+  
+  let senderPrefix = '';
+  const colonIndex = msg.indexOf(': ');
+  if (colonIndex !== -1 && colonIndex < 30) {
+    senderPrefix = msg.substring(0, colonIndex + 2);
+  }
+
   // If it's a Cloudinary URL, convert to friendly label
   if (msg.includes('cloudinary.com') || msg.includes('res.cloudinary')) {
     const lower = msg.toLowerCase();
     if (lower.includes('/video/upload/') || lower.includes('chat-videos') || lower.match(/\.(mp4|mov|avi|webm|mkv)$/)) {
-      return '🎥 Video';
+      return `${senderPrefix}🎥 Video`;
     }
     if (lower.includes('/image/upload/') || lower.includes('chat-images') || lower.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
-      return '📷 Photo';
+      return `${senderPrefix}📷 Photo`;
     }
     if (lower.includes('chat-docs') || lower.match(/\.(pdf|doc|docx|ppt|pptx)$/)) {
-      return '📎 Document';
+      return `${senderPrefix}📎 Document`;
     }
     if (lower.includes('chat-audios') || lower.match(/\.(mp3|wav|ogg|aac|m4a)$/)) {
-      return '🎵 Audio';
+      return `${senderPrefix}🎵 Audio`;
     }
-    return '📎 Media';
+    return `${senderPrefix}📎 Media`;
   }
   return msg;
 }
@@ -248,7 +278,7 @@ function ConversationItem({
 
         <View style={styles.lastMessageRow}>
           <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>
-            {sanitizeLastMessage(conversation.last_message)}
+            {sanitizeLastMessage(conversation.last_message, conversation.last_message_obj)}
           </Text>
           {(conversation.unread_count || 0) > 0 && (
             <View style={styles.unreadBadge}>
@@ -272,7 +302,7 @@ const styles = StyleSheet.create({
   },
   headerTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
     marginBottom: 24,
@@ -280,7 +310,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Inter-Bold',
     fontSize: 20,
-    color: '#064e3b',
+    fontWeight: '700',
     letterSpacing: 1,
   },
   searchBarContainer: {
@@ -344,8 +374,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8fafc',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     gap: 8,
   },
   sectionTitle: {

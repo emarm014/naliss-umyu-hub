@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
-import { Trophy, Settings, Activity, CheckCircle, Search, Edit, Eye, Save, X, Users, MessageSquare, Play, Pause, Calendar } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 
@@ -75,7 +75,7 @@ export default function EventPoolManagementPage() {
 
             // Fetch submissions
             const { data: subs } = await supabase.from('pool_submissions').select('id, user_id, answers, grading_status, grading_score, grading_feedback, podium_status, users:user_id(full_name, username)').eq('pool_id', pool.id);
-            setSubmissions(subs || []);
+            setSubmissions(subs ? subs.map((s: any) => ({ ...s, users: Array.isArray(s.users) ? s.users[0] : s.users })) : []);
         } catch (e) {
             console.error(e);
         }
@@ -106,7 +106,7 @@ export default function EventPoolManagementPage() {
         }
     };
 
-    const handleSaveEvaluation = async (subId: string, userId: string) => {
+    const handleSaveEvaluation = async (subId: string, _userId: string) => {
         if (!selectedPool) return;
         try {
             const updates = {

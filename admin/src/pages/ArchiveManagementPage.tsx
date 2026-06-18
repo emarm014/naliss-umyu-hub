@@ -26,7 +26,7 @@ export default function ArchiveManagementPage() {
     setFormError(null);
 
     try {
-      const { data, error, status } = await supabase
+      const { error, status } = await supabase
         .from('archives')
         .insert([{
           title: formData.title,
@@ -177,16 +177,15 @@ export default function ArchiveManagementPage() {
                   </div>
                 ) : (
                   <FileUpload
-                    onUploadComplete={(url, name, size) => {
+                    onUploadComplete={(url, _name, size) => {
                       // Optionally format size here if you want to automatically set it
-                      const sizeMB = (size / (1024 * 1024)).toFixed(1);
+                      const sizeMB = size ? (Number(size) / (1024 * 1024)).toFixed(1) : '0.0';
                       setFormData({ 
                         ...formData, 
                         file_url: url,
                         file_size: formData.file_size || `${sizeMB} MB`
                       });
                     }}
-                    onError={(err) => setFormError(err)}
                   />
                 )}
               </div>

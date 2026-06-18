@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, Info } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 
 export default function NewsManagementPage() {
@@ -31,7 +31,7 @@ export default function NewsManagementPage() {
       // Ensure empty strings for images are saved as true database NULLs
       const formattedImageUrl = formData.image_url.trim() === '' ? null : formData.image_url;
 
-      const { data, error, status } = await supabase
+      const { error, status } = await supabase
         .from('news')
         .insert([{
           title: formData.title,
@@ -132,7 +132,6 @@ export default function NewsManagementPage() {
                 </label>
                 <FileUpload
                   onUploadComplete={(url) => setFormData({ ...formData, image_url: url })}
-                  onError={(err) => setFormError(err.message)}
                   folder="news_covers"
                 />
                 {formData.image_url && (

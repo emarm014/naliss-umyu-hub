@@ -12,6 +12,7 @@ export interface Announcement {
   category: 'general' | 'academic' | 'social' | 'event' | string;
   priority: 'low' | 'normal' | 'high' | 'urgent';
   target_level: string | null;
+  pool_id: string | null;
   is_published: boolean;
   is_pinned: boolean;
   view_count: number;

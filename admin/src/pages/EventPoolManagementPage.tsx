@@ -33,12 +33,13 @@ export default function EventPoolManagementPage() {
     const [pools, setPools] = useState<EventPool[]>([]);
     const [selectedPool, setSelectedPool] = useState<EventPool | null>(null);
     const [submissions, setSubmissions] = useState<Submission[]>([]);
+    const [applications, setApplications] = useState<any[]>([]);
     const [participantsCount, setParticipantsCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Active View inside Modal: 'config' | 'monitor' | 'evaluate'
-    const [activeView, setActiveView] = useState<'config' | 'monitor' | 'evaluate'>('config');
+    // Active View inside Modal: 'config' | 'monitor' | 'evaluate' | 'applications'
+    const [activeView, setActiveView] = useState<'config' | 'monitor' | 'evaluate' | 'applications'>('config');
 
     // Evaluator states
     const [editingSubId, setEditingSubId] = useState<string | null>(null);
@@ -74,6 +75,10 @@ export default function EventPoolManagementPage() {
             // Fetch submissions
             const { data: subs } = await supabase.from('pool_submissions').select('id, user_id, answers, grading_status, grading_score, grading_feedback, podium_status, users:user_id(full_name, username)').eq('pool_id', pool.id);
             setSubmissions(subs ? subs.map((s: any) => ({ ...s, users: Array.isArray(s.users) ? s.users[0] : s.users })) : []);
+            
+            // Fetch applications
+            const { data: apps } = await supabase.from('pool_applications').select('id, user_id, status, created_at, users:user_id(full_name, username)').eq('pool_id', pool.id).order('created_at', { ascending: false });
+            setApplications(apps ? apps.map((a: any) => ({ ...a, users: Array.isArray(a.users) ? a.users[0] : a.users })) : []);
         } catch (e) {
             console.error(e);
         }
@@ -132,6 +137,23 @@ export default function EventPoolManagementPage() {
             setEditingSubId(null);
         } catch (e: any) {
             alert('Error evaluating: ' + e.message);
+        }
+    };
+
+    const handleApproveApplication = async (appId: string) => {
+        try {
+            const { error } = await supabase.rpc('approve_pool_application', { p_application_id: appId });
+            if (error) throw error;
+            
+            // Update local state
+            setApplications(applications.map(a => a.id === appId ? { ...a, status: 'approved' } : a));
+            
+            // Increment participants count locally
+            setParticipantsCount(prev => prev + 1);
+            
+            alert('Application successfully approved!');
+        } catch (e: any) {
+            alert('Failed to approve application: ' + e.message);
         }
     };
 
@@ -204,6 +226,9 @@ export default function EventPoolManagementPage() {
                             <button onClick={() => setActiveView('evaluate')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'evaluate' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                                 <CheckCircle className="h-4 w-4" /> Evaluation Terminal
                             </button>
+                            <button onClick={() => setActiveView('applications')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'applications' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                                <Users className="h-4 w-4" /> Registrations
+                            </button>
                         </div>
 
                         {/* Content */}
@@ -230,13 +255,14 @@ export default function EventPoolManagementPage() {
                                                 <option value="open">Open (All)</option>
                                                 <option value="level_based">Level Based</option>
                                                 <option value="department_based">Department Based</option>
+                                                <option value="individual_selection">Select Participants (Invite-Only)</option>
                                             </select>
                                         </div>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-semibold text-gray-700 mb-1">Target Constraints (JSON)</label>
                                         <textarea name="target_constraints" defaultValue={JSON.stringify(selectedPool.target_constraints, null, 2)} rows={4} className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-primary-500" />
-                                        <p className="text-xs text-gray-500 mt-1">Example: {`{"levels": ["100", "200"]}`}</p>
+                                        <p className="text-xs text-gray-500 mt-1">Example: {`{"enable_registration": true, "max_participants": 50, "application_deadline": "2026-06-30T12:00:00Z"}`}</p>
                                     </div>
                                     <button type="submit" className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 flex items-center gap-2">
                                         <Save className="h-4 w-4" /> Save Configuration
@@ -363,6 +389,55 @@ export default function EventPoolManagementPage() {
                                                     <CheckCircle className="h-4 w-4" /> Save Result
                                                 </button>
                                             </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* 4. Registrations Table */}
+                            {activeView === 'applications' && (
+                                <div className="space-y-4">
+                                    {applications.length === 0 ? (
+                                        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                                            No registrations received yet.
+                                        </div>
+                                    ) : (
+                                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                            <table className="w-full text-left text-sm">
+                                                <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                                                    <tr>
+                                                        <th className="px-4 py-3 font-semibold">Applicant</th>
+                                                        <th className="px-4 py-3 font-semibold">Date Applied</th>
+                                                        <th className="px-4 py-3 font-semibold">Status</th>
+                                                        <th className="px-4 py-3 font-semibold text-right">Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {applications.map(app => (
+                                                        <tr key={app.id} className="hover:bg-gray-50/50">
+                                                            <td className="px-4 py-3">
+                                                                <p className="font-medium text-gray-900">{app.users?.full_name}</p>
+                                                                <p className="text-xs text-gray-500">@{app.users?.username}</p>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-gray-500">
+                                                                {new Date(app.created_at).toLocaleDateString()}
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${app.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                    {app.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right">
+                                                                {app.status === 'pending' && (
+                                                                    <button onClick={() => handleApproveApplication(app.id)} className="px-3 py-1.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors">
+                                                                        Approve
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     )}
                                 </div>

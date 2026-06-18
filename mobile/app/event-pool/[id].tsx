@@ -225,6 +225,11 @@ export default function EventPoolRoom() {
             if (user.department_id && deptId === user.department_id) return true;
         }
 
+        if (pool.participation_rule === 'individual_selection') {
+            const selectedUsers = pool.target_constraints?.selected_users || [];
+            if (selectedUsers.includes(user.id)) return true;
+        }
+
         return false;
     }, [pool, user]);
 

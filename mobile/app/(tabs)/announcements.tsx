@@ -15,6 +15,7 @@ import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
+import { Modal, ActivityIndicator, Alert } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -61,6 +62,8 @@ export default function AnnouncementsScreen() {
     const fetchAnnouncements = useAnnouncementStore(s => s.fetchAnnouncements);
     const fetchUpcomingEvents = useEventStore(s => s.fetchUpcomingEvents);
     const { colors, isDark } = useTheme();
+
+    const [activeApplyPoolId, setActiveApplyPoolId] = useState<string | null>(null);
 
     const loadData = async () => {
         const level = user?.level || undefined;
@@ -184,15 +187,184 @@ export default function AnnouncementsScreen() {
                     ) : <EmptyState icon='calendar-outline' text='No upcoming events' />
                 ) : (
                     sortedAnnouncements.length > 0 ? sortedAnnouncements.map(ann => (
-                        <AnnouncementCard key={ann.id} announcement={ann} user={user} onDelete={handleDelete} />)
+                        <AnnouncementCard key={ann.id} announcement={ann} user={user} onDelete={handleDelete} onApply={() => setActiveApplyPoolId(ann.pool_id)} />)
                     ) : <EmptyState icon='notifications-off-outline' text='No announcements found' />
                 )}
             </ScrollView>
+
+            {/* Application Overlay Modal */}
+            {activeApplyPoolId && (
+                <RegistrationOverlay 
+                    poolId={activeApplyPoolId} 
+                    user={user} 
+                    onClose={() => setActiveApplyPoolId(null)} 
+                />
+            )}
         </SafeAreaView>
     );
 }
 
-function AnnouncementCard({ announcement, user, onDelete }: { announcement: any; user: any; onDelete: (id: string) => void }) {
+function RegistrationOverlay({ poolId, user, onClose }: { poolId: string, user: any, onClose: () => void }) {
+    const { colors } = useTheme();
+    const [poolData, setPoolData] = useState<any>(null);
+    const [appCount, setAppCount] = useState(0);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [serverTime, setServerTime] = useState<Date>(new Date());
+    const [existingApp, setExistingApp] = useState<any>(null);
+
+    useEffect(() => {
+        const init = async () => {
+            setIsLoading(true);
+            try {
+                // Fetch server time
+                const { data: sTime } = await supabase.rpc('get_server_time');
+                if (sTime) setServerTime(new Date(sTime));
+
+                // Fetch pool
+                const { data: pool } = await (supabase as any).from('event_pools').select('*').eq('id', poolId).single();
+                setPoolData(pool);
+
+                // Fetch applicant count
+                const { count } = await (supabase as any).from('pool_applications').select('*', { count: 'exact', head: true }).eq('pool_id', poolId);
+                setAppCount(count || 0);
+
+                // Check existing app
+                if (user?.id) {
+                    const { data: app } = await (supabase as any).from('pool_applications').select('*').eq('pool_id', poolId).eq('user_id', user.id).maybeSingle();
+                    if (app) setExistingApp(app);
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        init();
+    }, [poolId, user]);
+
+    if (isLoading) {
+        return (
+            <Modal transparent visible animationType="fade">
+                <View style={overlayStyles.overlayBg}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                </View>
+            </Modal>
+        );
+    }
+
+    if (!poolData) return null;
+
+    const constraints = poolData.target_constraints || {};
+    const cap = constraints.max_participants || 0;
+    const deadlineStr = constraints.application_deadline;
+    const isClosedByTime = deadlineStr && new Date(serverTime) > new Date(deadlineStr);
+    const isFull = cap > 0 && appCount >= cap;
+    
+    // Level checking
+    const requiredLevels = constraints.levels || [];
+    const isLevelMatch = requiredLevels.length === 0 || (user?.level && requiredLevels.includes(user.level));
+
+    const handleSubmit = async () => {
+        if (!user) return;
+        setIsSubmitting(true);
+        try {
+            const { error } = await (supabase as any).from('pool_applications').insert({
+                pool_id: poolId,
+                user_id: user.id,
+                status: 'pending'
+            });
+            if (error) throw error;
+            Alert.alert('Success', 'Your application has been submitted and is pending approval.');
+            onClose();
+        } catch (e: any) {
+            Alert.alert('Error', e.message);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <Modal transparent visible animationType="slide">
+            <View style={overlayStyles.overlayBg}>
+                <View style={[overlayStyles.modalContainer, { backgroundColor: colors.card }]}>
+                    <View style={overlayStyles.modalHeader}>
+                        <Text style={[overlayStyles.modalTitle, { color: colors.text }]}>Apply to Participate</Text>
+                        <TouchableOpacity onPress={onClose} style={overlayStyles.closeBtn}>
+                            <Ionicons name="close" size={24} color={colors.text} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <ScrollView contentContainerStyle={{ padding: 20 }}>
+                        <Text style={[overlayStyles.eventName, { color: colors.text }]}>{poolData.title}</Text>
+                        
+                        <View style={overlayStyles.statsRow}>
+                            <View style={overlayStyles.statCard}>
+                                <Text style={overlayStyles.statLabel}>Applicants</Text>
+                                <Text style={[overlayStyles.statValue, { color: colors.text }]}>{appCount} {cap > 0 ? `/ ${cap}` : ''}</Text>
+                            </View>
+                            {deadlineStr && (
+                                <View style={overlayStyles.statCard}>
+                                    <Text style={overlayStyles.statLabel}>Deadline</Text>
+                                    <Text style={[overlayStyles.statValue, { color: colors.text }]}>{new Date(deadlineStr).toLocaleString()}</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {existingApp ? (
+                            <View style={overlayStyles.alertBox}>
+                                <Ionicons name="checkmark-circle" size={24} color="#059669" />
+                                <Text style={overlayStyles.alertText}>You have already applied! Status: <Text style={{fontWeight: 'bold', textTransform: 'capitalize'}}>{existingApp.status}</Text></Text>
+                            </View>
+                        ) : isClosedByTime ? (
+                            <View style={[overlayStyles.alertBox, { backgroundColor: '#fee2e2' }]}>
+                                <Ionicons name="time" size={24} color="#dc2626" />
+                                <Text style={[overlayStyles.alertText, { color: '#dc2626' }]}>Applications Closed.</Text>
+                            </View>
+                        ) : isFull ? (
+                            <View style={[overlayStyles.alertBox, { backgroundColor: '#fee2e2' }]}>
+                                <Ionicons name="people" size={24} color="#dc2626" />
+                                <Text style={[overlayStyles.alertText, { color: '#dc2626' }]}>Registration Full.</Text>
+                            </View>
+                        ) : !isLevelMatch ? (
+                            <View style={[overlayStyles.alertBox, { backgroundColor: '#fef3c7' }]}>
+                                <Ionicons name="warning" size={24} color="#d97706" />
+                                <Text style={[overlayStyles.alertText, { color: '#d97706' }]}>Your level is not eligible for this event.</Text>
+                            </View>
+                        ) : (
+                            <TouchableOpacity 
+                                style={[overlayStyles.submitBtn, isSubmitting && { opacity: 0.7 }]} 
+                                onPress={handleSubmit} 
+                                disabled={isSubmitting}
+                            >
+                                <Text style={overlayStyles.submitBtnText}>{isSubmitting ? 'Submitting...' : 'Submit Application'}</Text>
+                            </TouchableOpacity>
+                        )}
+                    </ScrollView>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+const overlayStyles = StyleSheet.create({
+    overlayBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContainer: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
+    modalTitle: { fontSize: 20, fontWeight: '700' },
+    closeBtn: { padding: 4 },
+    eventName: { fontSize: 22, fontWeight: '800', marginBottom: 20 },
+    statsRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+    statCard: { flex: 1, backgroundColor: 'rgba(0,0,0,0.03)', padding: 16, borderRadius: 12 },
+    statLabel: { fontSize: 13, color: '#64748b', marginBottom: 4, fontWeight: '600' },
+    statValue: { fontSize: 16, fontWeight: '700' },
+    alertBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#d1fae5', padding: 16, borderRadius: 12, gap: 12 },
+    alertText: { flex: 1, fontSize: 15, color: '#065f46', fontWeight: '500' },
+    submitBtn: { backgroundColor: COLORS.primary, padding: 18, borderRadius: 16, alignItems: 'center' },
+    submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+});
+
+function AnnouncementCard({ announcement, user, onDelete, onApply }: { announcement: any; user: any; onDelete: (id: string) => void; onApply: () => void }) {
     const cat = CATEGORY_CONFIG[(announcement.category || 'general').toLowerCase()] || DEFAULT_CAT;
     const priority = PRIORITY_CONFIG[announcement.priority] || PRIORITY_CONFIG.normal;
     const hasCover = !!announcement.cover_image_url;
@@ -259,10 +431,13 @@ function AnnouncementCard({ announcement, user, onDelete }: { announcement: any;
                     {announcement.pool_id && (
                         <TouchableOpacity
                             style={{ backgroundColor: '#10b981', marginLeft: 'auto', marginRight: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center' }}
-                            onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: announcement.pool_id } } as any)}
+                            onPress={() => {
+                                // We check if there's a pool, then trigger onApply which opens the modal overlay
+                                onApply();
+                            }}
                         >
-                            <Ionicons name='trophy-outline' size={14} color='#fff' />
-                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 }}>Go To Event Pool</Text>
+                            <Ionicons name='clipboard-outline' size={14} color='#fff' />
+                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 }}>Participate / View</Text>
                         </TouchableOpacity>
                     )}
                     {canDelete && (

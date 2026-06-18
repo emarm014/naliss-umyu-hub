@@ -73,10 +73,6 @@ export default function EventPoolRoom() {
     const [challengeMediaUrl, setChallengeMediaUrl] = useState<string | null>(null);
     const [challengeMediaType, setChallengeMediaType] = useState<string | null>(null);
 
-    // Voting State
-    const [voteCandidates, setVoteCandidates] = useState<any[]>([]);
-    const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
-
     // Leaderboard State
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
@@ -123,18 +119,6 @@ export default function EventPoolRoom() {
                         setChallengeMediaUrl(parsed.challengeMediaUrl);
                         setChallengeMediaType(parsed.challengeMediaType);
                     }
-                    if ((poolData.type === 'voting' || poolData.type === 'talent') && parsed.selectedCandidateId) {
-                        setSelectedCandidateId(parsed.selectedCandidateId);
-                    }
-                }
-
-                // 5. If Voting/Talent, fetch candidates (submissions from others)
-                if (poolData.type === 'voting' || poolData.type === 'talent') {
-                    const { data: cData } = await (supabase as any)
-                        .from('pool_submissions')
-                        .select('id, user_id, file_url, text_submission, answers, users:user_id(full_name, username, avatar_url)')
-                        .eq('pool_id', id);
-                    if (cData) setVoteCandidates(cData);
                 }
 
             } catch (err) {
@@ -158,7 +142,6 @@ export default function EventPoolRoom() {
                 if (pool.type === 'quiz') answersPayload = quizAnswers;
                 else if (pool.type === 'essay') answersPayload = { text: essayText };
                 else if (pool.type === 'challenge') answersPayload = { file_url: challengeMediaUrl, file_type: challengeMediaType };
-                else if (pool.type === 'voting' || pool.type === 'talent') answersPayload = { vote_for: selectedCandidateId };
             }
             
             const { error } = await (supabase as any).from('pool_submissions').upsert({
@@ -192,7 +175,6 @@ export default function EventPoolRoom() {
                 if (pool.type === 'quiz') dataToSave = { quizAnswers };
                 else if (pool.type === 'essay') dataToSave = { essayText };
                 else if (pool.type === 'challenge') dataToSave = { challengeMediaUrl, challengeMediaType };
-                else if (pool.type === 'voting' || pool.type === 'talent') dataToSave = { selectedCandidateId };
                 
                 await mmkvStorage.setItem(`pool_progress_${id}`, JSON.stringify(dataToSave));
             } catch (e) {
@@ -201,7 +183,7 @@ export default function EventPoolRoom() {
         }, 500);
 
         return () => clearTimeout(timeoutId);
-    }, [quizAnswers, essayText, challengeMediaUrl, selectedCandidateId, id, isLoading, pool, isSubmitting]);
+    }, [quizAnswers, essayText, challengeMediaUrl, id, isLoading, pool, isSubmitting]);
 
     // Leaderboard Fetching Logic
     useEffect(() => {
@@ -427,51 +409,29 @@ export default function EventPoolRoom() {
 
 
 
-    const renderVotingEngine = () => {
-        return (
-            <ScrollView contentContainerStyle={styles.contentContainer}>
-                <Text style={[styles.essayHeadline, { color: textColor }]}>Cast Your Vote</Text>
-                <Text style={[styles.essayInstructions, { color: subtextColor }]}>
-                    {pool?.description || 'Review the candidates below and cast your official vote.'}
-                </Text>
+    const renderLiveAction = () => {
+        if (!pool) return null;
 
-                {voteCandidates.map(c => {
-                    const isSelected = selectedCandidateId === c.user_id;
-                    return (
-                        <TouchableOpacity
-                            key={c.id}
-                            style={[styles.voteCard, { backgroundColor: cardBg, borderColor: isSelected ? brandColor : borderColor }, isSelected && { borderWidth: 2 }]}
-                            onPress={() => {
-                                if (!isTimeUp && !isSubmitting) setSelectedCandidateId(c.user_id);
-                            }}
-                            disabled={isTimeUp || isSubmitting}
-                        >
-                            <View style={styles.voteInfo}>
-                                <Text style={[styles.voteName, { color: textColor }]}>{c.users?.full_name || 'Anonymous'}</Text>
-                                {c.answers?.text && <Text style={[styles.voteDesc, { color: subtextColor }]} numberOfLines={2}>{c.answers.text}</Text>}
-                            </View>
-                            <View style={[styles.radioCircle, { borderColor: isSelected ? brandColor : subtextColor }]}>
-                                {isSelected && <View style={[styles.radioFill, { backgroundColor: brandColor }]} />}
-                            </View>
-                        </TouchableOpacity>
-                    );
-                })}
-
-                <View style={[styles.essayFooter, { marginTop: 24 }]}>
-                    <View />
+        if (pool.type === 'voting' || pool.type === 'talent') {
+            return (
+                <View style={styles.centeredContainer}>
+                    <Ionicons name="checkbox-outline" size={48} color={brandColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>
+                        {pool.type === 'voting' ? 'Debate Voting Room' : 'Talent Show Voting Room'}
+                    </Text>
+                    <Text style={[styles.bannerText, { color: subtextColor, marginBottom: 24, textAlign: 'center' }]}>
+                        Cast your secure vote. Verify your selection before finalizing, as votes cannot be retracted.
+                    </Text>
                     <TouchableOpacity 
-                        style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingVertical: 10, paddingHorizontal: 16 }, (!selectedCandidateId || isTimeUp || isSubmitting) && { opacity: 0.5 }]}
-                        disabled={!selectedCandidateId || isTimeUp || isSubmitting}
-                        onPress={() => Alert.alert('Confirm Vote', 'Lock in your final vote? This cannot be undone.', [{ text: 'Cancel' }, { text: 'Lock Vote', onPress: () => handleFinalSubmit(false) }])}
+                        style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
+                        onPress={() => router.push(`/event-pool/voting/${id}`)}
                     >
-                        <Text style={styles.navBtnPrimaryText}>{isSubmitting ? 'Locking...' : 'Lock Vote'}</Text>
+                        <Text style={styles.navBtnPrimaryText}>Enter Voting Room</Text>
                     </TouchableOpacity>
                 </View>
-            </ScrollView>
-        );
-    };
+            );
+        }
 
-    const renderLiveAction = () => {
         if (!isParticipant) {
             return (
                 <View style={styles.centeredContainer}>
@@ -547,7 +507,6 @@ export default function EventPoolRoom() {
                 </View>
             );
         }
-        if (pool.type === 'voting' || pool.type === 'talent') return renderVotingEngine();
 
         return (
             <View style={styles.centeredContainer}>

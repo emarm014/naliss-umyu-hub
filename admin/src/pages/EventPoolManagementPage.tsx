@@ -125,21 +125,7 @@ export default function EventPoolManagementPage() {
             // If a podium status was assigned, generate announcement & update pool
             if (podiumInput) {
                 await supabase.from('event_pools').update({ status: 'completed' }).eq('id', selectedPool.id);
-                
-                const announcementContent = `Congratulations to the winner of the **${selectedPool.title}** event!\n\n**Award:** ${podiumInput}`;
-                
-                await supabase.from('announcements').insert([{
-                    title: `🏆 ${selectedPool.title} Results Announced!`,
-                    content: announcementContent,
-                    category: 'event_results',
-                    priority: 'high',
-                    target_level: null,
-                    is_published: true,
-                    is_pinned: false,
-                    author_id: profile?.id
-                }]);
-
-                alert(`Winner successfully recorded and Announcement published! Pool marked as completed.`);
+                alert(`Winner successfully recorded and Pool marked as completed! Automated announcement triggered.`);
                 fetchPools(); // refresh list
             } else {
                 alert('Grade saved successfully.');

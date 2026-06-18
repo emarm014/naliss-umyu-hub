@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useAuthStore } from '../store/auth.store';
 import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
@@ -31,7 +30,6 @@ type Submission = {
 };
 
 export default function EventPoolManagementPage() {
-    const { profile } = useAuthStore();
     const [pools, setPools] = useState<EventPool[]>([]);
     const [selectedPool, setSelectedPool] = useState<EventPool | null>(null);
     const [submissions, setSubmissions] = useState<Submission[]>([]);

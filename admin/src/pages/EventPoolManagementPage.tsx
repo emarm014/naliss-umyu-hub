@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
+import Modal from '../components/ui/Modal';
 
 type EventPool = {
     id: string;
@@ -478,63 +479,53 @@ export default function EventPoolManagementPage() {
                 </div>
             )}
 
-            {showCreateModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-                        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-slate-800">
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-slate-50">Create New Pool</h2>
-                            <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleCreatePool} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Pool Title</label>
-                                <input
-                                    required
-                                    type="text"
-                                    value={newPoolTitle}
-                                    onChange={(e) => setNewPoolTitle(e.target.value)}
-                                    placeholder="e.g., Spring 2026 Code Quiz"
-                                    className="w-full px-4 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Pool Type</label>
-                                <select
-                                    value={newPoolType}
-                                    onChange={(e) => setNewPoolType(e.target.value)}
-                                    className="w-full px-4 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500"
-                                >
-                                    <option value="quiz">Quiz</option>
-                                    <option value="essay">Essay</option>
-                                    <option value="challenge">Challenge</option>
-                                    <option value="voting">Voting</option>
-                                    <option value="debate">Debate</option>
-                                    <option value="talent">Talent</option>
-                                    <option value="academic">Academic</option>
-                                    <option value="custom">Custom</option>
-                                </select>
-                            </div>
-                            <div className="pt-4 flex gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateModal(false)}
-                                    className="flex-1 px-4 py-2 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 bg-primary-600 dark:bg-emerald-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 dark:hover:bg-emerald-700 transition-colors"
-                                >
-                                    Create Pool
-                                </button>
-                            </div>
-                        </form>
+            <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create New Pool" size="sm">
+                <form onSubmit={handleCreatePool} className="space-y-6">
+                    <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Pool Title</label>
+                        <input
+                            required
+                            type="text"
+                            value={newPoolTitle}
+                            onChange={(e) => setNewPoolTitle(e.target.value)}
+                            placeholder="e.g., Spring 2026 Code Quiz"
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400"
+                        />
                     </div>
-                </div>
-            )}
+                    <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Pool Type</label>
+                        <select
+                            value={newPoolType}
+                            onChange={(e) => setNewPoolType(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
+                        >
+                            <option value="quiz">Quiz</option>
+                            <option value="essay">Essay</option>
+                            <option value="challenge">Challenge</option>
+                            <option value="voting">Voting</option>
+                            <option value="debate">Debate</option>
+                            <option value="talent">Talent</option>
+                            <option value="academic">Academic</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div className="pt-2 flex gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setShowCreateModal(false)}
+                            className="flex-1 px-4 py-3 border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            className="flex-1 bg-primary-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
+                        >
+                            Create Pool
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </div>
     );
 }

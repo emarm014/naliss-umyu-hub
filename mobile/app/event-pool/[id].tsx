@@ -101,7 +101,7 @@ export default function EventPoolRoom() {
                 // 3. If quiz, fetch questions
                 if (poolData.type === 'quiz') {
                     const { data: qData, error: qErr } = await (supabase as any)
-                        .from('pool_quiz_questions')
+                        .from('pool_quiz_questions_safe')
                         .select('id, question_text, options, points')
                         .eq('pool_id', id)
                         .order('created_at', { ascending: true });

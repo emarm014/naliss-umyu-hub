@@ -15,8 +15,7 @@ import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
-import { Modal, ActivityIndicator, Alert } from 'react-native';
-
+import { Modal } from 'react-native';
 const { width } = Dimensions.get('window');
 
 const CATEGORIES = ['All', 'Academic', 'Social', 'Event', 'General'];

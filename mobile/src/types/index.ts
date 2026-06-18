@@ -286,6 +286,7 @@ export interface Announcement {
   priority: AnnouncementPriority;
   target_roles: UserRole[];
   target_department_id: string | null;
+  pool_id?: string | null;
   is_scheduled: boolean;
   scheduled_for: string | null;
   is_published: boolean;

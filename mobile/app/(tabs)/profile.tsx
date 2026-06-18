@@ -226,46 +226,10 @@ export default function ProfileScreen() {
     }, [])
   );
 
-  // ── Realtime: reflect role changes (promoted/demoted) immediately ─────────
-  // Subscribes to the user's own row. When admin promotes to moderator or
-  // demotes back to student, the badge and profile update instantly.
-  React.useEffect(() => {
-    const userId = storeProfile?.id;
-    if (!userId) return;
-
-    const channel = supabase
-      .channel(`profile-role-watch-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'users',
-          filter: `id=eq.${userId}`,
-        },
-        (payload: any) => {
-          const updated = payload.new;
-          if (!updated) return;
-          // Merge realtime update into store — but NEVER overwrite confirmedAvatarUrl
-          const currentState = useAuthStore.getState();
-          useAuthStore.setState({
-            profile: {
-              ...currentState.profile,
-              ...updated,
-              // Iron rule: confirmed avatar always wins over realtime DB push
-              avatar_url: currentState.confirmedAvatarUrl || updated.avatar_url || currentState.profile?.avatar_url,
-            } as any,
-          });
-          // Force-fetch only non-avatar fields — skip if it would overwrite avatar
-          fetchProfile(true);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [storeProfile?.id]);
+  // ── Removed Realtime WebSocket ────────────────────────────────────────────
+  // Removed `profile-role-watch` per emergency optimization to protect the 
+  // 200 concurrent connection limit on the Supabase Free Tier.
+  // Profile is now fetched exclusively via pull-to-refresh and App Foreground.
 
   const handleClearArchiveCache = async () => {
     try {

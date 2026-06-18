@@ -594,105 +594,73 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [restrictionInfo]);
 
-  // ── REALTIME: Detect ban/suspension while user is already logged in ───────
-  // Subscribes to the user's own row. If an admin bans or suspends them while
-  // they are actively using the app, the restriction screen appears immediately.
-  useEffect(() => {
-    const userId = session?.user?.id;
-    if (!userId) return;
-
-    const channel = supabase
-      .channel(`user-status-watch-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'users',
-          filter: `id=eq.${userId}`,
-        },
-        (payload) => {
-          const updated = payload.new as any;
-          // Refresh local profile store with the latest data
-          useAuthStore.getState().fetchProfile(true);
-
-          if (updated.status === 'banned') {
-            setRestrictionInfo({
-              type: 'banned',
-              reason: updated.banned_reason || null,
-              until: null,
-            });
-          } else if (updated.status === 'suspended') {
-            const suspendedUntil = updated.suspended_until ? new Date(updated.suspended_until) : null;
-            if (!suspendedUntil || suspendedUntil > new Date()) {
-              setRestrictionInfo({
-                type: 'suspended',
-                reason: updated.suspension_reason || null,
-                until: suspendedUntil,
-              });
-            }
-          } else if (updated.status === 'active') {
-            // Admin restored the account — clear restriction screen immediately
-            setRestrictionInfo(null);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [session?.user?.id]);
-
-  // ── REALTIME: Detect remote logout while user is already logged in ───────
+  // ── HEARTBEAT: Jittered REST Polling (Replaces Realtime WebSockets) ───────
+  // We use standard REST polling with a randomized 55s-65s jitter to check both
+  // ban/suspension status and session eviction. This completely bypasses the
+  // Supabase Free Tier 200 concurrent Realtime connection limit.
   useEffect(() => {
     const userId = session?.user?.id;
     if (!userId || !deviceSessionChecked || sessionError) return;
 
     let isSubscribed = true;
-    let channel: any = null;
+    let timer: ReturnType<typeof setTimeout>;
 
-    const setupSessionWatcher = async () => {
+    const performHeartbeatCheck = async () => {
       try {
         const deviceId = await getOrCreateDeviceId();
         
-        channel = supabase
-          .channel(`user-session-watch-${userId}-${deviceId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'user_sessions',
-              filter: `user_id=eq.${userId}`,
-            },
-            async (payload) => {
-              const updated = payload.new as any;
-              if (updated && updated.device_id === deviceId && !updated.is_active) {
-                if (isSubscribed) {
-                  Alert.alert('Session Terminated', 'This device has been logged out remotely.');
-                  await supabase.auth.signOut();
-                  useAuthStore.getState().setSession(null);
-                  useAuthStore.getState().setUser(null);
-                  useAuthStore.getState().setIsProfileComplete(null);
-                  useAuthStore.getState().setProfile(null);
-                }
-              }
+        // Parallel REST fetch to check user status and session status
+        const [userRes, sessionRes] = await Promise.all([
+          (supabase as any).from('users').select('status, banned_reason, suspension_reason, suspended_until').eq('id', userId).single(),
+          (supabase as any).from('user_sessions').select('is_active').eq('user_id', userId).eq('device_id', deviceId).single()
+        ]);
+
+        if (!isSubscribed) return;
+
+        // 1. Process Status Restriction
+        if (userRes.data) {
+          const u = userRes.data;
+          useAuthStore.getState().fetchProfile(true); // Optional light refresh
+          
+          if (u.status === 'banned') {
+            setRestrictionInfo({ type: 'banned', reason: u.banned_reason || null, until: null });
+          } else if (u.status === 'suspended') {
+            const suspendedUntil = u.suspended_until ? new Date(u.suspended_until) : null;
+            if (!suspendedUntil || suspendedUntil > new Date()) {
+              setRestrictionInfo({ type: 'suspended', reason: u.suspension_reason || null, until: suspendedUntil });
             }
-          )
-          .subscribe();
+          } else if (u.status === 'active') {
+            setRestrictionInfo(null);
+          }
+        }
+
+        // 2. Process Session Eviction
+        if (sessionRes.data && sessionRes.data.is_active === false) {
+          Alert.alert('Session Terminated', 'This device has been logged out remotely.');
+          await supabase.auth.signOut();
+          useAuthStore.getState().setSession(null);
+          useAuthStore.getState().setUser(null);
+          useAuthStore.getState().setIsProfileComplete(null);
+          useAuthStore.getState().setProfile(null);
+          return; // Stop polling if logged out
+        }
       } catch (err) {
-        console.error('Failed to setup session watcher:', err);
+        console.warn('Heartbeat check failed:', err);
+      }
+
+      // Schedule next tick with 55s-65s jitter
+      if (isSubscribed) {
+        const nextJitter = 55000 + Math.floor(Math.random() * 10000);
+        timer = setTimeout(performHeartbeatCheck, nextJitter);
       }
     };
 
-    setupSessionWatcher();
+    // Kick off first heartbeat with immediate small jitter (1s - 5s)
+    timer = setTimeout(performHeartbeatCheck, 1000 + Math.floor(Math.random() * 4000));
 
     return () => {
       isSubscribed = false;
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      clearTimeout(timer);
     };
   }, [session?.user?.id, deviceSessionChecked, sessionError]);
 

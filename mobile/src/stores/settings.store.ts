@@ -100,58 +100,12 @@ export const useSettingsStore = create<SettingsState>()(
           useSettingsStore.getState().fetchSettings();
         }, POLL_INTERVAL_MS);
 
-        // Keep a single shared realtime channel — only one instance app-wide
-        // (ProtectedRoute calls initializeListener once, not per user)
-        const existingChannel = supabase.getChannels().find(
-          (ch) => ch.topic === 'realtime:public:system_settings'
-        );
-        if (existingChannel) {
-          supabase.removeChannel(existingChannel);
-        }
-
-        const channel = supabase
-          .channel('system_settings_live', {
-            config: { broadcast: { ack: false }, presence: { key: '' } },
-          })
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'system_settings' },
-            (payload) => {
-              const record = payload.new as any;
-              if (!record?.key) return;
-              const { key, value } = record;
-              set((state) => {
-                switch (key) {
-                  case 'maintenance_mode':
-                    return { ...state, maintenanceMode: parseBool(value, false), lastFetchedAt: Date.now() };
-                  case 'read_only_mode':
-                    return { ...state, readOnlyMode: parseBool(value, false), lastFetchedAt: Date.now() };
-                  case 'allow_registration':
-                    return { ...state, allowRegistration: parseBool(value, true), lastFetchedAt: Date.now() };
-                  case 'maintenance_message':
-                    return { ...state, maintenanceMessage: value ?? '', lastFetchedAt: Date.now() };
-                  case 'maintenance_estimated_end':
-                    return { ...state, maintenanceEstimatedEnd: value ?? '', lastFetchedAt: Date.now() };
-                  default:
-                    return state;
-                }
-              });
-            }
-          )
-          .subscribe(async (status) => {
-            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-              const { useNetworkStore } = require('./network.store');
-              const isOnline = await useNetworkStore.getState().checkNetworkStatus();
-              if (isOnline) {
-                useSettingsStore.getState().fetchSettings();
-              }
-            }
-          });
-
-        // Return cleanup — clears poll interval AND removes realtime channel
+        // Removed system_settings_live WebSocket per emergency optimization
+        // to protect the 200 concurrent connection limit on Supabase Free Tier.
+        // We now rely purely on the 5-minute REST polling interval above, which
+        // is more than sufficient for global app settings.
         return () => {
           clearInterval(pollInterval);
-          supabase.removeChannel(channel);
         };
       },
     }),

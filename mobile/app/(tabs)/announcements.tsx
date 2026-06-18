@@ -256,6 +256,15 @@ function AnnouncementCard({ announcement, user, onDelete }: { announcement: any;
                         <Text style={[styles.annReadText, { color: cat.chipText }]}>Read more</Text>
                         <Ionicons name='arrow-forward' size={14} color={cat.chipText} />
                     </View>
+                    {announcement.pool_id && (
+                        <TouchableOpacity
+                            style={{ backgroundColor: '#10b981', marginLeft: 'auto', marginRight: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center' }}
+                            onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: announcement.pool_id } } as any)}
+                        >
+                            <Ionicons name='trophy-outline' size={14} color='#fff' />
+                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 }}>Go To Event Pool</Text>
+                        </TouchableOpacity>
+                    )}
                     {canDelete && (
                         <TouchableOpacity style={styles.deleteBtn}
                             onPress={() => Alert.alert('Delete', 'Remove this announcement?', [

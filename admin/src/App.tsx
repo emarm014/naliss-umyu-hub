@@ -30,6 +30,8 @@ import GroupMediaPage from './pages/GroupMediaPage';
 import ModeratorStoragePage from './pages/ModeratorStoragePage';
 import SecurityPage from './pages/SecurityPage';
 import ArchiveManagementPage from './pages/ArchiveManagementPage';
+import NewsManagementPage from './pages/NewsManagementPage';
+import EventPoolManagementPage from './pages/EventPoolManagementPage';
 
 // Aggressive caching: keep data fresh for 10 min, retry up to 3x with backoff
 const queryClient = new QueryClient({
@@ -107,6 +109,8 @@ function App() {
                 <Route path="/materials" element={<MaterialsPage />} />
                 <Route path="/past-questions" element={<PastQuestionsPage />} />
                 <Route path="/archive" element={<ArchiveManagementPage />} />
+                <Route path="/news" element={<NewsManagementPage />} />
+                <Route path="/event-pools" element={<EventPoolManagementPage />} />
               </Route>
 
               <Route element={<RoleProtectedRoute minRole="super_admin" />}>

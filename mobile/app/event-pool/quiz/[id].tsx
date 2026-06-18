@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert, BackHandler, Animated } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../src/api/supabase/client';
@@ -37,7 +37,24 @@ export default function QuizEngineScreen() {
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [serverTimeOffset, setServerTimeOffset] = useState(0);
 
+    const fadeAnim = useRef(new Animated.Value(1)).current;
+
     const answers = getAnswers(id);
+
+    const animateTransition = (callback: () => void) => {
+        Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 150,
+            useNativeDriver: true,
+        }).start(() => {
+            callback();
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 200,
+                useNativeDriver: true,
+            }).start();
+        });
+    };
 
     useEffect(() => {
         // Prevent back button on Android to prevent accidental exits
@@ -228,41 +245,42 @@ export default function QuizEngineScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.content} bounces={false}>
-                <View style={[styles.questionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Animated.View style={[styles.questionCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: fadeAnim }]}>
                     <Text style={[styles.questionText, { color: colors.text }]}>{currentQ.question_text}</Text>
                     
                     <View style={styles.optionsList}>
                         {currentQ.options.map((opt, idx) => {
                             const isSelected = answers[currentQ.id] === opt;
+                            const emeraldAccent = '#059669';
                             return (
                                 <TouchableOpacity
                                     key={idx}
                                     style={[
                                         styles.optionBtn,
                                         { 
-                                            backgroundColor: isSelected ? `${colors.primary}20` : 'transparent',
-                                            borderColor: isSelected ? colors.primary : colors.border
+                                            backgroundColor: isSelected ? `${emeraldAccent}20` : 'transparent',
+                                            borderColor: isSelected ? emeraldAccent : colors.border
                                         }
                                     ]}
                                     onPress={() => handleOptionSelect(currentQ.id, opt)}
                                     activeOpacity={0.7}
                                 >
-                                    <View style={[styles.radioOuter, { borderColor: isSelected ? colors.primary : colors.textMuted }]}>
-                                        {isSelected && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
+                                    <View style={[styles.radioOuter, { borderColor: isSelected ? emeraldAccent : colors.textMuted }]}>
+                                        {isSelected && <View style={[styles.radioInner, { backgroundColor: emeraldAccent }]} />}
                                     </View>
                                     <Text style={[styles.optionText, { color: colors.text }]}>{opt}</Text>
                                 </TouchableOpacity>
                             );
                         })}
                     </View>
-                </View>
+                </Animated.View>
             </ScrollView>
 
             <View style={[styles.footer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 <TouchableOpacity 
                     style={[styles.navBtn, { opacity: currentIndex === 0 ? 0.3 : 1 }]} 
                     disabled={currentIndex === 0}
-                    onPress={() => setCurrentIndex(prev => prev - 1)}
+                    onPress={() => animateTransition(() => setCurrentIndex(prev => prev - 1))}
                 >
                     <Ionicons name="chevron-back" size={24} color={colors.text} />
                     <Text style={[styles.navText, { color: colors.text }]}>Prev</Text>
@@ -282,7 +300,7 @@ export default function QuizEngineScreen() {
                     <TouchableOpacity 
                         style={[styles.navBtn, { opacity: isLastQuestion ? 0.3 : 1 }]} 
                         disabled={isLastQuestion}
-                        onPress={() => setCurrentIndex(prev => prev + 1)}
+                        onPress={() => animateTransition(() => setCurrentIndex(prev => prev + 1))}
                     >
                         <Text style={[styles.navText, { color: colors.text }]}>Next</Text>
                         <Ionicons name="chevron-forward" size={24} color={colors.text} />

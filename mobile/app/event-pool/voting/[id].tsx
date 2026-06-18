@@ -205,7 +205,7 @@ export default function VotingEngineScreen() {
                     <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>Voting Room</Text>
                     <Text style={[styles.subtitle, { color: colors.textMuted }]}>{poolInfo?.title}</Text>
                 </View>
-                <View style={[styles.timerBadge, { backgroundColor: timeLeft && timeLeft < 60 ? '#ef4444' : colors.primary }]}>
+                <View style={[styles.timerBadge, { backgroundColor: timeLeft && timeLeft < 60 ? '#ef4444' : '#059669' }]}>
                     <Text style={styles.timerText}>
                         {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
                     </Text>
@@ -234,8 +234,8 @@ export default function VotingEngineScreen() {
                                 onPress={() => setSelectedCandidateId(c.user_id)}
                                 style={[
                                     styles.card,
-                                    { backgroundColor: colors.card, borderColor: isSelected ? colors.primary : colors.border },
-                                    isSelected && { borderWidth: 2, shadowColor: colors.primary, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 }
+                                    { backgroundColor: colors.card, borderColor: isSelected ? '#059669' : colors.border },
+                                    isSelected && { borderWidth: 2, shadowColor: '#059669', shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 }
                                 ]}
                             >
                                 <View style={styles.cardHeader}>
@@ -254,8 +254,8 @@ export default function VotingEngineScreen() {
                                             <Text style={[styles.username, { color: colors.textMuted }]}>@{c.users?.username || 'user'}</Text>
                                         </View>
                                     </View>
-                                    <View style={[styles.selectionCircle, { borderColor: isSelected ? colors.primary : colors.textMuted }]}>
-                                        {isSelected && <View style={[styles.selectionFill, { backgroundColor: colors.primary }]} />}
+                                    <View style={[styles.selectionCircle, { borderColor: isSelected ? '#059669' : colors.textMuted }]}>
+                                        {isSelected && <View style={[styles.selectionFill, { backgroundColor: '#059669' }]} />}
                                     </View>
                                 </View>
 
@@ -269,8 +269,8 @@ export default function VotingEngineScreen() {
 
                                 {c.answers?.file_url && (
                                     <View style={styles.fileLinkContainer}>
-                                        <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
-                                        <Text style={[styles.fileLinkText, { color: colors.primary }]} numberOfLines={1}>
+                                        <Ionicons name="document-attach-outline" size={16} color="#059669" />
+                                        <Text style={[styles.fileLinkText, { color: '#059669' }]} numberOfLines={1}>
                                             View attached entry file
                                         </Text>
                                     </View>
@@ -287,7 +287,7 @@ export default function VotingEngineScreen() {
                     onPress={handleVoteSubmit}
                     style={[
                         styles.submitBtn,
-                        { backgroundColor: colors.primary },
+                        { backgroundColor: '#059669' },
                         (!selectedCandidateId || isTimeUp || isSubmittingGlobal) && { opacity: 0.5 }
                     ]}
                 >

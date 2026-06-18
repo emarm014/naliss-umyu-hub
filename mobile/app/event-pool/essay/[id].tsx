@@ -190,7 +190,7 @@ export default function EssayEngineScreen() {
                     <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>Essay Engine</Text>
                     <Text style={[styles.subtitle, { color: colors.textMuted }]}>{poolInfo?.title}</Text>
                 </View>
-                <View style={[styles.timerBadge, { backgroundColor: timeLeft && timeLeft < 60 ? '#ef4444' : colors.primary }]}>
+                <View style={[styles.timerBadge, { backgroundColor: timeLeft && timeLeft < 60 ? '#ef4444' : '#059669' }]}>
                     <Text style={styles.timerText}>
                         {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
                     </Text>
@@ -225,7 +225,7 @@ export default function EssayEngineScreen() {
                     <TouchableOpacity 
                         style={[
                             styles.submitBtn, 
-                            { backgroundColor: colors.primary },
+                            { backgroundColor: '#059669' },
                             (isOverLimit || isTimeUp || isSubmittingGlobal || currentWords === 0) && { opacity: 0.5 }
                         ]} 
                         onPress={() => handleFinalSubmit(false)}

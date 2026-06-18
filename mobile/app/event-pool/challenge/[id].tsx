@@ -214,7 +214,7 @@ export default function ChallengeEngineScreen() {
                     <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>Challenge Engine</Text>
                     <Text style={[styles.subtitle, { color: colors.textMuted }]}>{poolInfo?.title}</Text>
                 </View>
-                <View style={[styles.timerBadge, { backgroundColor: timeLeft && timeLeft < 60 ? '#ef4444' : colors.primary }]}>
+                <View style={[styles.timerBadge, { backgroundColor: timeLeft && timeLeft < 60 ? '#ef4444' : '#059669' }]}>
                     <Text style={styles.timerText}>
                         {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
                     </Text>
@@ -232,7 +232,7 @@ export default function ChallengeEngineScreen() {
                         onPress={pickImage} 
                         disabled={isTimeUp || isSubmittingGlobal || isUploading}
                     >
-                        <Ionicons name="image-outline" size={32} color={colors.primary} />
+                        <Ionicons name="image-outline" size={32} color="#059669" />
                         <Text style={[styles.uploadBtnText, { color: colors.text }]}>Pick Media</Text>
                     </TouchableOpacity>
                     
@@ -241,7 +241,7 @@ export default function ChallengeEngineScreen() {
                         onPress={pickDoc} 
                         disabled={isTimeUp || isSubmittingGlobal || isUploading}
                     >
-                        <Ionicons name="document-text-outline" size={32} color={colors.primary} />
+                        <Ionicons name="document-text-outline" size={32} color="#059669" />
                         <Text style={[styles.uploadBtnText, { color: colors.text }]}>Pick Document</Text>
                     </TouchableOpacity>
                 </View>
@@ -279,7 +279,7 @@ export default function ChallengeEngineScreen() {
                 <TouchableOpacity 
                     style={[
                         styles.submitBtn, 
-                        { backgroundColor: colors.primary },
+                        { backgroundColor: '#059669' },
                         (!mediaDraft || isTimeUp || isSubmittingGlobal || isUploading) && { opacity: 0.5 }
                     ]} 
                     onPress={handleFinalSubmit}

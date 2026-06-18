@@ -164,29 +164,29 @@ export default function EventPoolManagementPage() {
         <div className="p-6">
             <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Trophy className="h-6 w-6 text-primary-600" />
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-50 flex items-center gap-2">
+                        <Trophy className="h-6 w-6 text-primary-600 dark:text-emerald-500" />
                         Event Pool Management
                     </h1>
-                    <p className="text-gray-500 mt-1">Configure pools, monitor live metrics, and evaluate submissions.</p>
+                    <p className="text-gray-500 dark:text-slate-400 mt-1">Configure pools, monitor live metrics, and evaluate submissions.</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {pools.map(pool => (
-                    <div key={pool.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 hover:border-primary-200 transition-colors">
+                    <div key={pool.id} className="bg-white dark:bg-slate-950 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-5 hover:border-primary-200 dark:hover:border-emerald-500/50 transition-colors">
                         <div className="flex justify-between items-start mb-4">
-                            <h3 className="font-bold text-lg text-gray-900 line-clamp-1">{pool.title}</h3>
-                            <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium capitalize">
+                            <h3 className="font-bold text-lg text-gray-900 dark:text-slate-50 line-clamp-1">{pool.title}</h3>
+                            <span className="px-2.5 py-1 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 rounded-full text-xs font-medium capitalize">
                                 {pool.type}
                             </span>
                         </div>
-                        <p className="text-sm text-gray-500 mb-6 capitalize font-medium flex items-center gap-1.5">
+                        <p className="text-sm text-gray-500 dark:text-slate-400 mb-6 capitalize font-medium flex items-center gap-1.5">
                             <Activity className="h-4 w-4" /> Status: {pool.status}
                         </p>
                         <button
                             onClick={() => loadPoolDetails(pool)}
-                            className="w-full py-2.5 bg-primary-50 text-primary-700 hover:bg-primary-100 font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
+                            className="w-full py-2.5 bg-primary-50 dark:bg-emerald-900/30 text-primary-700 dark:text-emerald-400 hover:bg-primary-100 dark:hover:bg-emerald-900/50 font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
                         >
                             <Settings className="h-4 w-4" />
                             Manage Pool
@@ -194,7 +194,7 @@ export default function EventPoolManagementPage() {
                     </div>
                 ))}
                 {pools.length === 0 && (
-                    <div className="col-span-full py-12 text-center text-gray-500">
+                    <div className="col-span-full py-12 text-center text-gray-500 dark:text-slate-400">
                         No Event Pools found. Create one from the database first.
                     </div>
                 )}
@@ -202,45 +202,45 @@ export default function EventPoolManagementPage() {
 
             {selectedPool && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                    <div className="bg-white dark:bg-slate-950 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
                         
                         {/* Header */}
-                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                        <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between bg-gray-50 dark:bg-slate-900">
                             <div>
-                                <h2 className="text-xl font-bold text-gray-900">{selectedPool.title}</h2>
-                                <p className="text-sm text-gray-500 capitalize">{selectedPool.type} Engine</p>
+                                <h2 className="text-xl font-bold text-gray-900 dark:text-slate-50">{selectedPool.title}</h2>
+                                <p className="text-sm text-gray-500 dark:text-slate-400 capitalize">{selectedPool.type} Engine</p>
                             </div>
-                            <button onClick={() => setSelectedPool(null)} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
-                                <X className="h-5 w-5 text-gray-500" />
+                            <button onClick={() => setSelectedPool(null)} className="p-2 hover:bg-gray-200 dark:bg-slate-700 rounded-lg transition-colors">
+                                <X className="h-5 w-5 text-gray-500 dark:text-slate-400" />
                             </button>
                         </div>
 
                         {/* Tabs */}
-                        <div className="flex px-6 border-b border-gray-200">
-                            <button onClick={() => setActiveView('config')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'config' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                        <div className="flex px-6 border-b border-gray-200 dark:border-slate-800">
+                            <button onClick={() => setActiveView('config')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'config' ? 'border-primary-600 dark:border-emerald-500 text-primary-700 dark:text-emerald-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:text-slate-300'}`}>
                                 <Settings className="h-4 w-4" /> Configuration Editor
                             </button>
-                            <button onClick={() => setActiveView('monitor')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'monitor' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                            <button onClick={() => setActiveView('monitor')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'monitor' ? 'border-primary-600 dark:border-emerald-500 text-primary-700 dark:text-emerald-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:text-slate-300'}`}>
                                 <Activity className="h-4 w-4" /> Live Monitoring
                             </button>
-                            <button onClick={() => setActiveView('evaluate')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'evaluate' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                            <button onClick={() => setActiveView('evaluate')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'evaluate' ? 'border-primary-600 dark:border-emerald-500 text-primary-700 dark:text-emerald-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:text-slate-300'}`}>
                                 <CheckCircle className="h-4 w-4" /> Evaluation Terminal
                             </button>
-                            <button onClick={() => setActiveView('applications')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'applications' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                            <button onClick={() => setActiveView('applications')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'applications' ? 'border-primary-600 dark:border-emerald-500 text-primary-700 dark:text-emerald-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:text-slate-300'}`}>
                                 <Users className="h-4 w-4" /> Registrations
                             </button>
                         </div>
 
                         {/* Content */}
-                        <div className="flex-1 overflow-y-auto p-6 bg-white">
+                        <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-950">
                             
                             {/* 1. Configuration Editor */}
                             {activeView === 'config' && (
                                 <form onSubmit={handleSaveConfig} className="space-y-6 max-w-2xl">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
-                                            <select name="status" defaultValue={selectedPool.status} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500">
+                                            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Status</label>
+                                            <select name="status" defaultValue={selectedPool.status} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500">
                                                 <option value="draft">Draft</option>
                                                 <option value="scheduled">Scheduled</option>
                                                 <option value="live">Live</option>
@@ -250,8 +250,8 @@ export default function EventPoolManagementPage() {
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-semibold text-gray-700 mb-1">Participation Rule</label>
-                                            <select name="participation_rule" defaultValue={selectedPool.participation_rule} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500">
+                                            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Participation Rule</label>
+                                            <select name="participation_rule" defaultValue={selectedPool.participation_rule} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500">
                                                 <option value="open">Open (All)</option>
                                                 <option value="level_based">Level Based</option>
                                                 <option value="department_based">Department Based</option>
@@ -260,11 +260,11 @@ export default function EventPoolManagementPage() {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Target Constraints (JSON)</label>
-                                        <textarea name="target_constraints" defaultValue={JSON.stringify(selectedPool.target_constraints, null, 2)} rows={4} className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-primary-500" />
-                                        <p className="text-xs text-gray-500 mt-1">Example: {`{"enable_registration": true, "max_participants": 50, "application_deadline": "2026-06-30T12:00:00Z"}`}</p>
+                                        <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Target Constraints (JSON)</label>
+                                        <textarea name="target_constraints" defaultValue={JSON.stringify(selectedPool.target_constraints, null, 2)} rows={4} className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500" />
+                                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">Example: {`{"enable_registration": true, "max_participants": 50, "application_deadline": "2026-06-30T12:00:00Z"}`}</p>
                                     </div>
-                                    <button type="submit" className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 flex items-center gap-2">
+                                    <button type="submit" className="px-6 py-2 bg-primary-600 dark:bg-emerald-600 text-white font-semibold rounded-lg hover:bg-primary-700 dark:bg-emerald-700 flex items-center gap-2">
                                         <Save className="h-4 w-4" /> Save Configuration
                                     </button>
                                 </form>
@@ -297,13 +297,13 @@ export default function EventPoolManagementPage() {
                                         </div>
                                     </div>
                                     
-                                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                                        <h3 className="font-semibold text-gray-900 mb-4">Scheduling Properties</h3>
+                                    <div className="bg-gray-50 dark:bg-slate-900 rounded-xl p-6 border border-gray-200 dark:border-slate-800">
+                                        <h3 className="font-semibold text-gray-900 dark:text-slate-50 mb-4">Scheduling Properties</h3>
                                         <div className="grid grid-cols-2 gap-y-4 text-sm">
-                                            <div><span className="text-gray-500 block mb-1">Registration Opens</span><span className="font-medium">{new Date(selectedPool.registration_open).toLocaleString()}</span></div>
-                                            <div><span className="text-gray-500 block mb-1">Registration Closes</span><span className="font-medium">{new Date(selectedPool.registration_close).toLocaleString()}</span></div>
-                                            <div><span className="text-gray-500 block mb-1">Event Starts</span><span className="font-medium">{new Date(selectedPool.start_time).toLocaleString()}</span></div>
-                                            <div><span className="text-gray-500 block mb-1">Event Ends</span><span className="font-medium">{new Date(selectedPool.end_time).toLocaleString()}</span></div>
+                                            <div><span className="text-gray-500 dark:text-slate-400 block mb-1">Registration Opens</span><span className="font-medium">{new Date(selectedPool.registration_open).toLocaleString()}</span></div>
+                                            <div><span className="text-gray-500 dark:text-slate-400 block mb-1">Registration Closes</span><span className="font-medium">{new Date(selectedPool.registration_close).toLocaleString()}</span></div>
+                                            <div><span className="text-gray-500 dark:text-slate-400 block mb-1">Event Starts</span><span className="font-medium">{new Date(selectedPool.start_time).toLocaleString()}</span></div>
+                                            <div><span className="text-gray-500 dark:text-slate-400 block mb-1">Event Ends</span><span className="font-medium">{new Date(selectedPool.end_time).toLocaleString()}</span></div>
                                         </div>
                                     </div>
                                 </div>
@@ -313,13 +313,13 @@ export default function EventPoolManagementPage() {
                             {activeView === 'evaluate' && (
                                 <div className="space-y-4">
                                     {submissions.length === 0 ? (
-                                        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                                        <div className="text-center py-12 text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-900 rounded-xl border border-dashed border-gray-300">
                                             No submissions received yet.
                                         </div>
                                     ) : (
-                                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                        <div className="border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden">
                                             <table className="w-full text-left text-sm">
-                                                <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                                                <thead className="bg-gray-50 dark:bg-slate-900 text-gray-600 border-b border-gray-200 dark:border-slate-800">
                                                     <tr>
                                                         <th className="px-4 py-3 font-semibold">Student</th>
                                                         <th className="px-4 py-3 font-semibold">Submission</th>
@@ -330,15 +330,15 @@ export default function EventPoolManagementPage() {
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100">
                                                     {submissions.map(sub => (
-                                                        <tr key={sub.id} className="hover:bg-gray-50/50">
+                                                        <tr key={sub.id} className="hover:bg-gray-50 dark:bg-slate-900/50">
                                                             <td className="px-4 py-3">
-                                                                <p className="font-medium text-gray-900">{sub.users?.full_name}</p>
-                                                                <p className="text-xs text-gray-500">@{sub.users?.username}</p>
+                                                                <p className="font-medium text-gray-900 dark:text-slate-50">{sub.users?.full_name}</p>
+                                                                <p className="text-xs text-gray-500 dark:text-slate-400">@{sub.users?.username}</p>
                                                             </td>
-                                                            <td className="px-4 py-3 max-w-xs truncate text-gray-500">
+                                                            <td className="px-4 py-3 max-w-xs truncate text-gray-500 dark:text-slate-400">
                                                                 {sub.answers?.text ? `"${sub.answers.text.substring(0, 50)}..."` : sub.answers?.file_url ? 'Attachment [Link]' : 'Complex Data'}
                                                             </td>
-                                                            <td className="px-4 py-3 font-medium text-primary-700">{sub.grading_score !== null ? sub.grading_score : '--'}</td>
+                                                            <td className="px-4 py-3 font-medium text-primary-700 dark:text-emerald-400">{sub.grading_score !== null ? sub.grading_score : '--'}</td>
                                                             <td className="px-4 py-3 font-bold text-amber-600">{sub.podium_status || '--'}</td>
                                                             <td className="px-4 py-3 text-right">
                                                                 <button onClick={() => {
@@ -346,7 +346,7 @@ export default function EventPoolManagementPage() {
                                                                     setScoreInput(sub.grading_score?.toString() || '');
                                                                     setFeedbackInput(sub.grading_feedback || '');
                                                                     setPodiumInput(sub.podium_status || '');
-                                                                }} className="text-primary-600 hover:text-primary-800 font-medium">Evaluate</button>
+                                                                }} className="text-primary-600 dark:text-emerald-500 hover:text-primary-800 font-medium">Evaluate</button>
                                                             </td>
                                                         </tr>
                                                     ))}
@@ -357,18 +357,18 @@ export default function EventPoolManagementPage() {
 
                                     {/* Inline Evaluation Editor Form */}
                                     {editingSubId && (
-                                        <div className="mt-6 p-5 bg-primary-50 rounded-xl border border-primary-100 shadow-inner">
+                                        <div className="mt-6 p-5 bg-primary-50 dark:bg-emerald-900/30 rounded-xl border border-primary-100 shadow-inner">
                                             <h4 className="font-bold text-primary-900 mb-4 flex items-center gap-2">
                                                 <Edit className="h-4 w-4" /> Grading Panel
                                             </h4>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                                 <div>
-                                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Numerical Score</label>
-                                                    <input type="number" value={scoreInput} onChange={e => setScoreInput(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" placeholder="e.g. 85" />
+                                                    <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Numerical Score</label>
+                                                    <input type="number" value={scoreInput} onChange={e => setScoreInput(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500" placeholder="e.g. 85" />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Podium Assignment</label>
-                                                    <select value={podiumInput} onChange={e => setPodiumInput(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500">
+                                                    <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Podium Assignment</label>
+                                                    <select value={podiumInput} onChange={e => setPodiumInput(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500">
                                                         <option value="">None</option>
                                                         <option value="Winner">Winner</option>
                                                         <option value="1st Runner-Up">1st Runner-Up</option>
@@ -377,15 +377,15 @@ export default function EventPoolManagementPage() {
                                                 </div>
                                             </div>
                                             <div className="mb-4">
-                                                <label className="block text-sm font-semibold text-gray-700 mb-1">Manual Feedback</label>
-                                                <textarea value={feedbackInput} onChange={e => setFeedbackInput(e.target.value)} rows={2} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" placeholder="Leave remarks for the participant..." />
+                                                <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Manual Feedback</label>
+                                                <textarea value={feedbackInput} onChange={e => setFeedbackInput(e.target.value)} rows={2} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500" placeholder="Leave remarks for the participant..." />
                                             </div>
                                             <div className="flex gap-3 justify-end">
-                                                <button onClick={() => setEditingSubId(null)} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancel</button>
+                                                <button onClick={() => setEditingSubId(null)} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 dark:bg-slate-800 rounded-lg">Cancel</button>
                                                 <button onClick={() => {
                                                     const sub = submissions.find(s => s.id === editingSubId);
                                                     if(sub) handleSaveEvaluation(editingSubId, sub.user_id);
-                                                }} className="px-4 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 shadow-sm flex items-center gap-2">
+                                                }} className="px-4 py-2 bg-primary-600 dark:bg-emerald-600 text-white font-semibold rounded-lg hover:bg-primary-700 dark:bg-emerald-700 shadow-sm flex items-center gap-2">
                                                     <CheckCircle className="h-4 w-4" /> Save Result
                                                 </button>
                                             </div>
@@ -398,13 +398,13 @@ export default function EventPoolManagementPage() {
                             {activeView === 'applications' && (
                                 <div className="space-y-4">
                                     {applications.length === 0 ? (
-                                        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                                        <div className="text-center py-12 text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-900 rounded-xl border border-dashed border-gray-300">
                                             No registrations received yet.
                                         </div>
                                     ) : (
-                                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                        <div className="border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden">
                                             <table className="w-full text-left text-sm">
-                                                <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                                                <thead className="bg-gray-50 dark:bg-slate-900 text-gray-600 border-b border-gray-200 dark:border-slate-800">
                                                     <tr>
                                                         <th className="px-4 py-3 font-semibold">Applicant</th>
                                                         <th className="px-4 py-3 font-semibold">Date Applied</th>
@@ -414,12 +414,12 @@ export default function EventPoolManagementPage() {
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100">
                                                     {applications.map(app => (
-                                                        <tr key={app.id} className="hover:bg-gray-50/50">
+                                                        <tr key={app.id} className="hover:bg-gray-50 dark:bg-slate-900/50">
                                                             <td className="px-4 py-3">
-                                                                <p className="font-medium text-gray-900">{app.users?.full_name}</p>
-                                                                <p className="text-xs text-gray-500">@{app.users?.username}</p>
+                                                                <p className="font-medium text-gray-900 dark:text-slate-50">{app.users?.full_name}</p>
+                                                                <p className="text-xs text-gray-500 dark:text-slate-400">@{app.users?.username}</p>
                                                             </td>
-                                                            <td className="px-4 py-3 text-gray-500">
+                                                            <td className="px-4 py-3 text-gray-500 dark:text-slate-400">
                                                                 {new Date(app.created_at).toLocaleDateString()}
                                                             </td>
                                                             <td className="px-4 py-3">
@@ -429,7 +429,7 @@ export default function EventPoolManagementPage() {
                                                             </td>
                                                             <td className="px-4 py-3 text-right">
                                                                 {app.status === 'pending' && (
-                                                                    <button onClick={() => handleApproveApplication(app.id)} className="px-3 py-1.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors">
+                                                                    <button onClick={() => handleApproveApplication(app.id)} className="px-3 py-1.5 bg-primary-600 dark:bg-emerald-600 text-white font-medium rounded-lg hover:bg-primary-700 dark:bg-emerald-700 transition-colors">
                                                                         Approve
                                                                     </button>
                                                                 )}

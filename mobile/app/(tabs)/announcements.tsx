@@ -182,7 +182,7 @@ export default function AnnouncementsScreen() {
                     <ActivityIndicator size='large' color={COLORS.primary} style={{ marginTop: 60 }} />
                 ) : activeCategory === 'Event' ? (
                     filteredEvents.length > 0 ? filteredEvents.map(event => (
-                        <EventCard key={event.id} event={event} onApply={() => setActiveApplyPoolId(event.pool_id)} />)
+                        <EventCard key={event.id} event={event} onApply={() => setActiveApplyPoolId(event.pool_id || null)} />)
                     ) : <EmptyState icon='calendar-outline' text='No upcoming events' />
                 ) : (
                     sortedAnnouncements.length > 0 ? sortedAnnouncements.map(ann => (

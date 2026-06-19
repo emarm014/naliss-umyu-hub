@@ -260,8 +260,8 @@ export interface Event {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  pool_id?: string | null;
 }
-
 // Event Registration Interface
 export interface EventRegistration {
   id: string;

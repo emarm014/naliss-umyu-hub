@@ -51,10 +51,18 @@ export default function EventPoolManagementPage() {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newPoolTitle, setNewPoolTitle] = useState('');
     const [newPoolType, setNewPoolType] = useState('quiz');
+    const [events, setEvents] = useState<any[]>([]);
+    const [selectedEventId, setSelectedEventId] = useState('');
 
     useEffect(() => {
         fetchPools();
+        fetchEvents();
     }, []);
+
+    const fetchEvents = async () => {
+        const { data } = await supabase.from('events').select('id, title').in('status', ['published', 'ongoing']);
+        if (data) setEvents(data);
+    };
 
     const fetchPools = async () => {
         setIsLoading(true);
@@ -76,12 +84,14 @@ export default function EventPoolManagementPage() {
                 title: newPoolTitle,
                 type: newPoolType,
                 status: 'draft',
-                participation_rule: 'open'
+                participation_rule: 'open',
+                event_id: selectedEventId || null
             });
             if (error) throw error;
             setShowCreateModal(false);
             setNewPoolTitle('');
             setNewPoolType('quiz');
+            setSelectedEventId('');
             fetchPools();
         } catch (e: any) {
             alert('Failed to create event pool: ' + e.message);
@@ -507,6 +517,19 @@ export default function EventPoolManagementPage() {
                             <option value="talent">Talent</option>
                             <option value="academic">Academic</option>
                             <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Associated Event (Optional)</label>
+                        <select
+                            value={selectedEventId}
+                            onChange={(e) => setSelectedEventId(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
+                        >
+                            <option value="">None / Standalone Pool</option>
+                            {events.map(ev => (
+                                <option key={ev.id} value={ev.id}>{ev.title}</option>
+                            ))}
                         </select>
                     </div>
                     <div className="pt-2 flex gap-3">

@@ -182,7 +182,7 @@ export default function AnnouncementsScreen() {
                     <ActivityIndicator size='large' color={COLORS.primary} style={{ marginTop: 60 }} />
                 ) : activeCategory === 'Event' ? (
                     filteredEvents.length > 0 ? filteredEvents.map(event => (
-                        <EventCard key={event.id} event={event} />)
+                        <EventCard key={event.id} event={event} onApply={() => setActiveApplyPoolId(event.pool_id)} />)
                     ) : <EmptyState icon='calendar-outline' text='No upcoming events' />
                 ) : (
                     sortedAnnouncements.length > 0 ? sortedAnnouncements.map(ann => (
@@ -454,7 +454,7 @@ function AnnouncementCard({ announcement, user, onDelete, onApply }: { announcem
     );
 }
 
-function EventCard({ event }: { event: any }) {
+function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
     const status = STATUS_CONFIG[event.status] || STATUS_CONFIG.draft;
     const hasCover = !!event.cover_image_url;
     const isOngoing = event.status === 'ongoing';
@@ -535,18 +535,29 @@ function EventCard({ event }: { event: any }) {
                 )}
             </View>
 
-            {/* Description */}
-            {event.description ? (
-                <View style={[styles.eventDescRow, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
-                    <Text style={[styles.eventDesc, { color: colors.textSecondary }]} numberOfLines={2}>{event.description}</Text>
+            {/* Description and Actions */}
+            <View style={[styles.eventDescRow, { backgroundColor: colors.card, borderTopColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                {event.description ? (
+                    <Text style={[styles.eventDesc, { color: colors.textSecondary, flex: 1, marginRight: 10 }]} numberOfLines={2}>{event.description}</Text>
+                ) : (
+                    <Text style={[styles.eventDesc, { color: COLORS.primary, fontFamily: 'Inter-SemiBold', flex: 1 }]}>View full details</Text>
+                )}
+                
+                {event.pool_id && onApply ? (
+                    <TouchableOpacity
+                        style={{ backgroundColor: '#10b981', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center' }}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            onApply();
+                        }}
+                    >
+                        <Ionicons name='clipboard-outline' size={14} color='#fff' />
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 }}>Go to Pool</Text>
+                    </TouchableOpacity>
+                ) : (
                     <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
-                </View>
-            ) : (
-                <View style={[styles.eventDescRow, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
-                    <Text style={[styles.eventDesc, { color: COLORS.primary, fontFamily: 'Inter-SemiBold' }]}>View full details</Text>
-                    <Ionicons name='arrow-forward' size={16} color={COLORS.primary} />
-                </View>
-            )}
+                )}
+            </View>
         </TouchableOpacity>
     );
 }

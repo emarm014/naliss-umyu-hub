@@ -64,7 +64,7 @@ export const useEventStore = create<EventState>()(
                 try {
                     const now = new Date().toISOString().split('T')[0];
                     let query = (supabase as any).from('events')
-                        .select('*')
+                        .select('*, event_pools(id)')
                         .in('status', ['published', 'ongoing'])
                         .gte('start_date', now);
 
@@ -75,7 +75,14 @@ export const useEventStore = create<EventState>()(
                     const { data, error } = await query.order('start_date', { ascending: true }).limit(30);
 
                     if (error) throw error;
-                    set({ events: (data as unknown) as Event[], isLoading: false, lastFetch: Date.now() });
+
+                    const mappedEvents = data.map((ev: any) => ({
+                        ...ev,
+                        pool_id: ev.event_pools && ev.event_pools.length > 0 ? ev.event_pools[0].id : null,
+                        event_pools: undefined
+                    }));
+
+                    set({ events: mappedEvents as unknown as Event[], isLoading: false, lastFetch: Date.now() });
                 } catch {
                     // Keep cached data on network failure
                     set({ isLoading: false });

@@ -302,7 +302,7 @@ export default function ArchiveManagementPage() {
           isOpen={true} 
           onClose={() => setShowModal(null)}
           title={showModal === 'create' ? 'Add to Mobile App' : 'Edit Archive'}
-          size="2xl"
+          size="xl"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
             {formError && (

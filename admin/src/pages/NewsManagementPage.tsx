@@ -289,7 +289,7 @@ export default function NewsManagementPage() {
           isOpen={true} 
           onClose={() => setShowModal(null)}
           title={showModal === 'create' ? 'Add to Mobile App' : 'Edit News'}
-          size="2xl"
+          size="xl"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
             {formError && (

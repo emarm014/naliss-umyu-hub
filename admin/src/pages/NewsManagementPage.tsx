@@ -163,7 +163,7 @@ export default function NewsManagementPage() {
               disabled={isSubmitting}
               className={`px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 font-medium ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
-              {isSubmitting ? 'Publishing...' : 'Publish News'}
+              {isSubmitting ? 'Adding...' : 'Add to Mobile App'}
             </button>
           </div>
         </form>

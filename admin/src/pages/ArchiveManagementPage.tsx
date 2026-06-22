@@ -206,12 +206,12 @@ export default function ArchiveManagementPage() {
               {isSubmitting ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Saving...</span>
+                  <span>Adding...</span>
                 </>
               ) : (
                 <>
                   <Plus className="h-5 w-5" />
-                  <span>Create Archive Item</span>
+                  <span>Add to Mobile App</span>
                 </>
               )}
             </button>

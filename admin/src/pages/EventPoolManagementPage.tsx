@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2 } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import Modal from '../components/ui/Modal';
@@ -48,7 +48,8 @@ export default function EventPoolManagementPage() {
  const [feedbackInput, setFeedbackInput] = useState('');
  const [podiumInput, setPodiumInput] = useState('');
 
- const [showCreateModal, setShowCreateModal] = useState(false);
+ const [showCreateModal, setShowCreateModal] = useState<'create' | 'edit' | false>(false);
+ const [editingPoolId, setEditingPoolId] = useState<string | null>(null);
  const [newPoolTitle, setNewPoolTitle] = useState('');
  const [newPoolType, setNewPoolType] = useState('quiz');
  const [events, setEvents] = useState<any[]>([]);
@@ -80,6 +81,7 @@ export default function EventPoolManagementPage() {
  const handleCreatePool = async (e: React.FormEvent) => {
  e.preventDefault();
  try {
+ if (showCreateModal === 'create') {
  const { error } = await supabase.from('event_pools').insert({
  title: newPoolTitle,
  type: newPoolType,
@@ -88,14 +90,42 @@ export default function EventPoolManagementPage() {
  event_id: selectedEventId || null
  });
  if (error) throw error;
+ } else if (showCreateModal === 'edit' && editingPoolId) {
+ const { error } = await supabase.from('event_pools').update({
+ title: newPoolTitle,
+ type: newPoolType,
+ event_id: selectedEventId || null
+ }).eq('id', editingPoolId);
+ if (error) throw error;
+ }
  setShowCreateModal(false);
+ setEditingPoolId(null);
  setNewPoolTitle('');
  setNewPoolType('quiz');
  setSelectedEventId('');
  fetchPools();
  } catch (e: any) {
- alert('Failed to create event pool: ' + e.message);
+ alert('Failed to save event pool: ' + e.message);
  }
+ };
+
+ const handleDeletePool = async (id: string, title: string) => {
+ if (!window.confirm(`Are you sure you want to delete "${title}"?`)) return;
+ try {
+ const { error } = await supabase.from('event_pools').delete().eq('id', id);
+ if (error) throw error;
+ setPools(prev => prev.filter(p => p.id !== id));
+ } catch (e: any) {
+ alert('Failed to delete pool: ' + e.message);
+ }
+ };
+
+ const handleOpenEditModal = (pool: EventPool) => {
+ setEditingPoolId(pool.id);
+ setNewPoolTitle(pool.title);
+ setNewPoolType(pool.type);
+ setSelectedEventId(pool.target_constraints?.event_id || '');
+ setShowCreateModal('edit');
  };
 
  const loadPoolDetails = async (pool: EventPool) => {
@@ -214,7 +244,13 @@ export default function EventPoolManagementPage() {
  <p className="text-gray-500 mt-1">Configure pools, monitor live metrics, and evaluate submissions.</p>
  </div>
  <button
- onClick={() => setShowCreateModal(true)}
+ onClick={() => {
+ setShowCreateModal('create');
+ setNewPoolTitle('');
+ setNewPoolType('quiz');
+ setSelectedEventId('');
+ setEditingPoolId(null);
+ }}
  className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
  >
  <Plus className="h-5 w-5" />
@@ -226,10 +262,18 @@ export default function EventPoolManagementPage() {
  {pools.map(pool => (
  <div key={pool.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 hover:border-primary-200 transition-colors">
  <div className="flex justify-between items-start mb-4">
- <h3 className="font-bold text-lg text-gray-900 line-clamp-1">{pool.title}</h3>
+ <h3 className="font-bold text-lg text-gray-900 line-clamp-1 pr-2">{pool.title}</h3>
+ <div className="flex items-center gap-2 flex-shrink-0">
  <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium capitalize">
  {pool.type}
  </span>
+ <button onClick={() => handleOpenEditModal(pool)} className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors" title="Edit Pool Info">
+ <Edit className="h-4 w-4" />
+ </button>
+ <button onClick={() => handleDeletePool(pool.id, pool.title)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Delete Pool">
+ <Trash2 className="h-4 w-4" />
+ </button>
+ </div>
  </div>
  <p className="text-sm text-gray-500 mb-6 capitalize font-medium flex items-center gap-1.5">
  <Activity className="h-4 w-4" /> Status: {pool.status}
@@ -239,7 +283,7 @@ export default function EventPoolManagementPage() {
  className="w-full py-2.5 bg-primary-50 text-primary-700 hover:bg-primary-100 font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
  >
  <Settings className="h-4 w-4" />
- Manage Pool
+ Manage Pool Rules & Setup
  </button>
  </div>
  ))}
@@ -512,7 +556,7 @@ export default function EventPoolManagementPage() {
  </div>
  )}
 
- <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create New Pool" size="sm">
+ <Modal isOpen={!!showCreateModal} onClose={() => setShowCreateModal(false)} title={showCreateModal === 'create' ? "Create New Pool" : "Edit Pool Info"} size="sm">
  <form onSubmit={handleCreatePool} className="space-y-6">
  <div>
  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Pool Title</label>
@@ -567,7 +611,7 @@ export default function EventPoolManagementPage() {
  type="submit"
  className="flex-1 bg-primary-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
  >
- Create Pool
+ {showCreateModal === 'create' ? 'Create Pool' : 'Save Changes'}
  </button>
  </div>
  </form>

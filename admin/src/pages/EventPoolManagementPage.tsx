@@ -124,14 +124,23 @@ export default function EventPoolManagementPage() {
         
         const fd = new FormData(e.currentTarget);
         const participation_rule = fd.get('participation_rule') as string;
-        const target_constraints = fd.get('target_constraints') as string;
         const status = fd.get('status') as string;
+
+        const enable_registration = fd.get('enable_registration') === 'on';
+        const max_participants_raw = fd.get('max_participants');
+        const max_participants = max_participants_raw ? parseInt(max_participants_raw as string, 10) : null;
+        const application_deadline_raw = fd.get('application_deadline');
+        const application_deadline = application_deadline_raw ? new Date(application_deadline_raw as string).toISOString() : null;
 
         try {
             const updates = {
                 participation_rule,
                 status,
-                target_constraints: JSON.parse(target_constraints || '{}')
+                target_constraints: {
+                    enable_registration,
+                    ...(max_participants !== null && { max_participants }),
+                    ...(application_deadline !== null && { application_deadline })
+                }
             };
             const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
             if (error) throw error;
@@ -300,10 +309,24 @@ export default function EventPoolManagementPage() {
                                             </select>
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Target Constraints (JSON)</label>
-                                        <textarea name="target_constraints" defaultValue={JSON.stringify(selectedPool.target_constraints, null, 2)} rows={4} className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500" />
-                                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">Example: {`{"enable_registration": true, "max_participants": 50, "application_deadline": "2026-06-30T12:00:00Z"}`}</p>
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl space-y-4 border border-slate-100 dark:border-slate-800">
+                                        <h3 className="font-semibold text-sm text-slate-700 dark:text-slate-300">Registration Constraints</h3>
+                                        
+                                        <div className="flex items-center gap-2">
+                                            <input type="checkbox" id="enable_registration" name="enable_registration" defaultChecked={selectedPool.target_constraints?.enable_registration ?? true} className="rounded text-primary-600 focus:ring-primary-500" />
+                                            <label htmlFor="enable_registration" className="text-sm text-slate-700 dark:text-slate-300">Enable Registrations / Applications</label>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 mb-1">Max Participants</label>
+                                                <input type="number" name="max_participants" defaultValue={selectedPool.target_constraints?.max_participants || ''} placeholder="e.g. 50" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500 dark:bg-slate-900 dark:border-slate-700" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 mb-1">Application Deadline</label>
+                                                <input type="datetime-local" name="application_deadline" defaultValue={selectedPool.target_constraints?.application_deadline ? new Date(selectedPool.target_constraints.application_deadline).toISOString().slice(0, 16) : ''} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:focus:ring-emerald-500 dark:bg-slate-900 dark:border-slate-700" />
+                                            </div>
+                                        </div>
                                     </div>
                                     <button type="submit" className="px-6 py-2 bg-primary-600 dark:bg-emerald-600 text-white font-semibold rounded-lg hover:bg-primary-700 dark:bg-emerald-700 flex items-center gap-2">
                                         <Save className="h-4 w-4" /> Save Configuration

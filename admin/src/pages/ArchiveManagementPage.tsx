@@ -101,7 +101,7 @@ export default function ArchiveManagementPage() {
                   type="text"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="e.g. 2025 Institutional Handbook"
                   required
                 />
@@ -114,7 +114,7 @@ export default function ArchiveManagementPage() {
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 min-h-[100px]"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-h-[100px]"
                   placeholder="Summary of the findings..."
                 />
               </div>
@@ -127,7 +127,7 @@ export default function ArchiveManagementPage() {
                   <select
                     value={formData.file_type}
                     onChange={(e) => setFormData({ ...formData, file_type: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   >
                     <option value="pdf">PDF</option>
                     <option value="document">Document</option>
@@ -144,7 +144,7 @@ export default function ArchiveManagementPage() {
                     type="text"
                     value={formData.file_size}
                     onChange={(e) => setFormData({ ...formData, file_size: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                     placeholder="e.g. 2.4 MB"
                   />
                 </div>
@@ -160,7 +160,7 @@ export default function ArchiveManagementPage() {
                 {formData.file_url ? (
                   <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200">
                     <div className="flex items-center space-x-3 overflow-hidden">
-                      <div className="p-2 bg-brand-50 text-brand-600 rounded-lg">
+                      <div className="p-2 bg-primary-50 text-primary-600 rounded-lg">
                         <CheckCircle className="h-5 w-5" />
                       </div>
                       <span className="text-sm text-slate-700 truncate max-w-[200px]">
@@ -201,7 +201,7 @@ export default function ArchiveManagementPage() {
             <button
               type="submit"
               disabled={isSubmitting || !formData.file_url}
-              className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {isSubmitting ? (
                 <>

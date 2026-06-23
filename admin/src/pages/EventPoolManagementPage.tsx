@@ -190,6 +190,14 @@ export default function EventPoolManagementPage() {
  const end_time_raw = fd.get('end_time');
  const end_time = end_time_raw ? new Date(end_time_raw as string).toISOString() : null;
 
+ // Advanced constraints
+ const time_limit_per_question_sec_raw = fd.get('time_limit_per_question_sec');
+ const time_limit_per_question_sec = time_limit_per_question_sec_raw ? parseInt(time_limit_per_question_sec_raw as string, 10) : null;
+ const total_time_limit_sec_raw = fd.get('total_time_limit_sec');
+ const total_time_limit_sec = total_time_limit_sec_raw ? parseInt(total_time_limit_sec_raw as string, 10) : null;
+ const strict_once_off_selection = fd.get('strict_once_off_selection') === 'on';
+ const instant_feedback = fd.get('instant_feedback') === 'on';
+
  try {
  const updates = {
  participation_rule,
@@ -199,9 +207,14 @@ export default function EventPoolManagementPage() {
  ...(start_time && { start_time }),
  ...(end_time && { end_time }),
  target_constraints: {
+ ...selectedPool.target_constraints,
  enable_registration,
  ...(max_participants !== null && { max_participants }),
- ...(application_deadline !== null && { application_deadline })
+ ...(application_deadline !== null && { application_deadline }),
+ ...(time_limit_per_question_sec !== null && { time_limit_per_question_sec }),
+ ...(total_time_limit_sec !== null && { total_time_limit_sec }),
+ strict_once_off_selection,
+ instant_feedback
  }
  };
  const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
@@ -494,6 +507,38 @@ export default function EventPoolManagementPage() {
  </div>
  </div>
  </div>
+
+ <div className="bg-slate-50 p-4 rounded-xl space-y-4 border border-slate-100 ">
+ <h3 className="font-semibold text-sm text-slate-700">Advanced Settings</h3>
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+ {selectedPool.type === 'quiz' ? (
+ <>
+ <div>
+ <label className="block text-xs font-semibold text-slate-500 mb-1">Time Limit Per Question (seconds)</label>
+ <input type="number" name="time_limit_per_question_sec" defaultValue={selectedPool.target_constraints?.time_limit_per_question_sec || ''} placeholder="e.g. 5" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+ </div>
+ <div>
+ <label className="block text-xs font-semibold text-slate-500 mb-1">Total Quiz Time Limit (seconds)</label>
+ <input type="number" name="total_time_limit_sec" defaultValue={selectedPool.target_constraints?.total_time_limit_sec || ''} placeholder="e.g. 300 for 5 mins" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+ </div>
+ <div className="flex items-center gap-2 md:col-span-2">
+ <input type="checkbox" id="strict_once_off_selection" name="strict_once_off_selection" defaultChecked={selectedPool.target_constraints?.strict_once_off_selection ?? false} className="rounded text-primary-600 focus:ring-primary-500" />
+ <label htmlFor="strict_once_off_selection" className="text-sm text-slate-700 ">Strict Once-Off Selection (Users cannot change their answer once tapped)</label>
+ </div>
+ <div className="flex items-center gap-2 md:col-span-2">
+ <input type="checkbox" id="instant_feedback" name="instant_feedback" defaultChecked={selectedPool.target_constraints?.instant_feedback ?? false} className="rounded text-primary-600 focus:ring-primary-500" />
+ <label htmlFor="instant_feedback" className="text-sm text-slate-700 ">Instant Feedback (Show true/false immediately after selection - Works best if Once-Off is enabled)</label>
+ </div>
+ </>
+ ) : (
+ <div>
+ <label className="block text-xs font-semibold text-slate-500 mb-1">Total Event Time Limit (seconds)</label>
+ <input type="number" name="total_time_limit_sec" defaultValue={selectedPool.target_constraints?.total_time_limit_sec || ''} placeholder="e.g. 300 for 5 mins" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+ </div>
+ )}
+ </div>
+ </div>
+
  <button type="submit" className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 flex items-center gap-2">
  <Save className="h-4 w-4" /> Save Configuration
  </button>

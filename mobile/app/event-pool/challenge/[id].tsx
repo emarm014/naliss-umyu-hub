@@ -9,6 +9,7 @@ import { useCompositionStore } from '../../../src/stores/composition.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { differenceInSeconds } from 'date-fns';
 import * as DocumentPicker from 'expo-document-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadLocalFileToCloudinary } from '../../../src/lib/cloudinary';
 
@@ -29,6 +30,7 @@ export default function ChallengeEngineScreen() {
     const [isUploading, setIsUploading] = useState(false);
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [serverTimeOffset, setServerTimeOffset] = useState(0);
+    const [poolStartedAt, setPoolStartedAt] = useState<number>(Date.now());
     const [mediaDraft, setMediaDraft] = useState<{ url: string, type: 'image' | 'video' | 'raw' } | null>(getChallengeDraft(id));
 
     // Handle back button protection
@@ -95,30 +97,57 @@ export default function ChallengeEngineScreen() {
                 setIsLoading(false);
             }
         };
+
+        const loadOrSetStartTime = async () => {
+            if (!id) return;
+            try {
+                const key = `poolStartedAt_${id}`;
+                const existing = await AsyncStorage.getItem(key);
+                if (existing) {
+                    setPoolStartedAt(parseInt(existing, 10));
+                } else {
+                    const now = Date.now();
+                    await AsyncStorage.setItem(key, now.toString());
+                    setPoolStartedAt(now);
+                }
+            } catch(e) {}
+        };
+
         initChallenge();
+        loadOrSetStartTime();
     }, [id, user]);
 
     // Timer logic
     useEffect(() => {
-        if (!poolInfo?.end_time || isLoading) return;
+        if (isLoading || !poolInfo) return;
 
         const interval = setInterval(() => {
             const adjustedNow = new Date(Date.now() + serverTimeOffset);
-            const endDate = new Date(poolInfo.end_time);
-            const diff = differenceInSeconds(endDate, adjustedNow);
+            let timeIsUp = false;
 
-            if (diff <= 0) {
+            if (poolInfo.end_time) {
+                const endDate = new Date(poolInfo.end_time);
+                if (differenceInSeconds(endDate, adjustedNow) <= 0) timeIsUp = true;
+                else setTimeLeft(differenceInSeconds(endDate, adjustedNow));
+            }
+
+            if (poolInfo.target_constraints?.total_time_limit_sec) {
+                const targetDate = new Date(poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000);
+                if (differenceInSeconds(targetDate, adjustedNow) <= 0) timeIsUp = true;
+                else {
+                    const diff = differenceInSeconds(targetDate, adjustedNow);
+                    if (timeLeft === null || diff < timeLeft) setTimeLeft(diff);
+                }
+            }
+
+            if (timeIsUp) {
                 clearInterval(interval);
                 setTimeLeft(0);
-                // We do NOT auto-submit media because they might not have uploaded anything.
-                // Just lock the UI.
-            } else {
-                setTimeLeft(diff);
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [poolInfo?.end_time, serverTimeOffset, isLoading]);
+    }, [poolInfo, serverTimeOffset, isLoading, poolStartedAt]);
 
     const uploadMedia = async (uri: string, type: 'image' | 'video' | 'raw') => {
         setIsUploading(true);

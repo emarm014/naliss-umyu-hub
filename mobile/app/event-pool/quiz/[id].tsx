@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert, BackHandler, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert, BackHandler, Animated, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../src/api/supabase/client';
@@ -8,6 +8,7 @@ import { useAuthStore } from '../../../src/stores';
 import { useQuizStore } from '../../../src/stores/quiz.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { differenceInSeconds } from 'date-fns';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type QuizQuestion = {
     id: string;
@@ -15,6 +16,8 @@ type QuizQuestion = {
     options: string[];
     points: number;
     difficulty_level: string;
+    question_type: string;
+    media_url: string | null;
 };
 
 export default function QuizEngineScreen() {
@@ -36,6 +39,9 @@ export default function QuizEngineScreen() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [serverTimeOffset, setServerTimeOffset] = useState(0);
+    const [poolStartedAt, setPoolStartedAt] = useState<number>(Date.now());
+    const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
+    const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({});
 
     const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -78,7 +84,7 @@ export default function QuizEngineScreen() {
                 // 1. Fetch Pool Status & Deadline
                 const { data: poolData, error: poolError } = await (supabase as any)
                     .from('event_pools')
-                    .select('id, title, status, end_time')
+                    .select('id, title, status, end_time, target_constraints')
                     .eq('id', id)
                     .single();
                 
@@ -132,29 +138,84 @@ export default function QuizEngineScreen() {
                 setIsLoading(false);
             }
         };
+
+        const loadOrSetStartTime = async () => {
+            if (!id) return;
+            try {
+                const key = `poolStartedAt_${id}`;
+                const existing = await AsyncStorage.getItem(key);
+                if (existing) {
+                    setPoolStartedAt(parseInt(existing, 10));
+                } else {
+                    const now = Date.now();
+                    await AsyncStorage.setItem(key, now.toString());
+                    setPoolStartedAt(now);
+                }
+            } catch(e) {}
+        };
+
         initQuiz();
+        loadOrSetStartTime();
     }, [id, user]);
 
     // Timer logic
     useEffect(() => {
-        if (!poolInfo?.end_time || isLoading) return;
+        if (isLoading || !poolInfo) return;
 
         const interval = setInterval(() => {
             const adjustedNow = new Date(Date.now() + serverTimeOffset);
-            const endDate = new Date(poolInfo.end_time);
-            const diff = differenceInSeconds(endDate, adjustedNow);
+            let timeIsUp = false;
 
-            if (diff <= 0) {
+            if (poolInfo.end_time) {
+                const endDate = new Date(poolInfo.end_time);
+                if (differenceInSeconds(endDate, adjustedNow) <= 0) timeIsUp = true;
+                else setTimeLeft(differenceInSeconds(endDate, adjustedNow));
+            }
+
+            if (poolInfo.target_constraints?.total_time_limit_sec) {
+                const targetDate = new Date(poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000);
+                if (differenceInSeconds(targetDate, adjustedNow) <= 0) timeIsUp = true;
+                else {
+                    const diff = differenceInSeconds(targetDate, adjustedNow);
+                    if (timeLeft === null || diff < timeLeft) setTimeLeft(diff);
+                }
+            }
+
+            if (timeIsUp) {
                 clearInterval(interval);
                 setTimeLeft(0);
                 handleFinalSubmit(true);
-            } else {
-                setTimeLeft(diff);
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [poolInfo?.end_time, serverTimeOffset, isLoading]);
+    }, [poolInfo, serverTimeOffset, isLoading, poolStartedAt]);
+
+    // Per-question timer
+    useEffect(() => {
+        if (isLoading || !poolInfo?.target_constraints?.time_limit_per_question_sec || isSubmittingGlobal) return;
+
+        setQuestionTimeLeft(poolInfo.target_constraints.time_limit_per_question_sec);
+
+        const interval = setInterval(() => {
+            setQuestionTimeLeft(prev => {
+                if (prev === null) return null;
+                if (prev <= 1) {
+                    setTimeout(() => {
+                        if (currentIndex < questions.length - 1) {
+                            animateTransition(() => setCurrentIndex(i => i + 1));
+                        } else {
+                            handleFinalSubmit(true);
+                        }
+                    }, 0);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [currentIndex, poolInfo, isLoading, isSubmittingGlobal, questions.length]);
 
     const handleFinalSubmit = async (autoSubmitted = false) => {
         if (isSubmittingGlobal) return;
@@ -188,8 +249,38 @@ export default function QuizEngineScreen() {
         }
     };
 
-    const handleOptionSelect = (qId: string, option: string) => {
-        setAnswer(id, qId, option);
+    const handleOptionSelect = async (qId: string, option: string) => {
+        const q = questions.find(x => x.id === qId);
+        if (!q) return;
+
+        const isStrict = poolInfo?.target_constraints?.strict_once_off_selection;
+        const isMultiple = q.question_type === 'multiple';
+        const currentAns = answers[qId];
+
+        if (isStrict && currentAns && !isMultiple) return; // Locked
+
+        let newAnswer = option;
+        if (isMultiple) {
+            const currentArr = currentAns ? currentAns.split(', ') : [];
+            if (currentArr.includes(option)) {
+                newAnswer = currentArr.filter((x: string) => x !== option).join(', ');
+            } else {
+                currentArr.push(option);
+                newAnswer = currentArr.join(', ');
+            }
+        }
+
+        setAnswer(id, qId, newAnswer);
+
+        // Instant feedback if strict once-off and single choice
+        if (poolInfo?.target_constraints?.instant_feedback && !isMultiple && isStrict) {
+            try {
+                const { data, error } = await supabase.rpc('check_quiz_answer', { p_question_id: qId });
+                if (!error && data) {
+                    setFeedbackMap(prev => ({ ...prev, [qId]: data }));
+                }
+            } catch(e) {}
+        }
     };
 
     if (isLoading) {
@@ -244,22 +335,53 @@ export default function QuizEngineScreen() {
                 </View>
             </View>
 
+            {questionTimeLeft !== null && (
+                <View style={{ backgroundColor: isDark ? '#334155' : '#e2e8f0', height: 4, width: '100%', overflow: 'hidden' }}>
+                    <View style={{ backgroundColor: colors.primary, height: '100%', width: `${(questionTimeLeft / (poolInfo?.target_constraints?.time_limit_per_question_sec || 1)) * 100}%` }} />
+                </View>
+            )}
+
             <ScrollView contentContainerStyle={styles.content} bounces={false}>
                 <Animated.View style={[styles.questionCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: fadeAnim }]}>
+                    {currentQ.media_url ? (
+                        <Image source={{ uri: currentQ.media_url }} style={{ width: '100%', height: 200, borderRadius: 12, marginBottom: 16 }} resizeMode="cover" />
+                    ) : null}
                     <Text style={[styles.questionText, { color: colors.text }]}>{currentQ.question_text}</Text>
                     
                     <View style={styles.optionsList}>
                         {currentQ.options.map((opt, idx) => {
-                            const isSelected = answers[currentQ.id] === opt;
+                            const currentAns = answers[currentQ.id];
+                            const isSelected = currentQ.question_type === 'multiple'
+                                ? (currentAns ? currentAns.split(', ').includes(opt) : false)
+                                : currentAns === opt;
+
+                            const isStrict = poolInfo?.target_constraints?.strict_once_off_selection;
+                            const isLocked = isStrict && !!currentAns && currentQ.question_type !== 'multiple';
+                            const correctFeedback = feedbackMap[currentQ.id];
+
                             const emeraldAccent = '#059669';
+                            let bgColor = isSelected ? `${emeraldAccent}20` : 'transparent';
+                            let bdrColor = isSelected ? emeraldAccent : colors.border;
+
+                            if (correctFeedback && isLocked) {
+                                if (correctFeedback.includes(opt)) {
+                                    bgColor = isDark ? 'rgba(16, 185, 129, 0.2)' : '#d1fae5';
+                                    bdrColor = '#10b981';
+                                } else if (isSelected) {
+                                    bgColor = isDark ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2';
+                                    bdrColor = '#ef4444';
+                                }
+                            }
+
                             return (
                                 <TouchableOpacity
                                     key={idx}
+                                    disabled={isLocked || isSubmittingGlobal}
                                     style={[
                                         styles.optionBtn,
                                         { 
-                                            backgroundColor: isSelected ? `${emeraldAccent}20` : 'transparent',
-                                            borderColor: isSelected ? emeraldAccent : colors.border
+                                            backgroundColor: bgColor,
+                                            borderColor: bdrColor
                                         }
                                     ]}
                                     onPress={() => handleOptionSelect(currentQ.id, opt)}

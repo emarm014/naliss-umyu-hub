@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, TextInput, Alert, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/api/supabase/client';
@@ -29,6 +29,8 @@ type QuizQuestion = {
     question_text: string;
     options: string[];
     points: number;
+    question_type: string;
+    media_url: string | null;
 };
 
 type LeaderboardEntry = {
@@ -61,10 +63,13 @@ export default function EventPoolRoom() {
     const [serverTimeOffset, setServerTimeOffset] = useState(0);
     const [timeLeftSeconds, setTimeLeftSeconds] = useState<number | null>(null);
     const [isTimeUp, setIsTimeUp] = useState(false);
+    const [poolStartedAt, setPoolStartedAt] = useState<number | null>(null);
 
     // Quiz State
     const [currentIndex, setCurrentIndex] = useState(0);
     const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+    const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
+    const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({});
 
     // Essay State
     const [essayText, setEssayText] = useState('');
@@ -102,7 +107,7 @@ export default function EventPoolRoom() {
                 if (poolData.type === 'quiz') {
                     const { data: qData, error: qErr } = await (supabase as any)
                         .from('pool_quiz_questions_safe')
-                        .select('id, question_text, options, points')
+                        .select('id, question_text, options, points, question_type, media_url')
                         .eq('pool_id', id)
                         .order('created_at', { ascending: true });
                     if (qErr) console.error('Failed to fetch questions:', qErr);
@@ -113,12 +118,21 @@ export default function EventPoolRoom() {
                 const savedProgress = await mmkvStorage.getItem(`pool_progress_${id}`);
                 if (savedProgress) {
                     const parsed = JSON.parse(savedProgress);
-                    if (poolData.type === 'quiz' && parsed.quizAnswers) setQuizAnswers(parsed.quizAnswers);
+                    if (parsed.startedAt) setPoolStartedAt(parsed.startedAt);
+                    else setPoolStartedAt(Date.now());
+
+                    if (poolData.type === 'quiz') {
+                        if (parsed.quizAnswers) setQuizAnswers(parsed.quizAnswers);
+                        if (parsed.currentIndex !== undefined) setCurrentIndex(parsed.currentIndex);
+                        if (parsed.feedbackMap) setFeedbackMap(parsed.feedbackMap);
+                    }
                     if (poolData.type === 'essay' && parsed.essayText) setEssayText(parsed.essayText);
                     if (poolData.type === 'challenge' && parsed.challengeMediaUrl) {
                         setChallengeMediaUrl(parsed.challengeMediaUrl);
                         setChallengeMediaType(parsed.challengeMediaType);
                     }
+                } else {
+                    setPoolStartedAt(Date.now());
                 }
 
             } catch (err) {
@@ -167,14 +181,14 @@ export default function EventPoolRoom() {
 
     // Save Progress logic (Debounced)
     useEffect(() => {
-        if (!id || isLoading || !pool || isSubmitting) return;
+        if (!id || isLoading || !pool || isSubmitting || !poolStartedAt) return;
         
         const timeoutId = setTimeout(async () => {
             try {
-                let dataToSave = {};
-                if (pool.type === 'quiz') dataToSave = { quizAnswers };
-                else if (pool.type === 'essay') dataToSave = { essayText };
-                else if (pool.type === 'challenge') dataToSave = { challengeMediaUrl, challengeMediaType };
+                let dataToSave: any = { startedAt: poolStartedAt };
+                if (pool.type === 'quiz') dataToSave = { ...dataToSave, quizAnswers, currentIndex, feedbackMap };
+                else if (pool.type === 'essay') dataToSave = { ...dataToSave, essayText };
+                else if (pool.type === 'challenge') dataToSave = { ...dataToSave, challengeMediaUrl, challengeMediaType };
                 
                 await mmkvStorage.setItem(`pool_progress_${id}`, JSON.stringify(dataToSave));
             } catch (e) {
@@ -183,7 +197,7 @@ export default function EventPoolRoom() {
         }, 500);
 
         return () => clearTimeout(timeoutId);
-    }, [quizAnswers, essayText, challengeMediaUrl, id, isLoading, pool, isSubmitting]);
+    }, [quizAnswers, currentIndex, feedbackMap, essayText, challengeMediaUrl, id, isLoading, pool, isSubmitting, poolStartedAt]);
 
     // Leaderboard Fetching Logic
     useEffect(() => {
@@ -235,24 +249,65 @@ export default function EventPoolRoom() {
 
     // Timer logic
     useEffect(() => {
-        if (!pool?.end_time || isTimeUp || !isParticipant) return;
+        if (!pool || isTimeUp || !isParticipant || isSubmitting) return;
         
         const interval = setInterval(() => {
             const now = new Date(Date.now() + serverTimeOffset);
-            const target = new Date(pool.end_time);
-            
-            if (isBefore(target, now)) {
+            let totalTimeUp = false;
+
+            if (pool.end_time) {
+                const target = new Date(pool.end_time);
+                if (isBefore(target, now)) totalTimeUp = true;
+                else setTimeLeftSeconds(differenceInSeconds(target, now));
+            }
+
+            if (pool.target_constraints?.total_time_limit_sec && poolStartedAt) {
+                const target = new Date(poolStartedAt + pool.target_constraints.total_time_limit_sec * 1000);
+                if (isBefore(target, now)) totalTimeUp = true;
+                else {
+                    const diff = differenceInSeconds(target, now);
+                    if (timeLeftSeconds === null || diff < timeLeftSeconds) {
+                        setTimeLeftSeconds(diff);
+                    }
+                }
+            }
+
+            if (totalTimeUp) {
                 setIsTimeUp(true);
                 setTimeLeftSeconds(0);
                 clearInterval(interval);
-                handleFinalSubmit(true); // Auto-submit when time expires
-            } else {
-                setTimeLeftSeconds(differenceInSeconds(target, now));
+                handleFinalSubmit(true);
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [pool, serverTimeOffset, isTimeUp, isParticipant]);
+    }, [pool, serverTimeOffset, isTimeUp, isParticipant, poolStartedAt, isSubmitting]);
+
+    // Per-question timer
+    useEffect(() => {
+        if (!pool || pool.type !== 'quiz' || !pool.target_constraints?.time_limit_per_question_sec || isTimeUp || isSubmitting) return;
+
+        setQuestionTimeLeft(pool.target_constraints.time_limit_per_question_sec);
+
+        const interval = setInterval(() => {
+            setQuestionTimeLeft(prev => {
+                if (prev === null) return null;
+                if (prev <= 1) {
+                    setTimeout(() => {
+                        if (currentIndex < questions.length - 1) {
+                            setCurrentIndex(c => c + 1);
+                        } else {
+                            if (!isSubmitting && !isTimeUp) handleFinalSubmit(true);
+                        }
+                    }, 0);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [currentIndex, pool, isTimeUp, isSubmitting, questions.length]);
 
     const cardBg = isDark ? '#1E2638' : '#FFFFFF';
     const textColor = isDark ? '#FFFFFF' : '#0f172a';
@@ -292,6 +347,14 @@ export default function EventPoolRoom() {
         if (!pool) return null;
         return (
             <ScrollView contentContainerStyle={styles.contentContainer}>
+                {pool.target_constraints?.media_url ? (
+                    <Image 
+                        source={{ uri: pool.target_constraints.media_url }} 
+                        style={{ width: '100%', height: 220, borderRadius: 16, marginBottom: 16 }} 
+                        resizeMode="cover" 
+                    />
+                ) : null}
+
                 <View style={[styles.infoCard, { backgroundColor: cardBg, borderColor }]}>
                     <Text style={[styles.sectionTitle, { color: textColor }]}>Event Rules & Info</Text>
                     <Text style={[styles.bodyText, { color: subtextColor, marginTop: 8 }]}>
@@ -318,14 +381,52 @@ export default function EventPoolRoom() {
                             </Text>
                         </View>
                     </View>
+
+                    {pool.target_constraints?.instructions ? (
+                        <View style={{ marginTop: 24, paddingTop: 24, borderTopWidth: 1, borderTopColor: borderColor }}>
+                            <Text style={[styles.sectionTitle, { color: textColor, marginBottom: 8 }]}>Participant Instructions</Text>
+                            <Text style={[styles.bodyText, { color: subtextColor }]}>
+                                {pool.target_constraints.instructions}
+                            </Text>
+                        </View>
+                    ) : null}
                 </View>
             </ScrollView>
         );
     };
 
-    const handleQuizOptionSelect = (qId: string, option: string) => {
+    const handleQuizOptionSelect = async (qId: string, option: string) => {
         if (isTimeUp || isSubmitting) return;
-        setQuizAnswers(prev => ({ ...prev, [qId]: option }));
+        
+        const q = questions.find(x => x.id === qId);
+        if (!q) return;
+
+        const isStrict = pool?.target_constraints?.strict_once_off_selection;
+        const isMultiple = q.question_type === 'multiple';
+
+        if (isStrict && quizAnswers[qId] && !isMultiple) return; // Locked
+
+        let newAnswer = option;
+        if (isMultiple) {
+            const currentArr = quizAnswers[qId] ? quizAnswers[qId].split(', ') : [];
+            if (currentArr.includes(option)) {
+                newAnswer = currentArr.filter(x => x !== option).join(', ');
+            } else {
+                currentArr.push(option);
+                newAnswer = currentArr.join(', ');
+            }
+        }
+
+        setQuizAnswers(prev => ({ ...prev, [qId]: newAnswer }));
+
+        if (pool?.target_constraints?.instant_feedback && !isMultiple && isStrict) {
+            try {
+                const { data, error } = await supabase.rpc('check_quiz_answer', { p_question_id: qId });
+                if (!error && data) {
+                    setFeedbackMap(prev => ({ ...prev, [qId]: data }));
+                }
+            } catch(e) {}
+        }
     };
 
     const renderQuizEngine = () => {
@@ -356,24 +457,59 @@ export default function EventPoolRoom() {
                     <Text style={[styles.quizPoints, { color: brandColor }]}>{q.points} Points</Text>
                 </View>
 
+                {questionTimeLeft !== null && (
+                    <View style={{ backgroundColor: isDark ? '#334155' : '#e2e8f0', height: 4, borderRadius: 2, marginVertical: 8, overflow: 'hidden' }}>
+                        <View style={{ backgroundColor: brandColor, height: '100%', width: `${(questionTimeLeft / (pool?.target_constraints?.time_limit_per_question_sec || 1)) * 100}%` }} />
+                    </View>
+                )}
+
+                {q.media_url ? (
+                    <Image source={{ uri: q.media_url }} style={{ width: '100%', height: 200, borderRadius: 12, marginBottom: 16 }} resizeMode="cover" />
+                ) : null}
+
                 <Text style={[styles.questionText, { color: textColor }]}>{q.question_text}</Text>
 
                 <View style={styles.optionsContainer}>
                     {q.options?.map((opt, i) => {
-                        const isSelected = selected === opt;
+                        const currentAns = quizAnswers[q.id];
+                        const isSelected = q.question_type === 'multiple' 
+                            ? (currentAns ? currentAns.split(', ').includes(opt) : false)
+                            : currentAns === opt;
+
+                        const isStrict = pool?.target_constraints?.strict_once_off_selection;
+                        const isLocked = isStrict && !!currentAns && q.question_type !== 'multiple';
+
+                        const correctFeedback = feedbackMap[q.id];
+                        let bgColor = cardBg;
+                        let bdrColor = borderColor;
+
+                        if (isSelected) {
+                            bgColor = isDark ? 'rgba(5, 150, 105, 0.1)' : '#ecfdf5';
+                            bdrColor = brandColor;
+                        }
+
+                        if (correctFeedback && isLocked) {
+                            if (correctFeedback.includes(opt)) {
+                                bgColor = isDark ? 'rgba(16, 185, 129, 0.2)' : '#d1fae5';
+                                bdrColor = '#10b981';
+                            } else if (isSelected) {
+                                bgColor = isDark ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2';
+                                bdrColor = '#ef4444';
+                            }
+                        }
+
                         return (
                             <TouchableOpacity
                                 key={i}
-                                disabled={isTimeUp || isSubmitting}
+                                disabled={isTimeUp || isSubmitting || isLocked}
                                 onPress={() => handleQuizOptionSelect(q.id, opt)}
                                 style={[
                                     styles.optionCard,
-                                    { backgroundColor: cardBg, borderColor },
-                                    isSelected && { borderColor: brandColor, backgroundColor: isDark ? 'rgba(5, 150, 105, 0.1)' : '#ecfdf5' }
+                                    { backgroundColor: bgColor, borderColor: bdrColor },
                                 ]}
                             >
-                                <View style={[styles.optionRadio, isSelected && { borderColor: brandColor }]}>
-                                    {isSelected && <View style={[styles.optionRadioInner, { backgroundColor: brandColor }]} />}
+                                <View style={[styles.optionRadio, q.question_type === 'multiple' && { borderRadius: 4 }, isSelected && { borderColor: bdrColor }]}>
+                                    {isSelected && <View style={[styles.optionRadioInner, q.question_type === 'multiple' && { borderRadius: 2 }, { backgroundColor: bdrColor }]} />}
                                 </View>
                                 <Text style={[styles.optionText, { color: textColor }, isSelected && { fontWeight: '600' }]}>{opt}</Text>
                             </TouchableOpacity>

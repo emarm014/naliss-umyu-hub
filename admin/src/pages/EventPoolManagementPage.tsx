@@ -37,6 +37,8 @@ type QuizQuestion = {
  options: string[];
  correct_option: string;
  points: number;
+ question_type: string;
+ media_url?: string | null;
 };
 
 export default function EventPoolManagementPage() {
@@ -53,6 +55,7 @@ export default function EventPoolManagementPage() {
 
  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
  const [isBulkMode, setIsBulkMode] = useState(false);
+ const [newQuestionType, setNewQuestionType] = useState('single');
 
  // Evaluator states
  const [editingSubId, setEditingSubId] = useState<string | null>(null);
@@ -281,11 +284,13 @@ export default function EventPoolManagementPage() {
  if (!selectedPool) return;
  const fd = new FormData(e.currentTarget);
  const instructions = fd.get('instructions') as string;
+ const media_url = fd.get('media_url') as string;
  try {
  const updates = {
  target_constraints: {
  ...selectedPool.target_constraints,
- instructions
+ instructions,
+ media_url
  }
  };
  const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
@@ -303,21 +308,32 @@ export default function EventPoolManagementPage() {
  if (!selectedPool) return;
  const fd = new FormData(e.currentTarget);
  const question_text = fd.get('question_text') as string;
+ const question_type = fd.get('question_type') as string || 'single';
+ const media_url = fd.get('media_url') as string || null;
  const option1 = fd.get('option1') as string;
  const option2 = fd.get('option2') as string;
  const option3 = fd.get('option3') as string;
  const option4 = fd.get('option4') as string;
  const correct_option = fd.get('correct_option') as string;
+ const tf_correct = fd.get('tf_correct') as string;
  const points = parseInt(fd.get('points') as string, 10) || 1;
 
- const options = [option1, option2, option3, option4].filter(Boolean);
+ let finalOptions = [option1, option2, option3, option4].filter(Boolean);
+ let finalCorrect = correct_option;
+
+ if (question_type === 'true_false') {
+ finalOptions = ['True', 'False'];
+ finalCorrect = tf_correct;
+ }
 
  try {
  const { data, error } = await supabase.from('pool_quiz_questions').insert({
  pool_id: selectedPool.id,
  question_text,
- options,
- correct_option,
+ question_type,
+ media_url,
+ options: finalOptions,
+ correct_option: finalCorrect,
  points
  }).select().single();
  if (error) throw error;
@@ -627,11 +643,15 @@ export default function EventPoolManagementPage() {
  {quizQuestions.map((q, i) => (
  <div key={q.id} className="bg-gray-50 border border-gray-200 p-4 rounded-xl flex items-start justify-between">
  <div>
- <p className="font-semibold text-gray-900 text-sm mb-2">Q{i + 1}. {q.question_text} <span className="text-xs text-primary-600 ml-2">({q.points} pts)</span></p>
+ <p className="font-semibold text-gray-900 text-sm mb-2">Q{i + 1}. {q.question_text} 
+ <span className="text-xs text-primary-600 ml-2">({q.points} pts)</span>
+ <span className="text-xs bg-gray-200 px-2 py-0.5 rounded ml-2 uppercase">{q.question_type}</span>
+ {q.media_url && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded ml-2">Has Media</span>}
+ </p>
  <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
  {q.options.map((opt, j) => (
- <li key={j} className={opt === q.correct_option ? 'text-green-600 font-bold' : ''}>
- {opt} {opt === q.correct_option && '✓'}
+ <li key={j} className={q.correct_option?.includes(opt) ? 'text-green-600 font-bold' : ''}>
+ {opt} {q.correct_option?.includes(opt) && '✓'}
  </li>
  ))}
  </ul>
@@ -641,8 +661,6 @@ export default function EventPoolManagementPage() {
  </button>
  </div>
  ))}
- </div>
-
  </div>
 
  {/* Add new question form or Bulk mode */}
@@ -670,10 +688,28 @@ export default function EventPoolManagementPage() {
  ) : (
  <form onSubmit={handleAddQuizQuestion} className="bg-primary-50 border border-primary-100 p-6 rounded-xl space-y-4">
  <h4 className="font-semibold text-primary-900">Add New Question</h4>
+ 
+ <div className="grid grid-cols-2 gap-4">
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Question Type</label>
+ <select name="question_type" value={newQuestionType} onChange={e => setNewQuestionType(e.target.value)} className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500">
+ <option value="single">Single Choice (Multiple Choice)</option>
+ <option value="multiple">Multiple Answer (Checkboxes)</option>
+ <option value="true_false">True / False</option>
+ </select>
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Attachment / Media URL (Optional)</label>
+ <input name="media_url" type="url" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" placeholder="https://image-url.com/img.png" />
+ </div>
+ </div>
+
  <div>
  <label className="block text-xs font-bold text-primary-800 mb-1">Question Prompt</label>
  <input required name="question_text" type="text" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" placeholder="e.g. What is the capital of France?" />
  </div>
+
+ {newQuestionType !== 'true_false' && (
  <div className="grid grid-cols-2 gap-4">
  <div>
  <label className="block text-xs font-bold text-primary-800 mb-1">Option 1</label>
@@ -692,10 +728,25 @@ export default function EventPoolManagementPage() {
  <input name="option4" type="text" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" />
  </div>
  </div>
+ )}
+
  <div className="grid grid-cols-2 gap-4">
  <div>
+ {newQuestionType === 'true_false' ? (
+ <>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Correct Answer</label>
+ <select name="tf_correct" className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-green-50">
+ <option value="True">True</option>
+ <option value="False">False</option>
+ </select>
+ </>
+ ) : (
+ <>
  <label className="block text-xs font-bold text-primary-800 mb-1">Exact Correct Option text</label>
- <input required name="correct_option" type="text" className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-green-50" placeholder="Must exactly match one option above" />
+ <input required name="correct_option" type="text" className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-green-50" placeholder={newQuestionType === 'multiple' ? "e.g. Option1, Option2" : "Must exactly match one option above"} />
+ {newQuestionType === 'multiple' && <p className="text-[10px] text-gray-500 mt-1">Separate multiple exact answers with commas.</p>}
+ </>
+ )}
  </div>
  <div>
  <label className="block text-xs font-bold text-primary-800 mb-1">Points</label>
@@ -719,6 +770,16 @@ export default function EventPoolManagementPage() {
  defaultValue={selectedPool.target_constraints?.instructions || ''} 
  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
  placeholder="e.g. Write a 500-word essay about..."
+ />
+ </div>
+ <div>
+ <label className="block text-sm font-semibold text-gray-700 mb-2">Attachment / Media URL (Optional)</label>
+ <input 
+ name="media_url" 
+ type="url"
+ defaultValue={selectedPool.target_constraints?.media_url || ''} 
+ className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+ placeholder="e.g. https://example.com/image.png"
  />
  </div>
  <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 flex items-center gap-2">

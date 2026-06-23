@@ -1070,30 +1070,25 @@ export default function ChatScreen() {
         // Step 1: Launch System Gallery / Camera Access View
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,     // ⚡ MANDATORY: Automatically launches native cropping grid box
+            allowsMultipleSelection: true,
+            selectionLimit: 3,
             quality: 1,              // Preserve crisp max resolution
         });
 
-        if (result.canceled || !result.assets[0]) return;
+        if (result.canceled || !result.assets || result.assets.length === 0) return;
 
-        // Step 2: Extract the freshly cropped asset URI location
-        const croppedUri = result.assets[0].uri;
+        const newFiles = result.assets.map(asset => ({
+            uri: asset.uri,
+            name: asset.fileName || `image_${Date.now()}_${Math.floor(Math.random() * 1000)}.jpg`,
+            size: asset.fileSize,
+            mimeType: asset.mimeType || 'image/jpeg',
+            type: 'image' as const,
+            width: asset.width,
+            height: asset.height,
+            caption: ''
+        }));
 
-        // Step 3: Route the cropped URI into your attachment deck list state
-        // This pushes it right into your 'Selected Files' modal sheet layout for final preview and captioning
-        setSelectedFiles((prevFiles) => [
-            ...prevFiles,
-            {
-                uri: croppedUri,
-                name: result.assets[0].fileName || `image_${Date.now()}.jpg`,
-                size: result.assets[0].fileSize,
-                mimeType: result.assets[0].mimeType || 'image/jpeg',
-                type: 'image',
-                width: result.assets[0].width,
-                height: result.assets[0].height,
-                caption: ''
-            }
-        ]);
+        setSelectedFiles((prevFiles) => [...prevFiles, ...newFiles]);
         setIsPreviewVisible(true);
     };
 

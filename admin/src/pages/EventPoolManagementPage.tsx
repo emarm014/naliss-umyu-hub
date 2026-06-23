@@ -162,10 +162,23 @@ export default function EventPoolManagementPage() {
  const application_deadline_raw = fd.get('application_deadline');
  const application_deadline = application_deadline_raw ? new Date(application_deadline_raw as string).toISOString() : null;
 
+ const registration_open_raw = fd.get('registration_open');
+ const registration_open = registration_open_raw ? new Date(registration_open_raw as string).toISOString() : null;
+ const registration_close_raw = fd.get('registration_close');
+ const registration_close = registration_close_raw ? new Date(registration_close_raw as string).toISOString() : null;
+ const start_time_raw = fd.get('start_time');
+ const start_time = start_time_raw ? new Date(start_time_raw as string).toISOString() : null;
+ const end_time_raw = fd.get('end_time');
+ const end_time = end_time_raw ? new Date(end_time_raw as string).toISOString() : null;
+
  try {
  const updates = {
  participation_rule,
  status,
+ ...(registration_open && { registration_open }),
+ ...(registration_close && { registration_close }),
+ ...(start_time && { start_time }),
+ ...(end_time && { end_time }),
  target_constraints: {
  enable_registration,
  ...(max_participants !== null && { max_participants }),
@@ -372,6 +385,28 @@ export default function EventPoolManagementPage() {
  </div>
  </div>
  </div>
+
+ <div className="bg-slate-50 p-4 rounded-xl space-y-4 border border-slate-100 ">
+ <h3 className="font-semibold text-sm text-slate-700">Scheduling Properties</h3>
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+ <div>
+ <label className="block text-xs font-semibold text-slate-500 mb-1">Registration Opens</label>
+ <input type="datetime-local" name="registration_open" defaultValue={selectedPool.registration_open ? new Date(selectedPool.registration_open).toISOString().slice(0, 16) : ''} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+ </div>
+ <div>
+ <label className="block text-xs font-semibold text-slate-500 mb-1">Registration Closes</label>
+ <input type="datetime-local" name="registration_close" defaultValue={selectedPool.registration_close ? new Date(selectedPool.registration_close).toISOString().slice(0, 16) : ''} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+ </div>
+ <div>
+ <label className="block text-xs font-semibold text-slate-500 mb-1">Event Starts</label>
+ <input type="datetime-local" name="start_time" defaultValue={selectedPool.start_time ? new Date(selectedPool.start_time).toISOString().slice(0, 16) : ''} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+ </div>
+ <div>
+ <label className="block text-xs font-semibold text-slate-500 mb-1">Event Ends</label>
+ <input type="datetime-local" name="end_time" defaultValue={selectedPool.end_time ? new Date(selectedPool.end_time).toISOString().slice(0, 16) : ''} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+ </div>
+ </div>
+ </div>
  <button type="submit" className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 flex items-center gap-2">
  <Save className="h-4 w-4" /> Save Configuration
  </button>
@@ -408,10 +443,10 @@ export default function EventPoolManagementPage() {
  <div className="bg-gray-50 rounded-xl p-6 border border-gray-200 ">
  <h3 className="font-semibold text-gray-900 mb-4">Scheduling Properties</h3>
  <div className="grid grid-cols-2 gap-y-4 text-sm">
- <div><span className="text-gray-500 block mb-1">Registration Opens</span><span className="font-medium">{new Date(selectedPool.registration_open).toLocaleString()}</span></div>
- <div><span className="text-gray-500 block mb-1">Registration Closes</span><span className="font-medium">{new Date(selectedPool.registration_close).toLocaleString()}</span></div>
- <div><span className="text-gray-500 block mb-1">Event Starts</span><span className="font-medium">{new Date(selectedPool.start_time).toLocaleString()}</span></div>
- <div><span className="text-gray-500 block mb-1">Event Ends</span><span className="font-medium">{new Date(selectedPool.end_time).toLocaleString()}</span></div>
+ <div><span className="text-gray-500 block mb-1">Registration Opens</span><span className="font-medium">{selectedPool.registration_open ? new Date(selectedPool.registration_open).toLocaleString() : 'Not Set'}</span></div>
+ <div><span className="text-gray-500 block mb-1">Registration Closes</span><span className="font-medium">{selectedPool.registration_close ? new Date(selectedPool.registration_close).toLocaleString() : 'Not Set'}</span></div>
+ <div><span className="text-gray-500 block mb-1">Event Starts</span><span className="font-medium">{selectedPool.start_time ? new Date(selectedPool.start_time).toLocaleString() : 'Not Set'}</span></div>
+ <div><span className="text-gray-500 block mb-1">Event Ends</span><span className="font-medium">{selectedPool.end_time ? new Date(selectedPool.end_time).toLocaleString() : 'Not Set'}</span></div>
  </div>
  </div>
  </div>

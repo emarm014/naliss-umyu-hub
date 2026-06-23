@@ -52,6 +52,7 @@ export default function EventPoolManagementPage() {
  const [activeView, setActiveView] = useState<'config' | 'content' | 'monitor' | 'evaluate' | 'applications'>('config');
 
  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+ const [isBulkMode, setIsBulkMode] = useState(false);
 
  // Evaluator states
  const [editingSubId, setEditingSubId] = useState<string | null>(null);
@@ -340,6 +341,70 @@ export default function EventPoolManagementPage() {
  }
  };
 
+ const handleBulkImport = async (e: React.FormEvent<HTMLFormElement>) => {
+ e.preventDefault();
+ if (!selectedPool) return;
+ const fd = new FormData(e.currentTarget);
+ const rawText = fd.get('bulk_text') as string;
+ 
+ if (!rawText.trim()) return;
+ 
+ const blocks = rawText.split(/\n\s*\n/).filter(b => b.trim().length > 0);
+ const newQuestions = [];
+ 
+ for (const block of blocks) {
+ const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+ if (lines.length < 3) continue;
+ 
+ const question_text = lines[0].replace(/^\d+[\.\)]\s*/, '').trim();
+ const options: string[] = [];
+ let correct_option = '';
+ let points = 1;
+ 
+ for (let i = 1; i < lines.length; i++) {
+ const line = lines[i];
+ if (line.match(/^[A-Za-z][\.\)]\s/)) {
+ options.push(line.replace(/^[A-Za-z][\.\)]\s*/, '').trim());
+ } else if (line.toLowerCase().startsWith('answer:')) {
+ const ansLetter = line.replace(/answer:/i, '').trim().toUpperCase();
+ const idx = ansLetter.charCodeAt(0) - 65;
+ if (idx >= 0 && idx < options.length) {
+ correct_option = options[idx];
+ } else {
+ correct_option = line.replace(/answer:/i, '').trim();
+ }
+ } else if (line.toLowerCase().startsWith('points:')) {
+ points = parseInt(line.replace(/points:/i, '').trim(), 10) || 1;
+ }
+ }
+ 
+ if (question_text && options.length >= 2 && correct_option) {
+ newQuestions.push({
+ pool_id: selectedPool.id,
+ question_text,
+ options,
+ correct_option,
+ points
+ });
+ }
+ }
+ 
+ if (newQuestions.length === 0) {
+ alert("No valid questions parsed. Please check your format.");
+ return;
+ }
+ 
+ try {
+ const { data, error } = await supabase.from('pool_quiz_questions').insert(newQuestions).select();
+ if (error) throw error;
+ setQuizQuestions([...quizQuestions, ...(data || [])]);
+ setIsBulkMode(false);
+ alert(`Successfully imported ${newQuestions.length} questions!`);
+ } catch (err: any) {
+ alert("Failed to bulk import: " + err.message);
+ }
+ };
+
  if (isLoading) return <LoadingSpinner />;
  if (error) return <ErrorState message={error} onRetry={fetchPools} />;
 
@@ -552,7 +617,12 @@ export default function EventPoolManagementPage() {
  <div className="space-y-6">
  {/* List existing questions */}
  <div className="space-y-4">
+ <div className="flex items-center justify-between">
  <h3 className="font-semibold text-gray-900">Quiz Questions ({quizQuestions.length})</h3>
+ <button onClick={() => setIsBulkMode(!isBulkMode)} className="text-sm font-medium text-primary-600 hover:text-primary-700">
+ {isBulkMode ? 'Switch to Manual Entry' : 'Bulk Import Questions'}
+ </button>
+ </div>
  {quizQuestions.length === 0 && <p className="text-gray-500 text-sm">No questions added yet.</p>}
  {quizQuestions.map((q, i) => (
  <div key={q.id} className="bg-gray-50 border border-gray-200 p-4 rounded-xl flex items-start justify-between">
@@ -573,7 +643,31 @@ export default function EventPoolManagementPage() {
  ))}
  </div>
 
- {/* Add new question form */}
+ </div>
+
+ {/* Add new question form or Bulk mode */}
+ {isBulkMode ? (
+ <form onSubmit={handleBulkImport} className="bg-primary-50 border border-primary-100 p-6 rounded-xl space-y-4">
+ <h4 className="font-semibold text-primary-900">Bulk Import Questions</h4>
+ <div className="bg-white p-4 rounded-lg border border-primary-200 text-sm text-gray-600">
+ <p className="font-semibold mb-2">Required Format:</p>
+ <pre className="text-xs text-gray-500 whitespace-pre-wrap">
+ 1. What is the capital of France?{"\n"}
+ A) London{"\n"}
+ B) Berlin{"\n"}
+ C) Paris{"\n"}
+ D) Madrid{"\n"}
+ Answer: C{"\n"}
+ Points: 2
+ </pre>
+ <p className="mt-2 text-xs text-primary-600">Separate questions with a blank line. Points are optional (default 1).</p>
+ </div>
+ <textarea required name="bulk_text" rows={15} className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm" placeholder="Paste your questions here..." />
+ <button type="submit" className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 flex items-center gap-2">
+ <Save className="h-4 w-4" /> Parse & Import
+ </button>
+ </form>
+ ) : (
  <form onSubmit={handleAddQuizQuestion} className="bg-primary-50 border border-primary-100 p-6 rounded-xl space-y-4">
  <h4 className="font-semibold text-primary-900">Add New Question</h4>
  <div>
@@ -612,6 +706,7 @@ export default function EventPoolManagementPage() {
  <Plus className="h-4 w-4" /> Add Question
  </button>
  </form>
+ )}
  </div>
  ) : (
  <form onSubmit={handleSaveInstructions} className="space-y-4 max-w-3xl">

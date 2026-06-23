@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2 } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import Modal from '../components/ui/Modal';
@@ -30,6 +30,15 @@ type Submission = {
  users: { full_name: string; username: string };
 };
 
+type QuizQuestion = {
+ id: string;
+ pool_id: string;
+ question_text: string;
+ options: string[];
+ correct_option: string;
+ points: number;
+};
+
 export default function EventPoolManagementPage() {
  const [pools, setPools] = useState<EventPool[]>([]);
  const [selectedPool, setSelectedPool] = useState<EventPool | null>(null);
@@ -39,8 +48,10 @@ export default function EventPoolManagementPage() {
  const [isLoading, setIsLoading] = useState(true);
  const [error, setError] = useState<string | null>(null);
 
- // Active View inside Modal: 'config' | 'monitor' | 'evaluate' | 'applications'
- const [activeView, setActiveView] = useState<'config' | 'monitor' | 'evaluate' | 'applications'>('config');
+ // Active View inside Modal: 'config' | 'content' | 'monitor' | 'evaluate' | 'applications'
+ const [activeView, setActiveView] = useState<'config' | 'content' | 'monitor' | 'evaluate' | 'applications'>('config');
+
+ const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
 
  // Evaluator states
  const [editingSubId, setEditingSubId] = useState<string | null>(null);
@@ -143,6 +154,14 @@ export default function EventPoolManagementPage() {
  // Fetch applications
  const { data: apps } = await supabase.from('pool_applications').select('id, user_id, status, created_at, users:user_id(full_name, username)').eq('pool_id', pool.id).order('created_at', { ascending: false });
  setApplications(apps ? apps.map((a: any) => ({ ...a, users: Array.isArray(a.users) ? a.users[0] : a.users })) : []);
+
+ // Fetch quiz questions if pool type is quiz
+ if (pool.type === 'quiz') {
+ const { data: questions } = await supabase.from('pool_quiz_questions').select('*').eq('pool_id', pool.id).order('created_at', { ascending: true });
+ setQuizQuestions(questions || []);
+ } else {
+ setQuizQuestions([]);
+ }
  } catch (e) {
  console.error(e);
  }
@@ -243,6 +262,71 @@ export default function EventPoolManagementPage() {
  }
  };
 
+ const handleSaveInstructions = async (e: React.FormEvent<HTMLFormElement>) => {
+ e.preventDefault();
+ if (!selectedPool) return;
+ const fd = new FormData(e.currentTarget);
+ const instructions = fd.get('instructions') as string;
+ try {
+ const updates = {
+ target_constraints: {
+ ...selectedPool.target_constraints,
+ instructions
+ }
+ };
+ const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+ if (error) throw error;
+ setSelectedPool({ ...selectedPool, ...updates });
+ fetchPools();
+ alert('Instructions saved!');
+ } catch (e: any) {
+ alert('Failed to save instructions: ' + e.message);
+ }
+ };
+
+ const handleAddQuizQuestion = async (e: React.FormEvent<HTMLFormElement>) => {
+ e.preventDefault();
+ if (!selectedPool) return;
+ const fd = new FormData(e.currentTarget);
+ const question_text = fd.get('question_text') as string;
+ const option1 = fd.get('option1') as string;
+ const option2 = fd.get('option2') as string;
+ const option3 = fd.get('option3') as string;
+ const option4 = fd.get('option4') as string;
+ const correct_option = fd.get('correct_option') as string;
+ const points = parseInt(fd.get('points') as string, 10) || 1;
+
+ const options = [option1, option2, option3, option4].filter(Boolean);
+
+ try {
+ const { data, error } = await supabase.from('pool_quiz_questions').insert({
+ pool_id: selectedPool.id,
+ question_text,
+ options,
+ correct_option,
+ points
+ }).select().single();
+ if (error) throw error;
+ 
+ setQuizQuestions([...quizQuestions, data]);
+ (e.target as HTMLFormElement).reset();
+ alert('Question added!');
+ } catch (e: any) {
+ alert('Failed to add question: ' + e.message);
+ }
+ };
+
+ const handleDeleteQuizQuestion = async (qId: string) => {
+ if (!window.confirm('Delete this question?')) return;
+ try {
+ const { error } = await supabase.from('pool_quiz_questions').delete().eq('id', qId);
+ if (error) throw error;
+ setQuizQuestions(quizQuestions.filter(q => q.id !== qId));
+ } catch (e: any) {
+ alert('Failed to delete question: ' + e.message);
+ }
+ };
+
  if (isLoading) return <LoadingSpinner />;
  if (error) return <ErrorState message={error} onRetry={fetchPools} />;
 
@@ -323,17 +407,20 @@ export default function EventPoolManagementPage() {
  </div>
 
  {/* Tabs */}
- <div className="flex px-6 border-b border-gray-200 ">
- <button onClick={() => setActiveView('config')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'config' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
+ <div className="flex px-6 border-b border-gray-200 overflow-x-auto hide-scrollbar">
+ <button onClick={() => setActiveView('config')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeView === 'config' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
  <Settings className="h-4 w-4" /> Configuration Editor
  </button>
- <button onClick={() => setActiveView('monitor')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'monitor' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
+ <button onClick={() => setActiveView('content')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeView === 'content' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
+ <BookOpen className="h-4 w-4" /> Content Builder
+ </button>
+ <button onClick={() => setActiveView('monitor')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeView === 'monitor' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
  <Activity className="h-4 w-4" /> Live Monitoring
  </button>
- <button onClick={() => setActiveView('evaluate')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'evaluate' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
+ <button onClick={() => setActiveView('evaluate')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeView === 'evaluate' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
  <CheckCircle className="h-4 w-4" /> Evaluation Terminal
  </button>
- <button onClick={() => setActiveView('applications')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeView === 'applications' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
+ <button onClick={() => setActiveView('applications')} className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeView === 'applications' ? 'border-primary-600 text-primary-700 ' : 'border-transparent text-gray-500 hover:text-gray-700 '}`}>
  <Users className="h-4 w-4" /> Registrations
  </button>
  </div>
@@ -411,6 +498,95 @@ export default function EventPoolManagementPage() {
  <Save className="h-4 w-4" /> Save Configuration
  </button>
  </form>
+ )}
+
+ {/* Content Builder */}
+ {activeView === 'content' && (
+ <div className="space-y-6">
+ {selectedPool.type === 'quiz' ? (
+ <div className="space-y-6">
+ {/* List existing questions */}
+ <div className="space-y-4">
+ <h3 className="font-semibold text-gray-900">Quiz Questions ({quizQuestions.length})</h3>
+ {quizQuestions.length === 0 && <p className="text-gray-500 text-sm">No questions added yet.</p>}
+ {quizQuestions.map((q, i) => (
+ <div key={q.id} className="bg-gray-50 border border-gray-200 p-4 rounded-xl flex items-start justify-between">
+ <div>
+ <p className="font-semibold text-gray-900 text-sm mb-2">Q{i + 1}. {q.question_text} <span className="text-xs text-primary-600 ml-2">({q.points} pts)</span></p>
+ <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+ {q.options.map((opt, j) => (
+ <li key={j} className={opt === q.correct_option ? 'text-green-600 font-bold' : ''}>
+ {opt} {opt === q.correct_option && '✓'}
+ </li>
+ ))}
+ </ul>
+ </div>
+ <button type="button" onClick={() => handleDeleteQuizQuestion(q.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+ <Trash2 className="h-4 w-4" />
+ </button>
+ </div>
+ ))}
+ </div>
+
+ {/* Add new question form */}
+ <form onSubmit={handleAddQuizQuestion} className="bg-primary-50 border border-primary-100 p-6 rounded-xl space-y-4">
+ <h4 className="font-semibold text-primary-900">Add New Question</h4>
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Question Prompt</label>
+ <input required name="question_text" type="text" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" placeholder="e.g. What is the capital of France?" />
+ </div>
+ <div className="grid grid-cols-2 gap-4">
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Option 1</label>
+ <input required name="option1" type="text" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" />
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Option 2</label>
+ <input required name="option2" type="text" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" />
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Option 3 (Optional)</label>
+ <input name="option3" type="text" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" />
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Option 4 (Optional)</label>
+ <input name="option4" type="text" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" />
+ </div>
+ </div>
+ <div className="grid grid-cols-2 gap-4">
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Exact Correct Option text</label>
+ <input required name="correct_option" type="text" className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-green-50" placeholder="Must exactly match one option above" />
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-primary-800 mb-1">Points</label>
+ <input required name="points" type="number" defaultValue="1" min="1" className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500" />
+ </div>
+ </div>
+ <button type="submit" className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 flex items-center gap-2">
+ <Plus className="h-4 w-4" /> Add Question
+ </button>
+ </form>
+ </div>
+ ) : (
+ <form onSubmit={handleSaveInstructions} className="space-y-4 max-w-3xl">
+ <div>
+ <label className="block text-sm font-semibold text-gray-700 mb-2">Prompt / Instructions for Participants</label>
+ <p className="text-sm text-gray-500 mb-3">These instructions will be displayed to the participant when they start the event.</p>
+ <textarea 
+ name="instructions" 
+ rows={10} 
+ defaultValue={selectedPool.target_constraints?.instructions || ''} 
+ className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+ placeholder="e.g. Write a 500-word essay about..."
+ />
+ </div>
+ <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 flex items-center gap-2">
+ <Save className="h-4 w-4" /> Save Instructions
+ </button>
+ </form>
+ )}
+ </div>
  )}
 
  {/* 2. Live Monitoring Center */}

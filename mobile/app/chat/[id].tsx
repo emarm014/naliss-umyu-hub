@@ -184,6 +184,8 @@ export default function ChatScreen() {
     const [isPreviewVisible, setIsPreviewVisible] = useState(false);
     const [isCropVisible, setIsCropVisible] = useState(false);
     const [croppingIndex, setCroppingIndex] = useState<number | null>(null);
+    const [unprocessedImages, setUnprocessedImages] = useState<any[]>([]);
+    const [currentCropIndex, setCurrentCropIndex] = useState<number>(0);
     const [useSameCaptionForAll, setUseSameCaptionForAll] = useState(true);
     const [generalCaption, setGeneralCaption] = useState('');
     const [activeCaptionIndex, setActiveCaptionIndex] = useState<number | 'all'>('all');
@@ -212,6 +214,30 @@ export default function ChatScreen() {
             setActiveCaptionIndex('all');
         }
     }, [isPreviewVisible]);
+
+    useEffect(() => {
+        if (unprocessedImages.length > 0 && currentCropIndex < unprocessedImages.length) {
+            const asset = unprocessedImages[currentCropIndex];
+            initCrop(asset.uri, asset.width || 800, asset.height || 800);
+            setIsCropVisible(true);
+        } else if (unprocessedImages.length > 0 && currentCropIndex >= unprocessedImages.length) {
+            // Finished cropping all images in the queue
+            const newFiles = unprocessedImages.map(asset => ({
+                uri: asset.croppedUri || asset.uri, // Use cropped if available
+                name: asset.fileName || `image_${Date.now()}_${Math.floor(Math.random() * 1000)}.jpg`,
+                size: asset.fileSize,
+                mimeType: asset.mimeType || 'image/jpeg',
+                type: 'image' as const,
+                width: asset.cropWidth || asset.width,
+                height: asset.cropHeight || asset.height,
+                caption: ''
+            }));
+            setSelectedFiles(prev => [...prev, ...newFiles]);
+            setUnprocessedImages([]);
+            setCurrentCropIndex(0);
+            setIsPreviewVisible(true);
+        }
+    }, [unprocessedImages, currentCropIndex]);
 
     // Track whether user is near the bottom — only auto-scroll if they are
     const isNearBottomRef = useRef(true);
@@ -1077,19 +1103,8 @@ export default function ChatScreen() {
 
         if (result.canceled || !result.assets || result.assets.length === 0) return;
 
-        const newFiles = result.assets.map(asset => ({
-            uri: asset.uri,
-            name: asset.fileName || `image_${Date.now()}_${Math.floor(Math.random() * 1000)}.jpg`,
-            size: asset.fileSize,
-            mimeType: asset.mimeType || 'image/jpeg',
-            type: 'image' as const,
-            width: asset.width,
-            height: asset.height,
-            caption: ''
-        }));
-
-        setSelectedFiles((prevFiles) => [...prevFiles, ...newFiles]);
-        setIsPreviewVisible(true);
+        setUnprocessedImages(result.assets);
+        setCurrentCropIndex(0);
     };
 
     const handleDelete = async (messageId: string) => {
@@ -1997,9 +2012,11 @@ export default function ChatScreen() {
     };
 
     const handleApplyCrop = async () => {
-        if (croppingIndex === null) return;
+        if (croppingIndex === null && unprocessedImages.length === 0) return;
         try {
-            const file = selectedFiles[croppingIndex];
+            const fileUri = unprocessedImages.length > 0 
+                ? unprocessedImages[currentCropIndex].uri 
+                : selectedFiles[croppingIndex!].uri;
 
             let ar = imageWidthRef.current / imageHeightRef.current;
             let dw = CONTAINER_SIZE;
@@ -2028,25 +2045,40 @@ export default function ChatScreen() {
             const cropHeight = Math.min(imageHeightRef.current - originY, Math.round(CROP_SIZE * scale));
 
             const result = await ImageManipulator.manipulateAsync(
-                file.uri,
+                fileUri,
                 [{ crop: { originX, originY, width: cropWidth, height: cropHeight } }],
                 { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
             );
 
-            setSelectedFiles(prev => {
-                const next = [...prev];
-                next[croppingIndex] = {
-                    ...file,
-                    uri: result.uri,
-                    width: result.width,
-                    height: result.height,
-                    size: undefined
-                };
-                return next;
-            });
-
-            setIsCropVisible(false);
-            setCroppingIndex(null);
+            if (unprocessedImages.length > 0) {
+                setUnprocessedImages(prev => {
+                    const next = [...prev];
+                    next[currentCropIndex] = {
+                        ...next[currentCropIndex],
+                        croppedUri: result.uri,
+                        cropWidth: result.width,
+                        cropHeight: result.height,
+                    };
+                    return next;
+                });
+                setIsCropVisible(false);
+                setCurrentCropIndex(prev => prev + 1);
+            } else {
+                const file = selectedFiles[croppingIndex!];
+                setSelectedFiles(prev => {
+                    const next = [...prev];
+                    next[croppingIndex!] = {
+                        ...file,
+                        uri: result.uri,
+                        width: result.width,
+                        height: result.height,
+                        size: undefined
+                    };
+                    return next;
+                });
+                setIsCropVisible(false);
+                setCroppingIndex(null);
+            }
         } catch (err) {
             console.error('Cropping error:', err);
             Alert.alert('Crop Error', 'Failed to crop image. Please try again.');
@@ -2710,7 +2742,15 @@ export default function ChatScreen() {
                     <View style={[styles.cropCard, { backgroundColor: colors.card }]}>
                         <View style={styles.cropHeader}>
                             <Text style={[styles.cropTitle, { color: colors.text }]}>Crop Image</Text>
-                            <TouchableOpacity onPress={() => { setIsCropVisible(false); setCroppingIndex(null); }}>
+                            <TouchableOpacity onPress={() => { 
+                                if (unprocessedImages.length > 0) {
+                                    setIsCropVisible(false);
+                                    setCurrentCropIndex(prev => prev + 1);
+                                } else {
+                                    setIsCropVisible(false); 
+                                    setCroppingIndex(null); 
+                                }
+                            }}>
                                 <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
@@ -2771,10 +2811,20 @@ export default function ChatScreen() {
                         {/* Actions */}
                         <View style={styles.cropActionRow}>
                             <TouchableOpacity 
-                                onPress={() => { setIsCropVisible(false); setCroppingIndex(null); }} 
+                                onPress={() => { 
+                                    if (unprocessedImages.length > 0) {
+                                        setIsCropVisible(false);
+                                        setCurrentCropIndex(prev => prev + 1);
+                                    } else {
+                                        setIsCropVisible(false); 
+                                        setCroppingIndex(null); 
+                                    }
+                                }} 
                                 style={[styles.cropCancelBtn, { borderColor: colors.border }]}
                             >
-                                <Text style={[styles.cropCancelText, { color: colors.text }]}>Cancel</Text>
+                                <Text style={[styles.cropCancelText, { color: colors.text }]}>
+                                    {unprocessedImages.length > 0 ? "Skip" : "Cancel"}
+                                </Text>
                             </TouchableOpacity>
                             <TouchableOpacity 
                                 onPress={handleApplyCrop} 

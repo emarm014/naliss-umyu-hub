@@ -161,9 +161,8 @@ export function usePushNotifications() {
     if (!user) return;
 
     try {
-      const { error } = await (supabase as any).from('users')
-        .update({ push_token: token } as any)
-        .eq('id', user.id);
+      const { error } = await (supabase as any).from('user_push_tokens')
+        .upsert({ user_id: user.id, push_token: token, updated_at: new Date().toISOString() });
 
       if (error) throw error;
       // Token saved successfully

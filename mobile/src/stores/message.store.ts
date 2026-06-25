@@ -40,6 +40,8 @@ interface MessageState {
     processUnifiedQueueItem: (groupId: string, msg: any) => Promise<void>;
     flushUnsentMessageQueue: () => Promise<void>;
     setUploadProgress: (messageId: string, progress: number) => void;
+    editMessage: (messageId: string, groupId: string, newContent: string) => Promise<void>;
+    softDeleteMessage: (messageId: string, groupId: string) => Promise<void>;
 }
 
 export const useMessageStore = create<MessageState>()(
@@ -139,16 +141,53 @@ export const useMessageStore = create<MessageState>()(
                     const newCache: MessageCache = {};
                     for (const groupId of Object.keys(state.cache)) {
                         newCache[groupId] = state.cache[groupId].map(m => {
-                            if (m.sender_id !== userId) return m;
-                            return {
-                                ...m,
-                                user: m.user ? { ...m.user, ...updates } : m.user,
-                            };
+                            if (m.sender_id === userId) {
+                                return {
+                                    ...m,
+                                    user: { ...m.user, ...updates }
+                                };
+                            }
+                            return m;
                         });
                     }
                     return { cache: newCache };
                 });
             },
+
+            editMessage: async (messageId: string, groupId: string, newContent: string) => {
+                const editedAt = new Date().toISOString();
+                
+                // Optimistically update the cache
+                get().updateMessage(groupId, messageId, { content: newContent, edited_at: editedAt });
+
+                try {
+                    const { error } = await (supabase as any)
+                        .from('messages')
+                        .update({ content: newContent, edited_at: editedAt })
+                        .eq('id', messageId);
+
+                    if (error) throw error;
+                } catch (err) {
+                    Logger.error('message.store', 'Failed to edit message', err);
+                    // Could revert the optimistic update here if desired
+                }
+            },
+
+            softDeleteMessage: async (messageId: string, groupId: string) => {
+                // Optimistically update the cache
+                get().updateMessage(groupId, messageId, { content: '', is_deleted: true });
+
+                try {
+                    const { error } = await (supabase as any)
+                        .rpc('soft_delete_message', { p_message_id: messageId });
+
+                    if (error) throw error;
+                } catch (err) {
+                    Logger.error('message.store', 'Failed to soft delete message', err);
+                    // Reverting optimistic update would require fetching the old content
+                }
+            },
+
 
             // Merge messages that arrived while the user was offline.
             // Deduplicates by ID, preserves chronological order.

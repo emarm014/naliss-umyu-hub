@@ -538,6 +538,7 @@ export type Database = {
           id: string
           is_deleted: boolean | null
           is_edited: boolean | null
+          edited_at: string | null
           message_type: string | null
           reply_to_id: string | null
           updated_at: string | null
@@ -552,6 +553,7 @@ export type Database = {
           id?: string
           is_deleted?: boolean | null
           is_edited?: boolean | null
+          edited_at?: string | null
           message_type?: string | null
           reply_to_id?: string | null
           updated_at?: string | null
@@ -566,6 +568,7 @@ export type Database = {
           id?: string
           is_deleted?: boolean | null
           is_edited?: boolean | null
+          edited_at?: string | null
           message_type?: string | null
           reply_to_id?: string | null
           updated_at?: string | null

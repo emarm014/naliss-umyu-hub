@@ -223,6 +223,14 @@ export default function EventPoolManagementPage() {
  };
  const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
  if (error) throw error;
+
+ // Check if status changed
+ if (status !== selectedPool.status && ['live', 'paused', 'completed'].includes(status)) {
+   supabase.functions.invoke('event-pool-broadcaster', {
+     body: { pool_id: selectedPool.id, title: selectedPool.title, new_status: status }
+   }).catch(e => console.error('Broadcast failed:', e));
+ }
+
  fetchPools();
  setSelectedPool({ ...selectedPool, ...updates });
  alert('Configuration updated!');
@@ -250,6 +258,11 @@ export default function EventPoolManagementPage() {
  // If a podium status was assigned, generate announcement & update pool
  if (podiumInput) {
  await supabase.from('event_pools').update({ status: 'completed' }).eq('id', selectedPool.id);
+ 
+ supabase.functions.invoke('event-pool-broadcaster', {
+   body: { pool_id: selectedPool.id, title: selectedPool.title, new_status: 'completed' }
+ }).catch(e => console.error('Broadcast failed:', e));
+
  alert(`Winner successfully recorded and Pool marked as completed! Automated announcement triggered.`);
  fetchPools(); // refresh list
  } else {

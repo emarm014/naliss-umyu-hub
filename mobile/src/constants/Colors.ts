@@ -3,7 +3,7 @@
  * Following a premium, deep-blue focused palette with vibrant accents.
  */
 
-const tintColorLight = '#1B5E20'; // NALISS Deep Green
+const tintColorLight = '#059669'; // Emerald Green Accent
 const tintColorDark = '#38bdf8';  // Sky 400
 
 export const Colors = {
@@ -17,10 +17,10 @@ export const Colors = {
         icon: '#64748b',          // Slate 500
         tabIconDefault: '#94a3b8',
         tabIconSelected: tintColorLight,
-        primary: '#1B5E20',       // NALISS Deep Green
+        primary: '#059669',       // Emerald Green Accent
         secondary: '#2E7D32',     // Green 800
         accent: '#f59e0b',        // Amber 500
-        success: '#1B5E20',       // Unified with brand green
+        success: '#059669',       // Unified with brand emerald
         error: '#dc2626',         // Red 600
         warning: '#f59e0b',
         info: '#0ea5e9',

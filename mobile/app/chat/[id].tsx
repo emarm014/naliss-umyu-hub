@@ -389,7 +389,7 @@ export default function ChatScreen() {
                 .select(`
                     *,
                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                    reply_to_message:messages!reply_to_id(id, content, message_type, user:users!messages_sender_id_fkey(username, full_name))
+                    reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
                 `)
                 .eq('group_id', id)
                 .eq('is_deleted', false)
@@ -422,7 +422,8 @@ export default function ChatScreen() {
                     username: msg.reply_to_message.user?.username,
                     full_name: msg.reply_to_message.user?.full_name,
                     content_type: msg.reply_to_message.message_type,
-                    content: msg.reply_to_message.content?.substring(0, 50)
+                    content: msg.reply_to_message.content?.substring(0, 50),
+                    is_deleted: msg.reply_to_message.is_deleted
                 } : null,
                 status: 'sent',
                 isOnline: msg.user?.last_active_at ? (new Date().getTime() - new Date(msg.user.last_active_at).getTime() < 60000) : false
@@ -459,7 +460,7 @@ export default function ChatScreen() {
                 .select(`
                     *,
                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                    reply_to_message:messages!reply_to_id(id, content, message_type, user:users!messages_sender_id_fkey(username, full_name))
+                    reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
                 `)
                 .eq('group_id', id)
                 .eq('is_deleted', false)
@@ -476,7 +477,8 @@ export default function ChatScreen() {
                     username: msg.reply_to_message.user?.username,
                     full_name: msg.reply_to_message.user?.full_name,
                     content_type: msg.reply_to_message.message_type,
-                    content: msg.reply_to_message.content?.substring(0, 50)
+                    content: msg.reply_to_message.content?.substring(0, 50),
+                    is_deleted: msg.reply_to_message.is_deleted
                 } : null,
                 status: 'sent',
                 isOnline: false,
@@ -593,7 +595,8 @@ export default function ChatScreen() {
                                         username: repliedMsg.user?.username || repliedMsg.username || 'user',
                                         full_name: repliedMsg.user?.full_name || repliedMsg.full_name || '',
                                         content_type: repliedMsg.message_type || repliedMsg.content_type,
-                                        content: repliedMsg.content?.substring(0, 50)
+                                        content: repliedMsg.content?.substring(0, 50),
+                                        is_deleted: repliedMsg.is_deleted
                                     };
                                 }
                             }
@@ -616,7 +619,7 @@ export default function ChatScreen() {
                                 .select(`
                                     *,
                                     user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                                    reply_to_message:messages!reply_to_id(id, content, message_type, user:users!messages_sender_id_fkey(username, full_name))
+                                    reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
                                 `)
                                 .eq('id', newMsg.id)
                                 .single();
@@ -629,7 +632,8 @@ export default function ChatScreen() {
                                         username: (fullData as any).reply_to_message.user?.username,
                                         full_name: (fullData as any).reply_to_message.user?.full_name,
                                         content_type: (fullData as any).reply_to_message.message_type,
-                                        content: (fullData as any).reply_to_message.content?.substring(0, 50)
+                                        content: (fullData as any).reply_to_message.content?.substring(0, 50),
+                                        is_deleted: (fullData as any).reply_to_message.is_deleted
                                     } : null,
                                     status: 'sent',
                                 };
@@ -772,38 +776,24 @@ export default function ChatScreen() {
             
             if (editingMessage) {
                 try {
+                    const editedAt = new Date().toISOString();
                     // Optimistic update — show edit immediately
                     setMessages(prev => prev.map(m =>
                         m.id === editingMessage.id
-                            ? { ...m, content, is_edited: true, isEdited: true }
+                            ? { ...m, content, edited_at: editedAt }
                             : m
                     ));
-                    messageStore.updateMessage(id, editingMessage.id, { content, is_edited: true, isEdited: true });
+                    
                     setEditingMessage(null);
                     setInputText('');
 
-                    const { error } = await (supabase as any).from('messages')
-                        .update({ 
-                            content, 
-                            is_edited: true,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('id', editingMessage.id);
-
-                    if (error) {
-                        // Revert on failure
-                        setMessages(prev => prev.map(m =>
-                            m.id === editingMessage.id
-                                ? { ...m, content: editingMessage.content, is_edited: editingMessage.is_edited, isEdited: editingMessage.isEdited }
-                                : m
-                        ));
-                        messageStore.updateMessage(id, editingMessage.id, { content: editingMessage.content, is_edited: editingMessage.is_edited, isEdited: editingMessage.isEdited });
-                        Alert.alert('Error', 'Failed to edit message');
-                    }
+                    await messageStore.editMessage(editingMessage.id, id, content);
                     return;
                 } catch (err) {
                     captureUIError('ChatScreen.editMessage', err, { groupId: id });
                     Alert.alert('Error', 'Failed to edit message');
+                    // Revert optimism if needed by fetching messages again
+                    setMessages(messageStore.getMessages(id));
                     return;
                 }
             }
@@ -833,7 +823,8 @@ export default function ChatScreen() {
                     username: activeReplyTarget.user?.username || activeReplyTarget.username || 'user',
                     full_name: activeReplyTarget.user?.full_name || activeReplyTarget.full_name || '',
                     content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text',
-                    content: (activeReplyTarget.content || '').substring(0, 50) 
+                    content: (activeReplyTarget.content || '').substring(0, 50),
+                    is_deleted: activeReplyTarget.is_deleted 
                 } : null,
                 isEdited: false,
                 is_edited: false,
@@ -1115,57 +1106,40 @@ export default function ChatScreen() {
         const isUnsent = messageId.startsWith('temp-') ||
             ((msg?.status === 'failed' || msg?.status === 'unsent') && !msg?.content?.startsWith('http'));
 
-        // Optimistic removal — instant UI feedback
-        setMessages(prev => prev.filter(m => m.id !== messageId));
-        messageStore.removeMessage(id, messageId);
-
         if (isUnsent) {
-            // Never reached the server — nothing to delete in DB
+            setMessages(prev => prev.filter(m => m.id !== messageId));
+            messageStore.removeMessage(id, messageId);
             return;
         }
 
-        try {
-            const { error } = await (supabase as any).from('messages')
-                .update({
-                    is_deleted: true,
-                    deleted_at: new Date().toISOString(),
-                    deleted_by_user_id: currentUser?.id || null,
-                })
-                .eq('id', messageId);
+        // Optimistic removal — instant UI feedback
+        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, is_deleted: true, content: '' } : m));
+        
+        await messageStore.softDeleteMessage(messageId, id);
 
-            if (error) {
-                // Revert on failure
-                fetchMessages();
-            } else {
-                // Immediately update the group list preview with the new last message
-                // (the deleted message should no longer show as last_message)
-                const remainingMessages = messages.filter(m => m.id !== messageId && !m.is_deleted && m.sender_id !== 'system');
-                const newLastMsg = remainingMessages.length > 0 ? remainingMessages[remainingMessages.length - 1] : null;
+        const remainingMessages = messages.filter(m => m.id !== messageId && !m.is_deleted && m.sender_id !== 'system');
+        const newLastMsg = remainingMessages.length > 0 ? remainingMessages[remainingMessages.length - 1] : null;
 
-                useGroupStore.setState(state => ({
-                    groups: state.groups.map(g => {
-                        if (g.id !== id) return g;
-                        if (!newLastMsg) {
-                            return { ...g, last_message: null, last_message_at: null };
-                        }
-                        const senderName = newLastMsg.user?.username || newLastMsg.user?.full_name || 'user';
-                        const msgType = newLastMsg.content_type || newLastMsg.message_type || 'text';
-                        let lastMessageText = `${senderName}: ${newLastMsg.content || ''}`;
-                        if (msgType === 'image') lastMessageText = `${senderName}: 📷 Photo`;
-                        else if (msgType === 'document') lastMessageText = `${senderName}: 📎 Document`;
-                        else if (msgType === 'video') lastMessageText = `${senderName}: 🎥 Video`;
-                        else if (msgType === 'audio') lastMessageText = `${senderName}: 🎵 Audio`;
-                        else if (msgType === 'sticker') lastMessageText = `${senderName}: 😊 Sticker`;
-                        return { ...g, last_message: lastMessageText, last_message_at: newLastMsg.created_at };
-                    })
-                }));
+        useGroupStore.setState(state => ({
+            groups: state.groups.map(g => {
+                if (g.id !== id) return g;
+                if (!newLastMsg) {
+                    return { ...g, last_message: null, last_message_at: null };
+                }
+                const senderName = newLastMsg.user?.username || newLastMsg.user?.full_name || 'user';
+                const msgType = newLastMsg.content_type || newLastMsg.message_type || 'text';
+                let lastMessageText = `${senderName}: ${newLastMsg.content || ''}`;
+                if (msgType === 'image') lastMessageText = `${senderName}: 📷 Photo`;
+                else if (msgType === 'document') lastMessageText = `${senderName}: 📎 Document`;
+                else if (msgType === 'video') lastMessageText = `${senderName}: 🎥 Video`;
+                else if (msgType === 'audio') lastMessageText = `${senderName}: 🎵 Audio`;
+                else if (msgType === 'sticker') lastMessageText = `${senderName}: 😊 Sticker`;
+                return { ...g, last_message: lastMessageText, last_message_at: newLastMsg.created_at };
+            })
+        }));
 
-                // Background re-fetch to confirm from DB
-                useGroupStore.getState().fetchGroups(true);
-            }
-        } catch {
-            fetchMessages();
-        }
+        // Background re-fetch to confirm from DB
+        useGroupStore.getState().fetchGroups(true);
     };
 
     const handleClearChat = () => {
@@ -1466,9 +1440,19 @@ export default function ChatScreen() {
                                         </Text>
                                         
                                         {(() => {
+                                            const isReplyDeleted = item.reply_from_meta?.is_deleted || item.replyTo?.is_deleted;
+                                            const textColor = isDark ? '#cbd5e1' : '#64748b';
+
+                                            if (isReplyDeleted) {
+                                                return (
+                                                    <Text style={[styles.replyText, { color: textColor, marginTop: 2, fontStyle: 'italic' }]} numberOfLines={1}>
+                                                        This message was deleted
+                                                    </Text>
+                                                );
+                                            }
+
                                             const replyType = item.reply_from_meta?.content_type || item.replyTo?.content_type || 'text';
                                             const replyContent = item.reply_from_meta?.content || item.replyTo?.content || '';
-                                            const textColor = isDark ? '#cbd5e1' : '#64748b';
                                             
                                             if (replyType === 'image') {
                                                 return (
@@ -1521,6 +1505,9 @@ export default function ChatScreen() {
                                 </View>
                                 
                                 {(() => {
+                                    const isReplyDeleted = item.reply_from_meta?.is_deleted || item.replyTo?.is_deleted;
+                                    if (isReplyDeleted) return null;
+
                                     const replyType = item.reply_from_meta?.content_type || item.replyTo?.content_type || 'text';
                                     const replyContent = item.reply_from_meta?.content || item.replyTo?.content || '';
                                     if (replyType === 'image' && replyContent && replyContent.startsWith('http')) {
@@ -1543,7 +1530,13 @@ export default function ChatScreen() {
                             </Pressable>
                         )}
 
-                        {item.message_type === 'sticker' ? (
+                        {item.is_deleted ? (
+                            <View style={[styles.messageBubble, isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }] : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }]]}>
+                                <Text style={[styles.messageText, { fontStyle: 'italic', color: isDark ? '#94a3b8' : '#64748b' }]}>
+                                    This message was deleted by the sender.
+                                </Text>
+                            </View>
+                        ) : item.message_type === 'sticker' ? (
                             <View style={[styles.stickerBubble, isMe ? styles.stickerBubbleMe : [styles.stickerBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#fff' }]]}>
                                 <Text style={styles.stickerEmoji}>{item.content}</Text>
                                 <View style={styles.stickerTimeRow}>
@@ -1784,7 +1777,7 @@ export default function ChatScreen() {
                                     </Text>
                                 )}
                                 <View style={styles.timeEditRow}>
-                                    {item.isEdited && <Text style={styles.editedLabel}>edited</Text>}
+                                    {item.edited_at && <Text style={[styles.editedLabel, { color: isDark ? '#94a3b8' : '#64748b' }]}>(edited)</Text>}
                                     {/* Don't show timestamp here for video — it already has one inside the video container */}
                                     {item.message_type !== 'video' && (
                                       <Text style={[
@@ -2515,14 +2508,16 @@ export default function ChatScreen() {
                                                 <Text style={styles.contextItemText}>Edit</Text>
                                             </TouchableOpacity>
                                         )}
-                                        {/* Delete — available for all message types, no time limit */}
-                                        <TouchableOpacity style={styles.contextItem} onPress={() => {
-                                            handleDelete(longPressedMessage.id);
-                                            setLongPressedMessage(null);
-                                        }}>
-                                            <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                                            <Text style={[styles.contextItemText, { color: '#ef4444' }]}>Delete</Text>
-                                        </TouchableOpacity>
+                                        {/* Delete — only within 1 hour */}
+                                        {Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
+                                            <TouchableOpacity style={styles.contextItem} onPress={() => {
+                                                handleDelete(longPressedMessage.id);
+                                                setLongPressedMessage(null);
+                                            }}>
+                                                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                                                <Text style={[styles.contextItemText, { color: '#ef4444' }]}>Delete</Text>
+                                            </TouchableOpacity>
+                                        )}
                                         {(longPressedMessage.status === 'failed' || longPressedMessage.status === 'unsent') && (
                                             <TouchableOpacity style={styles.contextItem} onPress={() => {
                                                 handleResend(longPressedMessage.id);

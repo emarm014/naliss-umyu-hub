@@ -8,6 +8,8 @@ import { captureStoreError, trackStoreAction, isNetworkError } from '../utils/se
 import { Logger } from '../utils/logger';
 import { withRetry } from '../utils/api-protection';
 import * as FileSystem from 'expo-file-system/legacy';
+import NetInfo from '@react-native-community/netinfo';
+import { saveLocalUserSession, getLocalUserSession, clearLocalUserSession } from '../lib/database';
 
 const cacheAvatarLocally = async (userId: string, remoteUrl: string): Promise<string | null> => {
   if (!userId || !remoteUrl || !remoteUrl.startsWith('http')) return null;
@@ -63,6 +65,7 @@ interface AuthState {
   setProfile: (profile: Profile | null) => void;
   signOut: () => Promise<void>;
   setError: (error: string | null) => void;
+  hydrateFromSQLite: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -83,6 +86,13 @@ export const useAuthStore = create<AuthState>()(
 
       setSession: (session) => set({ session, isLoading: false }),
       setUser: (user) => set({ user }),
+
+      hydrateFromSQLite: async () => {
+        const localProfile = await getLocalUserSession();
+        if (localProfile) {
+          set({ profile: localProfile as Profile });
+        }
+      },
 
       fetchProfile: async (force = false) => {
         const { user, lastFetch, profile } = get();
@@ -125,6 +135,9 @@ export const useAuthStore = create<AuthState>()(
           }
           
           set({ profile: merged as Profile, lastFetch: Date.now() });
+          
+          // Anchor the fresh fetch payload into SQLite
+          await saveLocalUserSession(merged);
 
           if (merged.avatar_url) {
             cacheAvatarLocally(user.id, merged.avatar_url).then(localUri => {
@@ -163,12 +176,16 @@ export const useAuthStore = create<AuthState>()(
 
           const updatedRow = rows?.[0];
           if (updatedRow) {
-            set({ 
-              profile: { ...(updatedRow as any) } as Profile, 
-              lastFetch: Date.now(),
-              lastLocalProfileUpdateAt: Date.now(),
+            const merged = { ...profile, ...updatedRow };
+            set({
+              profile: merged,
+              pendingProfileUpdates: {},
+              lastLocalProfileUpdateAt: null
             });
             
+            // Anchor updated profile to SQLite
+            await saveLocalUserSession(merged);
+
             if ((updates as any).avatar_url) {
                 set({ confirmedAvatarUrl: (updates as any).avatar_url });
                 cacheAvatarLocally(user.id, (updates as any).avatar_url).then(localUri => {
@@ -315,6 +332,12 @@ export const useAuthStore = create<AuthState>()(
       setProfile: (profile) => set({ profile: profile as any }),
 
       signOut: async () => {
+        // ONLINE CONNECTIVITY GUARD GATEWAY
+        const networkState = await NetInfo.fetch();
+        if (!networkState.isConnected || networkState.isInternetReachable === false) {
+          throw new Error('NETWORK_OFFLINE_SIGNOUT');
+        }
+
         const { user } = get();
         // Capture userId BEFORE signOut fires the SIGNED_OUT event.
         // ProtectedRoute's onAuthStateChange reads user.id from Zustand state
@@ -330,9 +353,12 @@ export const useAuthStore = create<AuthState>()(
               () => {}
             );
         }
-        // Clear local state BEFORE calling signOut so onAuthStateChange
         // sees a clean slate and doesn't re-enter the ban-check with stale data.
         set({ session: null, user: null, profile: null, isProfileComplete: null, error: null, confirmedAvatarUrl: null, localAvatarUrl: null });
+        
+        // Remove SQLite profile anchor to erase zombie data
+        await clearLocalUserSession();
+
         // CRITICAL: Clear all cached data to prevent data leak between users
         // Wrap each in its own try/catch so one failure doesn't skip the rest
         try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}

@@ -1,4 +1,4 @@
-create table public.archives (
+create table if not exists public.archives (
   id uuid default gen_random_uuid() primary key,
   title text not null,
   description text,
@@ -9,13 +9,23 @@ create table public.archives (
 );
 
 -- Optimize for instantaneous grid loading on mobile feeds
-create index idx_archives_created_desc on public.archives (created_at desc);
+create index if not exists idx_archives_created_desc on public.archives (created_at desc);
 
 -- Enable Row Level Security (RLS)
 alter table public.archives enable row level security;
 
 -- Create policy to allow authenticated users to view archives
-create policy "Archives are viewable by authenticated users"
-  on public.archives for select
-  to authenticated
-  using (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+      AND tablename = 'archives' 
+      AND policyname = 'Archives are viewable by authenticated users'
+  ) THEN
+    create policy "Archives are viewable by authenticated users"
+      on public.archives for select
+      to authenticated
+      using (true);
+  END IF;
+END $$;

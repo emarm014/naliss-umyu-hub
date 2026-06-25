@@ -22,6 +22,7 @@ import { downloadFile, extractFileNameFromUrl } from '../../src/utils/download';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { Material, Course, Lecturer, Executive, AcademicLevel } from '../../src/types';
+import { CachedImage } from '../../src/components/common/CachedImage';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/Colors';
@@ -897,7 +898,7 @@ function StaffTile({ lecturer, onPress, isDark }: { lecturer: Lecturer, onPress:
         {/* Avatar */}
         <View style={styles.lecturerAvatarRing}>
           {hasPhoto ? (
-            <Image source={{ uri: getOptimizedCloudinaryUrl(lecturer.avatar_url!, 200, 200) }} style={styles.lecturerAvatar} />
+            <CachedImage entityId={lecturer.id} remoteUrl={getOptimizedCloudinaryUrl(lecturer.avatar_url!, 200, 200)} assetType="lecturer" style={styles.lecturerAvatar} />
           ) : (
             <View style={[styles.lecturerAvatarPlaceholder, !theme.isDark && { backgroundColor: '#f8fafc' }]}>
               <Text style={[styles.lecturerInitials, !theme.isDark && { color: COLORS.primary }]}>{initials}</Text>
@@ -966,7 +967,7 @@ function ExecTile({ executive, onPress, isDark }: { executive: any, onPress: () 
         {/* Avatar — left aligned */}
         <View style={styles.execAvatarRing}>
           {hasPhoto ? (
-            <Image source={{ uri: getOptimizedCloudinaryUrl(avatar, 200, 200) }} style={styles.execAvatar} />
+            <CachedImage entityId={executive.id} remoteUrl={getOptimizedCloudinaryUrl(avatar, 200, 200)} assetType="executive" style={styles.execAvatar} />
           ) : (
             <View style={[styles.execAvatarPlaceholder, !theme.isDark && { backgroundColor: '#f8fafc' }]}>
               <Text style={[styles.execInitials, !theme.isDark && { color: COLORS.primary }]}>{initials}</Text>
@@ -1045,7 +1046,7 @@ function DetailModal({ visible, onClose, title, subtitle, image, details, isExec
                         </TouchableOpacity>
                         <View style={styles.modalAvatarRing}>
                             {image ? (
-                                <Image source={{ uri: getOptimizedCloudinaryUrl(image, 300, 300) }} style={styles.modalAvatar} />
+                                <CachedImage entityId={title} remoteUrl={getOptimizedCloudinaryUrl(image, 300, 300)} assetType={isExec ? 'executive' : 'lecturer'} style={styles.modalAvatar} />
                             ) : (
                                 <View style={styles.modalAvatarPlaceholder}>
                                     <Text style={styles.modalAvatarInitials}>{initials}</Text>

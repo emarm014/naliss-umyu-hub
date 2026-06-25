@@ -1,4 +1,4 @@
-create table public.news (
+create table if not exists public.news (
   id uuid default gen_random_uuid() primary key,
   title text not null,
   content text not null,
@@ -8,25 +8,34 @@ create table public.news (
 );
 
 -- Optimize for instantaneous grid loading on mobile feeds
-create index idx_news_created_desc on public.news (created_at desc);
+create index if not exists idx_news_created_desc on public.news (created_at desc);
 
 -- Enable Row Level Security (RLS)
 alter table public.news enable row level security;
 
--- Create policy to allow authenticated users to view news
-create policy "News is viewable by authenticated users"
-  on public.news for select
-  to authenticated
-  using (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+      AND tablename = 'news' 
+      AND policyname = 'News is viewable by authenticated users'
+  ) THEN
+    create policy "News is viewable by authenticated users"
+      on public.news for select
+      to authenticated
+      using (true);
+  END IF;
 
--- Allow authenticated admin to insert/update/delete 
-create policy "News can be inserted by admins"
-  on public.news for insert
-  to authenticated
-  with check (
-    -- Assuming we are using a role check or similar. If not, just rely on service role.
-    true
-  );
-  
--- Depending on existing project conventions, admins typically use service_role to bypass RLS
--- Or an explicit function is used. We'll leave insert true for now to allow the admin dashboard (which checks roles at the app level) to insert.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+      AND tablename = 'news' 
+      AND policyname = 'News can be inserted by admins'
+  ) THEN
+    create policy "News can be inserted by admins"
+      on public.news for insert
+      to authenticated
+      with check (true);
+  END IF;
+END $$;

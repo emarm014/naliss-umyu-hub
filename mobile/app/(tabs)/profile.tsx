@@ -32,6 +32,8 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
 import { verifyPassword, getOrCreateDeviceId } from '../../src/utils/device';
 
+import { CachedImage } from '../../src/components/common/CachedImage';
+
 const { width } = Dimensions.get('window');
 
 const calculateUserPoints = (materials: Material[]) => {
@@ -116,6 +118,7 @@ export default function ProfileScreen() {
   const [otpToken, setOtpToken] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [offlineSignoutAttempted, setOfflineSignoutAttempted] = useState(false);
 
   React.useEffect(() => {
     const loadDeviceId = async () => {
@@ -305,7 +308,16 @@ export default function ProfileScreen() {
           // If we navigate synchronously, React Navigation can silently drop
           // the route change because the view hierarchy is locked during dismiss.
           setTimeout(async () => {
-            await useAuthStore.getState().signOut();
+            try {
+              await useAuthStore.getState().signOut();
+            } catch (err: any) {
+              if (err.message === 'NETWORK_OFFLINE_SIGNOUT') {
+                setOfflineSignoutAttempted(true);
+                setTimeout(() => setOfflineSignoutAttempted(false), 5000);
+              } else {
+                Alert.alert('Error', 'Failed to sign out. Please try again.');
+              }
+            }
           }, 300);
         },
       },
@@ -683,13 +695,7 @@ export default function ProfileScreen() {
     }
   };
 
-  if (isLoading && !storeProfile) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
+
 
   if (!storeProfile) {
     return (
@@ -733,9 +739,11 @@ export default function ProfileScreen() {
                 disabled={isLoading}
               >
                 {avatarUri ? (
-                  <Image
+                  <CachedImage
                     key={`${avatarUri}-${lastLocalProfileUpdateAt || 0}`}
-                    source={{ uri: avatarUri, cache: 'force-cache' }}
+                    entityId={storeProfile?.id || ''}
+                    remoteUrl={avatarUri}
+                    assetType="user"
                     style={styles.avatar}
                   />
                 ) : (
@@ -942,6 +950,15 @@ export default function ProfileScreen() {
               )}
               colors={colors}
             />
+            {offlineSignoutAttempted && (
+              <View style={{ backgroundColor: COLORS.error + '20', padding: 16, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: COLORS.error, flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="wifi-outline" size={24} color={COLORS.error} style={{ marginRight: 12 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.text, fontSize: 16, marginBottom: 4 }}>Offline Action Prevented</Text>
+                  <Text style={{ fontFamily: 'Inter-Regular', color: colors.textSecondary, fontSize: 14 }}>An active internet connection is required to safely invalidate your server session. Please connect to the internet to sign out.</Text>
+                </View>
+              </View>
+            )}
             <MenuItem 
               icon="log-out" 
               iconColor={COLORS.error} 

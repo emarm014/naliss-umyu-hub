@@ -13,6 +13,8 @@ import { format } from 'date-fns';
 import { getCleanAvatarUrl } from '../../../src/utils';
 import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
+import { CachedImage } from '../../../src/components/common/CachedImage';
+
 
 export default function ExecutiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -70,6 +72,7 @@ export default function ExecutiveDetailScreen() {
 
         {/* Avatar */}
         <ExecutiveHeroAvatar
+          entityId={exec.id}
           avatarUrl={avatarUrl}
           initials={initials}
           isActive={isActive}
@@ -219,7 +222,8 @@ export default function ExecutiveDetailScreen() {
   );
 }
 
-function ExecutiveHeroAvatar({ avatarUrl, initials, isActive, onPressAvatar }: {
+function ExecutiveHeroAvatar({ entityId, avatarUrl, initials, isActive, onPressAvatar }: {
+  entityId: string;
   avatarUrl: string | null;
   initials: string;
   isActive: boolean;
@@ -227,18 +231,17 @@ function ExecutiveHeroAvatar({ avatarUrl, initials, isActive, onPressAvatar }: {
 }) {
   const cleanUrl = getCleanAvatarUrl(avatarUrl);
   const optimizedUrl = cleanUrl ? getOptimizedCloudinaryUrl(cleanUrl, 300, 300) : null;
-  const cachedUri = useOfflineImage(optimizedUrl);
 
   return (
     <View style={styles.avatarSection}>
       <TouchableOpacity
         style={styles.avatarRing}
         onPress={onPressAvatar}
-        disabled={!cachedUri}
+        disabled={!optimizedUrl}
         activeOpacity={0.8}
       >
-        {cachedUri ? (
-          <Image source={{ uri: cachedUri }} style={styles.avatar} />
+        {optimizedUrl ? (
+          <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="executive" style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarInitials}>{initials}</Text>

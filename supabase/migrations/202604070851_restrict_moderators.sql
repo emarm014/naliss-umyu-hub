@@ -1,0 +1,1 @@
+ALTER TABLE IF EXISTS public.moderator_permissions ADD COLUMN IF NOT EXISTS is_restricted BOOLEAN DEFAULT FALSE;

@@ -93,6 +93,8 @@ import { useGroupStore } from '../src/stores/group.store';
 import { View, Text, Animated, Easing, AppState, AppStateStatus } from 'react-native';
 import { COLORS } from '../src/constants/Colors';
 import { NalissLogo } from '../src/components/NalissLogo';
+import { initDB } from '../src/lib/database';
+import { useAuthStore } from '../src/stores/auth.store';
 
 // CRITICAL: Required for OAuth redirects to work correctly on Android.
 // Without this, the browser closes immediately after the OAuth redirect
@@ -276,6 +278,10 @@ function RootLayoutNav() {
              useThemeStore.getState();
              useSignupStore.getState();
              useNetworkStore.getState();
+
+             // Initialize Local Database and Hydrate Profile Cache BEFORE Supabase Session
+             await initDB();
+             await useAuthStore.getState().hydrateFromSQLite();
           })(),
           new Promise(resolve => setTimeout(resolve, 1200)) // Explicit intentional branding beat
         ]);

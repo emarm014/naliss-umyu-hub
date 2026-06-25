@@ -89,10 +89,16 @@ END $$;
 -- ============================================================
 -- 6. ANNOUNCEMENT READS - Students can mark announcements as read
 -- ============================================================
-DROP POLICY IF EXISTS "Student Insert Announcement Reads" ON public.announcement_reads;
-CREATE POLICY "Student Insert Announcement Reads" ON public.announcement_reads
-  FOR INSERT TO authenticated
-  WITH CHECK (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_announcement_reads') THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Student Insert Announcement Reads" ON public.user_announcement_reads';
+    EXECUTE 'CREATE POLICY "Student Insert Announcement Reads" ON public.user_announcement_reads FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'announcement_reads') THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Student Insert Announcement Reads" ON public.announcement_reads';
+    EXECUTE 'CREATE POLICY "Student Insert Announcement Reads" ON public.announcement_reads FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)';
+  END IF;
+END $$;
 
 -- ============================================================
 -- 7. SYSTEM SETTINGS - Everyone can read (needed for maintenance mode check)

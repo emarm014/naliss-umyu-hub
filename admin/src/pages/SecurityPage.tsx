@@ -17,6 +17,8 @@ import {
   Eye,
   EyeOff,
   Mail,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 
 interface UserSession {
@@ -33,6 +35,7 @@ interface UserSession {
     full_name: string;
     email: string;
     role: string;
+    is_device_blocked: boolean;
   };
 }
 
@@ -46,7 +49,8 @@ export default function SecurityPage() {
   // Email Change state
   const [newEmail, setNewEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
-  const [isAwaitingEmailOtp, setIsAwaitingEmailOtp] = useState(false);
+  const [emailSwapPhase, setEmailSwapPhase] = useState<'idle' | 'otp' | 'newEmail'>('idle');
+  const [challengeId, setChallengeId] = useState<string>('');
   const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -102,7 +106,7 @@ export default function SecurityPage() {
 
       let query = supabase
         .from('user_sessions')
-        .select('*, users(full_name, email, role)')
+        .select('*, users(full_name, email, role, is_device_blocked)')
         .order('last_active_at', { ascending: false });
 
       if (profile.role !== 'super_admin') {
@@ -150,54 +154,28 @@ export default function SecurityPage() {
   }, [profile]);
 
   // ── Email Update Handlers ──────────────────────────────────────────────────
-  const handleEmailChangeRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleInitiateEmailSwap = async () => {
     setEmailError('');
     setEmailSuccess('');
-
-    if (!newEmail || newEmail === profile?.email) {
-      setEmailError('Please enter a new valid email address.');
-      return;
-    }
-
     setIsUpdatingEmail(true);
     try {
-      // Use direct fetch to bypass potential gotrue-js lock deadlocks
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.rpc('initiate_email_swap_auth');
+      if (error) throw error;
+      setEmailSwapPhase('otp');
+      setEmailSuccess(`A verification code has been dispatched to your current email address.`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-      
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/user`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ email: newEmail }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.message || data.error_description || 'Failed to initiate email change.');
+      if (data && typeof data === 'object' && 'otp_code' in data) {
+        console.log('DEV ONLY - OTP CODE:', data.otp_code);
       }
-
-      setIsAwaitingEmailOtp(true);
-      setEmailSuccess(`An OTP has been sent to ${newEmail}. Please enter it below.`);
     } catch (err: any) {
-      console.error('Failed to request email change:', err);
+      console.error('Failed to initiate email change:', err);
       setEmailError(err.message || 'Failed to initiate email change.');
     } finally {
       setIsUpdatingEmail(false);
     }
   };
 
-  const handleOtpVerification = async (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setEmailError('');
     setEmailSuccess('');
@@ -209,27 +187,56 @@ export default function SecurityPage() {
 
     setIsUpdatingEmail(true);
     try {
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        email: newEmail,
-        token: otpCode,
-        type: 'email_change',
+      const { data, error } = await supabase.rpc('verify_email_swap_otp', {
+        p_otp_code: otpCode,
       });
 
-      if (verifyError) throw verifyError;
+      if (error) throw error;
 
-      // Update public.users
+      if (data && typeof data === 'object' && 'challenge_id' in data) {
+        setChallengeId(data.challenge_id);
+        setEmailSwapPhase('newEmail');
+        setEmailSuccess('Code verified successfully. Please enter your new email address.');
+      }
+    } catch (err: any) {
+      console.error('Failed to verify OTP:', err);
+      setEmailError(err.message || 'Invalid or expired OTP.');
+    } finally {
+      setIsUpdatingEmail(false);
+    }
+  };
+
+  const handleExecuteEmailSwap = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailError('');
+    setEmailSuccess('');
+
+    if (!newEmail || newEmail === profile?.email) {
+      setEmailError('Please enter a new valid email address.');
+      return;
+    }
+
+    setIsUpdatingEmail(true);
+    try {
+      const { error } = await supabase.rpc('execute_email_swap', {
+        p_challenge_id: challengeId,
+        p_new_email: newEmail,
+      });
+
+      if (error) throw error;
+
       if (profile?.id) {
-        await supabase.from('users').update({ email: newEmail }).eq('id', profile.id);
         useAuthStore.getState().updateProfile({ email: newEmail });
       }
 
       setEmailSuccess('Email address updated successfully!');
-      setIsAwaitingEmailOtp(false);
+      setEmailSwapPhase('idle');
       setNewEmail('');
       setOtpCode('');
+      setChallengeId('');
     } catch (err: any) {
-      console.error('Failed to verify OTP:', err);
-      setEmailError(err.message || 'Invalid or expired OTP.');
+      console.error('Failed to execute email change:', err);
+      setEmailError(err.message || 'Failed to finalize email change.');
     } finally {
       setIsUpdatingEmail(false);
     }
@@ -283,6 +290,33 @@ export default function SecurityPage() {
       showPasswordError(err.message || 'Failed to update password. Try again.');
     } finally {
       setIsUpdatingPassword(false);
+    }
+  };
+
+  // ── Block Device Handlers ──────────────────────────────────────────────────
+  const [isBlockingDevice, setIsBlockingDevice] = useState(false);
+
+  const handleToggleDeviceBlock = async (userId: string, currentStatus: boolean) => {
+    const action = currentStatus ? 'unblock' : 'block';
+    if (!window.confirm(`Are you sure you want to ${action} this device? ${!currentStatus ? 'This will terminate all active sessions for this user.' : ''}`)) {
+      return;
+    }
+    setIsBlockingDevice(true);
+    try {
+      const { error: rpcError } = await supabase.rpc('toggle_device_block', {
+        p_user_id: userId,
+        p_status: !currentStatus,
+      });
+
+      if (rpcError) throw rpcError;
+      
+      // Refresh the session list
+      fetchSessions(true);
+    } catch (err: any) {
+      console.error(`Failed to ${action} device:`, err);
+      alert(`Failed to ${action} device: ${err.message}`);
+    } finally {
+      setIsBlockingDevice(false);
     }
   };
 
@@ -433,8 +467,8 @@ export default function SecurityPage() {
                 </div>
               )}
 
-              {!isAwaitingEmailOtp ? (
-                <form onSubmit={handleEmailChangeRequest} className="space-y-6">
+              {emailSwapPhase === 'idle' && (
+                <div className="space-y-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Current Email</label>
                     <input
@@ -444,37 +478,21 @@ export default function SecurityPage() {
                       className="w-full px-5 py-4 bg-gray-100 border-none rounded-2xl text-sm font-semibold text-gray-500 cursor-not-allowed"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">New Email</label>
-                    <input
-                      type="email"
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800"
-                      placeholder="admin@example.com"
-                      required
-                    />
-                  </div>
                   <div className="flex gap-4 mt-4">
                     <button
                       type="button"
-                      onClick={() => { setIsAwaitingEmailOtp(true); setEmailError(''); setEmailSuccess(''); }}
+                      onClick={handleInitiateEmailSwap}
                       disabled={isUpdatingEmail}
-                      className="flex-1 py-5 bg-gray-50 text-gray-500 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-200 shadow-sm active:scale-95"
+                      className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20 active:scale-95"
                     >
-                      Already have code?
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isUpdatingEmail}
-                      className="flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20 active:scale-95"
-                    >
-                      {isUpdatingEmail ? 'Requesting...' : 'Request Change'}
+                      {isUpdatingEmail ? 'Requesting...' : 'Change Email'}
                     </button>
                   </div>
-                </form>
-              ) : (
-                <form onSubmit={handleOtpVerification} className="space-y-6">
+                </div>
+              )}
+
+              {emailSwapPhase === 'otp' && (
+                <form onSubmit={handleVerifyOtp} className="space-y-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Verification Code (OTP)</label>
                     <input
@@ -490,7 +508,7 @@ export default function SecurityPage() {
                   <div className="flex gap-4">
                     <button
                       type="button"
-                      onClick={() => { setIsAwaitingEmailOtp(false); setEmailError(''); setEmailSuccess(''); }}
+                      onClick={() => { setEmailSwapPhase('idle'); setEmailError(''); setEmailSuccess(''); }}
                       className="flex-1 py-5 bg-gray-50 text-gray-400 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100"
                     >
                       Cancel
@@ -501,6 +519,38 @@ export default function SecurityPage() {
                       className="flex-1 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20"
                     >
                       {isUpdatingEmail ? 'Verifying...' : 'Verify OTP'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {emailSwapPhase === 'newEmail' && (
+                <form onSubmit={handleExecuteEmailSwap} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">New Email</label>
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800"
+                      placeholder="admin@example.com"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => { setEmailSwapPhase('idle'); setEmailError(''); setEmailSuccess(''); }}
+                      className="flex-1 py-5 bg-gray-50 text-gray-400 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isUpdatingEmail}
+                      className="flex-1 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20"
+                    >
+                      {isUpdatingEmail ? 'Updating...' : 'Confirm New Email'}
                     </button>
                   </div>
                 </form>
@@ -701,17 +751,39 @@ export default function SecurityPage() {
                           </td>
 
                           <td className="py-4 text-right">
-                            {s.is_active ? (
-                              <button
-                                onClick={() => initiateTermination(s)}
-                                className="inline-flex items-center justify-center p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all border border-transparent hover:border-red-100"
-                                title="Terminate session"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            ) : (
-                              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic pr-2">Ended</span>
-                            )}
+                            <div className="flex items-center justify-end gap-1">
+                              {s.is_active ? (
+                                <button
+                                  onClick={() => initiateTermination(s)}
+                                  className="inline-flex items-center justify-center p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all border border-transparent hover:border-red-100"
+                                  title="Log Out Specific Browser"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic px-2">Ended</span>
+                              )}
+                              
+                              {profile?.role === 'super_admin' && s.users?.is_device_blocked ? (
+                                <button
+                                  onClick={() => handleToggleDeviceBlock(s.user_id, true)}
+                                  disabled={isBlockingDevice}
+                                  className="inline-flex items-center justify-center p-2 rounded-xl text-green-600 hover:bg-green-50 transition-all border border-transparent hover:border-green-100"
+                                  title="Release / Unblock Device"
+                                >
+                                  <Unlock className="w-4 h-4" />
+                                </button>
+                              ) : profile?.role === 'super_admin' && (
+                                <button
+                                  onClick={() => handleToggleDeviceBlock(s.user_id, false)}
+                                  disabled={isBlockingDevice}
+                                  className="inline-flex items-center justify-center p-2 rounded-xl text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-all border border-transparent hover:border-amber-100"
+                                  title="Enforce Permanent Lock"
+                                >
+                                  <Lock className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

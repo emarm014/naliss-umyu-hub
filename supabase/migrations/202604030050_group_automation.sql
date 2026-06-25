@@ -1,15 +1,34 @@
 -- NALISS Group Automation: Auto-join students to their level and department groups
 -- This script ensures students have immediate access to community chats upon registration.
 
--- 1. Ensure core groups exist (if not already created by seed/admin)
-INSERT INTO public.groups (name, description, group_type, level, is_active)
-VALUES 
-  ('NALISS FAMILY UMYUK', 'General discussion for all NALISS students', 'department', null, true),
-  ('Level 100', '100 Level student discourse and announcements', 'level', '100', true),
-  ('Level 200', '200 Level student discourse and announcements', 'level', '200', true),
-  ('Level 300', '300 Level student discourse and announcements', 'level', '300', true),
-  ('Level 400', '400 Level student discourse and announcements', 'level', '400', true)
-ON CONFLICT (name) DO UPDATE SET level = EXCLUDED.level;
+DO $$
+BEGIN
+  -- Insert only if they don't exist by name
+  IF NOT EXISTS (SELECT 1 FROM public.groups WHERE name = 'NALISS FAMILY UMYUK') THEN
+    INSERT INTO public.groups (name, description, group_type, level, is_active)
+    VALUES ('NALISS FAMILY UMYUK', 'General discussion for all NALISS students', 'department', null, true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.groups WHERE name = 'Level 100') THEN
+    INSERT INTO public.groups (name, description, group_type, level, is_active)
+    VALUES ('Level 100', '100 Level student discourse and announcements', 'level', '100', true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.groups WHERE name = 'Level 200') THEN
+    INSERT INTO public.groups (name, description, group_type, level, is_active)
+    VALUES ('Level 200', '200 Level student discourse and announcements', 'level', '200', true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.groups WHERE name = 'Level 300') THEN
+    INSERT INTO public.groups (name, description, group_type, level, is_active)
+    VALUES ('Level 300', '300 Level student discourse and announcements', 'level', '300', true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.groups WHERE name = 'Level 400') THEN
+    INSERT INTO public.groups (name, description, group_type, level, is_active)
+    VALUES ('Level 400', '400 Level student discourse and announcements', 'level', '400', true);
+  END IF;
+END $$;
 
 -- 2. Function to auto-join student to their groups
 CREATE OR REPLACE FUNCTION public.handle_student_group_auto_join()

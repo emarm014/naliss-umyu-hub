@@ -1,0 +1,99 @@
+import React, { useEffect, useState } from 'react';
+import { Image, ImageStyle, StyleProp, View, ActivityIndicator } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import { getAssetCache, upsertAssetCache } from '../../lib/database';
+import { useThemeStore } from '../../stores/theme.store';
+
+interface CachedImageProps {
+    entityId: string;
+    remoteUrl: string | null | undefined;
+    assetType: 'user' | 'executive' | 'lecturer';
+    style?: StyleProp<ImageStyle>;
+    resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+}
+
+export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover' }: CachedImageProps) {
+    const [localUri, setLocalUri] = useState<string | null>(null);
+    const [loading, setLoading] = useState<boolean>(true);
+    const { colors, isDark } = useThemeStore();
+
+    useEffect(() => {
+        let isMounted = true;
+        
+        const loadAsset = async () => {
+            if (!entityId || !remoteUrl) {
+                if (isMounted) {
+                    setLoading(false);
+                }
+                return;
+            }
+
+            try {
+                // 1. Check SQLite for existing cache
+                const cached = await getAssetCache(entityId);
+                
+                if (cached?.local_path && cached.remote_url === remoteUrl) {
+                    // 2. Verify file exists
+                    const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
+                    if (fileInfo.exists) {
+                        if (isMounted) {
+                            setLocalUri(cached.local_path);
+                            setLoading(false);
+                        }
+                        return;
+                    }
+                }
+
+                // 3. Download if not found or URL changed
+                const filename = `${assetType}_${entityId}_${Date.now()}.jpg`;
+                const fileUri = `${FileSystem.documentDirectory}${filename}`;
+                
+                const result = await FileSystem.downloadAsync(remoteUrl, fileUri);
+                
+                if (result.status === 200) {
+                    // 4. Save to SQLite
+                    await upsertAssetCache(entityId, remoteUrl, result.uri, assetType);
+                    
+                    if (isMounted) {
+                        setLocalUri(result.uri);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load cached image:', err);
+            } finally {
+                if (isMounted) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        loadAsset();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [entityId, remoteUrl, assetType]);
+
+    if (!localUri && !remoteUrl) {
+        // Fallback UI when no image is available
+        return (
+            <View style={[style, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]} />
+        );
+    }
+
+    return (
+        <View style={[style, { overflow: 'hidden' }]}>
+            <Image
+                source={{ uri: localUri || remoteUrl! }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode={resizeMode}
+                onLoad={() => setLoading(false)}
+            />
+            {loading && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? 'rgba(15,23,42,0.5)' : 'rgba(241,245,249,0.5)' }}>
+                    <ActivityIndicator color="#059669" size="small" />
+                </View>
+            )}
+        </View>
+    );
+}

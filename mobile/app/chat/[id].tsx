@@ -256,9 +256,14 @@ export default function ChatScreen() {
 
         const initChat = async () => {
             if (id) {
-                // 1. INSTANT display — show cached messages with zero loading state
-                const cached = messageStore.getMessages(id);
+                await messageStore.initSQLiteCache();
+                
+                // 1. INSTANT display — show cached messages from SQLite with zero loading state
+                const { getMessagesByGroup } = require('../../src/lib/database');
+                const cached = await getMessagesByGroup(id);
+                
                 if (cached.length > 0) {
+                    messageStore.setMessages(id, cached);
                     setMessages(cached);
                     setIsLoading(false);
                 }
@@ -1559,7 +1564,7 @@ export default function ChatScreen() {
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <Image
-                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, `image_${item.id}.jpg`) : (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content)) }}
+                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, `image_${item.id}.jpg`) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content))) }}
                                         style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
@@ -1632,7 +1637,7 @@ export default function ChatScreen() {
                                         {/* Cloudinary video thumbnail — generated automatically */}
                                         {item.content?.startsWith('http') || downloadedIds[item.id] || item.fileUri ? (
                                             <Image
-                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `video_${item.id}.mp4`) : (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content)) }}
+                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `video_${item.id}.mp4`) : (item.local_media_path || (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content))) }}
                                                 style={styles.videoThumb}
                                                 resizeMode="cover"
                                             />
@@ -1698,7 +1703,7 @@ export default function ChatScreen() {
                                         onPress={() => handleDoubleTapReply(item, () => {
                                             if (isMe) {
                                                 const fileName = item.metadata?.name || `document_${item.id}.pdf`;
-                                                setViewerFile({ uri: item.content, type: item.message_type, name: fileName });
+                                                setViewerFile({ uri: item.local_media_path || item.content, type: item.message_type, name: fileName });
                                                 setViewerVisible(true);
                                                 return;
                                             }

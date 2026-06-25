@@ -20,6 +20,8 @@ import { getCleanAvatarUrl } from '../../src/utils';
 import * as ImagePicker from 'expo-image-picker';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
 
+import { CachedImage } from '../../src/components/common/CachedImage';
+
 const { width } = Dimensions.get('window');
 
 // ── Per-level theme config ────────────────────────────────────────────────────
@@ -280,22 +282,7 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   }, [loadData]);
-  if (!user) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.topBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <View style={styles.topBarLeft}>
-            <NalissLogo size={32} />
-            <Text style={[styles.appName, { color: colors.text }]}>NALISS UMYU HUB</Text>
-          </View>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={{ marginTop: 12, color: colors.textSecondary, fontFamily: 'Inter-Medium' }}>Loading your profile...</Text>
-        </View>
-      </View>
-    );
-  }
+  if (!user) return null;
 
   const displayName = user.username || user.full_name?.split(' ')[0] || 'Student';
   // localAvatarUrl is the local file URI, falling back to confirmedAvatarUrl (the iron-clad source),
@@ -383,7 +370,7 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
               >
                 <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
-                  <Image key={avatarKey} source={{ uri: avatar, cache: 'force-cache' }} style={styles.avatar} />
+                  <CachedImage entityId={user?.id || ''} remoteUrl={avatar} assetType="user" style={styles.avatar} />
                 </View>
               </TouchableOpacity>
             </View>

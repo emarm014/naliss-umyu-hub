@@ -31,10 +31,10 @@ DECLARE
   engagement_material_views int;
   engagement_material_downloads int;
   engagement_announcement_views int;
-  storage_resources bigserial;
-  storage_materials bigserial;
-  storage_past_questions bigserial;
-  storage_total bigserial;
+  storage_resources bigint;
+  storage_materials bigint;
+  storage_past_questions bigint;
+  storage_total bigint;
 BEGIN
   -- 1. User Census
   SELECT count(*) INTO users_total FROM public.users;

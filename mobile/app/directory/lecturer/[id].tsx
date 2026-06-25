@@ -12,6 +12,9 @@ import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { getCleanAvatarUrl } from '../../../src/utils';
 import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
+import { CachedImage } from '../../../src/components/common/CachedImage';
+
+
 
 export default function LecturerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -70,6 +73,7 @@ export default function LecturerDetailScreen() {
 
         {/* Avatar */}
         <LecturerHeroAvatar
+          entityId={lecturer.id}
           avatarUrl={lecturer.avatar_url}
           initials={initials}
           title={lecturer.title}
@@ -221,7 +225,8 @@ export default function LecturerDetailScreen() {
   );
 }
 
-function LecturerHeroAvatar({ avatarUrl, initials, title, onPressAvatar }: {
+function LecturerHeroAvatar({ entityId, avatarUrl, initials, title, onPressAvatar }: {
+  entityId: string;
   avatarUrl: string | null;
   initials: string;
   title: string | null;
@@ -229,18 +234,17 @@ function LecturerHeroAvatar({ avatarUrl, initials, title, onPressAvatar }: {
 }) {
   const cleanUrl = getCleanAvatarUrl(avatarUrl);
   const optimizedUrl = cleanUrl ? getOptimizedCloudinaryUrl(cleanUrl, 300, 300) : null;
-  const cachedUri = useOfflineImage(optimizedUrl);
 
   return (
     <View style={styles.avatarSection}>
       <TouchableOpacity
         style={styles.avatarRing}
         onPress={onPressAvatar}
-        disabled={!cachedUri}
+        disabled={!optimizedUrl}
         activeOpacity={0.8}
       >
-        {cachedUri ? (
-          <Image source={{ uri: cachedUri }} style={styles.avatar} />
+        {optimizedUrl ? (
+          <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="lecturer" style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarInitials}>{initials}</Text>

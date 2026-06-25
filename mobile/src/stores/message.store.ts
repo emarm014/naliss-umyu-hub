@@ -5,35 +5,38 @@ import { Logger } from '../utils/logger';
 import { supabase } from '../api/supabase/client';
 import { uploadLocalFileToCloudinary } from '../lib/cloudinary';
 import { useNetworkStore } from './network.store';
+import { 
+    initDB, 
+    insertOrReplaceMessage, 
+    updateLocalMessage, 
+    deleteLocalMessage, 
+    clearAllMessages, 
+    updateLocalMediaPath 
+} from '../lib/database';
+import * as FileSystem from 'expo-file-system/legacy';
+
 interface MessageCache {
     [groupId: string]: any[];
 }
 
 interface MessageState {
     cache: MessageCache;
-    // Tracks the timestamp of the last message seen per group
-    // Used for miss-recovery: fetch messages that arrived while offline
     lastSeenAt: Record<string, string>;
     isLoading: boolean;
     error: string | null;
 
+    initSQLiteCache: () => Promise<void>;
     setMessages: (groupId: string, messages: any[]) => void;
     addMessage: (groupId: string, message: any) => void;
     updateMessage: (groupId: string, messageId: string, updates: any) => void;
     removeMessage: (groupId: string, messageId: string) => void;
     getMessages: (groupId: string) => any[];
-    // WARNING: clearCache wipes ALL messages for ALL groups from AsyncStorage.
-    // Only call this on explicit user sign-out. Never call during signup cleanup,
-    // navigation, or any other lifecycle event.
     clearCache: () => void;
     patchSenderInfo: (userId: string, updates: { username?: string; avatar_url?: string; full_name?: string }) => void;
-    // Merge missed messages (arrived while offline) into existing cache
     mergeMissedMessages: (groupId: string, missedMessages: any[]) => void;
-    // Update the last-seen timestamp for a group
     touchLastSeen: (groupId: string, timestamp: string) => void;
     getLastSeenAt: (groupId: string) => string | null;
 
-    // Offline Queue Architecture
     uploadProgress: Record<string, number>;
     isFlushing: boolean;
     sendGroupMessage: (groupId: string, msgPayload: any, fileUri?: string) => Promise<void>;
@@ -43,6 +46,44 @@ interface MessageState {
     editMessage: (messageId: string, groupId: string, newContent: string) => Promise<void>;
     softDeleteMessage: (messageId: string, groupId: string) => Promise<void>;
 }
+
+export const interceptAndDownloadMedia = async (message: any) => {
+    if (!message.media_url || message.local_media_path) return message;
+    
+    // Skip if it's already a local file
+    if (message.media_url.startsWith('file://')) {
+        message.local_media_path = message.media_url;
+        return message;
+    }
+
+    try {
+        const fs = FileSystem as any;
+        const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
+        if (!docDir) return message;
+        const base = docDir.endsWith('/') ? docDir : `${docDir}/`;
+        
+        // Ensure a unique filename based on ID
+        const ext = message.media_url.split('.').pop()?.split('?')[0] || 'tmp';
+        const localPath = `${base}media_${message.id}.${ext}`;
+        
+        const info = await FileSystem.getInfoAsync(localPath);
+        if (info.exists) {
+            message.local_media_path = `file://${localPath}`;
+        } else {
+            const downloadRes = await FileSystem.downloadAsync(message.media_url, localPath);
+            if (downloadRes.status === 200) {
+                message.local_media_path = downloadRes.uri;
+            }
+        }
+        
+        if (message.local_media_path) {
+            await updateLocalMediaPath(message.id, message.local_media_path);
+        }
+    } catch (e) {
+        Logger.error('message.store', 'Failed to intercept media for offline caching:', e);
+    }
+    return message;
+};
 
 export const useMessageStore = create<MessageState>()(
     persist(
@@ -54,14 +95,21 @@ export const useMessageStore = create<MessageState>()(
             uploadProgress: {},
             isFlushing: false,
 
-            // Store up to 300 messages per group to prevent AsyncStorage stringify crashes
-            // and memory leaks on large, active groups.
+            initSQLiteCache: async () => {
+                await initDB();
+            },
+
             setMessages: (groupId, messages) => {
                 const cappedMessages = messages.slice(-300);
-                // Update lastSeenAt to the most recent message timestamp
                 const latest = cappedMessages.length > 0
                     ? cappedMessages[cappedMessages.length - 1]?.created_at
                     : null;
+
+                messages.forEach(async msg => {
+                    const enhancedMsg = await interceptAndDownloadMedia(msg);
+                    await insertOrReplaceMessage(enhancedMsg, groupId);
+                });
+
                 set((state) => ({
                     cache: { ...state.cache, [groupId]: cappedMessages },
                     lastSeenAt: latest
@@ -72,6 +120,11 @@ export const useMessageStore = create<MessageState>()(
 
             addMessage: (groupId, message) => {
                 Logger.info('message.store', 'addMessage called', { groupId, messageId: message.id, status: message.status });
+                
+                interceptAndDownloadMedia(message).then(enhancedMsg => {
+                    insertOrReplaceMessage(enhancedMsg, groupId);
+                });
+
                 set((state) => {
                     const existing = state.cache[groupId] || [];
                     if (existing.some(m => m.id === message.id)) {
@@ -83,10 +136,6 @@ export const useMessageStore = create<MessageState>()(
                         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
                         .slice(-300);
 
-                    // Only update lastSeenAt from confirmed server messages (real UUIDs).
-                    // Temp messages use device-clock timestamps which may be ahead of the
-                    // server — storing them as lastSeenAt would cause miss-recovery to skip
-                    // real messages that arrived in that window.
                     const isConfirmed = message.id && !String(message.id).startsWith('temp-');
 
                     return {
@@ -99,10 +148,11 @@ export const useMessageStore = create<MessageState>()(
             },
 
             updateMessage: (groupId, messageId, updates) => {
+                updateLocalMessage(messageId, updates);
+
                 set((state) => {
                     const existing = state.cache[groupId] || [];
                     const updated = existing.map(m => m.id === messageId ? { ...m, ...updates } : m);
-                    // If the id changed (temp → real), re-sort to keep chronological order
                     const needsSort = updates.id && updates.id !== messageId;
                     return {
                         cache: {
@@ -116,6 +166,8 @@ export const useMessageStore = create<MessageState>()(
             },
 
             removeMessage: (groupId, messageId) => {
+                deleteLocalMessage(messageId);
+
                 set((state) => {
                     const existing = state.cache[groupId] || [];
                     return {
@@ -131,10 +183,10 @@ export const useMessageStore = create<MessageState>()(
                 return get().cache[groupId] || [];
             },
 
-            // WARNING: Only call on explicit user sign-out.
-            // Calling this during signup cleanup, navigation, or any other
-            // lifecycle event will permanently delete all offline messages.
-            clearCache: () => set({ cache: {}, lastSeenAt: {} }),
+            clearCache: () => {
+                clearAllMessages();
+                set({ cache: {}, lastSeenAt: {} });
+            },
 
             patchSenderInfo: (userId, updates) => {
                 set((state) => {
@@ -142,10 +194,12 @@ export const useMessageStore = create<MessageState>()(
                     for (const groupId of Object.keys(state.cache)) {
                         newCache[groupId] = state.cache[groupId].map(m => {
                             if (m.sender_id === userId) {
-                                return {
+                                const patched = {
                                     ...m,
                                     user: { ...m.user, ...updates }
                                 };
+                                updateLocalMessage(m.id, { user: patched.user });
+                                return patched;
                             }
                             return m;
                         });
@@ -156,8 +210,6 @@ export const useMessageStore = create<MessageState>()(
 
             editMessage: async (messageId: string, groupId: string, newContent: string) => {
                 const editedAt = new Date().toISOString();
-                
-                // Optimistically update the cache
                 get().updateMessage(groupId, messageId, { content: newContent, edited_at: editedAt });
 
                 try {
@@ -169,12 +221,10 @@ export const useMessageStore = create<MessageState>()(
                     if (error) throw error;
                 } catch (err) {
                     Logger.error('message.store', 'Failed to edit message', err);
-                    // Could revert the optimistic update here if desired
                 }
             },
 
             softDeleteMessage: async (messageId: string, groupId: string) => {
-                // Optimistically update the cache
                 get().updateMessage(groupId, messageId, { content: '', is_deleted: true });
 
                 try {
@@ -184,15 +234,17 @@ export const useMessageStore = create<MessageState>()(
                     if (error) throw error;
                 } catch (err) {
                     Logger.error('message.store', 'Failed to soft delete message', err);
-                    // Reverting optimistic update would require fetching the old content
                 }
             },
 
-
-            // Merge messages that arrived while the user was offline.
-            // Deduplicates by ID, preserves chronological order.
             mergeMissedMessages: (groupId, missedMessages) => {
                 if (!missedMessages.length) return;
+
+                missedMessages.forEach(async msg => {
+                    const enhancedMsg = await interceptAndDownloadMedia(msg);
+                    await insertOrReplaceMessage(enhancedMsg, groupId);
+                });
+
                 set((state) => {
                     const existing = state.cache[groupId] || [];
                     const existingIds = new Set(existing.map(m => m.id));
@@ -239,15 +291,13 @@ export const useMessageStore = create<MessageState>()(
                 const { isOnline } = useNetworkStore.getState();
                 const tempId = msgPayload.id || `temp-${Date.now()}`;
                 
-                // Construct the local message state with status
                 const localMsg = { 
                     ...msgPayload, 
                     id: tempId, 
                     status: isOnline ? 'sending' : 'unsent',
-                    fileUri: fileUri // Keep a reference to the local file for offline recovery
+                    fileUri: fileUri
                 };
                 
-                // Append instantly for zero-latency UX
                 get().addMessage(groupId, localMsg);
 
                 if (!isOnline) {
@@ -258,7 +308,6 @@ export const useMessageStore = create<MessageState>()(
                 try {
                     await get().processUnifiedQueueItem(groupId, localMsg);
                 } catch (error) {
-                    // Revert to unsent on true network failures, error otherwise
                     const isNetwork = (error as any)?.status === 0 || (error as any)?.message?.toLowerCase().includes('network');
                     get().updateMessage(groupId, tempId, { status: isNetwork ? 'unsent' : 'error' });
                 }
@@ -278,7 +327,6 @@ export const useMessageStore = create<MessageState>()(
 
                 const isMediaMessage = msg.media_url || msg.fileUri;
 
-                // Handle Cloudinary Media Upload first
                 if (msg.message_type !== 'text' && msg.message_type !== 'sticker' && isMediaMessage) {
                     const type = msg.message_type;
                     const mimeType = type === 'image' ? 'image/jpeg'
@@ -308,7 +356,6 @@ export const useMessageStore = create<MessageState>()(
                     payload.content = finalContentUrl;
                 }
 
-                // Insert to Supabase DB
                 const { data, error } = await (supabase as any).from('messages')
                     .insert([payload])
                     .select()
@@ -316,7 +363,6 @@ export const useMessageStore = create<MessageState>()(
 
                 if (error) throw error;
 
-                // Confirm and map tempId to real DB id
                 get().updateMessage(groupId, msg.id, { id: (data as any).id, content: finalContentUrl, status: 'sent', fileUri: undefined });
             },
 
@@ -350,7 +396,7 @@ export const useMessageStore = create<MessageState>()(
                                 get().updateMessage(groupId, msg.id, { status: isNetwork ? 'unsent' : 'error' });
                                 if (isNetwork) {
                                     set({ isFlushing: false });
-                                    return; // Halt entire loop
+                                    return;
                                 }
                             }
                         }
@@ -363,12 +409,9 @@ export const useMessageStore = create<MessageState>()(
         {
             name: 'message-cache-storage',
             storage: createJSONStorage(() => mmkvStorage),
-            // Persist ALL messages — no cap, no limit.
-            // Every message ever received stays in MMKV indefinitely,
-            // accessible offline forever, exactly like WhatsApp.
             partialize: (state) => ({
-                cache: state.cache,
                 lastSeenAt: state.lastSeenAt,
+                uploadProgress: state.uploadProgress
             }),
         }
     )

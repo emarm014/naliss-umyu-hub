@@ -50,7 +50,6 @@ export default function SecurityPage() {
   const [newEmail, setNewEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [emailSwapPhase, setEmailSwapPhase] = useState<'idle' | 'otp' | 'newEmail'>('idle');
-  const [challengeId, setChallengeId] = useState<string>('');
   const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -159,7 +158,7 @@ export default function SecurityPage() {
     setEmailSuccess('');
     setIsUpdatingEmail(true);
     try {
-      const { data, error } = await supabase.auth.reauthenticate();
+      const { error } = await supabase.auth.reauthenticate();
       if (error) throw error;
       setEmailSwapPhase('otp');
       setEmailSuccess(`A verification code has been dispatched to your current email address.`);
@@ -189,7 +188,7 @@ export default function SecurityPage() {
       const { error } = await supabase.auth.verifyOtp({
         email: profile.email,
         token: otpCode,
-        type: 'reauthentication',
+        type: 'reauthentication' as any,
       });
 
       if (error) throw error;
@@ -230,7 +229,6 @@ export default function SecurityPage() {
       setEmailSwapPhase('idle');
       setNewEmail('');
       setOtpCode('');
-      setChallengeId('');
     } catch (err: any) {
       console.error('Failed to execute email change:', err);
       setEmailError(err.message || 'Failed to finalize email change.');

@@ -12,7 +12,6 @@ import {
     Platform,
     FlatList,
     Image,
-    Modal,
     Alert,
     Pressable,
     ScrollView,
@@ -20,6 +19,7 @@ import {
     PanResponder,
     Linking,
 } from 'react-native';
+import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -37,6 +37,8 @@ import { useGroupStore } from '../../src/stores/group.store';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { Message } from '../../src/types';
 import { FileService } from '../../src/services/file.service';
+import { saveMediaToDevice } from '../../src/utils/mediaSaver';
+import { showToast } from '../../src/components/common/overlays';
 import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
 import { sendChatMessageNotification } from '../../src/utils/notifications';
 import { useTheme } from '../../src/stores/theme.store';
@@ -2323,6 +2325,42 @@ export default function ChatScreen() {
         setViewerVisible(true);
     };
 
+    const handleSaveMessageMedia = async (msg: any) => {
+        try {
+            let localUri = '';
+            const fileName = msg.metadata?.name || `${msg.message_type}_${msg.id}.${msg.message_type === 'video' ? 'mp4' : msg.message_type === 'audio' ? 'mp3' : 'jpg'}`;
+            
+            const isDownloaded = downloadedIds[msg.id];
+            const isMe = msg.sender_id === currentUser?.id;
+            
+            if (isDownloaded) {
+                localUri = FileService.getLocalUri(msg.id, fileName);
+            } else if (isMe && msg.fileUri) {
+                localUri = msg.fileUri;
+            } else {
+                localUri = FileService.getLocalUri(msg.id, fileName);
+                const downloaded = await FileService.downloadFile(msg.content, msg.id, fileName);
+                if (!downloaded) {
+                    Alert.alert('Save Failed', 'Could not retrieve file to save.');
+                    return;
+                }
+                localUri = downloaded;
+                setDownloadedIds(prev => ({ ...prev, [msg.id]: true }));
+            }
+            
+            const normalizedUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
+            const result = await saveMediaToDevice(normalizedUri, msg.message_type, fileName);
+            
+            if (result.success) {
+                showToast('✓ Saved to Device');
+            } else {
+                Alert.alert('Save Failed', result.error || 'Could not save the attachment to your device.');
+            }
+        } catch (error) {
+            Alert.alert('Save Failed', 'Could not save the attachment to your device.');
+        }
+    };
+
     const handleOpenSwipeableMedia = (targetMessageId: string) => {
         const mediaMessages = messages.filter(m => !m.is_deleted && (m.message_type === 'image' || m.message_type === 'video'));
         const mediaArray = mediaMessages.map(m => {
@@ -2495,70 +2533,88 @@ export default function ChatScreen() {
 
             {/* Long-press context menu */}
             {longPressedMessage && (
-                <Modal transparent animationType="fade" visible={!!longPressedMessage}>
-                    <TouchableWithoutFeedback onPress={() => setLongPressedMessage(null)}>
-                        <View style={styles.contextOverlay}>
-                            <View style={styles.contextMenu}>
-                                <TouchableOpacity style={styles.contextItem} onPress={() => handleReply(longPressedMessage)}>
-                                    <Ionicons name="arrow-undo" size={20} color={COLORS.text} />
-                                    <Text style={styles.contextItemText}>Reply</Text>
-                                </TouchableOpacity>
-                                {/* Edit — only for text, only within 1 hour */}
-                                {longPressedMessage.sender_id === currentUser?.id && (
-                                    <>
-                                        {longPressedMessage.message_type === 'text' &&
-                                         Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
-                                            <TouchableOpacity style={styles.contextItem} onPress={() => handleEdit(longPressedMessage)}>
-                                                <Ionicons name="create-outline" size={20} color={COLORS.text} />
-                                                <Text style={styles.contextItemText}>Edit</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                        {/* Delete — only within 1 hour */}
-                                        {Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
-                                            <TouchableOpacity style={styles.contextItem} onPress={() => {
-                                                handleDelete(longPressedMessage.id);
-                                                setLongPressedMessage(null);
-                                            }}>
-                                                <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                                                <Text style={[styles.contextItemText, { color: '#ef4444' }]}>Delete</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                        {(longPressedMessage.status === 'failed' || longPressedMessage.status === 'unsent') && (
-                                            <TouchableOpacity style={styles.contextItem} onPress={() => {
-                                                handleResend(longPressedMessage.id);
-                                                setLongPressedMessage(null);
-                                            }}>
-                                                <Ionicons name="refresh" size={20} color="#f59e0b" />
-                                                <Text style={[styles.contextItemText, { color: '#f59e0b' }]}>Resend</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                    </>
+                <SafeOverlayContainer
+                    visible={!!longPressedMessage}
+                    onClose={() => setLongPressedMessage(null)}
+                    animationType="fade"
+                    overlayStyle={{ justifyContent: 'center', alignItems: 'center' }}
+                >
+                    <View style={styles.contextMenu}>
+                        <TouchableOpacity style={styles.contextItem} onPress={() => handleReply(longPressedMessage)}>
+                            <Ionicons name="arrow-undo" size={20} color={COLORS.text} />
+                            <Text style={styles.contextItemText}>Reply</Text>
+                        </TouchableOpacity>
+                        {['image', 'video', 'audio', 'document'].includes(longPressedMessage.message_type) && (
+                            <TouchableOpacity 
+                                style={styles.contextItem} 
+                                onPress={() => {
+                                    handleSaveMessageMedia(longPressedMessage);
+                                    setLongPressedMessage(null);
+                                }}
+                            >
+                                <Ionicons name="cloud-download-outline" size={20} color={COLORS.text} />
+                                <Text style={styles.contextItemText}>Save to Device</Text>
+                            </TouchableOpacity>
+                        )}
+                        {/* Edit — only for text, only within 1 hour */}
+                        {longPressedMessage.sender_id === currentUser?.id && (
+                            <>
+                                {longPressedMessage.message_type === 'text' &&
+                                 Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
+                                    <TouchableOpacity style={styles.contextItem} onPress={() => handleEdit(longPressedMessage)}>
+                                        <Ionicons name="create-outline" size={20} color={COLORS.text} />
+                                        <Text style={styles.contextItemText}>Edit</Text>
+                                    </TouchableOpacity>
                                 )}
-                            </View>
-                        </View>
-                    </TouchableWithoutFeedback>
-                </Modal>
+                                {/* Delete — only within 1 hour */}
+                                {Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
+                                    <TouchableOpacity style={styles.contextItem} onPress={() => {
+                                        handleDelete(longPressedMessage.id);
+                                        setLongPressedMessage(null);
+                                    }}>
+                                        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                                        <Text style={[styles.contextItemText, { color: '#ef4444' }]}>Delete</Text>
+                                    </TouchableOpacity>
+                                )}
+                                {(longPressedMessage.status === 'failed' || longPressedMessage.status === 'unsent') && (
+                                    <TouchableOpacity style={styles.contextItem} onPress={() => {
+                                        handleResend(longPressedMessage.id);
+                                        setLongPressedMessage(null);
+                                    }}>
+                                        <Ionicons name="refresh" size={20} color="#f59e0b" />
+                                        <Text style={[styles.contextItemText, { color: '#f59e0b' }]}>Resend</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </>
+                        )}
+                    </View>
+                </SafeOverlayContainer>
             )}
 
             {/* Video Player Modal */}
             {activeVideo && (
-                <Modal visible animationType="fade" transparent>
-                    <View style={styles.fullPlayerOverlay}>
-                        <TouchableOpacity style={styles.playerClose} onPress={() => setActiveVideo(null)}>
-                            <Ionicons name="close-circle" size={40} color="#FFF" />
-                        </TouchableOpacity>
-                        <View style={styles.videoPlaceholder}>
-                            <Ionicons name="play-circle" size={80} color="#FFF" />
-                            <Text style={styles.videoPlaceholderText}>Playing: {activeVideo.split('/').pop()}</Text>
-                        </View>
+                <SafeOverlayContainer
+                    visible={!!activeVideo}
+                    onClose={() => setActiveVideo(null)}
+                    animationType="fade"
+                    overlayStyle={styles.fullPlayerOverlay}
+                >
+                    <TouchableOpacity style={styles.playerClose} onPress={() => setActiveVideo(null)}>
+                        <Ionicons name="close-circle" size={40} color="#FFF" />
+                    </TouchableOpacity>
+                    <View style={styles.videoPlaceholder}>
+                        <Ionicons name="play-circle" size={80} color="#FFF" />
+                        <Text style={styles.videoPlaceholderText}>Playing: {activeVideo.split('/').pop()}</Text>
                     </View>
-                </Modal>
+                </SafeOverlayContainer>
             )}
 
             {/* File Preview Modal */}
-            <Modal visible={isPreviewVisible} animationType="slide" transparent>
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.previewModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <SafeBottomSheet
+                visible={isPreviewVisible}
+                onClose={() => { setSelectedFiles([]); setIsPreviewVisible(false); }}
+                contentStyle={[styles.previewModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
                         <View style={styles.previewHeader}>
                             <Text style={[styles.previewTitle, { color: colors.text }]}>Selected Files</Text>
                             <TouchableOpacity onPress={() => { setSelectedFiles([]); setIsPreviewVisible(false); }}>
@@ -2732,14 +2788,16 @@ export default function ChatScreen() {
                                 <Text style={styles.previewSendText}>Add</Text>
                             </TouchableOpacity>
                         </View>
-                    </View>
-                </View>
-            </Modal>
+            </SafeBottomSheet>
 
             {/* Image Cropper Modal */}
-            <Modal visible={isCropVisible} animationType="fade" transparent>
-                <View style={styles.cropOverlay}>
-                    <View style={[styles.cropCard, { backgroundColor: colors.card }]}>
+            <SafeModal
+                visible={isCropVisible}
+                onClose={() => {}}
+                dismissible={false}
+                contentStyle={[styles.cropCard, { backgroundColor: colors.card }]}
+                animationType="fade"
+            >
                         <View style={styles.cropHeader}>
                             <Text style={[styles.cropTitle, { color: colors.text }]}>Crop Image</Text>
                             <TouchableOpacity onPress={() => { 
@@ -2834,15 +2892,15 @@ export default function ChatScreen() {
                                 <Text style={styles.cropApplyText}>Apply</Text>
                             </TouchableOpacity>
                         </View>
-                    </View>
-                </View>
-            </Modal>
+            </SafeModal>
 
             {/* Attachment Menu Modal */}
-            <Modal visible={showAttachmentMenu} animationType="fade" transparent>
-                <TouchableWithoutFeedback onPress={() => setShowAttachmentMenu(false)}>
-                    <View style={styles.attachmentOverlay}>
-                        <View style={styles.attachmentMenu}>
+            <SafeBottomSheet
+                visible={showAttachmentMenu}
+                onClose={() => setShowAttachmentMenu(false)}
+                contentStyle={styles.attachmentMenu}
+                animationType="fade"
+            >
                             <TouchableOpacity style={styles.attachmentItem} onPress={() => { setShowAttachmentMenu(false); handlePickAndCropImage(); }}>
                                 <View style={[styles.attachmentIcon, { backgroundColor: '#3b82f6' }]}>
                                     <Ionicons name="image" size={22} color="#FFF" />
@@ -2861,15 +2919,15 @@ export default function ChatScreen() {
                                 </View>
                                 <Text style={styles.attachmentText}>Audio/Video</Text>
                             </TouchableOpacity>
-                        </View>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+            </SafeBottomSheet>
 
             {/* ========== MEMBERS LIST MODAL ========== */}
-            <Modal visible={showMembersList} animationType="slide" transparent onShow={fetchMembers}>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.membersModal}>
+            <SafeBottomSheet
+                visible={showMembersList}
+                onClose={() => setShowMembersList(false)}
+                onShow={fetchMembers}
+                contentStyle={styles.membersModal}
+            >
                         <View style={styles.membersHeader}>
                             <Text style={styles.membersTitle}>Group Members</Text>
                             <TouchableOpacity onPress={() => setShowMembersList(false)}>
@@ -2935,14 +2993,14 @@ export default function ChatScreen() {
                                 );
                             })}
                         </ScrollView>
-                    </View>
-                </View>
-            </Modal>
+            </SafeBottomSheet>
 
             {/* ========== PROFILE VIEW MODAL ========== */}
-            <Modal visible={!!viewingProfile} animationType="slide" transparent>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.profileModal}>
+            <SafeBottomSheet
+                visible={!!viewingProfile}
+                onClose={() => setViewingProfile(null)}
+                contentStyle={styles.profileModal}
+            >
                         <TouchableOpacity style={styles.profileClose} onPress={() => setViewingProfile(null)}>
                             <Ionicons name="close" size={24} color={COLORS.text} />
                         </TouchableOpacity>
@@ -3049,16 +3107,15 @@ export default function ChatScreen() {
                                 </View>
                             </ScrollView>
                         )}
-                    </View>
-                </View>
-            </Modal>
+            </SafeBottomSheet>
 
             {/* ========== EXPANDED AVATAR VIEW MODAL (Half-Screen) ========== */}
-            <Modal visible={!!expandedAvatarUrl} animationType="fade" transparent onRequestClose={() => setExpandedAvatarUrl(null)}>
-                <TouchableWithoutFeedback onPress={() => setExpandedAvatarUrl(null)}>
-                    <View style={styles.expandedAvatarOverlay}>
-                        <TouchableWithoutFeedback>
-                            <View style={[styles.expandedAvatarCard, { backgroundColor: colors.card }]}>
+            <SafeModal
+                visible={!!expandedAvatarUrl}
+                onClose={() => setExpandedAvatarUrl(null)}
+                contentStyle={[styles.expandedAvatarCard, { backgroundColor: colors.card }]}
+                animationType="fade"
+            >
                                 <View style={styles.expandedAvatarHeader}>
                                     <Text style={[styles.expandedAvatarTitle, { color: colors.text }]}>Profile Photo</Text>
                                     <TouchableOpacity onPress={() => setExpandedAvatarUrl(null)}>
@@ -3072,18 +3129,16 @@ export default function ChatScreen() {
                                         resizeMode="contain"
                                     />
                                 )}
-                            </View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+            </SafeModal>
 
             {/* ========== GROUP MENU MODAL ========== */}
-            <Modal visible={showGroupMenu} animationType="fade" transparent>
-                <TouchableWithoutFeedback onPress={() => setShowGroupMenu(false)}>
-                    <View style={styles.menuOverlay}>
-                        <TouchableWithoutFeedback>
-                            <View style={[styles.menuContent, { backgroundColor: colors.card }]}>
+            <SafeOverlayContainer
+                visible={showGroupMenu}
+                onClose={() => setShowGroupMenu(false)}
+                animationType="fade"
+                overlayStyle={[styles.menuOverlay, { paddingTop: insets.top + 50 }]}
+            >
+                <View style={[styles.menuContent, { backgroundColor: colors.card }]}>
                                 <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => { setShowGroupMenu(false); setShowSearch(!showSearch); }}>
                                     <Ionicons name="search-outline" size={20} color={colors.text} />
                                     <Text style={[styles.menuItemText, { color: colors.text }]}>Search Messages</Text>
@@ -3094,10 +3149,7 @@ export default function ChatScreen() {
                                     <Text style={[styles.menuItemText, { color: colors.text }]}>Group Members</Text>
                                 </TouchableOpacity>
                             </View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+            </SafeOverlayContainer>
 
             {/* Sticker Picker */}
             {showStickerPicker && (

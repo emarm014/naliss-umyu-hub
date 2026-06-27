@@ -8,7 +8,7 @@ import { useAuthStore } from '../../../src/stores';
 import { useCompositionStore } from '../../../src/stores/composition.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { differenceInSeconds } from 'date-fns';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQuizStore } from '../../../src/stores/quiz.store';
 
 export default function EssayEngineScreen() {
     useSentryScreen('EssayEngine');
@@ -108,13 +108,13 @@ export default function EssayEngineScreen() {
         const loadOrSetStartTime = async () => {
             if (!id) return;
             try {
-                const key = `poolStartedAt_${id}`;
-                const existing = await AsyncStorage.getItem(key);
+                const store = useQuizStore.getState();
+                const existing = store.getPoolStartTime(id);
                 if (existing) {
-                    setPoolStartedAt(parseInt(existing, 10));
+                    setPoolStartedAt(existing);
                 } else {
                     const now = Date.now();
-                    await AsyncStorage.setItem(key, now.toString());
+                    store.setPoolStartTime(id, now);
                     setPoolStartedAt(now);
                 }
             } catch(e) {}

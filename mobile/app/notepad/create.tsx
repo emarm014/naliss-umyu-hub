@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Alert, useColorScheme, KeyboardAvoidingView, Platform, Modal, Dimensions, FlatList } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Alert, useColorScheme, KeyboardAvoidingView, Platform, Dimensions, FlatList } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNoteStore, LocalNote } from '../../src/stores/note.store';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { useResourceStore } from '../../src/stores/resource.store';
+import { SafeOverlayContainer } from '../../src/components/common/overlays';
 import { ContinuousHandoutCamera } from '../../src/components/ContinuousHandoutCamera';
 
 export default function CreateNoteScreen() {
@@ -489,32 +490,30 @@ export default function CreateNoteScreen() {
                 )}
             </View>
 
-            <Modal
+            <SafeOverlayContainer
                 visible={isImageModalVisible}
-                transparent={true}
+                onClose={() => setIsImageModalVisible(false)}
                 animationType="fade"
-                onRequestClose={() => setIsImageModalVisible(false)}
+                overlayStyle={styles.modalBackground}
             >
-                <View style={styles.modalBackground}>
-                    <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsImageModalVisible(false)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
-                        <Ionicons name="close" size={32} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <FlatList
-                        data={mediaPaths}
-                        keyExtractor={(_, index) => index.toString()}
-                        horizontal
-                        pagingEnabled
-                        showsHorizontalScrollIndicator={false}
-                        initialScrollIndex={selectedImageIndex}
-                        getItemLayout={(_, index) => ({ length: windowWidth, offset: windowWidth * index, index })}
-                        renderItem={({ item }) => (
-                            <View style={{ width: windowWidth, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                                <Image source={{ uri: item }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
-                            </View>
-                        )}
-                    />
-                </View>
-            </Modal>
+                <TouchableOpacity style={[styles.modalCloseBtn, { top: Math.max(top + 10, 40) }]} onPress={() => setIsImageModalVisible(false)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                    <Ionicons name="close" size={32} color="#FFFFFF" />
+                </TouchableOpacity>
+                <FlatList
+                    data={mediaPaths}
+                    keyExtractor={(_, index) => index.toString()}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    initialScrollIndex={selectedImageIndex}
+                    getItemLayout={(_, index) => ({ length: windowWidth, offset: windowWidth * index, index })}
+                    renderItem={({ item }) => (
+                        <View style={{ width: windowWidth, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                            <Image source={{ uri: item }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
+                        </View>
+                    )}
+                />
+            </SafeOverlayContainer>
         </KeyboardAvoidingView>
     );
 }

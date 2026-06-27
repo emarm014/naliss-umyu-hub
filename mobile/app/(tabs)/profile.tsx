@@ -24,7 +24,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/Colors';
 import { Material } from '../../src/types';
 import { supabase } from '../../src/api/supabase/client';
-import { Modal, TextInput } from 'react-native';
+import { TextInput } from 'react-native';
+import { SafeModal, SafeBottomSheet } from '../../src/components/common/overlays';
 import { uploadLocalFileToCloudinary, uploadToCloudinary } from '../../src/lib/cloudinary';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme, useThemeStore } from '../../src/stores/theme.store';
@@ -972,14 +973,11 @@ export default function ProfileScreen() {
         </View>
 
         {/* Edit Profile Modal */}
-        <Modal
+        <SafeBottomSheet
             visible={isEditing}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => setIsEditing(false)}
+            onClose={() => setIsEditing(false)}
+            contentStyle={{ backgroundColor: colors.card }}
         >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile</Text>
                         <TouchableOpacity onPress={() => setIsEditing(false)}>
@@ -1082,19 +1080,14 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                         <View style={{ height: 40 }} />
                     </ScrollView>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
 
         {/* Security / Password Change Modal */}
-        <Modal
+        <SafeBottomSheet
             visible={showChangePassword}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => { setShowChangePassword(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}
+            onClose={() => { setShowChangePassword(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}
+            contentStyle={{ backgroundColor: colors.card }}
         >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Change Password</Text>
                         <TouchableOpacity onPress={() => { setShowChangePassword(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}>
@@ -1251,19 +1244,14 @@ export default function ProfileScreen() {
                         )}
                         <View style={{ height: 40 }} />
                     </ScrollView>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
 
         {/* Security Sub-Menu Modal */}
-        <Modal
+        <SafeBottomSheet
             visible={showSecurityMenu}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => setShowSecurityMenu(false)}
+            onClose={() => setShowSecurityMenu(false)}
+            contentStyle={{ backgroundColor: colors.card, height: 'auto', borderTopLeftRadius: 32, borderTopRightRadius: 32 }}
         >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { backgroundColor: colors.card, height: 'auto', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Security Settings</Text>
                         <TouchableOpacity onPress={() => setShowSecurityMenu(false)}>
@@ -1308,19 +1296,15 @@ export default function ProfileScreen() {
                           colors={colors}
                         />
                     </View>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
 
         {/* Manage Active Sessions Modal */}
-        <Modal
+        <SafeBottomSheet
             visible={showManageSessions}
+            onClose={() => setShowManageSessions(false)}
+            contentStyle={{ backgroundColor: colors.card }}
             animationType="fade"
-            transparent={true}
-            onRequestClose={() => setShowManageSessions(false)}
         >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Manage Active Sessions</Text>
                         <TouchableOpacity onPress={() => setShowManageSessions(false)} disabled={isRevokingSessions}>
@@ -1365,19 +1349,14 @@ export default function ProfileScreen() {
                             )}
                         </TouchableOpacity>
                     </View>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
 
         {/* Device Management Modal */}
-        <Modal
+        <SafeBottomSheet
             visible={showDeviceLogs}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => setShowDeviceLogs(false)}
+            onClose={() => setShowDeviceLogs(false)}
+            contentStyle={{ backgroundColor: colors.card }}
         >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <View style={{ flex: 1, marginRight: 16 }}>
                             <Text style={[styles.modalTitle, { color: colors.text }]}>Device Management</Text>
@@ -1458,25 +1437,20 @@ export default function ProfileScreen() {
                             <View style={{ height: 40 }} />
                         </ScrollView>
                     )}
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
 
         {/* Password Confirmation Modal */}
-        <Modal
+        <SafeModal
             visible={confirmPasswordVisible}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => {
-                if (!isVerifyingPassword) {
-                    setConfirmPasswordVisible(false);
-                    setConfirmPasswordInput('');
-                    setSessionToTerminate(null);
-                }
+            onClose={() => {
+                setConfirmPasswordVisible(false);
+                setConfirmPasswordInput('');
+                setSessionToTerminate(null);
             }}
+            dismissible={!isVerifyingPassword}
+            contentStyle={{ backgroundColor: colors.card }}
+            animationType="fade"
         >
-            <View style={styles.avatarModalOverlay}>
-                <View style={[styles.avatarModalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.avatarModalHeader}>
                         <Text style={[styles.avatarModalTitle, { color: colors.text }]}>Confirm Password</Text>
                         <TouchableOpacity
@@ -1542,19 +1516,14 @@ export default function ProfileScreen() {
                             )}
                         </TouchableOpacity>
                     </View>
-                </View>
-            </View>
-        </Modal>
+        </SafeModal>
 
         {/* Notifications Settings Modal */}
-        <Modal
+        <SafeBottomSheet
             visible={showNotifications}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={closeNotificationsModal}
+            onClose={closeNotificationsModal}
+            contentStyle={{ backgroundColor: colors.card }}
         >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Notifications</Text>
                         <TouchableOpacity onPress={closeNotificationsModal}>
@@ -1623,19 +1592,14 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                         <View style={{ height: 40 }} />
                     </ScrollView>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
 
         {/* Display / Theme Settings Modal */}
-        <Modal
+        <SafeBottomSheet
             visible={showDisplay}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => setShowDisplay(false)}
+            onClose={() => setShowDisplay(false)}
+            contentStyle={{ backgroundColor: colors.card }}
         >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Display</Text>
                         <TouchableOpacity onPress={() => setShowDisplay(false)}>
@@ -1714,9 +1678,7 @@ export default function ProfileScreen() {
 
                         <View style={{ height: 40 }} />
                     </ScrollView>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
 
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.textMuted }]}>NALISS UMYU HUB v1.0.0</Text>
@@ -1724,14 +1686,12 @@ export default function ProfileScreen() {
         </View>
       </View>
       {/* Avatar Confirmation Modal — inline JSX, NOT a nested component (prevents shaking) */}
-      <Modal
+      <SafeModal
         visible={showAvatarConfirm}
-        transparent={true}
+        onClose={() => setShowAvatarConfirm(false)}
+        contentStyle={{ backgroundColor: colors.card }}
         animationType="fade"
-        onRequestClose={() => setShowAvatarConfirm(false)}
       >
-        <View style={styles.avatarModalOverlay}>
-          <View style={[styles.avatarModalContent, { backgroundColor: colors.card }]}>
             <View style={styles.avatarModalHeader}>
               <Text style={[styles.avatarModalTitle, { color: colors.text }]}>Confirm New Photo</Text>
               <TouchableOpacity onPress={() => setShowAvatarConfirm(false)}>
@@ -1769,9 +1729,7 @@ export default function ProfileScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </SafeModal>
     </ScrollView>
   );
 }

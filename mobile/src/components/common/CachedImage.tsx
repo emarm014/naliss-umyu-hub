@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Image, ImageStyle, StyleProp, View, ActivityIndicator } from 'react-native';
+import { Image, ImageStyle, StyleProp, View, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getAssetCache, upsertAssetCache } from '../../lib/database';
 import { useThemeStore } from '../../stores/theme.store';
+import { saveMediaToDevice } from '../../utils/mediaSaver';
+import { showToast } from './overlays';
 
 interface CachedImageProps {
     entityId: string;
@@ -16,6 +18,17 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
     const [localUri, setLocalUri] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const { colors, isDark } = useThemeStore();
+
+    const handleLongPress = async () => {
+        const uriToSave = localUri || remoteUrl;
+        if (!uriToSave) return;
+        const result = await saveMediaToDevice(uriToSave, 'image');
+        if (result.success) {
+            showToast('✓ Saved to Device');
+        } else {
+            Alert.alert('Save Failed', result.error || 'Could not save the image to your device.');
+        }
+    };
 
     useEffect(() => {
         let isMounted = true;
@@ -82,7 +95,11 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
     }
 
     return (
-        <View style={[style, { overflow: 'hidden' }]}>
+        <TouchableOpacity 
+            style={[style, { overflow: 'hidden' }]} 
+            onLongPress={handleLongPress}
+            activeOpacity={0.9}
+        >
             <Image
                 source={{ uri: localUri || remoteUrl! }}
                 style={{ width: '100%', height: '100%' }}
@@ -94,6 +111,6 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     <ActivityIndicator color="#059669" size="small" />
                 </View>
             )}
-        </View>
+        </TouchableOpacity>
     );
 }

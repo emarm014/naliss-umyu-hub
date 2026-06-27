@@ -10,16 +10,16 @@ export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // Smart safe area buffer for Android:
-  // - Gesture nav (insets.bottom ~15-40): Add 8px buffer to avoid accidental swipe gestures.
-  // - 3-Button nav (insets.bottom > 40): No buffer needed, avoid wasting screen space.
-  // - Legacy / Non-translucent (insets.bottom = 0): No buffer needed.
-  let androidBottomBuffer = 0;
-  if (Platform.OS === 'android') {
-    if (insets.bottom > 0 && insets.bottom < 40) {
-      androidBottomBuffer = 8;
-    }
-  }
+  // Ensure there is always a minimum visual gap, but push higher if safe area requires it
+  const TAB_BAR_HEIGHT = 72;
+  const MIN_BOTTOM_MARGIN = 12;
+
+  // The actual distance from the bottom of the screen
+  const safeBottomOffset = Math.max(insets.bottom, MIN_BOTTOM_MARGIN);
+
+  // The padding needed for the screens behind the tab bar so content isn't hidden
+  // TAB_BAR_HEIGHT + safeBottomOffset + Extra Visual Padding
+  const containerPaddingBottom = TAB_BAR_HEIGHT + safeBottomOffset + 16;
 
   const groups = useGroupStore((state) => state.groups);
   const isBadgeCleared = useGroupStore((state) => state.isBadgeCleared);
@@ -77,7 +77,7 @@ export default function TabsLayout() {
       }}
       sceneContainerStyle={{
         backgroundColor: colors.background,
-        paddingBottom: Platform.OS === 'ios' ? (insets.bottom > 0 ? 104 : 88) : 88,
+        paddingBottom: containerPaddingBottom,
       }}
       screenOptions={{
         headerShown: false,
@@ -86,7 +86,7 @@ export default function TabsLayout() {
         
         tabBarStyle: {
           position: 'absolute',
-          bottom: Platform.OS === 'ios' ? (insets.bottom > 0 ? insets.bottom - 4 : 12) : 12,
+          bottom: safeBottomOffset,
           left: 16,
           right: 16,
           height: 72,

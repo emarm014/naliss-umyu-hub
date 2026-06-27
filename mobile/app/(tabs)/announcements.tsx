@@ -15,7 +15,7 @@ import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
-import { Modal } from 'react-native';
+import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 const { width } = Dimensions.get('window');
 
 const CATEGORIES = ['All', 'Academic', 'Social', 'Event', 'General'];
@@ -244,11 +244,9 @@ function RegistrationOverlay({ poolId, user, onClose }: { poolId: string, user: 
 
     if (isLoading) {
         return (
-            <Modal transparent visible animationType="fade">
-                <View style={overlayStyles.overlayBg}>
-                    <ActivityIndicator size="large" color={COLORS.primary} />
-                </View>
-            </Modal>
+            <SafeOverlayContainer visible={isLoading} animationType="fade" overlayStyle={{ justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+            </SafeOverlayContainer>
         );
     }
 
@@ -284,9 +282,11 @@ function RegistrationOverlay({ poolId, user, onClose }: { poolId: string, user: 
     };
 
     return (
-        <Modal transparent visible animationType="slide">
-            <View style={overlayStyles.overlayBg}>
-                <View style={[overlayStyles.modalContainer, { backgroundColor: colors.card }]}>
+        <SafeBottomSheet
+            visible={true}
+            onClose={onClose}
+            contentStyle={[overlayStyles.modalContainer, { backgroundColor: colors.card }]}
+        >
                     <View style={overlayStyles.modalHeader}>
                         <Text style={[overlayStyles.modalTitle, { color: colors.text }]}>Apply to Participate</Text>
                         <TouchableOpacity onPress={onClose} style={overlayStyles.closeBtn}>
@@ -340,9 +340,7 @@ function RegistrationOverlay({ poolId, user, onClose }: { poolId: string, user: 
                             </TouchableOpacity>
                         )}
                     </ScrollView>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
     );
 }
 

@@ -10,6 +10,7 @@ import ProtectedRoute from './components/layout/ProtectedRoute';
 import RoleProtectedRoute from './components/layout/RoleProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import { OverlayManager } from './components/common/overlays';
 import StudentsPage from './pages/StudentsPage';
 import AnnouncementsPage from './pages/AnnouncementsPage';
 import EventsPage from './pages/EventsPage';
@@ -75,6 +76,9 @@ function App() {
 
         {/* PWA install prompt — appears after 3s if app is installable */}
         <PWAInstallPrompt />
+
+        {/* Global Overlay Manager */}
+        <OverlayManager />
 
         <Routes>
           {/* Public route */}

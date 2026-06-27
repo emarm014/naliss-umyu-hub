@@ -1,0 +1,15 @@
+- [x] Create Reusable Save Service & Overlays
+  - [x] Create `GlobalToast.tsx`
+  - [x] Update overlays barrel `index.ts`
+  - [x] Create `mediaSaver.ts`
+- [x] Update UI and Screen Layouts
+  - [x] Update `CachedImage.tsx`
+  - [x] Update `UniversalViewer.tsx`
+  - [x] Update `viewer.tsx`
+  - [x] Update chat `[id].tsx`
+- [x] Cleanup Unused Code
+  - [x] Delete `fileSaver.ts`
+  - [x] Delete `Toast.tsx`
+- [x] Verification
+  - [x] Run type-checking command: `npx tsc --noEmit`
+  - [x] Verify all compiler checks pass with 0 errors

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, useColorScheme, StyleSheet, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNoteStore, LocalNote } from '../../src/stores/note.store';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { format } from 'date-fns';
@@ -16,6 +17,11 @@ export default function NotepadDashboard() {
     const userLevel = profile?.level || 'All';
 
     const [searchQuery, setSearchQuery] = useState('');
+
+    const insets = useSafeAreaInsets();
+    const FAB_MIN_BOTTOM = 24;
+    const safeBottomOffset = Math.max(insets.bottom + 16, FAB_MIN_BOTTOM);
+    const containerPaddingBottom = safeBottomOffset + 56 + 16;
 
     // O(1) performance lookup mapping (Memoized)
     const filteredNotes = useMemo(() => {
@@ -88,7 +94,7 @@ export default function NotepadDashboard() {
         listContent: {
             paddingTop: 20,
             paddingHorizontal: 16,
-            paddingBottom: 100,
+            paddingBottom: containerPaddingBottom,
         },
         noteCard: {
             backgroundColor: isDark ? '#1E1E1E' : '#FFFFFF',
@@ -146,7 +152,7 @@ export default function NotepadDashboard() {
         },
         fab: {
             position: 'absolute',
-            bottom: 24,
+            bottom: safeBottomOffset,
             right: 24,
             width: 56,
             height: 56,

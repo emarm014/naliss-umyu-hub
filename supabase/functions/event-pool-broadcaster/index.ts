@@ -48,9 +48,13 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: 'No notification needed for this state.' }), { status: 200 });
     }
 
-    // 3. Batch Fetch Target User Tokens (based on participation rule)
-    // For simplicity, assuming 'open' sends to all active tokens, otherwise filter by constraints
-    let tokenQuery = supabase.from('user_push_tokens').select('push_token');
+    // 3. Batch Fetch Target User Tokens (based on participation rule and user preferences)
+    // Ensure we join the public.users table (via foreign key) to filter active users who have not opted out of events.
+    let tokenQuery = supabase
+      .from('user_push_tokens')
+      .select('push_token, users!inner(notif_events, status)')
+      .eq('users.status', 'active')
+      .neq('users.notif_events', false);
     
     if (pool.participation_rule !== 'open') {
       // Future expansion: filter tokenQuery based on pool.target_constraints

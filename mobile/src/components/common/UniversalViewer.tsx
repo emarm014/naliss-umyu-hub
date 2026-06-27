@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Image,
   TouchableOpacity,
   Dimensions,
@@ -23,7 +22,9 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
 import * as Sentry from '@sentry/react-native';
-import { saveCategorizedFileToDevice } from '../../utils/fileSaver';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeOverlayContainer, showToast } from './overlays';
+import { saveCategorizedFileToDevice, saveMediaToDevice } from '../../utils/mediaSaver';
 import Pdf from 'react-native-pdf';
 
 const { width, height } = Dimensions.get('window');
@@ -482,8 +483,6 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   if (!isVisible) return null;
 
-
-
   const saveToDevice = async () => {
     try {
       const uriToSave = localUri || fileUri;
@@ -499,14 +498,17 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
       // Normalize to file:// URI
       const fileUriNorm = localFile.startsWith('file://') ? localFile : `file://${localFile}`;
-      const realFileName = extractFileNameFromUrl(fileUri, fileName);
 
-      // Call the new cross-platform public saving utility
-      await saveCategorizedFileToDevice(fileUriNorm, realFileName);
+      // Call the new background save utility directly
+      const result = await saveMediaToDevice(fileUriNorm, fileType, fileName);
 
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 3000);
-      Alert.alert('Saved', `"${realFileName}" has been saved to your device.`);
+      if (result.success) {
+        setIsSaved(true);
+        showToast('✓ Saved to Device');
+        setTimeout(() => setIsSaved(false), 3000);
+      } else {
+        Alert.alert('Save Failed', result.error || 'Could not save the file to your device.');
+      }
     } catch (err: any) {
       Sentry.captureException(err, { tags: { location: 'UniversalViewer.saveToDevice' }, extra: { fileType, fileName } });
       Alert.alert('Error', 'Could not save the file to public storage. Please try again.');
@@ -531,7 +533,13 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   };
 
   return (
-    <Modal visible={isVisible} animationType="slide" transparent>
+    <SafeOverlayContainer
+      visible={isVisible}
+      onClose={onClose}
+      animationType="slide-up"
+      dismissible={false}
+      overlayStyle={StyleSheet.absoluteFill}
+    >
       <BlurView intensity={80} style={StyleSheet.absoluteFill}>
         <View style={[styles.container, isLandscape && { marginTop: 0, borderRadius: 0 }]}>
           {/* Header */}
@@ -664,7 +672,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           )}
         </View>
       </BlurView>
-    </Modal>
+    </SafeOverlayContainer>
   );
 };
 
@@ -724,6 +732,8 @@ function MobileVisualScan({ url }: { url: string }) {
 // Fallback: expo-av Video component (tap "Native Player" button)
 function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
   const [useNative, setUseNative] = React.useState(false);
+  const insets = useSafeAreaInsets();
+  const safeBottomOffset = Math.max(insets.bottom + 8, 16);
 
   // Normalize URI for expo-av: local paths must have file:// prefix
   // The web player handles bare paths via allowFileAccess, but expo-av requires file://
@@ -772,7 +782,7 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
         {!isLocal && (
           <TouchableOpacity
             onPress={() => setUseNative(false)}
-            style={videoStyles.switchBtn}
+            style={[videoStyles.switchBtn, { bottom: safeBottomOffset }]}
           >
             <Ionicons name="globe-outline" size={14} color="#fff" />
             <Text style={videoStyles.switchBtnText}>Web Player</Text>
@@ -821,7 +831,7 @@ gap:12px;color:#ef4444;padding:24px;text-align:center;min-height:60vh}
       />
       <TouchableOpacity
         onPress={() => setUseNative(true)}
-        style={videoStyles.switchBtn}
+        style={[videoStyles.switchBtn, { bottom: safeBottomOffset }]}
       >
         <Ionicons name="phone-portrait-outline" size={14} color="#fff" />
         <Text style={videoStyles.switchBtnText}>Native Player</Text>
@@ -833,7 +843,6 @@ gap:12px;color:#ef4444;padding:24px;text-align:center;min-height:60vh}
 const videoStyles = StyleSheet.create({
   switchBtn: {
     position: 'absolute',
-    bottom: 16,
     right: 16,
     flexDirection: 'row',
     alignItems: 'center',

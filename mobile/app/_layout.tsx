@@ -104,6 +104,7 @@ import { ProtectedRoute } from '../src/components/ProtectedRoute';
 import { supabase } from '../src/api/supabase/client';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
 import { useHeartbeat, HeartbeatBanner } from '../src/hooks/useHeartbeat';
+import { OverlayManager } from '../src/components/common/overlays';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSignupStore } from '../src/stores/signup.store';
 import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
@@ -442,6 +443,7 @@ function RootLayoutNav() {
       </Stack>
       <GroupMembershipHandler />
       <HeartbeatBanner />
+      <OverlayManager />
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </ProtectedRoute>
   );

@@ -2,7 +2,7 @@ export * from './announcement.store';
 export * from './event.store';
 export * from './resource.store';
 export * from './network.store';
-export * from './ui.store';
+export * from './quiz.store';
 export * from './directory.store';
 export * from './signup.store';
 export * from './auth.store';

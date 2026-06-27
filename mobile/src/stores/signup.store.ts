@@ -51,6 +51,13 @@ interface SignupState {
 
   // Reset when done or unmounting
   reset: () => void;
+
+  // OTP lock state
+  otpResendCounts: Record<string, number>;
+  otpResendLocks: Record<string, number>;
+  getOTPResendState: (email: string) => { count: number; lockedUntil: number | null };
+  incrementOTPResendCount: (email: string) => { count: number; lockedUntil: number | null };
+  clearOTPResendState: (email: string) => void;
 }
 
 const initialState = {
@@ -67,6 +74,8 @@ const initialState = {
   currentStep: undefined,
   isGoogleDelaying: false,
   lastActivityTime: null as number | null,
+  otpResendCounts: {} as Record<string, number>,
+  otpResendLocks: {} as Record<string, number>,
 };
 
 export const useSignupStore = create<SignupState>()(
@@ -119,15 +128,65 @@ export const useSignupStore = create<SignupState>()(
         return Date.now() - lastActivityTime <= SIGNUP_TIMEOUT_MS;
       },
       reset: () => set(initialState),
+
+      getOTPResendState: (email) => {
+        const { otpResendCounts, otpResendLocks } = get();
+        const count = otpResendCounts[email] ?? 0;
+        const lockedUntil = otpResendLocks[email] ?? null;
+
+        if (lockedUntil && Date.now() >= lockedUntil) {
+          set((state) => {
+            const nextCounts = { ...state.otpResendCounts };
+            const nextLocks = { ...state.otpResendLocks };
+            delete nextCounts[email];
+            delete nextLocks[email];
+            return { otpResendCounts: nextCounts, otpResendLocks: nextLocks };
+          });
+          return { count: 0, lockedUntil: null };
+        }
+
+        return { count, lockedUntil };
+      },
+
+      incrementOTPResendCount: (email) => {
+        const { count } = get().getOTPResendState(email);
+        const next = count + 1;
+
+        let lockedUntil: number | null = null;
+        if (next >= 3) {
+          lockedUntil = Date.now() + 30 * 60 * 1000;
+        }
+
+        set((state) => ({
+          otpResendCounts: {
+            ...state.otpResendCounts,
+            [email]: next,
+          },
+          otpResendLocks: {
+            ...state.otpResendLocks,
+            ...(lockedUntil ? { [email]: lockedUntil } : {}),
+          },
+        }));
+
+        return { count: next, lockedUntil };
+      },
+
+      clearOTPResendState: (email) => {
+        set((state) => {
+          const nextCounts = { ...state.otpResendCounts };
+          const nextLocks = { ...state.otpResendLocks };
+          delete nextCounts[email];
+          delete nextLocks[email];
+          return { otpResendCounts: nextCounts, otpResendLocks: nextLocks };
+        });
+      },
     }),
     {
       name: 'naliss-signup-session',
       storage: createJSONStorage(() => AsyncStorage),
-      // Persist everything except the Google delaying flag
       partialize: (state) => ({
         provider: state.provider,
         email: state.email,
-        // Do NOT persist password in plain text — user re-enters it on resume
         access_token: state.access_token,
         refresh_token: state.refresh_token,
         full_name: state.full_name,
@@ -137,6 +196,8 @@ export const useSignupStore = create<SignupState>()(
         department: state.department,
         currentStep: state.currentStep,
         lastActivityTime: state.lastActivityTime,
+        otpResendCounts: state.otpResendCounts,
+        otpResendLocks: state.otpResendLocks,
       }),
     }
   )

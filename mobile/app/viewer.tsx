@@ -5,7 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { saveCategorizedFileToDevice } from '../src/utils/fileSaver';
+import { saveCategorizedFileToDevice, saveMediaToDevice } from '../src/utils/mediaSaver';
+import { showToast } from '../src/components/common/overlays';
 import { BlurView } from 'expo-blur';
 import { UniversalViewer } from '../src/components/common/UniversalViewer';
 
@@ -45,12 +46,18 @@ export default function ViewerScreen() {
   const saveToDevice = async () => {
     if (!activeItem) return;
     try {
-      await saveCategorizedFileToDevice(
+      const result = await saveMediaToDevice(
         activeItem.media_url,
-        activeItem.name || `media_${Date.now()}.jpg`
+        activeItem.content_type || 'image',
+        activeItem.name
       );
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 3000);
+      if (result.success) {
+        setIsSaved(true);
+        showToast('✓ Saved to Device');
+        setTimeout(() => setIsSaved(false), 3000);
+      } else {
+        Alert.alert('Save Failed', result.error || 'Could not save the file to your device.');
+      }
     } catch (error) {
       Alert.alert('Save Failed', 'Could not save the file to your device.');
     }

@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, TouchableOpacity,
   Image, RefreshControl, ActivityIndicator, Dimensions,
-  StatusBar, Platform, Modal, Alert,
+  StatusBar, Platform, Alert,
 } from 'react-native';
+import { SafeModal } from '../../src/components/common/overlays';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -562,14 +563,12 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Avatar Confirmation Modal */}
-      <Modal
+      <SafeModal
         visible={showAvatarConfirm}
-        transparent={true}
+        onClose={() => setShowAvatarConfirm(false)}
+        contentStyle={{ backgroundColor: colors.card }}
         animationType="fade"
-        onRequestClose={() => setShowAvatarConfirm(false)}
       >
-        <View style={styles.avatarModalOverlay}>
-          <View style={[styles.avatarModalContent, { backgroundColor: colors.card }]}>
             <View style={styles.avatarModalHeader}>
               <Text style={[styles.avatarModalTitle, { color: colors.text }]}>Confirm New Photo</Text>
               <TouchableOpacity onPress={() => setShowAvatarConfirm(false)}>
@@ -607,19 +606,15 @@ export default function HomeScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </SafeModal>
 
       {/* Student Privacy Snapshot Modal */}
-      <Modal
+      <SafeModal
         visible={showSnapshot}
-        transparent={true}
+        onClose={() => setShowSnapshot(false)}
+        contentStyle={{ backgroundColor: colors.card, alignItems: 'center', paddingVertical: 40 }}
         animationType="fade"
-        onRequestClose={() => setShowSnapshot(false)}
       >
-        <View style={styles.avatarModalOverlay}>
-          <View style={[styles.avatarModalContent, { backgroundColor: colors.card, alignItems: 'center', paddingVertical: 40 }]}>
             <Image 
               source={{ uri: avatar, cache: 'force-cache' }} 
               style={{ width: 160, height: 160, borderRadius: 80, marginBottom: 20, borderWidth: 4, borderColor: theme.accentColor + '50' }} 
@@ -633,9 +628,7 @@ export default function HomeScreen() {
             >
               <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Close</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      </SafeModal>
     </View>
   );
 }

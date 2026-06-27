@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.fetch_admin_analytics() TO authenticated;

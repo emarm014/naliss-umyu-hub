@@ -8,7 +8,6 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
@@ -20,55 +19,6 @@ const OTP_LENGTH = 6;
 const MAX_RESENDS = 3;
 const RESEND_LOCK_MINUTES = 30;
 const INITIAL_COOLDOWN = 60;
-
-const resendCountKey = (email: string) => `otp_resend_count_${email}`;
-const resendLockKey  = (email: string) => `otp_resend_lock_${email}`;
-
-async function getResendState(email: string): Promise<{ count: number; lockedUntil: number | null }> {
-  try {
-    const [countStr, lockStr] = await Promise.all([
-      AsyncStorage.getItem(resendCountKey(email)),
-      AsyncStorage.getItem(resendLockKey(email)),
-    ]);
-    const count = countStr ? parseInt(countStr, 10) : 0;
-    const lockedUntil = lockStr ? parseInt(lockStr, 10) : null;
-    if (lockedUntil && Date.now() >= lockedUntil) {
-      await Promise.all([
-        AsyncStorage.removeItem(resendCountKey(email)),
-        AsyncStorage.removeItem(resendLockKey(email)),
-      ]);
-      return { count: 0, lockedUntil: null };
-    }
-    return { count, lockedUntil };
-  } catch {
-    return { count: 0, lockedUntil: null };
-  }
-}
-
-async function incrementResendCount(email: string): Promise<{ count: number; lockedUntil: number | null }> {
-  try {
-    const { count } = await getResendState(email);
-    const next = count + 1;
-    await AsyncStorage.setItem(resendCountKey(email), next.toString());
-    if (next >= MAX_RESENDS) {
-      const lockedUntil = Date.now() + RESEND_LOCK_MINUTES * 60 * 1000;
-      await AsyncStorage.setItem(resendLockKey(email), lockedUntil.toString());
-      return { count: next, lockedUntil };
-    }
-    return { count: next, lockedUntil: null };
-  } catch {
-    return { count: 0, lockedUntil: null };
-  }
-}
-
-async function clearResendState(email: string): Promise<void> {
-  try {
-    await Promise.all([
-      AsyncStorage.removeItem(resendCountKey(email)),
-      AsyncStorage.removeItem(resendLockKey(email)),
-    ]);
-  } catch { /* silent */ }
-}
 
 function formatLockCountdown(ms: number): string {
   const totalSec = Math.ceil(ms / 1000);
@@ -117,7 +67,7 @@ export default function RegisterOTP() {
           setLockCountdown(null);
           setLockedUntilMs(null);
           setResendCount(0);
-          clearResendState(email as string);
+          useSignupStore.getState().clearOTPResendState(email as string);
         }
         return;
       }
@@ -246,7 +196,7 @@ export default function RegisterOTP() {
       }
       store.touchActivity();
 
-      const { count, lockedUntil } = await getResendState(email as string);
+      const { count, lockedUntil } = store.getOTPResendState(email as string);
       if (isMounted.current) {
         setResendCount(count);
         if (lockedUntil) setLockedUntilMs(lockedUntil);
@@ -344,7 +294,7 @@ export default function RegisterOTP() {
       }
 
       succeeded = true;
-      await clearResendState(email as string);
+      store.clearOTPResendState(email as string);
 
       if (!isMounted.current) {
         store.setIsGoogleDelaying(false);
@@ -378,7 +328,7 @@ export default function RegisterOTP() {
     if (cooldown > 0 || lockedUntilMs || isResending) return;
     setIsResending(true);
     try {
-      const { lockedUntil } = await incrementResendCount(email as string);
+      const { lockedUntil } = useSignupStore.getState().incrementOTPResendCount(email as string);
       if (isMounted.current) {
         setResendCount(c => c + 1);
         if (lockedUntil) {

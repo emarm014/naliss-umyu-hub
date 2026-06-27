@@ -11,7 +11,6 @@ import {
   Image,
   Dimensions,
   Platform,
-  Modal,
   Alert,
   Linking,
   KeyboardAvoidingView,
@@ -20,6 +19,7 @@ import {
 import { useResourceStore, useDirectoryStore, useAuthStore } from '../../src/stores';
 import { downloadFile, extractFileNameFromUrl } from '../../src/utils/download';
 import { NalissLogo } from '../../src/components/NalissLogo';
+import { SafeBottomSheet } from '../../src/components/common/overlays';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { Material, Course, Lecturer, Executive, AcademicLevel } from '../../src/types';
 import { CachedImage } from '../../src/components/common/CachedImage';
@@ -1036,9 +1036,7 @@ function DetailModal({ visible, onClose, title, subtitle, image, details, isExec
     const initials = title.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
 
     return (
-        <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-            <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
+        <SafeBottomSheet visible={visible} onClose={onClose} contentStyle={styles.modalContent}>
                     {/* Gradient header */}
                     <LinearGradient colors={gradColors} style={styles.modalGradientHeader} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                         <TouchableOpacity style={styles.modalCloseBtn} onPress={onClose}>
@@ -1086,9 +1084,7 @@ function DetailModal({ visible, onClose, title, subtitle, image, details, isExec
                         })}
                         <View style={{ height: 32 }} />
                     </ScrollView>
-                </View>
-            </View>
-        </Modal>
+        </SafeBottomSheet>
     );
 }
 

@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Image, SafeAreaView } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   onFinishCapture: (uris: string[]) => void;
@@ -12,6 +13,10 @@ export const ContinuousHandoutCamera = ({ onFinishCapture, onClose }: Props) => 
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [localQueue, setLocalQueue] = useState<string[]>([]);
+
+  const insets = useSafeAreaInsets();
+  const DASHBOARD_MIN_BOTTOM = 40;
+  const safeBottomOffset = Math.max(insets.bottom + 16, DASHBOARD_MIN_BOTTOM);
 
   if (!permission) return <View style={styles.container} />;
   
@@ -55,7 +60,7 @@ export const ContinuousHandoutCamera = ({ onFinishCapture, onClose }: Props) => 
         </SafeAreaView>
 
         
-        <View style={styles.bottomDashboardContainer}>
+        <View style={[styles.bottomDashboardContainer, { bottom: safeBottomOffset }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbnailCarousel}>
             {localQueue.map((uri, index) => (
               <Image key={index} source={{ uri }} style={styles.queuedThumbImage} />
@@ -85,7 +90,7 @@ const styles = StyleSheet.create({
   counterTitle: { color: '#FFF', fontWeight: '600', fontSize: 16, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   finishPillBtn: { backgroundColor: '#005A36', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   finishText: { color: '#FFF', fontWeight: 'bold' },
-  bottomDashboardContainer: { position: 'absolute', bottom: 40, left: 0, right: 0, alignItems: 'center' },
+  bottomDashboardContainer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   thumbnailCarousel: { maxHeight: 70, marginBottom: 20, paddingHorizontal: 20, width: '100%' },
   queuedThumbImage: { width: 50, height: 70, borderRadius: 4, marginRight: 10, borderWidth: 1, borderColor: '#FFF' },
   shutterRowAlignment: { justifyContent: 'center', alignItems: 'center' },

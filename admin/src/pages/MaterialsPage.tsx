@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 import { useAuthStore } from '../store/auth.store';
 import { 
@@ -51,7 +52,15 @@ const materialTypeConfig = {
 };
 
 export default function MaterialsPage() {
-  const { materials: allMaterials, courses, syncAll, removeMaterial, refreshAnalytics } = useAdminDataStore();
+  const { materials: allMaterials, courses, syncAll, removeMaterial, refreshAnalytics } = useAdminDataStore(
+    useShallow((state) => ({
+      materials: state.materials,
+      courses: state.courses,
+      syncAll: state.syncAll,
+      removeMaterial: state.removeMaterial,
+      refreshAnalytics: state.refreshAnalytics,
+    }))
+  );
   const { user, profile, permissions } = useAuthStore();
   const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
 

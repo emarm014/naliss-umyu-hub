@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import type { Event, AcademicLevel } from '../types';
+import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
@@ -42,7 +43,16 @@ const statusConfig = {
 };
 
 export default function EventsPage() {
-  const { events: allEvents, isSyncing, error: storeError, syncAll, removeEvent, refreshAnalytics } = useAdminDataStore();
+  const { events: allEvents, isSyncing, error: storeError, syncAll, removeEvent, refreshAnalytics } = useAdminDataStore(
+    useShallow((state) => ({
+      events: state.events,
+      isSyncing: state.isSyncing,
+      error: state.error,
+      syncAll: state.syncAll,
+      removeEvent: state.removeEvent,
+      refreshAnalytics: state.refreshAnalytics,
+    }))
+  );
   
   useEffect(() => {
     syncAll();

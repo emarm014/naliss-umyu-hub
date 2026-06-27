@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
+import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 import type { PastQuestion } from '../types';
 import ErrorState from '../components/ui/ErrorState';
@@ -61,7 +62,17 @@ export default function PastQuestionsPage() {
     syncAll,
     removePastQuestion,
     refreshAnalytics,
-  } = useAdminDataStore();
+  } = useAdminDataStore(
+    useShallow((state) => ({
+      pastQuestions: state.pastQuestions,
+      courses: state.courses,
+      isSyncing: state.isSyncing,
+      error: state.error,
+      syncAll: state.syncAll,
+      removePastQuestion: state.removePastQuestion,
+      refreshAnalytics: state.refreshAnalytics,
+    }))
+  );
 
 
   const [searchQuery, setSearchQuery] = useState('');

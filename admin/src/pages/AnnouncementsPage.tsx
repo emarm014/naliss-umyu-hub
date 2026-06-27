@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import type { Announcement } from '../types';
+import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 import ErrorState from '../components/ui/ErrorState';
 import {
@@ -60,7 +61,16 @@ export default function AnnouncementsPage() {
   const [actioningId, setActioningId] = useState<string | null>(null); // tracks which card is mid-action
 
   const { profile, permissions } = useAuthStore();
-  const { announcements: allAnnouncements, isSyncing, error: storeError, syncAll, removeAnnouncement, refreshAnalytics } = useAdminDataStore();
+  const { announcements: allAnnouncements, isSyncing, error: storeError, syncAll, removeAnnouncement, refreshAnalytics } = useAdminDataStore(
+    useShallow((state) => ({
+      announcements: state.announcements,
+      isSyncing: state.isSyncing,
+      error: state.error,
+      syncAll: state.syncAll,
+      removeAnnouncement: state.removeAnnouncement,
+      refreshAnalytics: state.refreshAnalytics,
+    }))
+  );
   
   useEffect(() => {
     syncAll();

@@ -31,8 +31,35 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: CORS });
   }
 
+  const adminSupabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+
   if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
     return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured on server' }), { status: 500, headers: CORS });
+  }
+
+  // 1. Try reading from database cache first
+  try {
+    const { data: cached } = await adminSupabase
+      .from('cloudinary_usage_snapshot')
+      .select('*')
+      .order('last_updated', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (cached) {
+      const ageMs = Date.now() - new Date(cached.last_updated).getTime();
+      // Cache for 1 hour to prevent Cloudinary rate limiting
+      if (ageMs < 60 * 60 * 1000) {
+        return new Response(JSON.stringify(cached.data), {
+          headers: { ...CORS, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to read Cloudinary usage cache:', err);
   }
 
   try {
@@ -169,6 +196,13 @@ Deno.serve(async (req: Request) => {
         .sort((a, b) => b.bytes - a.bytes),
       requests: usage.requests ?? 0,
     };
+
+    // 2. Save newly fetched usage stats to DB cache asynchronously
+    try {
+      await adminSupabase.from('cloudinary_usage_snapshot').insert({ data: response });
+    } catch (dbErr) {
+      console.error('Failed to save Cloudinary usage to cache:', dbErr);
+    }
 
     return new Response(JSON.stringify(response), {
       headers: { ...CORS, 'Content-Type': 'application/json' },

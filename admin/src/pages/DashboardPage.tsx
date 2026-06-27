@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-
+import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 
 interface TrendData {
@@ -54,7 +54,14 @@ function TrendBadge({ dir, pct }: { dir: 'up' | 'down' | 'flat'; pct: number }) 
 }
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { analytics: census, isSyncing, lastSync, syncAll } = useAdminDataStore();
+  const { analytics: census, isSyncing, lastSync, syncAll } = useAdminDataStore(
+    useShallow((state) => ({
+      analytics: state.analytics,
+      isSyncing: state.isSyncing,
+      lastSync: state.lastSync,
+      syncAll: state.syncAll,
+    }))
+  );
   const [trends, setTrends] = useState<TrendData | null>(null);
   const [cloudStorageBytes, setCloudStorageBytes] = useState<number | null>(null);
 

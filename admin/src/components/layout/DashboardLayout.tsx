@@ -6,18 +6,31 @@ import BottomNav from './BottomNav';
 import { useAdminDataStore } from '../../store/adminData.store';
 import { useAuthStore } from '../../store/auth.store';
 import { supabase } from '../../lib/supabase';
+import { useShallow } from 'zustand/react/shallow';
+import { runtimeCoordinator } from '../../lib/runtime/coordinator';
 
 export default function DashboardLayout() {
-  const { syncAll, subscribe, unsubscribe, resubscribe } = useAdminDataStore();
+  const { syncAll, subscribe, unsubscribe, resubscribe } = useAdminDataStore(
+    useShallow((state) => ({
+      syncAll: state.syncAll,
+      subscribe: state.subscribe,
+      unsubscribe: state.unsubscribe,
+      resubscribe: state.resubscribe,
+    }))
+  );
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, isAdminOrModerator, signOut } = useAuthStore();
 
   useEffect(() => {
     if (isAdminOrModerator) {
+      runtimeCoordinator.initialize();
       syncAll(true);
       subscribe();
-      return () => { unsubscribe(); };
+      return () => {
+        unsubscribe();
+        runtimeCoordinator.shutdown();
+      };
     }
   }, [isAdminOrModerator]); // eslint-disable-line react-hooks/exhaustive-deps
 

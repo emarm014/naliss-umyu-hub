@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
-import { useAdminDataStore } from '../../store/adminData.store';
 import {
   LayoutDashboard,
   Users,
@@ -58,7 +57,6 @@ const navigation = [
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
   const { profile, signOut } = useAuthStore();
   
   const handleLogout = async () => {
@@ -82,6 +80,33 @@ export default function Sidebar() {
 
     return true;
   });
+
+  const prefetchRoute = (href: string) => {
+    switch (href) {
+      case '/': import('../../pages/DashboardPage'); break;
+      case '/moderators': import('../../pages/ModeratorsPage'); break;
+      case '/students': import('../../pages/StudentsPage'); break;
+      case '/groups': import('../../pages/GroupsPage'); break;
+      case '/announcements': import('../../pages/AnnouncementsPage'); break;
+      case '/events': import('../../pages/EventsPage'); break;
+      case '/event-pools': import('../../pages/EventPoolManagementPage'); break;
+      case '/news': import('../../pages/NewsManagementPage'); break;
+      case '/archive': import('../../pages/ArchiveManagementPage'); break;
+      case '/past-questions': import('../../pages/PastQuestionsPage'); break;
+      case '/messaging': import('../../pages/MessagingPage'); break;
+      case '/group-media': import('../../pages/GroupMediaPage'); break;
+      case '/storage': import('../../pages/ModeratorStoragePage'); break;
+      case '/courses': import('../../pages/CoursesPage'); break;
+      case '/resources': import('../../pages/ResourcesPage'); break;
+      case '/lecturers': import('../../pages/LecturersPage'); break;
+      case '/executives': import('../../pages/ExecutivesPage'); break;
+      case '/graduates': import('../../pages/GraduatesPage'); break;
+      case '/analytics': import('../../pages/AnalyticsPage'); break;
+      case '/logs': import('../../pages/ActivityLogsPage'); break;
+      case '/security': import('../../pages/SecurityPage'); break;
+      case '/settings': import('../../pages/SettingsPage'); break;
+    }
+  };
 
   return (
     <>
@@ -153,11 +178,7 @@ export default function Sidebar() {
                 key={item.href}
                 to={item.href}
                 end={item.href === '/archive' || item.href === '/'}
-                onClick={() => {
-                  if (location.pathname === item.href) {
-                    useAdminDataStore.getState().syncAll(true);
-                  }
-                }}
+                onMouseEnter={() => prefetchRoute(item.href)}
                 className={({ isActive }) => `
                     flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200
                     ${isActive 

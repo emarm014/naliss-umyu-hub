@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useShallow } from 'zustand/react/shallow';
 import type { User, UserRole, AccountStatus, AcademicLevel } from '../types';
 import { ROLE_LABELS, STATUS_LABELS, LEVEL_LABELS } from '../types';
 import {
@@ -69,7 +70,16 @@ function SuspensionCountdown({ until }: { until: Date }) {
 
 export default function StudentsPage() {
 
-  const { students: allStudents, isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore();
+  const { students: allStudents, isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore(
+    useShallow((state) => ({
+      students: state.students,
+      isSyncing: state.isSyncing,
+      lastSync: state.lastSync,
+      syncAll: state.syncAll,
+      error: state.error,
+      refreshAnalytics: state.refreshAnalytics,
+    }))
+  );
   const { profile, permissions } = useAuthStore();
 
   useEffect(() => {
@@ -141,12 +151,15 @@ export default function StudentsPage() {
   const to = from + ITEMS_PER_PAGE;
   const users = filteredUsers.slice(from, to);
 
-  const stats = {
-    total: (allStudents as UserWithDepartment[]).filter(u => u.role === 'student').length,
-    active: (allStudents as UserWithDepartment[]).filter(u => u.status === 'active' && u.role === 'student').length,
-    pending: (allStudents as UserWithDepartment[]).filter(u => u.status === 'pending_verification' && u.role === 'student').length,
-    risk: (allStudents as UserWithDepartment[]).filter(u => ['suspended', 'banned'].includes(u.status) && u.role === 'student').length
-  };
+  const stats = useMemo(() => {
+    const studentsOnly = (allStudents as UserWithDepartment[]).filter(u => u.role === 'student');
+    return {
+      total: studentsOnly.length,
+      active: studentsOnly.filter(u => u.status === 'active').length,
+      pending: studentsOnly.filter(u => u.status === 'pending_verification').length,
+      risk: studentsOnly.filter(u => ['suspended', 'banned'].includes(u.status)).length
+    };
+  }, [allStudents]);
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 

@@ -82,7 +82,6 @@ export default function EventsPage() {
     total: allEvents.length,
     active: allEvents.filter(e => e.status === 'ongoing' || e.status === 'published').length,
     drafts: allEvents.filter(e => e.status === 'draft').length,
-    virtual: allEvents.filter(e => e.is_virtual).length
   }), [allEvents]);
 
   // Client-side Filtering
@@ -206,7 +205,7 @@ export default function EventsPage() {
       </div>
 
       {/* Dashboard Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="glass-card p-6 rounded-2xl relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-br from-primary-950/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="flex items-center justify-between mb-4">
@@ -246,20 +245,6 @@ export default function EventsPage() {
           <div>
             <h3 className="text-3xl font-black text-slate-900">{stats.drafts}</h3>
             <p className="text-sm text-slate-500 font-medium mt-1">Unpublished</p>
-          </div>
-        </div>
-
-        <div className="glass-card p-6 rounded-2xl relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="flex items-center justify-between mb-4">
-            <div className="h-10 w-10 bg-purple-50 rounded-xl flex items-center justify-center">
-              <Video className="h-5 w-5 text-purple-600" />
-            </div>
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Virtual</span>
-          </div>
-          <div>
-            <h3 className="text-3xl font-black text-slate-900">{stats.virtual}</h3>
-            <p className="text-sm text-slate-500 font-medium mt-1">Online events</p>
           </div>
         </div>
       </div>
@@ -366,13 +351,6 @@ export default function EventsPage() {
                     <StatusIcon className="w-3.5 h-3.5" />
                     {statusConfig[event.status].label}
                   </span>
-                  
-                  {event.is_virtual && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/90 backdrop-blur-md border border-purple-400 text-white text-[10px] font-black uppercase tracking-widest rounded-lg">
-                      <Video className="w-3.5 h-3.5" />
-                      Virtual
-                    </span>
-                  )}
                 </div>
               </div>
 
@@ -394,36 +372,20 @@ export default function EventsPage() {
                           weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
                         })}
                       </p>
-                      {event.start_time && (
-                        <p className="text-xs text-slate-500 font-medium">
-                          {event.start_time} {event.end_time && `to ${event.end_time}`}
-                        </p>
-                      )}
                     </div>
                   </div>
                   
                   {/* Venue Block */}
-                  {(event.venue || event.virtual_link) && (
+                  {event.venue && (
                      <div className="flex items-start gap-3 text-slate-600">
                         <div className="mt-0.5 p-1.5 bg-slate-50 rounded-md border border-slate-100 text-slate-400">
                            <MapPin className="w-4 h-4" />
                         </div>
                         <p className="font-medium truncate pt-1 flex-1">
-                           {event.is_virtual ? 'Virtual Conference Room' : event.venue}
+                           {event.venue}
                         </p>
                      </div>
                   )}
-                  
-                  {/* Capacity Block */}
-                  <div className="flex items-start gap-3 text-slate-600">
-                     <div className="mt-0.5 p-1.5 bg-slate-50 rounded-md border border-slate-100 text-slate-400">
-                        <Users className="w-4 h-4" />
-                     </div>
-                     <p className="font-medium pt-1">
-                        <span className="font-bold text-slate-900">{event.current_attendees}</span>
-                        {event.max_attendees ? ` / ${event.max_attendees}` : ' / ∞'} attendees
-                     </p>
-                  </div>
                 </div>
 
                 {/* Workflow Toolbar */}
@@ -550,16 +512,8 @@ function EventFormModal({
     description: event?.description || '',
     cover_image_url: event?.cover_image_url || predefinedAsset?.url || '',
     cover_image_size: (event as any)?.cover_image_size || null as number | null,
-    start_date: event?.start_date || '',
-    end_date: event?.end_date || '',
-    start_time: event?.start_time || '',
-    end_time: event?.end_time || '',
     venue: event?.venue || '',
-    is_virtual: event?.is_virtual || false,
-    virtual_link: event?.virtual_link || '',
-    max_attendees: event?.max_attendees || '',
     target_level: (event?.target_level as LevelOption) || assignedLevel || 'all',
-    is_public: event?.is_public ?? true,
     status: event?.status || 'draft',
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -570,7 +524,6 @@ function EventFormModal({
     setErrorMsg(null);
 
     if (!formData.title.trim()) { setErrorMsg('Event title is required.'); return; }
-    if (!formData.start_date) { setErrorMsg('Start date is required.'); return; }
 
     setIsSaving(true);
 
@@ -578,13 +531,22 @@ function EventFormModal({
       if (!authProfile?.id) throw new Error('Not authenticated');
 
       const data = {
-        ...formData,
-        created_by: authProfile.id,
+        title: formData.title,
+        description: formData.description,
+        cover_image_url: formData.cover_image_url,
+        cover_image_size: formData.cover_image_size,
+        venue: formData.venue,
         target_level: formData.target_level === 'all' ? null : formData.target_level,
-        max_attendees: formData.max_attendees ? Number(formData.max_attendees) : null,
-        end_date: formData.end_date || null,
-        start_time: formData.start_time || null,
-        end_time: formData.end_time || null,
+        status: formData.status,
+        created_by: authProfile.id,
+        start_date: event ? event.start_date : new Date().toISOString().split('T')[0],
+        end_date: null,
+        start_time: null,
+        end_time: null,
+        is_virtual: false,
+        virtual_link: null,
+        is_public: true,
+        max_attendees: null,
       };
 
       let savedEvent: any = null;
@@ -611,7 +573,7 @@ function EventFormModal({
             sendPushNotification({
               targetUserIds: targetIds,
               title: '🗓️ New Event',
-              body: `${formData.title} — ${formData.start_date}`,
+              body: `${formData.title}`,
               data: {
                 type: 'event',
                 id: savedEvent?.id || '',
@@ -619,14 +581,14 @@ function EventFormModal({
                 description: formData.description,
                 cover_image_url: formData.cover_image_url || null,
                 status: formData.status || 'published',
-                is_virtual: formData.is_virtual,
-                virtual_link: formData.virtual_link || null,
+                is_virtual: false,
+                virtual_link: null,
                 venue: formData.venue || null,
-                start_date: formData.start_date,
-                end_date: formData.end_date || null,
-                start_time: formData.start_time || null,
-                end_time: formData.end_time || null,
-                max_attendees: formData.max_attendees || null,
+                start_date: data.start_date,
+                end_date: null,
+                start_time: null,
+                end_time: null,
+                max_attendees: null,
                 current_attendees: 0,
                 created_at: savedEvent?.created_at || new Date().toISOString(),
                 published_at: savedEvent?.published_at || new Date().toISOString(),
@@ -706,48 +668,6 @@ function EventFormModal({
                />
              </div>
 
-             <div className="grid grid-cols-2 gap-4">
-               <div>
-                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Start Date</label>
-                 <input
-                   type="date"
-                   value={formData.start_date}
-                   onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20"
-                 />
-               </div>
-               <div>
-                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">End Date</label>
-                 <input
-                   type="date"
-                   value={formData.end_date}
-                   onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20"
-                 />
-               </div>
-             </div>
-
-             <div className="grid grid-cols-2 gap-4">
-               <div>
-                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Start Time</label>
-                 <input
-                   type="time"
-                   value={formData.start_time}
-                   onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20"
-                 />
-               </div>
-               <div>
-                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">End Time</label>
-                 <input
-                   type="time"
-                   value={formData.end_time}
-                   onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
-                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20"
-                 />
-               </div>
-             </div>
-
              <div>
                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Venue</label>
                <input
@@ -759,76 +679,20 @@ function EventFormModal({
                />
              </div>
 
-             {/* Toggles */}
-             <div className="flex items-center gap-8 bg-slate-50 p-4 border border-slate-200 rounded-xl">
-               <label className="flex items-center gap-3 cursor-pointer">
-                 <div className={`w-10 h-6 rounded-full p-1 transition-colors ${formData.is_virtual ? 'bg-purple-500' : 'bg-slate-300'}`}>
-                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${formData.is_virtual ? 'translate-x-4' : 'translate-x-0'}`} />
-                 </div>
-                 <input
-                   type="checkbox"
-                   checked={formData.is_virtual}
-                   onChange={(e) => setFormData({ ...formData, is_virtual: e.target.checked })}
-                   className="sr-only"
-                 />
-                 <span className="text-sm font-bold text-slate-700 uppercase tracking-widest">Virtual Event</span>
-               </label>
-               
-               <div className="w-px h-6 bg-slate-200" />
-               
-               <label className="flex items-center gap-3 cursor-pointer">
-                 <div className={`w-10 h-6 rounded-full p-1 transition-colors ${formData.is_public ? 'bg-green-500' : 'bg-slate-300'}`}>
-                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${formData.is_public ? 'translate-x-4' : 'translate-x-0'}`} />
-                 </div>
-                 <input
-                   type="checkbox"
-                   checked={formData.is_public}
-                   onChange={(e) => setFormData({ ...formData, is_public: e.target.checked })}
-                   className="sr-only"
-                 />
-                 <span className="text-sm font-bold text-slate-700 uppercase tracking-widest">Global Visibility</span>
-               </label>
-             </div>
-
-             {formData.is_virtual && (
-               <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Virtual Link</label>
-                 <input
-                   type="url"
-                   value={formData.virtual_link}
-                   onChange={(e) => setFormData({ ...formData, virtual_link: e.target.value })}
-                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                   placeholder="https://zoom.us/..."
-                 />
-               </div>
-             )}
-
-             <div className="grid grid-cols-2 gap-4">
-                 <div>
-                   <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Target level</label>
-                   <select
-                     value={formData.target_level}
-                     onChange={(e) => setFormData({ ...formData, target_level: e.target.value as LevelOption })}
-                     disabled={!!assignedLevel}
-                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 disabled:opacity-50 appearance-none"
-                   >
-                     {!assignedLevel && <option value="all">All Levels</option>}
-                     <option value="100">Level 100</option>
-                     <option value="200">Level 200</option>
-                     <option value="300">Level 300</option>
-                     <option value="400">Level 400</option>
-                   </select>
-                 </div>
-                 <div>
-                   <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Max Capacity</label>
-                   <input
-                     type="number"
-                     value={formData.max_attendees}
-                     onChange={(e) => setFormData({ ...formData, max_attendees: e.target.value })}
-                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 placeholder:text-slate-400"
-                     placeholder="∞ Unlimited"
-                   />
-                 </div>
+             <div>
+               <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Target level</label>
+               <select
+                 value={formData.target_level}
+                 onChange={(e) => setFormData({ ...formData, target_level: e.target.value as LevelOption })}
+                 disabled={!!assignedLevel}
+                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 disabled:opacity-50 appearance-none"
+               >
+                 {!assignedLevel && <option value="all">All Levels</option>}
+                 <option value="100">Level 100</option>
+                 <option value="200">Level 200</option>
+                 <option value="300">Level 300</option>
+                 <option value="400">Level 400</option>
+               </select>
              </div>
           </div>
         </form>

@@ -3,6 +3,9 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
+import * as TaskManager from 'expo-task-manager';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as FileSystem from 'expo-file-system';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationStore } from '../stores/notification.store';
@@ -19,11 +22,62 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Detect if running inside Expo Go.
-// In Expo Go, push tokens belong to Expo's app (host.exp.exponent), not ours.
-// We still allow notifications to work during testing, but we do NOT save
-// the Expo Go token to the database — it would be invalid in production.
+const BACKGROUND_FETCH_TASK = 'background-notification-sync';
+
+// Background Task Registration
+TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    if (userId) {
+      const { data: remoteHistory } = await supabase
+        .from('notification_history')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (remoteHistory && remoteHistory.length > 0) {
+        const localList = remoteHistory.map((h: any) => ({
+          id: h.notification_id,
+          type: h.type,
+          title: h.title,
+          message: h.body,
+          date: h.created_at,
+          isRead: h.is_read,
+          data: h.data
+        }));
+        useNotificationStore.getState().addNotifications(localList);
+      }
+    }
+    return BackgroundFetch.BackgroundFetchResult.NewData;
+  } catch {
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
+
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
+
+// Local Rich Media Cache Helper
+async function cacheMediaForNotification(data: any): Promise<any> {
+  const imageUrl = data?.cover_image_url || data?.file_url || data?.image_url || data?.avatar_url || null;
+  if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('http')) return data;
+  try {
+    const filename = imageUrl.split('/').pop()?.split('?')[0] || 'cached_image';
+    const localUri = `${FileSystem.documentDirectory}${filename}`;
+    const info = await FileSystem.getInfoAsync(localUri);
+    if (!info.exists) {
+      await FileSystem.downloadAsync(imageUrl, localUri);
+    }
+    return {
+      ...data,
+      cover_image_url: localUri,
+      image_url: localUri,
+    };
+  } catch {
+    return data;
+  }
+}
 
 export function usePushNotifications() {
   const { user } = useAuthStore();
@@ -47,6 +101,34 @@ export function usePushNotifications() {
     }
   }
 
+  // Cross-device History Synchronization
+  async function syncNotificationHistory() {
+    if (!user) return;
+    try {
+      const { data: remoteHistory, error } = await supabase
+        .from('notification_history')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (error) throw error;
+      if (remoteHistory && remoteHistory.length > 0) {
+        const localList = remoteHistory.map((h: any) => ({
+          id: h.notification_id,
+          type: h.type,
+          title: h.title,
+          message: h.body,
+          date: h.created_at,
+          isRead: h.is_read,
+          data: h.data
+        }));
+        useNotificationStore.getState().addNotifications(localList);
+      }
+    } catch {
+      // silent
+    }
+  }
+
   useEffect(() => {
     let tokenListener: any = null;
 
@@ -65,16 +147,38 @@ export function usePushNotifications() {
         }
       });
 
-      // Synchronize any notifications currently sitting in the system tray
+      // Sync history and delivered tray
+      syncNotificationHistory();
       syncDeliveredNotifications();
+
+      // Register background fetch
+      BackgroundFetch.getStatusAsync().then(status => {
+        if (status === BackgroundFetch.BackgroundFetchStatus.Available) {
+          BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+            minimumInterval: 15 * 60,
+            stopOnTerminate: false,
+            startOnBoot: true,
+          }).catch(() => {});
+        }
+      });
     }
 
     // Fired when a notification is received while the app is foregrounded
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+    notificationListener.current = Notifications.addNotificationReceivedListener(async (notification) => {
       const { title, body, data } = notification.request.content;
       const notifId = notification.request.identifier || Math.random().toString(36).substring(2);
       const notifType = (data?.type as string) || 'general';
+
+      // Silent Sync pushes wake application and trigger reloading
+      if (notifType === 'silent_sync' || data?.is_silent === 'true' || data?.is_silent === true) {
+        if (data?.sync_target === 'messages' && data?.group_id) {
+          // Future expansion: trigger messages reload
+        }
+        return;
+      }
       
+      const cachedData = await cacheMediaForNotification(data);
+
       useNotificationStore.getState().addNotification({
         id: notifId,
         type: notifType,
@@ -82,7 +186,7 @@ export function usePushNotifications() {
         message: body || '',
         date: new Date().toISOString(),
         isRead: false,
-        data: data,
+        data: cachedData,
       });
 
       if (data?.type) {
@@ -94,11 +198,13 @@ export function usePushNotifications() {
     });
 
     // Fired when user taps a notification (foreground, background, or killed)
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const { title, body, data } = response.notification.request.content;
       const notifId = response.notification.request.identifier || Math.random().toString(36).substring(2);
       const notifType = (data?.type as string) || 'general';
       
+      const cachedData = await cacheMediaForNotification(data);
+
       useNotificationStore.getState().addNotification({
         id: notifId,
         type: notifType,
@@ -106,7 +212,7 @@ export function usePushNotifications() {
         message: body || '',
         date: response.notification.date ? new Date(response.notification.date).toISOString() : new Date().toISOString(),
         isRead: true,
-        data: data,
+        data: cachedData,
       });
 
       if (data?.type) {
@@ -118,27 +224,35 @@ export function usePushNotifications() {
       // Handle Quick Actions
       if (actionId === 'mark_read') {
         useNotificationStore.getState().markAsRead(notifId);
-        if (notifType === 'announcement' && data.id) {
-          const { useAnnouncementStore } = require('../stores/announcement.store');
-          useAnnouncementStore.getState().markAsRead(data.id);
-        }
+        await supabase.from('notification_history').update({ is_read: true }).eq('notification_id', notifId).catch(() => {});
         logTelemetry(notifId, notifType, 'opened');
-      } else if (actionId === 'reply' && (response as any).userText && data.group_id && user) {
+      } else if (actionId === 'reply' && (response as any).userText && data?.group_id && user) {
         const replyText = (response as any).userText;
-        (supabase as any).from('messages').insert({
+        await supabase.from('messages').insert({
           group_id: data.group_id,
           sender_id: user.id,
           content: replyText,
-        }).then(({ error }: any) => {
-          if (!error) {
-            const { useGroupStore } = require('../stores/group.store');
-            const group = useGroupStore.getState().groups.find((g: any) => g.id === data.group_id);
-            const groupName = group?.name || 'Group Chat';
-            const senderName = useAuthStore.getState().profile?.display_name || useAuthStore.getState().profile?.full_name || 'Member';
-            const { sendChatMessageNotification } = require('../utils/notifications');
-            sendChatMessageNotification(data.group_id, groupName, senderName, replyText, user.id);
-          }
         });
+        logTelemetry(notifId, notifType, 'opened');
+      } else if (actionId === 'remind_later') {
+        // Schedule a local reminder for 1 hour later
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `Reminder: ${title}`,
+            body: body || 'You scheduled a reminder.',
+            data: data,
+          },
+          trigger: { seconds: 3600 },
+        });
+        logTelemetry(notifId, notifType, 'dismissed');
+      } else if (actionId === 'download' && data?.file_url) {
+        try {
+          const filename = data.file_url.split('/').pop() || 'downloaded_file';
+          const localUri = `${FileSystem.documentDirectory}${filename}`;
+          await FileSystem.downloadAsync(data.file_url, localUri);
+        } catch {
+          // silent
+        }
         logTelemetry(notifId, notifType, 'opened');
       } else if (actionId === 'dismiss') {
         logTelemetry(notifId, notifType, 'dismissed');
@@ -179,7 +293,7 @@ export function usePushNotifications() {
               router.push('/(tabs)' as any);
           }
         } catch {
-          // silent — deep link navigation errors don't need user notification
+          // silent
         }
       }
     });
@@ -187,11 +301,13 @@ export function usePushNotifications() {
     async function syncDeliveredNotifications() {
       try {
         const presented = await Notifications.getPresentedNotificationsAsync();
-        presented.forEach(notif => {
+        for (const notif of presented) {
           const { title, body, data } = notif.request.content;
           const notifId = notif.request.identifier || Math.random().toString(36).substring(2);
           const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
           const notifType = (data?.type as string) || 'general';
+
+          const cachedData = await cacheMediaForNotification(data);
           
           useNotificationStore.getState().addNotification({
             id: notifId,
@@ -200,7 +316,7 @@ export function usePushNotifications() {
             message: body || '',
             date: dateStr,
             isRead: false,
-            data: data,
+            data: cachedData,
           });
 
           if (data?.type) {
@@ -209,7 +325,7 @@ export function usePushNotifications() {
 
           // Log telemetry
           logTelemetry(notifId, notifType, 'delivered');
-        });
+        }
       } catch {
         // silent
       }
@@ -236,9 +352,8 @@ export function usePushNotifications() {
         .upsert({ user_id: user.id, push_token: token, updated_at: new Date().toISOString() });
 
       if (error) throw error;
-      // Token saved successfully
     } catch {
-      // silent — push token sync failure doesn't affect core functionality
+      // silent
     }
   }
 }
@@ -260,6 +375,11 @@ async function configureNotificationCategories() {
         buttonTitleText: 'Mark as Read',
         options: { opensAppToForeground: false },
       },
+      {
+        identifier: 'mute',
+        buttonTitleText: 'Mute Conversation',
+        options: { opensAppToForeground: false },
+      },
     ]);
 
     await Notifications.setNotificationCategoryAsync('announcement_actions', [
@@ -267,6 +387,11 @@ async function configureNotificationCategories() {
         identifier: 'open',
         buttonTitleText: 'Open',
         options: { opensAppToForeground: true },
+      },
+      {
+        identifier: 'save',
+        buttonTitleText: 'Save',
+        options: { opensAppToForeground: false },
       },
       {
         identifier: 'dismiss',
@@ -282,9 +407,14 @@ async function configureNotificationCategories() {
         options: { opensAppToForeground: true },
       },
       {
-        identifier: 'view',
-        buttonTitleText: 'View Details',
-        options: { opensAppToForeground: true },
+        identifier: 'interested',
+        buttonTitleText: 'Interested',
+        options: { opensAppToForeground: false },
+      },
+      {
+        identifier: 'dismiss',
+        buttonTitleText: 'Dismiss',
+        options: { opensAppToForeground: false, isDestructive: true },
       },
     ]);
 
@@ -294,13 +424,36 @@ async function configureNotificationCategories() {
         buttonTitleText: 'Start Quiz',
         options: { opensAppToForeground: true },
       },
+      {
+        identifier: 'remind_later',
+        buttonTitleText: 'Remind Me Later',
+        options: { opensAppToForeground: false },
+      },
     ]);
 
     await Notifications.setNotificationCategoryAsync('material_actions', [
       {
-        identifier: 'open',
-        buttonTitleText: 'Open File',
+        identifier: 'download',
+        buttonTitleText: 'Download File',
+        options: { opensAppToForeground: false },
+      },
+      {
+        identifier: 'bookmark',
+        buttonTitleText: 'Bookmark',
+        options: { opensAppToForeground: false },
+      },
+    ]);
+
+    await Notifications.setNotificationCategoryAsync('security_actions', [
+      {
+        identifier: 'review',
+        buttonTitleText: 'Review Alert',
         options: { opensAppToForeground: true },
+      },
+      {
+        identifier: 'secure_account',
+        buttonTitleText: 'Secure Account',
+        options: { opensAppToForeground: true, isDestructive: true },
       },
     ]);
   } catch {
@@ -320,17 +473,31 @@ async function registerForPushNotificationsAsync() {
     } catch {
       // silent
     }
-    // High Priority
+
+    // High Priority (respect DND)
     await Notifications.setNotificationChannelAsync('default_v2', {
       name: 'Default Alerts',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#064e3b',
-      bypassDnd: true,
+      bypassDnd: false, // Obey Do Not Disturb settings
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       sound: 'default',
       showBadge: true,
     });
+
+    // Critical Security (bypasses DND)
+    await Notifications.setNotificationChannelAsync('critical_security', {
+      name: 'Critical & Security Alerts',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#991b1b',
+      bypassDnd: true, // Bypasses Do Not Disturb
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      sound: 'default',
+      showBadge: true,
+    });
+
     // Low Priority Channel
     await Notifications.setNotificationChannelAsync('low_priority', {
       name: 'Silent Updates',
@@ -341,10 +508,6 @@ async function registerForPushNotificationsAsync() {
     });
   }
 
-  // Ensure we are on a physical device (expo-notifications limitation on simulators)
-  // Note: We use Constants.isDevice or check the platform
-  // Constants.isDevice was removed in newer Expo SDKs — treat undefined as true
-  // so standalone builds still request tokens. Simulators will fail gracefully.
   const isDevice = Constants.isDevice !== false;
   if (isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -364,10 +527,8 @@ async function registerForPushNotificationsAsync() {
     try {
       token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     } catch {
-      // silent — push token fetch failure is non-critical
+      // silent
     }
-  } else {
-    // Simulator/emulator — push notifications not available
   }
 
   return token;

@@ -11,6 +11,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-secret",
 };
 
+async function generateHash(token: string, type: string, entityId: string): Promise<string> {
+  const timeWindow = Math.floor(Date.now() / 60000); // 1-minute window
+  const input = `${token}:${type}:${entityId}:${timeWindow}`;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -57,17 +67,16 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch push tokens + ALL notification preferences
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, push_token, notif_messages, notif_announcements, notif_events, notif_materials")
-      .in("id", targetUserIds)
-      .eq("status", "active")
-      .not("push_token", "is", null);
+    // Fetch push tokens + ALL notification preferences from user_push_tokens + users (optimized join)
+    const { data: userTokens, error } = await supabase
+      .from("user_push_tokens")
+      .select("user_id, push_token, users!inner(status, notif_messages, notif_announcements, notif_events, notif_materials, privacy_mode)")
+      .in("user_id", targetUserIds)
+      .eq("users.status", "active");
 
     if (error) throw error;
-    if (!users || users.length === 0) {
-      return new Response(JSON.stringify({ success: true, message: "No valid tokens" }), {
+    if (!userTokens || userTokens.length === 0) {
+      return new Response(JSON.stringify({ success: true, message: "No active push tokens found" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -75,32 +84,42 @@ Deno.serve(async (req) => {
     // Filter by each user's individual notification preferences
     // null/undefined = default ON (user hasn't changed it)
     const notifType = data?.type ?? "";
-    const filteredUsers = users.filter(u => {
+    const filteredTokens = userTokens.filter(ut => {
+      const u = ut.users;
+      if (!u) return false;
       if (notifType === "message") {
-        // notif_messages: null = ON (default), false = OFF
         return u.notif_messages !== false;
       }
       if (notifType === "announcement") {
         return u.notif_announcements !== false;
       }
       if (notifType === "event") {
-        // notif_events is its own separate preference
         return u.notif_events !== false;
       }
       if (notifType === "material") {
         return u.notif_materials !== false;
       }
-      // Unknown type — send to everyone
       return true;
     });
 
-    if (filteredUsers.length === 0) {
+    if (filteredTokens.length === 0) {
       return new Response(JSON.stringify({ success: true, message: "All users opted out" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const expoTokens = filteredUsers.map(u => u.push_token);
+    // Duplicate protection using deterministic hash
+    const uniqueTokens = [];
+    const processedHashes = new Set();
+    const entityId = data?.id || data?.group_id || data?.pool_id || "general";
+
+    for (const ut of filteredTokens) {
+      const hash = await generateHash(ut.push_token, notifType, entityId);
+      if (!processedHashes.has(hash)) {
+        processedHashes.add(hash);
+        uniqueTokens.push(ut);
+      }
+    }
 
     // Map custom priorities to Expo options
     const payloadPriority = data?.priority ?? "high";
@@ -144,21 +163,29 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Android Collapse Keys
+    let collapseKey = data?.collapseKey ?? null;
+    if (!collapseKey && notifType) {
+      collapseKey = `${notifType}_${entityId}`;
+    }
+
     // Rich Media (attachments)
     const imageUrl = data?.cover_image_url || data?.file_url || data?.image_url || data?.avatar_url || null;
     const attachments = imageUrl ? [{ url: imageUrl }] : undefined;
     const mutableContent = attachments ? true : undefined;
 
-    // Send in batches of 100 (Expo Push API limit)
-    const BATCH_SIZE = 100;
-    const results = [];
-    for (let i = 0; i < expoTokens.length; i += BATCH_SIZE) {
-      const batch = expoTokens.slice(i, i + BATCH_SIZE);
+    // Build message objects list (one message per token to support individual Privacy Mode title/body mapping)
+    const messages = uniqueTokens.map((ut) => {
+      const u = ut.users;
+      const usePrivacy = u?.privacy_mode === true;
+      const targetTitle = usePrivacy ? "New Notification" : title;
+      const targetBody = usePrivacy ? "Open the application to view content." : body;
+
       const message: any = {
-        to: batch,
+        to: ut.push_token,
         sound: expoSound,
-        title,
-        body,
+        title: targetTitle,
+        body: targetBody,
         data: data ?? {},
         priority: expoPriority,
         channelId: expoChannelId,
@@ -173,6 +200,9 @@ Deno.serve(async (req) => {
       if (threadId) {
         message.threadId = threadId;
       }
+      if (collapseKey) {
+        message.collapseKey = collapseKey;
+      }
       if (attachments) {
         message.attachments = attachments;
       }
@@ -183,6 +213,20 @@ Deno.serve(async (req) => {
         message.contentAvailable = true;
       }
 
+      return message;
+    });
+
+    // Send in batches of 100 (Expo Push API limit)
+    const BATCH_SIZE = 100;
+    const results = [];
+    const telemetryRecords = [];
+    const historyRecords = [];
+    const notifId = data?.id || data?.notification_id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+      const batch = messages.slice(i, i + BATCH_SIZE);
+      const batchTokens = uniqueTokens.slice(i, i + BATCH_SIZE);
+
       const response = await fetch("https://exp.host/--/api/v2/push/send", {
         method: "POST",
         headers: {
@@ -190,28 +234,51 @@ Deno.serve(async (req) => {
           "Accept-encoding": "gzip, deflate",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(message),
+        body: JSON.stringify(batch),
       });
 
-      results.push(await response.json());
-    }
+      const responseJson = await response.json();
+      results.push(responseJson);
 
-    // Telemetry tracking - log sent records
-    const notifId = data?.id || data?.notification_id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const telemetryRecords = filteredUsers.map(u => ({
-      notification_id: notifId,
-      user_id: u.id,
-      type: notifType || 'general',
-      status: 'sent',
-      platform: 'unknown'
-    }));
+      const ticketData = responseJson.data || [];
+      for (let k = 0; k < batch.length; k++) {
+        const msg = batch[k];
+        const ticket = ticketData[k] || {};
+        const ut = batchTokens[k];
+
+        telemetryRecords.push({
+          notification_id: notifId,
+          user_id: ut.user_id,
+          type: notifType || 'general',
+          status: ticket.status === 'ok' ? 'sent' : 'failed',
+          platform: 'unknown',
+          expo_ticket_id: ticket.id || null,
+          provider_status: ticket.status || null,
+          provider_error: ticket.message || (ticket.details?.error) || null
+        });
+
+        // Insert into unified history
+        historyRecords.push({
+          user_id: ut.user_id,
+          notification_id: notifId,
+          title: msg.title,
+          body: msg.body,
+          type: notifType || 'general',
+          data: data ?? {},
+          is_read: false
+        });
+      }
+    }
 
     if (telemetryRecords.length > 0) {
       await supabase.from('notification_telemetry').upsert(telemetryRecords, { onConflict: 'user_id,notification_id' }).catch(() => {});
     }
+    if (historyRecords.length > 0) {
+      await supabase.from('notification_history').upsert(historyRecords, { onConflict: 'user_id,notification_id' }).catch(() => {});
+    }
 
     return new Response(
-      JSON.stringify({ success: true, sent: filteredUsers.length, total: users.length, results }),
+      JSON.stringify({ success: true, sent: uniqueTokens.length, total: userTokens.length, results }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

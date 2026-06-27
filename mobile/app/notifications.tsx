@@ -12,8 +12,8 @@ import { Event } from '../src/stores/event.store';
 import { Material } from '../src/types';
 import { useTheme } from '../src/stores/theme.store';
 import { useNotificationStore } from '../src/stores/notification.store';
-import { upsertEntityFromNotification } from '../src/utils/notifications';
 import * as Notifications from 'expo-notifications';
+import { supabase } from '../src/api/supabase/client';
 
 export default function NotificationsScreen() {
   const { profile, fetchProfile } = useAuthStore();
@@ -142,6 +142,27 @@ export default function NotificationsScreen() {
         fetchUpcomingEvents(profile?.level),
         fetchMaterials({ level: (profile?.level as any) || undefined }),
       ]);
+      try {
+        const { data: remoteHistory } = await supabase
+          .from('notification_history')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (remoteHistory && remoteHistory.length > 0) {
+          const localList = remoteHistory.map((h: any) => ({
+            id: h.notification_id,
+            type: h.type,
+            title: h.title,
+            message: h.body,
+            date: h.created_at,
+            isRead: h.is_read,
+            data: h.data
+          }));
+          useNotificationStore.getState().addNotifications(localList);
+        }
+      } catch {
+        // silent
+      }
     } finally {
       setRefreshing(false);
     }

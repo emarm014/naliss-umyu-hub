@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
+import * as Notifications from 'expo-notifications';
+
+const updateDeviceBadge = (notifications: any[]) => {
+    try {
+        const unreadCount = notifications.filter(n => !n.isRead).length;
+        Notifications.setBadgeCountAsync(unreadCount);
+    } catch {
+        // silent
+    }
+};
 
 export interface AppNotification {
     id: string;
@@ -33,21 +43,21 @@ export const useNotificationStore = create<NotificationState>()(
             addNotification: (notif) => {
                 set((state) => {
                     const exists = state.notifications.some((n) => n.id === notif.id);
+                    let newNotifs = [];
                     if (exists) {
-                        return {
-                            notifications: state.notifications.map((n) =>
-                                n.id === notif.id
-                                    ? { ...n, ...notif, isRead: n.isRead || !!notif.isRead }
-                                    : n
-                            ),
-                        };
-                    }
-                    return {
-                        notifications: [
+                        newNotifs = state.notifications.map((n) =>
+                            n.id === notif.id
+                                ? { ...n, ...notif, isRead: n.isRead || !!notif.isRead }
+                                : n
+                        );
+                    } else {
+                        newNotifs = [
                             { ...notif, isRead: notif.isRead ?? false } as AppNotification,
                             ...state.notifications,
-                        ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-                    };
+                        ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    }
+                    updateDeviceBadge(newNotifs);
+                    return { notifications: newNotifs };
                 });
             },
 
@@ -66,27 +76,34 @@ export const useNotificationStore = create<NotificationState>()(
                             current.push({ ...notif, isRead: notif.isRead ?? false } as AppNotification);
                         }
                     });
-                    return {
-                        notifications: current.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-                    };
+                    const sorted = current.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    updateDeviceBadge(sorted);
+                    return { notifications: sorted };
                 });
             },
 
             markAsRead: (id) => {
-                set((state) => ({
-                    notifications: state.notifications.map((n) =>
+                set((state) => {
+                    const updated = state.notifications.map((n) =>
                         n.id === id ? { ...n, isRead: true } : n
-                    ),
-                }));
+                    );
+                    updateDeviceBadge(updated);
+                    return { notifications: updated };
+                });
             },
 
             markAllAsRead: () => {
-                set((state) => ({
-                    notifications: state.notifications.map((n) => ({ ...n, isRead: true })),
-                }));
+                set((state) => {
+                    const updated = state.notifications.map((n) => ({ ...n, isRead: true }));
+                    updateDeviceBadge(updated);
+                    return { notifications: updated };
+                });
             },
 
-            clearNotifications: () => set({ notifications: [] }),
+            clearNotifications: () => {
+                updateDeviceBadge([]);
+                set({ notifications: [] });
+            },
         }),
         {
             name: 'naliss-notification-storage',

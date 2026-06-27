@@ -52,7 +52,7 @@ serve(async (req) => {
     // Ensure we join the public.users table (via foreign key) to filter active users who have not opted out of events.
     let tokenQuery = supabase
       .from('user_push_tokens')
-      .select('push_token, users!inner(notif_events, status)')
+      .select('user_id, push_token, users!inner(notif_events, status)')
       .eq('users.status', 'active')
       .neq('users.notif_events', false);
     
@@ -69,13 +69,24 @@ serve(async (req) => {
 
     // 4. Chunk tokens in batches of 100 for Expo Push API
     const CHUNK_SIZE = 100;
-    const messages = tokens.map((t) => ({
-      to: t.push_token,
-      sound: 'default',
-      title: notifTitle,
-      body: notifBody,
-      data: { type: 'event', id: pool.id },
-    }));
+    const messages = tokens.map((t) => {
+      const isQuizType = pool.participation_rule === 'quiz' || pool.title.toLowerCase().includes('quiz');
+      const categoryId = isQuizType ? 'quiz_actions' : 'event_actions';
+      const threadId = isQuizType ? 'quizzes' : 'events';
+
+      return {
+        to: t.push_token,
+        sound: 'default',
+        title: notifTitle,
+        body: notifBody,
+        data: { type: 'event', id: pool.id, pool_id: pool.id },
+        priority: 'high',
+        channelId: 'default_v2',
+        badge: 1,
+        categoryIdentifier: categoryId,
+        threadId: threadId,
+      };
+    });
 
     const chunks = [];
     for (let i = 0; i < messages.length; i += CHUNK_SIZE) {
@@ -93,6 +104,20 @@ serve(async (req) => {
         },
         body: JSON.stringify(chunk),
       });
+    }
+
+    // Telemetry tracking - log sent records
+    const notifId = `event_pool_${pool.id}_${Date.now()}`;
+    const telemetryRecords = tokens.map(t => ({
+      notification_id: notifId,
+      user_id: t.user_id,
+      type: 'event',
+      status: 'sent',
+      platform: 'unknown'
+    }));
+
+    if (telemetryRecords.length > 0) {
+      await supabase.from('notification_telemetry').upsert(telemetryRecords, { onConflict: 'user_id,notification_id' }).catch(() => {});
     }
 
     return new Response(JSON.stringify({ success: true, batchesSent: chunks.length }), { status: 200 });

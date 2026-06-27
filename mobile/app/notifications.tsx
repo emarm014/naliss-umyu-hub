@@ -23,6 +23,7 @@ export default function NotificationsScreen() {
   const isOnline = useNetworkStore(s => s.isOnline);
   const { colors, isDark } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'all' | 'message' | 'announcement' | 'event' | 'resource'>('all');
   
   const notifications = useNotificationStore(s => s.notifications);
   const _hasHydrated = useNotificationStore(s => s._hasHydrated);
@@ -187,6 +188,12 @@ export default function NotificationsScreen() {
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
+  const filteredNotifications = notifications.filter(n => {
+    if (activeTab === 'all') return true;
+    if (activeTab === 'resource') return n.type === 'resource' || n.type === 'material';
+    return n.type === activeTab;
+  });
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
@@ -212,6 +219,44 @@ export default function NotificationsScreen() {
         </View>
       </View>
 
+      {/* Category Tabs */}
+      <View style={{ backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 10, gap: 8 }}
+        >
+          {(['all', 'message', 'announcement', 'event', 'resource'] as const).map((tab) => {
+            const isActive = activeTab === tab;
+            const label = tab === 'all' ? 'All' 
+                        : tab === 'message' ? 'Chats'
+                        : tab === 'announcement' ? 'Announcements'
+                        : tab === 'event' ? 'Events'
+                        : 'Materials';
+            return (
+              <TouchableOpacity
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 20,
+                  backgroundColor: isActive ? COLORS.primary : (isDark ? '#1e293b' : '#f1f5f9'),
+                }}
+              >
+                <Text style={{
+                  fontFamily: 'Inter-SemiBold',
+                  fontSize: 13,
+                  color: isActive ? '#fff' : colors.textSecondary,
+                }}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       {/* Content */}
       <ScrollView
         style={styles.content}
@@ -225,9 +270,12 @@ export default function NotificationsScreen() {
           />
         }
       >
-        {notifications.length > 0 ? (
-          notifications.map((notification) => {
+        {filteredNotifications.length > 0 ? (
+          filteredNotifications.map((notification) => {
             const iconConfig = getIconConfig(notification.type);
+            const coverImage = notification.data?.cover_image_url || notification.data?.file_url || notification.data?.image_url || notification.data?.avatar_url || null;
+            const hasImagePreview = coverImage && (notification.type === 'announcement' || notification.type === 'event' || notification.type === 'resource' || notification.type === 'material');
+
             return (
               <TouchableOpacity
                 key={notification.id}
@@ -270,6 +318,21 @@ export default function NotificationsScreen() {
                     {notification.message}
                   </Text>
                 </View>
+
+                {hasImagePreview && (
+                  <Image 
+                    source={{ uri: coverImage }} 
+                    style={{
+                      width: 50,
+                      height: 50,
+                      borderRadius: 8,
+                      marginLeft: 12,
+                      alignSelf: 'center',
+                      backgroundColor: colors.surface
+                    }} 
+                    resizeMode="cover"
+                  />
+                )}
 
                 {!notification.isRead && <View style={styles.unreadDot} />}
               </TouchableOpacity>

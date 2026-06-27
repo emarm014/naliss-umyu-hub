@@ -102,21 +102,86 @@ Deno.serve(async (req) => {
 
     const expoTokens = filteredUsers.map(u => u.push_token);
 
+    // Map custom priorities to Expo options
+    const payloadPriority = data?.priority ?? "high";
+    let expoPriority: "default" | "normal" | "high" = "high";
+    let expoSound: string | null = "default";
+    let expoChannelId = "default_v2";
+    let isSilent = false;
+
+    if (payloadPriority === "silent") {
+      expoPriority = "normal";
+      expoSound = null;
+      expoChannelId = "low_priority";
+      isSilent = true;
+    } else if (payloadPriority === "low") {
+      expoPriority = "normal";
+      expoSound = null;
+      expoChannelId = "low_priority";
+    } else if (payloadPriority === "normal") {
+      expoPriority = "default";
+      expoChannelId = "default_v2";
+    }
+
+    // Map custom categories
+    let categoryId = data?.categoryIdentifier ?? null;
+    if (!categoryId && notifType) {
+      if (notifType === "message") categoryId = "chat_actions";
+      else if (notifType === "announcement") categoryId = "announcement_actions";
+      else if (notifType === "event") categoryId = "event_actions";
+      else if (notifType === "quiz") categoryId = "quiz_actions";
+      else if (notifType === "material" || notifType === "resource") categoryId = "material_actions";
+      else if (notifType === "application") categoryId = "application_actions";
+    }
+
+    // Thread ID / Group keys
+    let threadId = data?.threadId ?? null;
+    if (!threadId && notifType) {
+      if (notifType === "message") {
+        threadId = `chat_${data.group_id || "general"}`;
+      } else {
+        threadId = `${notifType}s`;
+      }
+    }
+
+    // Rich Media (attachments)
+    const imageUrl = data?.cover_image_url || data?.file_url || data?.image_url || data?.avatar_url || null;
+    const attachments = imageUrl ? [{ url: imageUrl }] : undefined;
+    const mutableContent = attachments ? true : undefined;
+
     // Send in batches of 100 (Expo Push API limit)
     const BATCH_SIZE = 100;
     const results = [];
     for (let i = 0; i < expoTokens.length; i += BATCH_SIZE) {
       const batch = expoTokens.slice(i, i + BATCH_SIZE);
-      const message = {
+      const message: any = {
         to: batch,
-        sound: "default",
+        sound: expoSound,
         title,
         body,
         data: data ?? {},
-        priority: "high",
-        channelId: "default_v2",
-        badge: 1,
+        priority: expoPriority,
+        channelId: expoChannelId,
       };
+
+      if (!isSilent) {
+        message.badge = 1;
+      }
+      if (categoryId) {
+        message.categoryIdentifier = categoryId;
+      }
+      if (threadId) {
+        message.threadId = threadId;
+      }
+      if (attachments) {
+        message.attachments = attachments;
+      }
+      if (mutableContent) {
+        message.mutableContent = mutableContent;
+      }
+      if (isSilent) {
+        message.contentAvailable = true;
+      }
 
       const response = await fetch("https://exp.host/--/api/v2/push/send", {
         method: "POST",
@@ -129,6 +194,20 @@ Deno.serve(async (req) => {
       });
 
       results.push(await response.json());
+    }
+
+    // Telemetry tracking - log sent records
+    const notifId = data?.id || data?.notification_id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const telemetryRecords = filteredUsers.map(u => ({
+      notification_id: notifId,
+      user_id: u.id,
+      type: notifType || 'general',
+      status: 'sent',
+      platform: 'unknown'
+    }));
+
+    if (telemetryRecords.length > 0) {
+      await supabase.from('notification_telemetry').upsert(telemetryRecords, { onConflict: 'user_id,notification_id' }).catch(() => {});
     }
 
     return new Response(

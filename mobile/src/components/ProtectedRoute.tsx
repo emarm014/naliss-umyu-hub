@@ -283,6 +283,21 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (session && (isProfileComplete === true || offlineUnblocked)) {
       useGlobalSyncStore.getState().initialize();
+      try {
+        const { useOfflineAssetStore } = require('../stores/offlineAsset.store');
+        useOfflineAssetStore.getState().initialize();
+
+        const { OfflineSyncService } = require('../services/offlineSync.service');
+        OfflineSyncService.syncAll().catch(() => {});
+        
+        // Execute database health checks and auto-healing scans
+        const { IntegrityService } = require('../services/integrityService');
+        IntegrityService.runStartupIntegrityChecks().then(() => {
+          IntegrityService.runFileSelfHealingScanner().catch(() => {});
+        }).catch(() => {});
+      } catch (e) {
+        // silent load failure
+      }
     }
     // No cleanup / terminate here — channels must survive navigation
     // CRITICAL: Do NOT include store functions in dependencies

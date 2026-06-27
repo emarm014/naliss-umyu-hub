@@ -13,4 +13,8 @@ export * from './message.store';
 export * from './theme.store';
 export * from './notification.store';
 export * from './mutationQueue.store';
+export * from './crossDeviceSync.store';
+export * from './offlineStorage.store';
+export * from './offlineSearch.store';
+export * from './offlineAsset.store';
 

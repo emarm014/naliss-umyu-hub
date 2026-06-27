@@ -232,6 +232,29 @@ function ConversationItem({
   onPress: () => void;
   colors: any;
 }) {
+  const [syncStatus, setSyncStatus] = React.useState<'ready' | 'syncing' | 'waiting' | 'partial'>('ready');
+  const [syncProgress, setSyncProgress] = React.useState<number>(100);
+
+  React.useEffect(() => {
+    let active = true;
+    const checkStatus = async () => {
+      try {
+        const { useOfflineStorageStore } = require('../../src/stores/offlineStorage.store');
+        const res = await useOfflineStorageStore.getState().getPerChatStatus(conversation.id);
+        if (active) {
+          setSyncStatus(res.status);
+          setSyncProgress(res.progress);
+        }
+      } catch (_) {}
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [conversation.id]);
+
   return (
     <TouchableOpacity
       style={[
@@ -267,6 +290,17 @@ function ConversationItem({
             </Text>
             {conversation.is_pinned && (
               <Ionicons name="pin" size={12} color={COLORS.primary} style={{ marginLeft: 6, transform: [{ rotate: '45deg' }] }} />
+            )}
+            {syncStatus === 'ready' && (
+              <Ionicons name="checkmark-circle" size={13} color="#10B981" style={{ marginLeft: 4 }} />
+            )}
+            {syncStatus === 'syncing' && (
+              <Text style={{ color: '#3B82F6', fontSize: 11, fontWeight: '600', marginLeft: 4 }}>
+                🔄 {syncProgress}%
+              </Text>
+            )}
+            {syncStatus === 'partial' && (
+              <Ionicons name="cloud-download-outline" size={13} color="#8A8D93" style={{ marginLeft: 4 }} />
             )}
           </View>
           {conversation.last_message_at && conversation.last_message ? (

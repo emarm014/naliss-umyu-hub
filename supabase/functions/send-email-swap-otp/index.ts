@@ -15,6 +15,9 @@ serve(async (req: Request) => {
   }
 
   try {
+    const envKeys = Object.keys(Deno.env.toObject()).filter(k => k.startsWith('SMTP') || k.includes('EMAIL') || k.includes('BREVO'));
+    return new Response(JSON.stringify({ envKeys }), { headers: corsHeaders });
+
     const payload = await req.json()
     const record = payload.record
 
@@ -89,7 +92,7 @@ serve(async (req: Request) => {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       console.error('Brevo error:', JSON.stringify(err))
-      return new Response(JSON.stringify({ error: 'Failed to dispatch email' }), { status: 500, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'Failed to dispatch email', brevo_error: err }), { status: 500, headers: corsHeaders })
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders })

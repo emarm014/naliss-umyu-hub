@@ -910,6 +910,14 @@ export default function ProfileScreen() {
               colors={colors}
             />
             <MenuItem 
+              icon="cloud-download" 
+              iconColor="#10b981" 
+              iconBg="rgba(16, 185, 129, 0.15)" 
+              label="Offline Storage & Diagnostics" 
+              onPress={() => router.push('/offline-dashboard')}
+              colors={colors}
+            />
+            <MenuItem 
               icon="notifications" 
               iconColor="#ea580c" 
               iconBg={COLORS.actionOrange} 

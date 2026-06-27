@@ -421,6 +421,25 @@ export default function ChatScreen() {
             const { data, error } = await (query as any);
             if (error) throw error;
 
+            // REDESIGN: Empty response from Supabase must NEVER erase local history
+            if ((!data || data.length === 0) && messages.length > 0) {
+                console.log("[Sync] Empty server response returned under active local cache. Retaining local data.");
+                try {
+                    if (supabase && typeof (supabase as any).rpc === 'function') {
+                        await (supabase as any).rpc('log_notification_telemetry', {
+                            p_notification_id: `diag_rls_${Date.now()}`,
+                            p_type: 'diagnostics',
+                            p_status: 'failed',
+                            p_platform: Platform.OS,
+                            p_device_info: `RLS Empty Response Filtered - Retained ${messages.length} messages`
+                        });
+                    }
+                } catch {
+                    // silent telemetry failure
+                }
+                return;
+            }
+
             const formattedMessages = (data as any[]).map(msg => ({
                 ...msg,
                 isEdited: msg.is_edited || false,

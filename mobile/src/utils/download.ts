@@ -123,104 +123,17 @@ export const downloadFile = async (
     onProgress?: (progress: number) => void
 ): Promise<string | null> => {
     try {
-        // Ensure vault directory exists — use multiple fallbacks for SDK compatibility
-        try {
-            const dirInfo = await FileSystem.getInfoAsync(VAULT_DIRECTORY);
-            if (!dirInfo.exists) {
-                await FileSystem.makeDirectoryAsync(VAULT_DIRECTORY, { intermediates: true });
-            }
-        } catch {
-            // Directory creation failed — try once more with a slight delay
-            try {
-                await FileSystem.makeDirectoryAsync(VAULT_DIRECTORY, { intermediates: true });
-            } catch {
-                // If still failing, the base directory may not exist — try without intermediates
-            }
+        const { UnifiedDownloadEngine } = require('./unifiedDownload');
+        const res = await UnifiedDownloadEngine.download(url, fileId, displayName, onProgress, {
+            assetType: 'document'
+        });
+        if (res) {
+            Alert.alert('Saved for Offline', `"${displayName}" is now available offline.`);
         }
-
-        const localUri = getVaultFilePath(fileId, displayName);
-
-        // Check if already downloaded and file is valid (size > 0)
-        const existing = await FileSystem.getInfoAsync(localUri);
-        if (existing.exists && (existing as any).size > 0) {
-            // Already in vault — signal 100% and return immediately
-            onProgress?.(1);
-            return localUri;
-        }
-
-        // Delete any corrupt/empty file from a previous failed download
-        if (existing.exists) {
-            await FileSystem.deleteAsync(localUri, { idempotent: true });
-        }
-
-        // Convert URL to downloadable format (handles Cloudinary PDF issue)
-        const downloadUrl = toDownloadableUrl(url);
-
-        onProgress?.(0);
-
-        const downloadResumable = FileSystem.createDownloadResumable(
-            downloadUrl,
-            localUri,
-            {
-                headers: {
-                    'Accept': '*/*',
-                    'User-Agent': 'NALISS-Hub/1.0',
-                },
-            },
-            (progress) => {
-                const pct = progress.totalBytesExpectedToWrite > 0
-                    ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
-                    : 0;
-                onProgress?.(pct);
-            }
-        );
-
-        const result = await downloadResumable.downloadAsync();
-
-        if (!result || !result.uri) {
-            throw new Error('Download returned no result');
-        }
-
-        // Check HTTP status — non-200 means Cloudinary returned an error page
-        if (result.status && result.status !== 200) {
-            await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
-            throw new Error(`Server returned status ${result.status}`);
-        }
-
-        // Validate file has real content
-        const fileInfo = await FileSystem.getInfoAsync(result.uri);
-        if ((fileInfo as any).size === 0) {
-            await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
-            throw new Error('Downloaded file is empty');
-        }
-
-        onProgress?.(1);
-        Alert.alert('Saved for Offline', `"${displayName}" is now available offline.`);
-        return result.uri;
+        return res;
     } catch (err: any) {
         const msg = err?.message || '';
-
-        // Always send the real error + URL to Sentry so it appears in the dashboard
-        Sentry.captureException(err, {
-            tags: { location: 'download.downloadFile', fileId },
-            extra: { url, displayName, errorMessage: msg },
-        });
-        Sentry.addBreadcrumb({
-            category: 'feature.download',
-            message: `Download failed: ${displayName}`,
-            data: { url, fileId, error: msg },
-            level: 'error',
-        });
-
-        if (msg.includes('empty') || msg.includes('invalid')) {
-            Alert.alert('Download Failed', 'The file could not be downloaded. The file may be corrupted or the link has expired.');
-        } else if (msg.includes('status')) {
-            Alert.alert('Download Failed', `The server rejected the request (${msg}). Please try again.`);
-        } else if (msg.includes('Network request failed') || msg.includes('network') || msg.includes('fetch')) {
-            Alert.alert('Download Failed', 'Network error. Please check your internet connection and try again.');
-        } else {
-            Alert.alert('Download Failed', `Could not download the file.\n\n${msg || 'Unknown error'}`);
-        }
+        Alert.alert('Download Failed', `Could not download the file.\n\n${msg || 'Unknown error'}`);
         return null;
     }
 };

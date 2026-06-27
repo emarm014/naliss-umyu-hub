@@ -11,7 +11,8 @@ import {
     updateLocalMessage, 
     deleteLocalMessage, 
     clearAllMessages, 
-    updateLocalMediaPath 
+    updateLocalMediaPath,
+    batchInsertMessages
 } from '../lib/database';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -26,14 +27,14 @@ interface MessageState {
     error: string | null;
 
     initSQLiteCache: () => Promise<void>;
-    setMessages: (groupId: string, messages: any[]) => void;
-    addMessage: (groupId: string, message: any) => void;
+    setMessages: (groupId: string, messages: any[]) => Promise<void>;
+    addMessage: (groupId: string, message: any) => Promise<void>;
     updateMessage: (groupId: string, messageId: string, updates: any) => void;
     removeMessage: (groupId: string, messageId: string) => void;
     getMessages: (groupId: string) => any[];
     clearCache: () => void;
     patchSenderInfo: (userId: string, updates: { username?: string; avatar_url?: string; full_name?: string }) => void;
-    mergeMissedMessages: (groupId: string, missedMessages: any[]) => void;
+    mergeMissedMessages: (groupId: string, missedMessages: any[]) => Promise<void>;
     touchLastSeen: (groupId: string, timestamp: string) => void;
     getLastSeenAt: (groupId: string) => string | null;
 
@@ -99,31 +100,33 @@ export const useMessageStore = create<MessageState>()(
                 await initDB();
             },
 
-            setMessages: (groupId, messages) => {
+            setMessages: async (groupId, messages) => {
                 const cappedMessages = messages.slice(-300);
                 const latest = cappedMessages.length > 0
                     ? cappedMessages[cappedMessages.length - 1]?.created_at
                     : null;
 
-                messages.forEach(async msg => {
+                // Redesign: Transactional sequential insertion to guarantee SQLite owns the message before state update
+                const enhancedMessages: any[] = [];
+                for (const msg of cappedMessages) {
                     const enhancedMsg = await interceptAndDownloadMedia(msg);
-                    await insertOrReplaceMessage(enhancedMsg, groupId);
-                });
+                    enhancedMessages.push(enhancedMsg);
+                }
+                await batchInsertMessages(enhancedMessages, groupId);
 
                 set((state) => ({
-                    cache: { ...state.cache, [groupId]: cappedMessages },
+                    cache: { ...state.cache, [groupId]: enhancedMessages },
                     lastSeenAt: latest
                         ? { ...state.lastSeenAt, [groupId]: latest }
                         : state.lastSeenAt,
                 }));
             },
 
-            addMessage: (groupId, message) => {
+            addMessage: async (groupId, message) => {
                 Logger.info('message.store', 'addMessage called', { groupId, messageId: message.id, status: message.status });
                 
-                interceptAndDownloadMedia(message).then(enhancedMsg => {
-                    insertOrReplaceMessage(enhancedMsg, groupId);
-                });
+                const enhancedMsg = await interceptAndDownloadMedia(message);
+                await insertOrReplaceMessage(enhancedMsg, groupId);
 
                 set((state) => {
                     const existing = state.cache[groupId] || [];
@@ -132,7 +135,7 @@ export const useMessageStore = create<MessageState>()(
                         return state;
                     }
 
-                    const updated = [...existing, message]
+                    const updated = [...existing, enhancedMsg]
                         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
                         .slice(-300);
 
@@ -237,18 +240,21 @@ export const useMessageStore = create<MessageState>()(
                 }
             },
 
-            mergeMissedMessages: (groupId, missedMessages) => {
+            mergeMissedMessages: async (groupId, missedMessages) => {
                 if (!missedMessages.length) return;
 
-                missedMessages.forEach(async msg => {
+                // Redesign: Transactional sequential insertion to guarantee SQLite owns the message before state update
+                const enhancedMessages: any[] = [];
+                for (const msg of missedMessages) {
                     const enhancedMsg = await interceptAndDownloadMedia(msg);
-                    await insertOrReplaceMessage(enhancedMsg, groupId);
-                });
+                    enhancedMessages.push(enhancedMsg);
+                }
+                await batchInsertMessages(enhancedMessages, groupId);
 
                 set((state) => {
                     const existing = state.cache[groupId] || [];
                     const existingIds = new Set(existing.map(m => m.id));
-                    const newOnes = missedMessages.filter(m => !existingIds.has(m.id));
+                    const newOnes = enhancedMessages.filter(m => !existingIds.has(m.id));
                     if (!newOnes.length) return state;
 
                     const merged = [...existing, ...newOnes]
@@ -410,6 +416,7 @@ export const useMessageStore = create<MessageState>()(
             name: 'message-cache-storage',
             storage: createJSONStorage(() => mmkvStorage),
             partialize: (state) => ({
+                cache: state.cache,
                 lastSeenAt: state.lastSeenAt,
                 uploadProgress: state.uploadProgress
             }),

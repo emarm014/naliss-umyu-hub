@@ -1,0 +1,102 @@
+import { create } from 'zustand';
+import { Logger } from '../utils/logger';
+import { indexEntity, searchOffline, getDB } from '../lib/database';
+
+export interface SearchResult {
+    entity_id: string;
+    entity_type: 'message' | 'announcement' | 'event' | 'material';
+    group_id: string | null;
+    sender_name: string | null;
+    content: string | null;
+    file_name: string | null;
+    caption: string | null;
+    created_at: string;
+}
+
+interface OfflineSearchState {
+    results: SearchResult[];
+    isSearching: boolean;
+    search: (query: string, filters?: { type?: string; groupId?: string }) => Promise<SearchResult[]>;
+    rebuildIndex: () => Promise<void>;
+}
+
+export const useOfflineSearchStore = create<OfflineSearchState>((set) => ({
+    results: [],
+    isSearching: false,
+
+    search: async (query, filters) => {
+        if (!query.trim()) {
+            set({ results: [] });
+            return [];
+        }
+
+        set({ isSearching: true });
+        try {
+            const dbResults = await searchOffline(query, filters);
+            set({ results: dbResults, isSearching: false });
+            return dbResults;
+        } catch (e) {
+            Logger.error('offline-search', 'Search failed', e);
+            set({ isSearching: false, results: [] });
+            return [];
+        }
+    },
+
+    rebuildIndex: async () => {
+        const db = getDB();
+        if (!db) return;
+
+        Logger.info('offline-search', 'Rebuilding full-text search index from local databases.');
+        try {
+            // Clear FTS index
+            await db.runAsync('DELETE FROM offline_search_index');
+
+            // 1. Index messages
+            const messages = await db.getAllAsync<any>('SELECT * FROM local_messages');
+            for (const msg of messages) {
+                try {
+                    const parsed = JSON.parse(msg.raw_data);
+                    const senderName = parsed.user?.username || parsed.user?.full_name || 'Member';
+                    await indexEntity(parsed.id, 'message', {
+                        group_id: parsed.group_id,
+                        sender_name: senderName,
+                        content: parsed.content,
+                        created_at: parsed.created_at
+                    });
+                } catch (_) {}
+            }
+
+            // 2. Index content manifests (Announcements, Events, Materials)
+            const contentItems = await db.getAllAsync<any>('SELECT * FROM content_manifest');
+            for (const item of contentItems) {
+                try {
+                    const parsed = JSON.parse(item.raw_data);
+                    if (item.content_type === 'announcement') {
+                        await indexEntity(parsed.id, 'announcement', {
+                            caption: parsed.title,
+                            content: parsed.content,
+                            created_at: parsed.created_at
+                        });
+                    } else if (item.content_type === 'event') {
+                        await indexEntity(parsed.id, 'event', {
+                            caption: parsed.title,
+                            content: parsed.description,
+                            created_at: parsed.created_at
+                        });
+                    } else if (item.content_type === 'material') {
+                        await indexEntity(parsed.id, 'material', {
+                            caption: parsed.title,
+                            content: parsed.description,
+                            file_name: parsed.file_name,
+                            created_at: parsed.created_at
+                        });
+                    }
+                } catch (_) {}
+            }
+
+            Logger.info('offline-search', 'Full-text search index rebuild completed successfully.');
+        } catch (e) {
+            Logger.error('offline-search', 'Failed to rebuild search index', e);
+        }
+    }
+}));

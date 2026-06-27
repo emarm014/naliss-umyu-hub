@@ -87,50 +87,10 @@ export const FileService = {
     onProgress?: (progress: number) => void
   ): Promise<string | null> {
     try {
-      await this.initVault();
-      const localUri = this.getLocalUri(fileId, fileUrlOrName);
-
-      // Delete any corrupt/empty file from a previous failed download
-      const existing = await FileSystem.getInfoAsync(localUri);
-      if (existing.exists && (existing as any).size > 0) {
-        // Already in vault — signal completion so callers clean up progress state
-        onProgress?.(1);
-        return localUri;
-      }
-      if (existing.exists) {
-        await FileSystem.deleteAsync(localUri, { idempotent: true });
-      }
-
-      const downloadUrl = toDownloadableUrl(url);
-
-      const downloadResumable = FileSystem.createDownloadResumable(
-        downloadUrl,
-        localUri,
-        {
-          headers: {
-            'Accept': '*/*',
-            'User-Agent': 'NALISS-Hub/1.0',
-          },
-        },
-        (downloadProgress) => {
-          const progress = downloadProgress.totalBytesExpectedToWrite > 0
-            ? downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite
-            : 0;
-          onProgress?.(progress);
-        }
-      );
-
-      const result = await downloadResumable.downloadAsync();
-      if (!result?.uri) return null;
-
-      // Validate file is not empty/HTML error
-      const fileInfo = await FileSystem.getInfoAsync(result.uri);
-      if (!(fileInfo as any).size || (fileInfo as any).size === 0) {
-        await FileSystem.deleteAsync(result.uri, { idempotent: true });
-        return null;
-      }
-
-      return result.uri;
+      const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+      return UnifiedDownloadEngine.download(url, fileId, fileUrlOrName, onProgress, {
+        assetType: 'document'
+      });
     } catch {
       return null;
     }
@@ -164,6 +124,23 @@ export const FileService = {
       const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
 
       for (const file of files) {
+        // Redesign: chat media, avatars, and attachments are permanent local storage and never pruned
+        const isPermanent =
+          file.startsWith('media_') ||
+          file.startsWith('chat_') ||
+          file.startsWith('attachment_') ||
+          file.startsWith('avatar_') ||
+          file.startsWith('thumbnail_') ||
+          file.startsWith('reaction_') ||
+          file.startsWith('voice_') ||
+          file.startsWith('video_') ||
+          file.startsWith('document_') ||
+          file.startsWith('sticker_') ||
+          file.startsWith('quoted_') ||
+          file.startsWith('thumb_');
+
+        if (isPermanent) continue;
+
         const fileUri = `${VAULT_DIRECTORY}${file}`;
         const info = await FileSystem.getInfoAsync(fileUri);
         

@@ -9,11 +9,12 @@ import { downloadFile } from '../src/utils';
 import { useAnnouncementStore, useResourceStore, useEventStore } from '../src/stores';
 import { format } from 'date-fns';
 
-const TABS = ['All Results', 'Announcements', 'Events', 'Resources', 'Past Questions'];
+const TABS = ['All Results', 'Announcements', 'Events', 'Resources', 'Past Questions', 'Messages'];
 
 export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('All Results');
+  const [offlineResults, setOfflineResults] = useState<any[]>([]);
 
   const { announcements, fetchAnnouncements } = useAnnouncementStore();
   const { materials, pastQuestions, fetchMaterials, fetchPastQuestions, incrementDownloadCount } = useResourceStore();
@@ -28,6 +29,22 @@ export default function SearchScreen() {
   }, []);
 
   const query = searchQuery.trim().toLowerCase();
+
+  React.useEffect(() => {
+    if (query.length === 0) {
+      setOfflineResults([]);
+      return;
+    }
+    const runSearch = async () => {
+      try {
+        const { useOfflineSearchStore } = require('../src/stores/offlineSearch.store');
+        const res = await useOfflineSearchStore.getState().search(query);
+        setOfflineResults(res);
+      } catch (_) {}
+    };
+    const delayDebounce = setTimeout(runSearch, 300);
+    return () => clearTimeout(delayDebounce);
+  }, [query]);
 
   const filteredAnnouncements = query.length === 0 ? [] : announcements.filter(a => 
     a.title.toLowerCase().includes(query) || (a.content && a.content.toLowerCase().includes(query))
@@ -44,6 +61,8 @@ export default function SearchScreen() {
   const filteredPastQuestions = query.length === 0 ? [] : pastQuestions.filter(pq => 
     (pq.title.toLowerCase().includes(query) || (pq.description && pq.description.toLowerCase().includes(query)))
   );
+
+  const filteredMessages = offlineResults.filter(r => r.entity_type === 'message');
 
   const handleDownload = async (material: any) => {
     if (!material.file_url) return;
@@ -131,6 +150,37 @@ export default function SearchScreen() {
       </TouchableOpacity>
     );
   };
+
+  const renderMessageCard = (item: any) => (
+    <TouchableOpacity 
+      key={item.entity_id} 
+      style={styles.card} 
+      onPress={() => router.push({ 
+        pathname: '/chat/[id]', 
+        params: { 
+          id: item.group_id, 
+          type: 'group',
+          name: 'Group Chat'
+        } 
+      } as any)}
+    >
+      <View style={[styles.iconBox, { backgroundColor: '#EDE9FE' }]}>
+        <Ionicons name="chatbubbles" size={24} color="#7C3AED" />
+      </View>
+      <View style={styles.cardContent}>
+        <Text style={styles.cardTitle}>{item.sender_name}</Text>
+        <Text style={styles.cardSubtitle} numberOfLines={1}>{item.content}</Text>
+        <View style={styles.metaRow}>
+          <View style={[styles.badge, { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]}>
+            <Text style={[styles.badgeText, { color: '#10B981' }]}>OFFLINE MESSAGE</Text>
+          </View>
+          <Text style={styles.metaText}>
+            {item.created_at ? format(new Date(item.created_at), 'MMM d, h:mm a') : ''}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -224,11 +274,22 @@ export default function SearchScreen() {
           </View>
         )}
 
+        {(activeTab === 'All Results' || activeTab === 'Messages') && filteredMessages.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>OFFLINE MESSAGES</Text>
+              <Text style={styles.resultCount}>{filteredMessages.length} results</Text>
+            </View>
+            {filteredMessages.map(renderMessageCard)}
+          </View>
+        )}
+
         {query.length > 0 && 
          filteredAnnouncements.length === 0 && 
          filteredEvents.length === 0 &&
          filteredResources.length === 0 && 
-         filteredPastQuestions.length === 0 && (
+         filteredPastQuestions.length === 0 && 
+         filteredMessages.length === 0 && (
           <View style={{ alignItems: 'center', marginTop: 100 }}>
             <Ionicons name="search-outline" size={48} color={COLORS.textMuted} />
             <Text style={{ fontFamily: 'Inter-Medium', color: COLORS.textMuted, marginTop: 16 }}>No results found for "{searchQuery}"</Text>

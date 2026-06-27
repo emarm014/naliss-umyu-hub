@@ -159,14 +159,10 @@ export default function SecurityPage() {
     setEmailSuccess('');
     setIsUpdatingEmail(true);
     try {
-      const { data, error } = await supabase.rpc('initiate_email_swap_auth');
+      const { data, error } = await supabase.auth.reauthenticate();
       if (error) throw error;
       setEmailSwapPhase('otp');
       setEmailSuccess(`A verification code has been dispatched to your current email address.`);
-      
-      if (data && typeof data === 'object' && 'otp_code' in data) {
-        console.log('DEV ONLY - OTP CODE:', data.otp_code);
-      }
     } catch (err: any) {
       console.error('Failed to initiate email change:', err);
       setEmailError(err.message || 'Failed to initiate email change.');
@@ -187,17 +183,19 @@ export default function SecurityPage() {
 
     setIsUpdatingEmail(true);
     try {
-      const { data, error } = await supabase.rpc('verify_email_swap_otp', {
-        p_otp_code: otpCode,
+      if (!profile?.email) {
+        throw new Error('Could not resolve current administrator email address.');
+      }
+      const { error } = await supabase.auth.verifyOtp({
+        email: profile.email,
+        token: otpCode,
+        type: 'reauthentication',
       });
 
       if (error) throw error;
 
-      if (data && typeof data === 'object' && 'challenge_id' in data) {
-        setChallengeId(data.challenge_id);
-        setEmailSwapPhase('newEmail');
-        setEmailSuccess('Code verified successfully. Please enter your new email address.');
-      }
+      setEmailSwapPhase('newEmail');
+      setEmailSuccess('Code verified successfully. Please enter your new email address.');
     } catch (err: any) {
       console.error('Failed to verify OTP:', err);
       setEmailError(err.message || 'Invalid or expired OTP.');
@@ -218,8 +216,7 @@ export default function SecurityPage() {
 
     setIsUpdatingEmail(true);
     try {
-      const { error } = await supabase.rpc('execute_email_swap', {
-        p_challenge_id: challengeId,
+      const { error } = await supabase.rpc('execute_email_swap_v2', {
         p_new_email: newEmail,
       });
 

@@ -511,8 +511,7 @@ function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
                 <View style={styles.eventInfoItem}>
                     <Ionicons name='time-outline' size={14} color={COLORS.primary} />
                     <Text style={[styles.eventInfoText, { color: colors.textSecondary }]}>
-                        {event.start_time || (event.start_date ? (() => { try { return format(new Date(event.start_date), 'h:mm a'); } catch { return ''; } })() : '')}
-                        {event.end_time ? '  ' + event.end_time : ''}
+                        {event.start_time ? (event.start_time + (event.end_time ? ' – ' + event.end_time : '')) : 'All Day'}
                     </Text>
                 </View>
                 <View style={[styles.eventInfoDivider, { backgroundColor: colors.border }]} />

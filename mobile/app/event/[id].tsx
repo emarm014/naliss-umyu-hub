@@ -160,7 +160,7 @@ function EventDetailsContent() {
                 {/*  Info Cards Row  */}
                 <View style={styles.infoRow}>
                     <InfoChip icon='time-outline' label='Time'
-                        value={(event.start_time || (event.start_date ? format(new Date(event.start_date), 'h:mm a') : 'TBD')) + (event.end_time ? '  –  ' + event.end_time : '')} />
+                        value={event.start_time ? (event.start_time + (event.end_time ? '  –  ' + event.end_time : '')) : 'All Day'} />
                     <InfoChip icon='location-outline' label='Venue'
                         value={event.is_virtual ? 'Online' : (event.venue || 'Main Campus')} />
                     {event.max_attendees != null && (

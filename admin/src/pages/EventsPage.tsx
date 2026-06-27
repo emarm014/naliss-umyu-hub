@@ -13,8 +13,6 @@ import {
   Trash2,
   Calendar,
   MapPin,
-  Users,
-  Video,
   X,
   ChevronLeft,
   ChevronRight,

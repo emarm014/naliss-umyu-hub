@@ -63,17 +63,15 @@ export const useEventStore = create<EventState>()(
                 if (events.length === 0) set({ isLoading: true });
 
                 try {
-                    const now = new Date().toISOString().split('T')[0];
                     let query = (supabase as any).from('events')
                         .select('*, event_pools(id)')
-                        .in('status', ['published', 'ongoing'])
-                        .gte('start_date', now);
+                        .in('status', ['published', 'ongoing']);
 
                     if (level) {
                         query = query.or(`target_level.is.null,target_level.eq.${level}`);
                     }
 
-                    const { data, error } = await query.order('start_date', { ascending: true }).limit(30);
+                    const { data, error } = await query.order('created_at', { ascending: false }).limit(30);
 
                     if (error) throw error;
 

@@ -370,7 +370,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       try {
         // 1. Check vault first (user explicitly downloaded it)
         if (fileId) {
-          const vaultPath = getVaultFilePath(fileId, fileName);
+          const vaultPath = getVaultFilePath(fileId, fileName, fileUri);
           const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
           if (vaultInfo.exists && (vaultInfo as any).size > 0) {
             if (!cancelled) {

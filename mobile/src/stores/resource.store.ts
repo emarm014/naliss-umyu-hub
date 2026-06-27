@@ -5,6 +5,7 @@ import { supabase } from '../api/supabase/client';
 import { Material, Course, MaterialType, AcademicLevel, SemesterType, PastQuestion } from '../types';
 import { checkFileExists, extractFileNameFromUrl } from '../utils/download';
 import { captureStoreError } from '../utils/sentry';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface ResourceState {
     materials: Material[];
@@ -148,14 +149,28 @@ export const useResourceStore = create<ResourceState>()(
 
             refreshDownloadedStatus: async () => {
                 const { materials, pastQuestions } = get();
+                const { AssetPathResolver } = require('../utils/assetResolver');
                 
                 // Parallel file existence checks — 10x faster than sequential for loop
                 const checks = await Promise.all(
                     [...materials, ...pastQuestions].map(async (item) => {
-                        if (!item.file_url) return null;
-                        const realName = item.file_name || extractFileNameFromUrl(item.file_url, item.id);
-                        const exists = await checkFileExists(`${item.id}_${realName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase()}`);
-                        return exists ? item.id : null;
+                        // Check primary file
+                        if (item.file_url) {
+                            const localPath = AssetPathResolver.resolveLocalPath(item.id, 'document', item.file_url);
+                            const info = await FileSystem.getInfoAsync(localPath);
+                            if (info.exists && (info as any).size > 0) return item.id;
+                        }
+                        // Check files array for multiple attachments
+                        if (item.files && Array.isArray(item.files)) {
+                            for (const f of item.files) {
+                                if (f.url) {
+                                    const localPath = AssetPathResolver.resolveLocalPath(item.id, 'document', f.url);
+                                    const info = await FileSystem.getInfoAsync(localPath);
+                                    if (info.exists && (info as any).size > 0) return item.id;
+                                }
+                            }
+                        }
+                        return null;
                     })
                 );
                 

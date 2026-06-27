@@ -212,9 +212,9 @@ export default function ResourcesScreen() {
         const { getVaultFilePath, checkFileExists } = require('../../src/utils/download');
         const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
         const vaultFileName = `${material.id}_${safeName}`;
-        const isInVault = await checkFileExists(vaultFileName);
+        const isInVault = await checkFileExists(vaultFileName, material.file_url, material.id);
         if (isInVault) {
-          fileUri = getVaultFilePath(material.id, displayName);
+          fileUri = getVaultFilePath(material.id, displayName, material.file_url);
         }
       } catch {
         // Vault check failed — fall back to Cloudinary URL (requires internet)
@@ -704,7 +704,23 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }
     return () => { isMountedRef.current = false; };
   }, []);
 
-  React.useEffect(() => { setLocalDownloaded(isDownloaded); }, [isDownloaded]);
+  React.useEffect(() => {
+    let active = true;
+    const checkDownloaded = async () => {
+      if (!fileAsset.url) return;
+      try {
+        const { checkFileExists } = require('../../src/utils/download');
+        const exists = await checkFileExists('', fileAsset.url, material.id);
+        if (active) {
+          setLocalDownloaded(exists);
+        }
+      } catch {
+        if (active) setLocalDownloaded(false);
+      }
+    };
+    checkDownloaded();
+    return () => { active = false; };
+  }, [fileAsset.url, material.id, isDownloaded]);
 
   const isPdf = mime.includes('pdf') || url.endsWith('.pdf');
   const isImage = mime.includes('image') || url.match(/\.(jpg|jpeg|png|webp|gif|svg)$/) !== null;

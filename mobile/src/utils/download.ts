@@ -86,7 +86,11 @@ export const extractFileNameFromUrl = (url: string, fallbackName?: string): stri
 /**
  * Get a safe local file path in the vault directory.
  */
-export const getVaultFilePath = (fileId: string, fileName: string): string => {
+export const getVaultFilePath = (fileId: string, fileName: string, remoteUrl?: string): string => {
+    if (remoteUrl) {
+        const { AssetPathResolver } = require('./assetResolver');
+        return AssetPathResolver.resolveLocalPath(fileId, 'document', remoteUrl);
+    }
     const safeName = fileName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
     return `${VAULT_DIRECTORY}${fileId}_${safeName}`;
 };
@@ -95,9 +99,13 @@ export const getVaultFilePath = (fileId: string, fileName: string): string => {
  * Check if a file exists in the vault AND has real content (size > 0 bytes).
  * Returns false for empty/corrupt files from previous failed downloads.
  */
-export const checkFileExists = async (fileName: string): Promise<boolean> => {
+export const checkFileExists = async (fileName: string, remoteUrl?: string, fileId?: string): Promise<boolean> => {
     try {
-        const fileUri = `${VAULT_DIRECTORY}${fileName}`;
+        let fileUri = `${VAULT_DIRECTORY}${fileName}`;
+        if (remoteUrl && fileId) {
+            const { AssetPathResolver } = require('./assetResolver');
+            fileUri = AssetPathResolver.resolveLocalPath(fileId, 'document', remoteUrl);
+        }
         const info = await FileSystem.getInfoAsync(fileUri);
         if (!info.exists) return false;
         // Validate it's a real file, not an empty download

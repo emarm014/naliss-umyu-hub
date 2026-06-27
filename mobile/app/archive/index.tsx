@@ -61,7 +61,7 @@ export default function ArchiveScreen() {
         const displayName = extractFileNameFromUrl(item.file_url, item.title);
         const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
         const vaultFileName = `${item.id}_${safeName}`;
-        const isInVault = await checkFileExists(vaultFileName);
+        const isInVault = await checkFileExists(vaultFileName, item.file_url, item.id);
         if (isInVault) {
           cacheStatus[item.id] = true;
         }
@@ -100,7 +100,7 @@ export default function ArchiveScreen() {
       let fileUri = item.file_url;
       const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
       const vaultFileName = `${item.id}_${safeName}`;
-      const isInVault = await checkFileExists(vaultFileName);
+      const isInVault = await checkFileExists(vaultFileName, item.file_url, item.id);
       
       if (!isInVault && !isOnline) {
         Alert.alert(
@@ -111,7 +111,7 @@ export default function ArchiveScreen() {
       }
       
       if (isInVault) {
-        fileUri = getVaultFilePath(item.id, displayName);
+        fileUri = getVaultFilePath(item.id, displayName, item.file_url);
       }
 
       setReaderUrl(fileUri);

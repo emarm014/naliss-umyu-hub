@@ -41,9 +41,6 @@ export const AssetPathResolver = {
         return 'documents/';
     },
 
-    /**
-     * Returns a fully qualified, standardized local filesystem path.
-     */
     resolveLocalPath(assetId: string, assetType: string, remoteUrl: string): string {
         const vaultBase = getVaultBase();
         const folder = this.getFolderForType(assetType);
@@ -52,8 +49,20 @@ export const AssetPathResolver = {
         const cleanUrl = remoteUrl.split('?')[0];
         const ext = cleanUrl.split('.').pop() || 'dat';
         
+        // Compute a stable hash of the remoteUrl to distinguish multiple files under one assetId
+        let urlHash = '';
+        if (remoteUrl && !remoteUrl.startsWith('file://')) {
+            let hash = 0;
+            for (let i = 0; i < remoteUrl.length; i++) {
+                const char = remoteUrl.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            urlHash = '_' + Math.abs(hash).toString(36);
+        }
+        
         // Return standardized file path
-        return `${vaultBase}${folder}media_${assetId}.${ext}`;
+        return `${vaultBase}${folder}media_${assetId}${urlHash}.${ext}`;
     }
 };
 

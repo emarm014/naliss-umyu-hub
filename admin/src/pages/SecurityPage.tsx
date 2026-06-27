@@ -182,11 +182,12 @@ export default function SecurityPage() {
 
     setIsUpdatingEmail(true);
     try {
-      if (!profile?.email) {
-        throw new Error('Could not resolve current administrator email address.');
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user || !user.email) {
+        throw new Error('Could not resolve current authenticated administrator session.');
       }
       const { error } = await supabase.auth.verifyOtp({
-        email: profile.email,
+        email: user.email,
         token: otpCode,
         type: 'reauthentication' as any,
       });

@@ -390,97 +390,115 @@ export default function NewsManagementPage() {
 
       {/* Modal */}
       {showModal && (
-        <Modal 
-          isOpen={true} 
-          onClose={() => setShowModal(null)}
-          title={showModal === 'create' ? 'Add to Mobile App' : 'Edit News'}
-          size="xl"
-        >
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {formError && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-medium">
-                {formError}
-              </div>
-            )}
-            
-            <div className="space-y-5">
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                  Title Headline <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400"
-                  placeholder="e.g. Campus Wi-Fi Maintenance Schedule"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                  Category <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white animate-in zoom-in-95 duration-300">
+            <form onSubmit={handleSubmit} className="flex flex-col h-full overflow-hidden">
+              {/* Header */}
+              <div className="p-10 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    {showModal === 'create' ? 'Add to Mobile App' : 'Edit News'}
+                  </h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">News Details</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
                 >
-                  <option value="General">General</option>
-                  <option value="Academic">Academic</option>
-                  <option value="Social">Social</option>
-                  <option value="Event">Event</option>
-                </select>
+                  <X className="h-6 w-6" />
+                </button>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                  Cover Image Asset (Optional)
-                </label>
-                <FileUpload
-                  onUploadComplete={(url) => setFormData({ ...formData, image_url: url })}
-                  folder="news_covers"
-                />
-                {formData.image_url && (
-                  <div className="mt-2 text-sm text-emerald-600 flex items-center">
-                    <CheckCircle className="w-4 h-4 mr-1" /> Image attached successfully
+              {/* Scrollable content */}
+              <div className="p-10 space-y-6 overflow-y-auto flex-1">
+                {formError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-medium">
+                    {formError}
                   </div>
                 )}
+                
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">
+                      Title Headline <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-900 placeholder:text-slate-400 transition-all"
+                      placeholder="e.g. Campus Wi-Fi Maintenance Schedule"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">
+                      Category <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-700 transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="General">General</option>
+                      <option value="Academic">Academic</option>
+                      <option value="Social">Social</option>
+                      <option value="Event">Event</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">
+                      Cover Image Asset (Optional)
+                    </label>
+                    <FileUpload
+                      onUploadComplete={(url) => setFormData({ ...formData, image_url: url })}
+                      folder="news_covers"
+                    />
+                    {formData.image_url && (
+                      <div className="mt-2 text-sm text-emerald-600 flex items-center">
+                        <CheckCircle className="w-4 h-4 mr-1" /> Image attached successfully
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">
+                      Content <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={formData.content}
+                      onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-medium text-slate-900 placeholder:text-slate-400 transition-all min-h-[200px]"
+                      placeholder="Full article content..."
+                      required
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                  Content <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={formData.content}
-                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400 min-h-[200px]"
-                  placeholder="Full article content..."
-                  required
-                />
+              {/* Footer */}
+              <div className="p-10 bg-gray-50/50 border-t border-gray-50 flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(null)}
+                  className="flex-1 px-8 py-5 bg-white text-gray-400 rounded-2xl font-black text-[10px] uppercase tracking-widest border border-gray-100 hover:bg-gray-100 hover:text-gray-600 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-[2] px-8 py-5 bg-primary-950 text-primary-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-primary-900 transition-all shadow-xl shadow-primary-950/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? 'Saving...' : (showModal === 'create' ? 'Add to Mobile App' : 'Save Changes')}
+                </button>
               </div>
-            </div>
-
-            <div className="pt-4 border-t border-slate-200 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowModal(null)}
-                className="flex-1 px-4 py-3 border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="flex-1 bg-primary-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? 'Saving...' : (showModal === 'create' ? 'Add to Mobile App' : 'Save Changes')}
-              </button>
-            </div>
-          </form>
-        </Modal>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

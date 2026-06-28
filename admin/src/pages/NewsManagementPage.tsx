@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { CheckCircle, Plus, Search, Edit, Trash2, Calendar, Globe, Newspaper, Tag, Clock, ShieldCheck, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
-import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 type NewsItem = {

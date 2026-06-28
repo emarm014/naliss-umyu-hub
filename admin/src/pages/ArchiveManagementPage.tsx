@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Plus, X, CheckCircle, Info, Search, Edit, Trash2, Calendar, FileText, Database, Layers, HardDrive, ShieldCheck, ChevronRight, ChevronLeft } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
-import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 type ArchiveItem = {

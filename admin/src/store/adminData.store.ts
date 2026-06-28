@@ -196,117 +196,156 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         }
       };
 
-      const [
-        analyticsData, studentsData, depsData, groupsData,
-        coursesData, materialsData, pqData, resourcesData,
-        lecturersData, executivesData, announcementsData, eventsData,
-        graduatesData, logsData, flaggedData, reportsData, mutedData
-      ] = await Promise.all([
-        safeFetch('analytics', async () => {
-          const { data, error } = await supabase.rpc('fetch_admin_analytics');
-          if (error) throw error;
-          return data;
-        }, get().analytics),
-        safeFetch('students', () => fetchAllUsers(), get().students),
-        safeFetch('departments', async () => {
-          const { data, error } = await supabase.from('departments').select('*').order('name', { ascending: true });
-          if (error) throw error;
-          return data || [];
-        }, get().departments),
-        safeFetch('groups', async () => {
-          const { data, error } = await supabase.rpc('get_groups_with_counts');
-          if (error) throw error;
-          return (data || []).map((g: any) => ({
-            ...g,
-            member_count: Number(g.member_count) || 0,
-            moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
-          }));
-        }, get().groups),
-        safeFetch('courses', async () => {
-          const { data, error } = await supabase.from('courses').select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)').order('code', { ascending: true });
-          if (error) throw error;
-          return data || [];
-        }, get().courses),
-        safeFetch('materials', async () => {
-          const { data, error } = await supabase.from('materials').select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
-          if (error) throw error;
-          return data || [];
-        }, get().materials),
-        safeFetch('pastQuestions', async () => {
-          const { data, error } = await supabase.from('past_questions').select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
-          if (error) throw error;
-          return data || [];
-        }, get().pastQuestions),
-        safeFetch('resources', async () => {
-          const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(300);
-          if (error) throw error;
-          return (data || []).map((r: any) => ({ ...r, file_size: r.file_size || 0, file_type: r.file_type || null }));
-        }, get().resources),
-        safeFetch('lecturers', async () => {
-          const { data, error } = await supabase.from('lecturers').select('*').order('display_order', { ascending: true });
-          if (error) throw error;
-          return data || [];
-        }, get().lecturers),
-        safeFetch('executives', async () => {
-          const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
-          if (error) throw error;
-          return data || [];
-        }, get().executives),
-        safeFetch('announcements', async () => {
-          const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(50);
-          if (error) throw error;
-          return data || [];
-        }, get().announcements),
-        safeFetch('events', async () => {
-          const { data, error } = await supabase.from('events').select('*').order('start_date', { ascending: true });
-          if (error) throw error;
-          return data || [];
-        }, get().events),
-        safeFetch('graduates', async () => {
-          const { data, error } = await supabase.from('graduates').select('*').order('graduation_year', { ascending: false });
-          if (error) throw error;
-          return data || [];
-        }, get().graduates),
-        safeFetch('activityLogs', async () => {
-          const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
-          if (error) throw error;
-          return data || [];
-        }, get().activityLogs),
-        safeFetch('flaggedMessages', async () => {
-          const { data, error } = await supabase.from('messages').select('*, sender:users!messages_sender_id_fkey(id, full_name, email, role)').eq('is_flagged', true).eq('is_deleted', false).order('created_at', { ascending: false }).limit(50);
-          if (error) throw error;
-          return data || [];
-        }, get().flaggedMessages),
-        safeFetch('messageReports', async () => {
-          const { data, error } = await supabase.from('message_reports').select('*, reporter:users!message_reports_reported_by_fkey(id, full_name, email), message:messages(id, content, sender_id, sender:users!messages_sender_id_fkey(full_name, email, role))').order('created_at', { ascending: false }).limit(50);
-          if (error) throw error;
-          return data || [];
-        }, get().messageReports),
-        safeFetch('mutedUsers', async () => {
-          const { data, error } = await supabase.from('muted_users').select('*, user:users!muted_users_user_id_fkey(id, full_name, email), mutedBy:users!muted_users_muted_by_fkey(id, full_name, email)').order('created_at', { ascending: false }).limit(50);
-          if (error) throw error;
-          return data || [];
-        }, get().mutedUsers),
-      ]);
+      // Define thunks that execute the queries
+      const tasks = [
+        async () => ({
+          analytics: await safeFetch('analytics', async () => {
+            const { data, error } = await supabase.rpc('fetch_admin_analytics');
+            if (error) throw error;
+            return data;
+          }, get().analytics)
+        }),
+        async () => ({
+          students: await safeFetch('students', () => fetchAllUsers(), get().students)
+        }),
+        async () => ({
+          departments: await safeFetch('departments', async () => {
+            const { data, error } = await supabase.from('departments').select('*').order('name', { ascending: true });
+            if (error) throw error;
+            return data || [];
+          }, get().departments)
+        }),
+        async () => ({
+          groups: await safeFetch('groups', async () => {
+            const { data, error } = await supabase.rpc('get_groups_with_counts');
+            if (error) throw error;
+            return (data || []).map((g: any) => ({
+              ...g,
+              member_count: Number(g.member_count) || 0,
+              moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
+            }));
+          }, get().groups)
+        }),
+        async () => ({
+          courses: await safeFetch('courses', async () => {
+            const { data, error } = await supabase.from('courses').select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)').order('code', { ascending: true });
+            if (error) throw error;
+            return data || [];
+          }, get().courses)
+        }),
+        async () => ({
+          materials: await safeFetch('materials', async () => {
+            const { data, error } = await supabase.from('materials').select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
+            if (error) throw error;
+            return data || [];
+          }, get().materials)
+        }),
+        async () => ({
+          pastQuestions: await safeFetch('pastQuestions', async () => {
+            const { data, error } = await supabase.from('past_questions').select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
+            if (error) throw error;
+            return data || [];
+          }, get().pastQuestions)
+        }),
+        async () => ({
+          resources: await safeFetch('resources', async () => {
+            const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(300);
+            if (error) throw error;
+            return (data || []).map((r: any) => ({ ...r, file_size: r.file_size || 0, file_type: r.file_type || null }));
+          }, get().resources)
+        }),
+        async () => ({
+          lecturers: await safeFetch('lecturers', async () => {
+            const { data, error } = await supabase.from('lecturers').select('*').order('display_order', { ascending: true });
+            if (error) throw error;
+            return data || [];
+          }, get().lecturers)
+        }),
+        async () => ({
+          executives: await safeFetch('executives', async () => {
+            const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
+            if (error) throw error;
+            return data || [];
+          }, get().executives)
+        }),
+        async () => ({
+          announcements: await safeFetch('announcements', async () => {
+            const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(50);
+            if (error) throw error;
+            return data || [];
+          }, get().announcements)
+        }),
+        async () => ({
+          events: await safeFetch('events', async () => {
+            const { data, error } = await supabase.from('events').select('*').order('start_date', { ascending: true });
+            if (error) throw error;
+            return data || [];
+          }, get().events)
+        }),
+        async () => ({
+          graduates: await safeFetch('graduates', async () => {
+            const { data, error } = await supabase.from('graduates').select('*').order('graduation_year', { ascending: false });
+            if (error) throw error;
+            return data || [];
+          }, get().graduates)
+        }),
+        async () => ({
+          activityLogs: await safeFetch('activityLogs', async () => {
+            const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
+            if (error) throw error;
+            return data || [];
+          }, get().activityLogs)
+        }),
+        async () => ({
+          flaggedMessages: await safeFetch('flaggedMessages', async () => {
+            const { data, error } = await supabase.from('messages').select('*, sender:users!messages_sender_id_fkey(id, full_name, email, role)').eq('is_flagged', true).eq('is_deleted', false).order('created_at', { ascending: false }).limit(50);
+            if (error) throw error;
+            return data || [];
+          }, get().flaggedMessages)
+        }),
+        async () => ({
+          messageReports: await safeFetch('messageReports', async () => {
+            const { data, error } = await supabase.from('message_reports').select('*, reporter:users!message_reports_reported_by_fkey(id, full_name, email), message:messages(id, content, sender_id, sender:users!messages_sender_id_fkey(full_name, email, role))').order('created_at', { ascending: false }).limit(50);
+            if (error) throw error;
+            return data || [];
+          }, get().messageReports)
+        }),
+        async () => ({
+          mutedUsers: await safeFetch('mutedUsers', async () => {
+            const { data, error } = await supabase.from('muted_users').select('*, user:users!muted_users_user_id_fkey(id, full_name, email), mutedBy:users!muted_users_muted_by_fkey(id, full_name, email)').order('created_at', { ascending: false }).limit(50);
+            if (error) throw error;
+            return data || [];
+          }, get().mutedUsers)
+        }),
+      ];
+
+      // Run sequential batches of 4 to prevent browser queue stalling
+      const combinedResults: Record<string, any> = {};
+      const batchSize = 4;
+      for (let i = 0; i < tasks.length; i += batchSize) {
+        const batch = tasks.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(t => t()));
+        batchResults.forEach(res => Object.assign(combinedResults, res));
+      }
 
       set({
-        analytics: analyticsData,
-        students: studentsData,
-        departments: depsData,
-        groups: groupsData,
-        courses: coursesData,
-        materials: materialsData,
-        pastQuestions: pqData,
-        resources: resourcesData,
-        lecturers: lecturersData,
-        executives: executivesData,
-        announcements: announcementsData,
-        events: eventsData,
-        graduates: graduatesData,
-        activityLogs: logsData,
-        flaggedMessages: flaggedData,
-        messageReports: reportsData,
-        mutedUsers: mutedData,
+        analytics: combinedResults.analytics,
+        students: combinedResults.students,
+        departments: combinedResults.departments,
+        groups: combinedResults.groups,
+        courses: combinedResults.courses,
+        materials: combinedResults.materials,
+        pastQuestions: combinedResults.pastQuestions,
+        resources: combinedResults.resources,
+        lecturers: combinedResults.lecturers,
+        executives: combinedResults.executives,
+        announcements: combinedResults.announcements,
+        events: combinedResults.events,
+        graduates: combinedResults.graduates,
+        activityLogs: combinedResults.activityLogs,
+        flaggedMessages: combinedResults.flaggedMessages,
+        messageReports: combinedResults.messageReports,
+        mutedUsers: combinedResults.mutedUsers,
         lastSync: new Date().toISOString(),
         error: failedKeys.length > 0 ? `Partial sync warning (failed: ${failedKeys.join(', ')})` : null,
       });

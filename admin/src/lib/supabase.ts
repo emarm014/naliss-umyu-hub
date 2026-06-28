@@ -57,7 +57,7 @@ const fetchWithRetry = async (
   }
 
   const controller = new AbortController();
-  const timeoutMs = 8000; // 8s timeout aligned with mobile
+  const timeoutMs = 30000; // 30s timeout for web client to prevent aborts on stalled browser queues
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   const existingHeaders: Record<string, string> = {};

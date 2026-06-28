@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, X, CheckCircle, Info, Search, Edit, Trash2, Calendar, FileText } from 'lucide-react';
+import { Plus, X, CheckCircle, Info, Search, Edit, Trash2, Calendar, FileText, Database, Layers, HardDrive, ShieldCheck, ChevronRight, ChevronLeft } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -159,54 +159,140 @@ export default function ArchiveManagementPage() {
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Archive Management</h1>
-          <p className="text-slate-600 mt-1">Add and manage institutional research repository assets.</p>
-        </div>
-        <button
-          onClick={handleOpenCreate}
-          className="btn-institutional group flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-        >
-          <div className="bg-white/20 p-1.5 rounded-full group-hover:bg-white/30 transition-colors">
-            <Plus className="h-4 w-4" />
-          </div>
-          Add to Mobile App
-        </button>
-      </div>
+  // Derived stats
+  const uniqueTypes = useMemo(() => new Set(archives.map(a => a.file_type)).size, [archives]);
+  const latestDate = useMemo(() => {
+    if (archives.length === 0) return '—';
+    return new Date(archives[0].created_at).toLocaleDateString();
+  }, [archives]);
 
+  return (
+    <div className="p-8 lg:p-12 max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700 pb-20">
+      {/* Success Toast */}
       {successMessage && (
-        <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-md">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <CheckCircle className="h-5 w-5 text-emerald-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-emerald-700">{successMessage}</p>
-            </div>
+        <div className="fixed top-10 right-10 z-[100] bg-primary-950 border border-primary-800 text-white px-8 py-6 rounded-[2rem] shadow-2xl flex items-center gap-5 animate-in fade-in slide-in-from-right-10 duration-500 backdrop-blur-3xl">
+          <div className="w-12 h-12 bg-primary-400 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-primary-400/20">
+            <CheckCircle className="w-6 h-6 text-primary-950" />
           </div>
+          <div>
+            <p className="font-black text-sm uppercase tracking-widest text-primary-400">Success</p>
+            <p className="text-sm font-medium text-primary-100/80">{successMessage}</p>
+          </div>
+          <button onClick={() => setSuccessMessage(null)} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
+            <X className="w-5 h-5 text-primary-400/50" />
+          </button>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+      {/* Hero Header */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 pb-10 border-b border-gray-100">
+        <div>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="px-4 py-1 bg-primary-950 text-primary-400 rounded-full flex items-center gap-2 border border-primary-800/50 shadow-xl shadow-primary-950/20">
+               <ShieldCheck className="w-3.5 h-3.5" />
+               <span className="text-[10px] font-black uppercase tracking-[0.2em] italic">Archive Manager</span>
+            </div>
+            <div className="px-4 py-1 bg-green-50 text-green-600 rounded-full flex items-center gap-2 border border-green-100">
+               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+               <span className="text-[10px] font-black uppercase tracking-widest text-green-700">Active</span>
+            </div>
+          </div>
+          <h1 className="text-4xl lg:text-6xl font-black text-gray-950 tracking-tight leading-[0.9]">
+            Cloud <br/>
+            <span className="text-primary-600">Archives.</span>
+          </h1>
+          <p className="text-gray-400 mt-6 text-lg font-medium max-w-xl leading-relaxed">
+              Add and manage institutional research repository assets for the NALISS mobile application.
+          </p>
+        </div>
+
+        <button
+          onClick={handleOpenCreate}
+          className="group relative flex items-center gap-3 px-8 py-5 bg-primary-950 text-primary-400 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] hover:bg-white hover:text-primary-950 transition-all duration-500 shadow-2xl shadow-primary-950/20 overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-primary-400/10 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
+          <Plus className="w-5 h-5 relative z-10" />
+          <span className="relative z-10">Add to Mobile App</span>
+        </button>
+      </div>
+
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-sm flex flex-col gap-6 group hover:shadow-2xl transition-all duration-500 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-primary-50 rounded-bl-[3rem] -mr-12 -mt-12 group-hover:bg-primary-100 transition-colors" />
+            <div className="p-5 bg-primary-950 text-primary-400 rounded-2xl w-fit shadow-xl shadow-primary-950/20 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
+                <Database className="w-8 h-8" />
+            </div>
+            <div>
+                <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1">Total Archives</p>
+                <div className="flex items-baseline gap-3">
+                    <p className="text-4xl font-black text-gray-950 tracking-tighter">{archives.length.toLocaleString()}</p>
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                        Records
+                    </div>
+                </div>
+            </div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight pt-4 border-t border-gray-50 flex items-center justify-between group-hover:text-primary-800 transition-colors">
+                Repository Items
+                <ChevronRight className="w-4 h-4 opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-500" />
+            </p>
+        </div>
+
+        <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-sm flex flex-col gap-6 group hover:shadow-2xl transition-all duration-500 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-[3rem] -mr-12 -mt-12 group-hover:bg-amber-100 transition-colors" />
+            <div className="p-5 bg-amber-950 text-amber-400 rounded-2xl w-fit shadow-xl shadow-amber-950/20 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
+                <Layers className="w-8 h-8" />
+            </div>
+            <div>
+                <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1">Document Types</p>
+                <div className="flex items-baseline gap-3">
+                    <p className="text-4xl font-black text-gray-950 tracking-tighter">{uniqueTypes}</p>
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                        Formats
+                    </div>
+                </div>
+            </div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight pt-4 border-t border-gray-50 flex items-center justify-between group-hover:text-primary-800 transition-colors">
+                File Categories
+                <ChevronRight className="w-4 h-4 opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-500" />
+            </p>
+        </div>
+
+        <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-sm flex flex-col gap-6 group hover:shadow-2xl transition-all duration-500 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-bl-[3rem] -mr-12 -mt-12 group-hover:bg-emerald-100 transition-colors" />
+            <div className="p-5 bg-emerald-950 text-emerald-400 rounded-2xl w-fit shadow-xl shadow-emerald-950/20 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
+                <HardDrive className="w-8 h-8" />
+            </div>
+            <div>
+                <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1">Latest Upload</p>
+                <div className="flex items-baseline gap-3">
+                    <p className="text-4xl font-black text-gray-950 tracking-tighter">{latestDate}</p>
+                </div>
+            </div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight pt-4 border-t border-gray-50 flex items-center justify-between group-hover:text-primary-800 transition-colors">
+                Most Recent Entry
+                <ChevronRight className="w-4 h-4 opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-500" />
+            </p>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm flex flex-col md:flex-row gap-6 items-center group hover:shadow-xl transition-all duration-500">
+        <div className="flex-1 w-full relative">
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-300 group-focus-within:text-primary-600 transition-colors" />
           <input
             type="text"
             placeholder="Search archives..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary-500"
+            className="w-full pl-16 pr-8 py-5 bg-gray-50 border-none rounded-[2rem] focus:ring-2 focus:ring-primary-950 font-medium text-gray-950 placeholder:text-gray-300 transition-all shadow-inner"
           />
         </div>
-        <div>
+        <div className="flex flex-wrap md:flex-nowrap gap-4 w-full md:w-fit">
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary-500"
+            className="flex-1 md:w-48 px-6 py-5 bg-gray-50 border-none rounded-[2rem] focus:ring-2 focus:ring-primary-950 font-black text-[10px] uppercase tracking-widest text-gray-600 appearance-none text-center shadow-inner cursor-pointer"
           >
             <option value="all">All Types</option>
             <option value="document">Document</option>
@@ -218,81 +304,95 @@ export default function ArchiveManagementPage() {
       </div>
 
       {/* List */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="space-y-6">
         {isLoading ? (
-          <div className="p-12 flex justify-center"><LoadingSpinner size="lg" /></div>
+          <div className="col-span-full py-20 flex justify-center"><LoadingSpinner size="lg" /></div>
         ) : filteredArchives.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">
-            No archives found.
+          <div className="col-span-full py-20 text-center">
+            <div className="w-20 h-20 bg-gray-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+              <FileText className="w-10 h-10 text-gray-200" />
+            </div>
+            <p className="text-lg font-black text-gray-300">No archives found</p>
+            <p className="text-sm text-gray-300 mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-200">
-            {paginatedArchives.map((item) => (
-              <div key={item.id} className="p-6 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <FileText className="h-6 w-6 text-slate-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900">
-                      <a href={item.file_url} target="_blank" rel="noopener noreferrer" className="hover:text-primary-600 hover:underline">
-                        {item.title}
-                      </a>
-                    </h3>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" />
-                        {new Date(item.created_at).toLocaleDateString()}
-                      </span>
-                      <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 rounded-full text-xs font-medium border border-slate-200 uppercase">
-                        {item.file_type}
-                      </span>
-                      {item.file_size && (
-                        <span className="text-xs text-slate-400 border border-slate-200 px-2.5 py-0.5 rounded-full bg-white">
-                          {item.file_size}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+          paginatedArchives.map((item) => (
+            <div key={item.id} className="bg-white rounded-[2rem] border border-gray-100 p-8 group hover:shadow-2xl hover:border-primary-200 transition-all duration-500 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+              <div className="flex items-start gap-5">
+                <div className="p-4 bg-primary-950 text-primary-400 rounded-2xl flex-shrink-0 shadow-xl shadow-primary-950/20 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
+                  <FileText className="w-6 h-6" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleOpenEdit(item)}
-                    className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                  >
-                    <Edit className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id, item.title)}
-                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
+                <div>
+                  <h3 className="text-xl font-black text-gray-950">
+                    <a href={item.file_url} target="_blank" rel="noopener noreferrer" className="hover:text-primary-600 transition-colors">
+                      {item.title}
+                    </a>
+                  </h3>
+                  <div className="flex items-center gap-3 mt-2 flex-wrap">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {new Date(item.created_at).toLocaleDateString()}
+                    </span>
+                    <span className="text-[10px] font-bold text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest border border-primary-100">
+                      {item.file_type}
+                    </span>
+                    {item.file_size && (
+                      <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full uppercase tracking-widest border border-gray-100">
+                        {item.file_size}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => handleOpenEdit(item)}
+                  className="p-2.5 hover:bg-primary-50 text-gray-300 hover:text-primary-600 rounded-xl transition-all"
+                >
+                  <Edit className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={() => handleDelete(item.id, item.title)}
+                  className="p-2.5 hover:bg-red-50 text-gray-300 hover:text-red-600 rounded-xl transition-all"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          ))
         )}
       </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex justify-center mt-6">
-          <div className="flex gap-2">
-            {Array.from({ length: totalPages }).map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setCurrentPage(i + 1)}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium transition-colors ${
-                  currentPage === i + 1
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {i + 1}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="w-10 h-10 rounded-[1rem] flex items-center justify-center text-sm font-bold bg-white text-gray-400 border border-gray-100 hover:bg-gray-50 hover:text-gray-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          {Array.from({ length: totalPages }).map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentPage(i + 1)}
+              className={`w-10 h-10 rounded-[1rem] flex items-center justify-center text-sm font-bold transition-all ${
+                currentPage === i + 1
+                  ? 'bg-primary-950 text-primary-400 shadow-lg shadow-primary-950/20'
+                  : 'bg-white text-gray-400 border border-gray-100 hover:bg-gray-50 hover:text-gray-600'
+              }`}
+            >
+              {i + 1}
+            </button>
+          ))}
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="w-10 h-10 rounded-[1rem] flex items-center justify-center text-sm font-bold bg-white text-gray-400 border border-gray-100 hover:bg-gray-50 hover:text-gray-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -306,48 +406,48 @@ export default function ArchiveManagementPage() {
         >
           <form onSubmit={handleSubmit} className="space-y-6">
             {formError && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-medium">
                 {formError}
               </div>
             )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
                     Title <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400"
                     placeholder="e.g. 2025 Institutional Handbook"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
                     Description / Abstract Findings
                   </label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-h-[100px]"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400 min-h-[100px]"
                     placeholder="Summary of the findings..."
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
                       File Type
                     </label>
                     <select
                       value={formData.file_type}
                       onChange={(e) => setFormData({ ...formData, file_type: e.target.value as any })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
                     >
                       <option value="pdf">PDF</option>
                       <option value="document">Document</option>
@@ -356,14 +456,14 @@ export default function ArchiveManagementPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
                       File Size (Optional)
                     </label>
                     <input
                       type="text"
                       value={formData.file_size}
                       onChange={(e) => setFormData({ ...formData, file_size: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400"
                       placeholder="e.g. 2.4 MB"
                     />
                   </div>
@@ -371,25 +471,25 @@ export default function ArchiveManagementPage() {
               </div>
 
               <div className="space-y-4">
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
                   Asset Attachment <span className="text-red-500">*</span>
                 </label>
                 
-                <div className="p-4 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+                <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
                   {formData.file_url ? (
-                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200">
+                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200">
                       <div className="flex items-center space-x-3 overflow-hidden">
-                        <div className="p-2 bg-primary-50 text-primary-600 rounded-lg">
+                        <div className="p-2 bg-primary-50 text-primary-600 rounded-xl">
                           <CheckCircle className="h-5 w-5" />
                         </div>
-                        <span className="text-sm text-slate-700 truncate max-w-[200px]" title={formData.file_url}>
+                        <span className="text-sm font-medium text-slate-700 truncate max-w-[200px]" title={formData.file_url}>
                           Asset Attached
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, file_url: '' })}
-                        className="p-1 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
+                        className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -408,7 +508,7 @@ export default function ArchiveManagementPage() {
                   )}
                 </div>
                 
-                <div className="flex items-start gap-2 text-sm text-slate-500 mt-2 bg-blue-50/50 p-3 rounded-lg">
+                <div className="flex items-start gap-2 text-sm text-slate-500 mt-2 bg-blue-50/50 p-3 rounded-xl">
                   <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
                   <p>Upload a file to automatically secure it into the cloud bucket and generate a permanent download link.</p>
                 </div>
@@ -419,14 +519,14 @@ export default function ArchiveManagementPage() {
               <button
                 type="button"
                 onClick={() => setShowModal(null)}
-                className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium transition-colors"
+                className="flex-1 sm:flex-none px-6 py-3 border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting || !formData.file_url}
-                className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="flex-1 sm:flex-none bg-primary-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 {isSubmitting ? (
                   <>

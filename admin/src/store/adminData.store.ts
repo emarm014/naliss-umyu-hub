@@ -171,6 +171,8 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
 
     set({ isSyncing: true, error: null });
 
+    const failedKeys: string[] = [];
+
     try {
       const fetchOrUseCache = async (key: string, queryFn: () => Promise<any>) => {
         if (force) {
@@ -184,24 +186,34 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         return fresh;
       };
 
+      const safeFetch = async (key: string, queryFn: () => Promise<any>, currentValue: any) => {
+        try {
+          return await fetchOrUseCache(key, queryFn);
+        } catch (err: any) {
+          console.error(`[Sync Engine] Failed to sync slice "${key}":`, err);
+          failedKeys.push(key);
+          return currentValue || [];
+        }
+      };
+
       const [
         analyticsData, studentsData, depsData, groupsData,
         coursesData, materialsData, pqData, resourcesData,
         lecturersData, executivesData, announcementsData, eventsData,
         graduatesData, logsData, flaggedData, reportsData, mutedData
       ] = await Promise.all([
-        fetchOrUseCache('analytics', async () => {
+        safeFetch('analytics', async () => {
           const { data, error } = await supabase.rpc('fetch_admin_analytics');
           if (error) throw error;
           return data;
-        }),
-        fetchOrUseCache('students', () => fetchAllUsers()),
-        fetchOrUseCache('departments', async () => {
+        }, get().analytics),
+        safeFetch('students', () => fetchAllUsers(), get().students),
+        safeFetch('departments', async () => {
           const { data, error } = await supabase.from('departments').select('*').order('name', { ascending: true });
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('groups', async () => {
+        }, get().departments),
+        safeFetch('groups', async () => {
           const { data, error } = await supabase.rpc('get_groups_with_counts');
           if (error) throw error;
           return (data || []).map((g: any) => ({
@@ -209,72 +221,72 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
             member_count: Number(g.member_count) || 0,
             moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
           }));
-        }),
-        fetchOrUseCache('courses', async () => {
+        }, get().groups),
+        safeFetch('courses', async () => {
           const { data, error } = await supabase.from('courses').select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)').order('code', { ascending: true });
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('materials', async () => {
+        }, get().courses),
+        safeFetch('materials', async () => {
           const { data, error } = await supabase.from('materials').select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('pastQuestions', async () => {
+        }, get().materials),
+        safeFetch('pastQuestions', async () => {
           const { data, error } = await supabase.from('past_questions').select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('resources', async () => {
+        }, get().pastQuestions),
+        safeFetch('resources', async () => {
           const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(300);
           if (error) throw error;
           return (data || []).map((r: any) => ({ ...r, file_size: r.file_size || 0, file_type: r.file_type || null }));
-        }),
-        fetchOrUseCache('lecturers', async () => {
+        }, get().resources),
+        safeFetch('lecturers', async () => {
           const { data, error } = await supabase.from('lecturers').select('*').order('display_order', { ascending: true });
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('executives', async () => {
+        }, get().lecturers),
+        safeFetch('executives', async () => {
           const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('announcements', async () => {
+        }, get().executives),
+        safeFetch('announcements', async () => {
           const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(50);
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('events', async () => {
+        }, get().announcements),
+        safeFetch('events', async () => {
           const { data, error } = await supabase.from('events').select('*').order('start_date', { ascending: true });
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('graduates', async () => {
+        }, get().events),
+        safeFetch('graduates', async () => {
           const { data, error } = await supabase.from('graduates').select('*').order('graduation_year', { ascending: false });
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('activityLogs', async () => {
+        }, get().graduates),
+        safeFetch('activityLogs', async () => {
           const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('flaggedMessages', async () => {
+        }, get().activityLogs),
+        safeFetch('flaggedMessages', async () => {
           const { data, error } = await supabase.from('messages').select('*, sender:users!messages_sender_id_fkey(id, full_name, email, role)').eq('is_flagged', true).eq('is_deleted', false).order('created_at', { ascending: false }).limit(50);
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('messageReports', async () => {
+        }, get().flaggedMessages),
+        safeFetch('messageReports', async () => {
           const { data, error } = await supabase.from('message_reports').select('*, reporter:users!message_reports_reported_by_fkey(id, full_name, email), message:messages(id, content, sender_id, sender:users!messages_sender_id_fkey(full_name, email, role))').order('created_at', { ascending: false }).limit(50);
           if (error) throw error;
           return data || [];
-        }),
-        fetchOrUseCache('mutedUsers', async () => {
+        }, get().messageReports),
+        safeFetch('mutedUsers', async () => {
           const { data, error } = await supabase.from('muted_users').select('*, user:users!muted_users_user_id_fkey(id, full_name, email), mutedBy:users!muted_users_muted_by_fkey(id, full_name, email)').order('created_at', { ascending: false }).limit(50);
           if (error) throw error;
           return data || [];
-        }),
+        }, get().mutedUsers),
       ]);
 
       set({
@@ -296,8 +308,10 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         messageReports: reportsData,
         mutedUsers: mutedData,
         lastSync: new Date().toISOString(),
+        error: failedKeys.length > 0 ? `Partial sync warning (failed: ${failedKeys.join(', ')})` : null,
       });
     } catch (err: unknown) {
+      console.error('[Sync Engine] Critical unhandled sync error:', err);
       set({ error: (err as Error).message });
     } finally {
       set({ isSyncing: false });

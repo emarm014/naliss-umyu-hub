@@ -54,12 +54,13 @@ function TrendBadge({ dir, pct }: { dir: 'up' | 'down' | 'flat'; pct: number }) 
 }
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { analytics: census, isSyncing, lastSync, syncAll } = useAdminDataStore(
+  const { analytics: census, isSyncing, lastSync, syncAll, error } = useAdminDataStore(
     useShallow((state) => ({
       analytics: state.analytics,
       isSyncing: state.isSyncing,
       lastSync: state.lastSync,
       syncAll: state.syncAll,
+      error: state.error,
     }))
   );
   const [trends, setTrends] = useState<TrendData | null>(null);
@@ -234,13 +235,16 @@ export default function DashboardPage() {
                     {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                 </span>
               </div>
-              {!census && !isSyncing && (
+              {(error || !census) && !isSyncing && (
                 <button 
                   onClick={() => syncAll(true)}
-                  className="px-4 py-1.5 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-2.5 hover:bg-red-500/40 transition-colors"
+                  className="px-4 py-1.5 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-2.5 hover:bg-red-500/40 transition-colors animate-pulse"
+                  title={error || 'Failed to sync all tables. Click to retry.'}
                 >
                   <AlertCircle className="w-4 h-4 text-red-400" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">Sync Error - Retry</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">
+                    {error ? error : 'Sync Error - Retry'}
+                  </span>
                 </button>
               )}
             </div>

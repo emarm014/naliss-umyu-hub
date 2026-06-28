@@ -60,6 +60,14 @@ const fetchWithRetry = async (
   const timeoutMs = 30000; // 30s timeout for web client to prevent aborts on stalled browser queues
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+  if (options.signal) {
+    if (options.signal.aborted) {
+      clearTimeout(timeoutId);
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    }
+    options.signal.addEventListener('abort', () => controller.abort());
+  }
+
   const existingHeaders: Record<string, string> = {};
   if (options.headers) {
     if (options.headers instanceof Headers) {
@@ -87,6 +95,18 @@ const fetchWithRetry = async (
     const currentMethod = options.method ?? 'GET';
 
     if (!response.ok) {
+      if (response.status === 401 && attempt === 0) {
+        // Expired token / session — try to refresh session silently
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            return fetchWithRetry(url, options, attempt + 1);
+          }
+        } catch (refreshErr) {
+          console.error('[Supabase Client] Silent token refresh failed:', refreshErr);
+        }
+      }
+
       Sentry.addBreadcrumb({
         category: 'api.supabase',
         message: `HTTP ${response.status}: ${currentMethod} ${urlPath} (${durationMs}ms)`,

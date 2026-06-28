@@ -25,7 +25,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     if (isAdminOrModerator) {
       runtimeCoordinator.initialize();
-      syncAll(true);
+      syncAll(false);
       subscribe();
       return () => {
         unsubscribe();

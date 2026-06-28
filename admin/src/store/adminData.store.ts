@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { realtimeCoordinator } from '../lib/runtime/realtime';
-import { cacheManager } from '../lib/runtime/cache';
+import { queryClient } from '../lib/queryClient';
 
 // ── Paginated user fetcher ────────────────────────────────────────────────────
 // PostgREST has a default max-rows cap (typically 1000). For departments with
@@ -176,21 +176,20 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     const failedKeys: string[] = [];
 
     try {
-      const fetchOrUseCache = async (key: string, queryFn: () => Promise<any>) => {
+      const fetchOrUseCache = async (key: string, queryFn: () => Promise<any>, staleTime = 5 * 60 * 1000) => {
         if (force) {
-          cacheManager.invalidate([key]);
+          await queryClient.invalidateQueries({ queryKey: [key] });
         }
-        const cached = cacheManager.get(key);
-        if (cached !== undefined) return cached;
-
-        const fresh = await queryFn();
-        cacheManager.set(key, fresh);
-        return fresh;
+        return await queryClient.fetchQuery({
+          queryKey: [key],
+          queryFn,
+          staleTime: force ? 0 : staleTime,
+        });
       };
 
-      const safeFetch = async (key: string, queryFn: () => Promise<any>, currentValue: any) => {
+      const safeFetch = async (key: string, queryFn: () => Promise<any>, currentValue: any, staleTime?: number) => {
         try {
-          return await fetchOrUseCache(key, queryFn);
+          return await fetchOrUseCache(key, queryFn, staleTime);
         } catch (err: any) {
           console.error(`[Sync Engine] Failed to sync slice "${key}":`, err);
           failedKeys.push(key);
@@ -205,17 +204,17 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
             const { data, error } = await supabase.rpc('fetch_admin_analytics');
             if (error) throw error;
             return data;
-          }, get().analytics)
+          }, get().analytics, 60000)
         }),
         async () => ({
-          students: await safeFetch('students', () => fetchAllUsers(), get().students)
+          students: await safeFetch('students', () => fetchAllUsers(), get().students, 5 * 60 * 1000)
         }),
         async () => ({
           departments: await safeFetch('departments', async () => {
-            const { data, error } = await supabase.from('departments').select('*').order('name', { ascending: true });
+            const { data, error } = await supabase.from('departments').select('id, name, code').order('name', { ascending: true });
             if (error) throw error;
             return data || [];
-          }, get().departments)
+          }, get().departments, 60 * 60 * 1000)
         }),
         async () => ({
           groups: await safeFetch('groups', async () => {
@@ -226,98 +225,98 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
               member_count: Number(g.member_count) || 0,
               moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
             }));
-          }, get().groups)
+          }, get().groups, 5 * 60 * 1000)
         }),
         async () => ({
           courses: await safeFetch('courses', async () => {
-            const { data, error } = await supabase.from('courses').select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)').order('code', { ascending: true });
+            const { data, error } = await supabase.from('courses').select('id, code, title, level, semester, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)').order('code', { ascending: true });
             if (error) throw error;
             return data || [];
-          }, get().courses)
+          }, get().courses, 30 * 60 * 1000)
         }),
         async () => ({
           materials: await safeFetch('materials', async () => {
-            const { data, error } = await supabase.from('materials').select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
+            const { data, error } = await supabase.from('materials').select('id, title, file_url, created_at, is_active, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
             if (error) throw error;
             return data || [];
-          }, get().materials)
+          }, get().materials, 5 * 60 * 1000)
         }),
         async () => ({
           pastQuestions: await safeFetch('pastQuestions', async () => {
-            const { data, error } = await supabase.from('past_questions').select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
+            const { data, error } = await supabase.from('past_questions').select('id, year, exam_type, file_url, created_at, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
             if (error) throw error;
             return data || [];
-          }, get().pastQuestions)
+          }, get().pastQuestions, 5 * 60 * 1000)
         }),
         async () => ({
           resources: await safeFetch('resources', async () => {
-            const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(300);
+            const { data, error } = await supabase.from('cloud_archive').select('id, file_name, file_url, file_size, file_type, created_at').order('created_at', { ascending: false }).limit(300);
             if (error) throw error;
             return (data || []).map((r: any) => ({ ...r, file_size: r.file_size || 0, file_type: r.file_type || null }));
-          }, get().resources)
+          }, get().resources, 5 * 60 * 1000)
         }),
         async () => ({
           lecturers: await safeFetch('lecturers', async () => {
-            const { data, error } = await supabase.from('lecturers').select('*').order('display_order', { ascending: true });
+            const { data, error } = await supabase.from('lecturers').select('id, title, full_name, email, display_order').order('display_order', { ascending: true });
             if (error) throw error;
             return data || [];
-          }, get().lecturers)
+          }, get().lecturers, 30 * 60 * 1000)
         }),
         async () => ({
           executives: await safeFetch('executives', async () => {
-            const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
+            const { data, error } = await supabase.from('executives').select('id, full_name, position, display_order').order('display_order', { ascending: true });
             if (error) throw error;
             return data || [];
-          }, get().executives)
+          }, get().executives, 30 * 60 * 1000)
         }),
         async () => ({
           announcements: await safeFetch('announcements', async () => {
-            const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(50);
+            const { data, error } = await supabase.from('announcements').select('id, title, content, created_at, is_published').order('created_at', { ascending: false }).limit(50);
             if (error) throw error;
             return data || [];
-          }, get().announcements)
+          }, get().announcements, 2 * 60 * 1000)
         }),
         async () => ({
           events: await safeFetch('events', async () => {
-            const { data, error } = await supabase.from('events').select('*').order('start_date', { ascending: true });
+            const { data, error } = await supabase.from('events').select('id, title, description, start_date, end_date').order('start_date', { ascending: true });
             if (error) throw error;
             return data || [];
-          }, get().events)
+          }, get().events, 5 * 60 * 1000)
         }),
         async () => ({
           graduates: await safeFetch('graduates', async () => {
-            const { data, error } = await supabase.from('graduates').select('*').order('graduation_year', { ascending: false });
+            const { data, error } = await supabase.from('graduates').select('id, full_name, graduation_year, class_of_degree').order('graduation_year', { ascending: false });
             if (error) throw error;
             return data || [];
-          }, get().graduates)
+          }, get().graduates, 10 * 60 * 1000)
         }),
         async () => ({
           activityLogs: await safeFetch('activityLogs', async () => {
-            const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
+            const { data, error } = await supabase.from('activity_logs').select('id, action, created_at, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
             if (error) throw error;
             return data || [];
-          }, get().activityLogs)
+          }, get().activityLogs, 30000)
         }),
         async () => ({
           flaggedMessages: await safeFetch('flaggedMessages', async () => {
-            const { data, error } = await supabase.from('messages').select('*, sender:users!messages_sender_id_fkey(id, full_name, email, role)').eq('is_flagged', true).eq('is_deleted', false).order('created_at', { ascending: false }).limit(50);
+            const { data, error } = await supabase.from('messages').select('id, content, created_at, sender:users!messages_sender_id_fkey(id, full_name, email, role)').eq('is_flagged', true).eq('is_deleted', false).order('created_at', { ascending: false }).limit(50);
             if (error) throw error;
             return data || [];
-          }, get().flaggedMessages)
+          }, get().flaggedMessages, 30000)
         }),
         async () => ({
           messageReports: await safeFetch('messageReports', async () => {
-            const { data, error } = await supabase.from('message_reports').select('*, reporter:users!message_reports_reported_by_fkey(id, full_name, email), message:messages(id, content, sender_id, sender:users!messages_sender_id_fkey(full_name, email, role))').order('created_at', { ascending: false }).limit(50);
+            const { data, error } = await supabase.from('message_reports').select('id, created_at, reporter:users!message_reports_reported_by_fkey(id, full_name, email), message:messages(id, content, sender_id, sender:users!messages_sender_id_fkey(full_name, email, role))').order('created_at', { ascending: false }).limit(50);
             if (error) throw error;
             return data || [];
-          }, get().messageReports)
+          }, get().messageReports, 30000)
         }),
         async () => ({
           mutedUsers: await safeFetch('mutedUsers', async () => {
-            const { data, error } = await supabase.from('muted_users').select('*, user:users!muted_users_user_id_fkey(id, full_name, email), mutedBy:users!muted_users_muted_by_fkey(id, full_name, email)').order('created_at', { ascending: false }).limit(50);
+            const { data, error } = await supabase.from('muted_users').select('id, created_at, user:users!muted_users_user_id_fkey(id, full_name, email), mutedBy:users!muted_users_muted_by_fkey(id, full_name, email)').order('created_at', { ascending: false }).limit(50);
             if (error) throw error;
             return data || [];
-          }, get().mutedUsers)
+          }, get().mutedUsers, 30000)
         }),
       ];
 

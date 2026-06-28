@@ -96,37 +96,18 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchTrends() {
       try {
-        const now = new Date();
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-
-        const [trendCurrent, trendPrev] = await Promise.all([
-          supabase
-            .from('activity_logs')
-            .select('action')
-            .gte('created_at', weekAgo.toISOString())
-            .lt('created_at', now.toISOString()),
-          supabase
-            .from('activity_logs')
-            .select('action')
-            .gte('created_at', twoWeeksAgo.toISOString())
-            .lt('created_at', weekAgo.toISOString()),
-        ]);
-
-        const countActions = (logs: { action: string }[], keyword: string) =>
-          logs.filter(l => l.action.toLowerCase().includes(keyword)).length;
-
-        const curr = trendCurrent.data || [];
-        const prev = trendPrev.data || [];
-
-        setTrends({
-          newUsers: countActions(curr, 'user'),
-          newMaterials: countActions(curr, 'material') + countActions(curr, 'upload'),
-          newMessages: countActions(curr, 'message'),
-          prevUsers: countActions(prev, 'user'),
-          prevMaterials: countActions(prev, 'material') + countActions(prev, 'upload'),
-          prevMessages: countActions(prev, 'message'),
-        });
+        const { data, error } = await supabase.rpc('fetch_activity_trends');
+        if (error) throw error;
+        if (data) {
+          setTrends({
+            newUsers: Number(data.newUsers) || 0,
+            newMaterials: Number(data.newMaterials) || 0,
+            newMessages: Number(data.newMessages) || 0,
+            prevUsers: Number(data.prevUsers) || 0,
+            prevMaterials: Number(data.prevMaterials) || 0,
+            prevMessages: Number(data.prevMessages) || 0,
+          });
+        }
       } catch {
         // silent — trend data is non-critical, dashboard still shows main stats
       }

@@ -57,7 +57,10 @@ function App() {
 
     const handleFocus = () => {
       // Quiet background check to sync changes seamlessly without showing full-page blocking loaders
-      syncAll();
+      const hasUser = useAuthStore.getState().user;
+      if (hasUser) {
+        syncAll();
+      }
     };
     window.addEventListener('focus', handleFocus);
 

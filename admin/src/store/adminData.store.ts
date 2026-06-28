@@ -77,6 +77,7 @@ interface AdminDataState {
   isSyncing: boolean;
   lastSync: string | null;
   error: string | null;
+  syncWarnings: string[];
 
   syncAll: (force?: boolean) => Promise<void>;
   syncMaterialsOnly: () => Promise<void>;
@@ -155,6 +156,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
   isSyncing: false,
   lastSync: null,
   error: null,
+  syncWarnings: [],
   _channels: [],
   _syncTimer: null,
   _rtSyncTimer: null,
@@ -347,7 +349,8 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         messageReports: combinedResults.messageReports,
         mutedUsers: combinedResults.mutedUsers,
         lastSync: new Date().toISOString(),
-        error: failedKeys.length > 0 ? `Partial sync warning (failed: ${failedKeys.join(', ')})` : null,
+        syncWarnings: failedKeys,
+        error: null,
       });
     } catch (err: unknown) {
       console.error('[Sync Engine] Critical unhandled sync error:', err);

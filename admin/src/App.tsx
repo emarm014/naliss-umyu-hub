@@ -11,31 +11,45 @@ import RoleProtectedRoute from './components/layout/RoleProtectedRoute';
 import { OverlayManager } from './components/common/overlays';
 import { queryClient } from './lib/queryClient';
 
+// Resilient lazy load wrapper to handle chunk load failures gracefully (e.g. during new Vercel deployments)
+function safeLazy<T extends React.ComponentType<any>>(importFn: () => Promise<{ default: T }>) {
+  return lazy(async () => {
+    try {
+      return await importFn();
+    } catch (error) {
+      console.error('Lazy load chunk error:', error);
+      // Automatically refresh the tab to load the new deployment chunk registry
+      window.location.reload();
+      return { default: (() => null) as unknown as T };
+    }
+  });
+}
+
 // Lazy load every admin page for chunk splitting and faster initial load
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const StudentsPage = lazy(() => import('./pages/StudentsPage'));
-const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage'));
-const EventsPage = lazy(() => import('./pages/EventsPage'));
-const MaterialsPage = lazy(() => import('./pages/MaterialsPage'));
-const MessagingPage = lazy(() => import('./pages/MessagingPage'));
-const LecturersPage = lazy(() => import('./pages/LecturersPage'));
-const ModeratorsPage = lazy(() => import('./pages/ModeratorsPage'));
-const ExecutivesPage = lazy(() => import('./pages/ExecutivesPage'));
-const GraduatesPage = lazy(() => import('./pages/GraduatesPage'));
-const GroupsPage = lazy(() => import('./pages/GroupsPage'));
-const CoursesPage = lazy(() => import('./pages/CoursesPage'));
-const PastQuestionsPage = lazy(() => import('./pages/PastQuestionsPage'));
-const ResourcesPage = lazy(() => import('./pages/ResourcesPage'));
-const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
-const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const ActivityLogsPage = lazy(() => import('./pages/ActivityLogsPage'));
-const GroupMediaPage = lazy(() => import('./pages/GroupMediaPage'));
-const ModeratorStoragePage = lazy(() => import('./pages/ModeratorStoragePage'));
-const SecurityPage = lazy(() => import('./pages/SecurityPage'));
-const ArchiveManagementPage = lazy(() => import('./pages/ArchiveManagementPage'));
-const NewsManagementPage = lazy(() => import('./pages/NewsManagementPage'));
-const EventPoolManagementPage = lazy(() => import('./pages/EventPoolManagementPage'));
+const LoginPage = safeLazy(() => import('./pages/LoginPage'));
+const DashboardPage = safeLazy(() => import('./pages/DashboardPage'));
+const StudentsPage = safeLazy(() => import('./pages/StudentsPage'));
+const AnnouncementsPage = safeLazy(() => import('./pages/AnnouncementsPage'));
+const EventsPage = safeLazy(() => import('./pages/EventsPage'));
+const MaterialsPage = safeLazy(() => import('./pages/MaterialsPage'));
+const MessagingPage = safeLazy(() => import('./pages/MessagingPage'));
+const LecturersPage = safeLazy(() => import('./pages/LecturersPage'));
+const ModeratorsPage = safeLazy(() => import('./pages/ModeratorsPage'));
+const ExecutivesPage = safeLazy(() => import('./pages/ExecutivesPage'));
+const GraduatesPage = safeLazy(() => import('./pages/GraduatesPage'));
+const GroupsPage = safeLazy(() => import('./pages/GroupsPage'));
+const CoursesPage = safeLazy(() => import('./pages/CoursesPage'));
+const PastQuestionsPage = safeLazy(() => import('./pages/PastQuestionsPage'));
+const ResourcesPage = safeLazy(() => import('./pages/ResourcesPage'));
+const AnalyticsPage = safeLazy(() => import('./pages/AnalyticsPage'));
+const SettingsPage = safeLazy(() => import('./pages/SettingsPage'));
+const ActivityLogsPage = safeLazy(() => import('./pages/ActivityLogsPage'));
+const GroupMediaPage = safeLazy(() => import('./pages/GroupMediaPage'));
+const ModeratorStoragePage = safeLazy(() => import('./pages/ModeratorStoragePage'));
+const SecurityPage = safeLazy(() => import('./pages/SecurityPage'));
+const ArchiveManagementPage = safeLazy(() => import('./pages/ArchiveManagementPage'));
+const NewsManagementPage = safeLazy(() => import('./pages/NewsManagementPage'));
+const EventPoolManagementPage = safeLazy(() => import('./pages/EventPoolManagementPage'));
 
 // Skeleton loader for Suspense fallback
 function PageLoaderSkeleton() {

@@ -11,15 +11,23 @@ import RoleProtectedRoute from './components/layout/RoleProtectedRoute';
 import { OverlayManager } from './components/common/overlays';
 import { queryClient } from './lib/queryClient';
 
-// Resilient lazy load wrapper to handle chunk load failures gracefully (e.g. during new Vercel deployments)
+// Resilient lazy load wrapper to handle chunk load failures gracefully (e.g. during new Vercel deployments).
+// Uses a sessionStorage guard to prevent infinite reload loops — only one auto-reload is attempted per session.
 function safeLazy<T extends React.ComponentType<any>>(importFn: () => Promise<{ default: T }>) {
   return lazy(async () => {
     try {
-      return await importFn();
+      const mod = await importFn();
+      // Successful load — clear any previous reload guard
+      try { sessionStorage.removeItem('chunk_reload'); } catch { /* no-op */ }
+      return mod;
     } catch (error) {
-      console.error('Lazy load chunk error:', error);
-      // Automatically refresh the tab to load the new deployment chunk registry
-      window.location.reload();
+      // Guard: only auto-reload once per session to prevent infinite loops
+      const alreadyReloaded = (() => { try { return sessionStorage.getItem('chunk_reload'); } catch { return null; } })();
+      if (!alreadyReloaded) {
+        try { sessionStorage.setItem('chunk_reload', '1'); } catch { /* no-op */ }
+        window.location.reload();
+      }
+      // Return empty component to satisfy React.lazy contract (won't render — page is reloading or guard is active)
       return { default: (() => null) as unknown as T };
     }
   });

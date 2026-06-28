@@ -6,16 +6,20 @@ import {
   GraduationCap, Briefcase, FolderOpen, BarChart3,
   History, Archive, UsersRound, BookOpen, Cloud,
   Wrench, HelpCircle, LogOut, Calendar, Images,
-  HardDrive, X, ShieldCheck,
+  HardDrive, X, ShieldCheck, Newspaper, Trophy,
 } from 'lucide-react';
 import { NalissLogo } from '../NalissLogo';
 
 const allNav = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, minRole: 'super_admin' as const },
+  { name: 'Moderators', href: '/moderators', icon: ShieldCheck, minRole: 'super_admin' as const },
   { name: 'Students', href: '/students', icon: Users, minRole: 'moderator' as const },
   { name: 'Groups', href: '/groups', icon: UsersRound, minRole: 'moderator' as const },
   { name: 'Announcements', href: '/announcements', icon: FileText, minRole: 'moderator' as const },
   { name: 'Events', href: '/events', icon: Calendar, minRole: 'moderator' as const },
+  { name: 'Event Pools', href: '/event-pools', icon: Trophy, minRole: 'moderator' as const },
+  { name: 'News', href: '/news', icon: Newspaper, minRole: 'moderator' as const },
+  { name: 'Archive', href: '/archive', icon: FolderOpen, minRole: 'moderator' as const },
   { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const },
   { name: 'Past Questions', href: '/past-questions', icon: HelpCircle, minRole: 'moderator' as const },
   { name: 'Messaging', href: '/messaging', icon: MessageSquare, minRole: 'moderator' as const },

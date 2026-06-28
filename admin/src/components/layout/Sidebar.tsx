@@ -39,6 +39,7 @@ const navigation = [
   { name: 'Event Pools', href: '/event-pools', icon: Trophy, minRole: 'moderator' as const },
   { name: 'News', href: '/news', icon: Newspaper, minRole: 'moderator' as const },
   { name: 'Archive', href: '/archive', icon: FolderOpen, minRole: 'moderator' as const },
+  { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const },
   { name: 'Past Questions', href: '/past-questions', icon: HelpCircle, minRole: 'moderator' as const },
   { name: 'Messaging', href: '/messaging', icon: MessageSquare, minRole: 'moderator' as const },
   { name: 'Group Media', href: '/group-media', icon: Images, minRole: 'moderator' as const },
@@ -92,6 +93,7 @@ export default function Sidebar() {
       case '/event-pools': import('../../pages/EventPoolManagementPage'); break;
       case '/news': import('../../pages/NewsManagementPage'); break;
       case '/archive': import('../../pages/ArchiveManagementPage'); break;
+      case '/materials': import('../../pages/MaterialsPage'); break;
       case '/past-questions': import('../../pages/PastQuestionsPage'); break;
       case '/messaging': import('../../pages/MessagingPage'); break;
       case '/group-media': import('../../pages/GroupMediaPage'); break;

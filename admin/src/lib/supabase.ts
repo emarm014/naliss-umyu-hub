@@ -158,3 +158,18 @@ export const supabase: SupabaseClient = isSupabaseConfigured
       },
     })
   : null as unknown as SupabaseClient;
+
+// Coalesce concurrent getSession calls to prevent gotrue-js lock contention (lock:naliss-admin-session)
+if (supabase) {
+  const originalGetSession = supabase.auth.getSession.bind(supabase.auth);
+  let sessionPromise: Promise<any> | null = null;
+
+  supabase.auth.getSession = () => {
+    if (!sessionPromise) {
+      sessionPromise = originalGetSession().finally(() => {
+        sessionPromise = null;
+      });
+    }
+    return sessionPromise;
+  };
+}

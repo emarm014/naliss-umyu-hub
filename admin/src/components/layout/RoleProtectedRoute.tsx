@@ -1,13 +1,15 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import type { User } from '../../types';
 
 interface RoleProtectedRouteProps {
   minRole: 'super_admin' | 'moderator';
+  permission?: keyof NonNullable<User['permissions']>;
 }
 
-export default function RoleProtectedRoute({ minRole }: RoleProtectedRouteProps) {
-  const { profile, isLoading } = useAuthStore();
+export default function RoleProtectedRoute({ minRole, permission }: RoleProtectedRouteProps) {
+  const { profile, permissions, isLoading } = useAuthStore();
 
   if (isLoading) {
     return (
@@ -22,9 +24,13 @@ export default function RoleProtectedRoute({ minRole }: RoleProtectedRouteProps)
   // Access denied if no profile or role is insufficient
   // If minRole is super_admin, only super_admin can enter
   // If minRole is moderator, both super_admin and moderator can enter
-  const hasAccess = 
+  let hasAccess = 
     userRole === 'super_admin' || 
     (minRole === 'moderator' && userRole === 'moderator');
+
+  if (hasAccess && userRole === 'moderator' && permission) {
+    hasAccess = !!(permissions as any)?.[permission];
+  }
 
   if (!hasAccess) {
     return <Navigate to="/" replace />;

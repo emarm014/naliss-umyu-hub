@@ -49,7 +49,7 @@ const fmtBytes = (b?: number): string => {
 
 export default function GroupMediaPage() {
   const { groups: storeGroups } = useAdminDataStore();
-  const { profile } = useAuthStore();
+  const { profile, permissions } = useAuthStore();
   const isModerator = profile?.role === 'moderator';
   const [moderatorGroupId, setModeratorGroupId] = useState<string | null>(null);
   const [moderatorGroupName, setModeratorGroupName] = useState<string>('');
@@ -97,12 +97,25 @@ export default function GroupMediaPage() {
 
   useEffect(() => {
     if (!isModerator || !profile?.id) return;
-    supabase.from('groups').select('id, name').eq('moderator_id', profile.id).single()
+    
+    const assignedLevel = permissions?.assigned_level;
+    let query = supabase.from('groups').select('id, name');
+    
+    if (assignedLevel) {
+      query = query.eq('group_type', 'level').eq('level', assignedLevel);
+    } else {
+      query = query.eq('moderator_id', profile.id);
+    }
+
+    query.maybeSingle()
       .then(({ data }) => {
-        if (data) { setModeratorGroupId(data.id); setModeratorGroupName(data.name); }
+        if (data) { 
+          setModeratorGroupId(data.id); 
+          setModeratorGroupName(data.name); 
+        }
         setModeratorGroupResolved(true);
       });
-  }, [isModerator, profile?.id]); // eslint-disable-line
+  }, [isModerator, profile?.id, permissions?.assigned_level]); // eslint-disable-line
 
   useEffect(() => {
     if (moderatorGroupResolved) fetchMedia();

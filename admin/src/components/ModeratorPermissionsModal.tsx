@@ -16,6 +16,21 @@ interface ModeratorPermissions {
     can_manage_lecturers: boolean;
     can_manage_executives: boolean;
     can_manage_students: boolean;
+    can_manage_groups: boolean;
+    can_manage_group_media: boolean;
+    can_manage_news: boolean;
+    can_manage_archives: boolean;
+    can_manage_messaging: boolean;
+    can_manage_events: boolean;
+    can_manage_past_questions: boolean;
+    can_manage_courses: boolean;
+    can_manage_cloud_archive: boolean;
+    can_manage_graduates: boolean;
+    can_manage_analytics: boolean;
+    can_manage_logs: boolean;
+    can_manage_settings: boolean;
+    can_manage_storage: boolean;
+    can_manage_security: boolean;
     assigned_level: AcademicLevel | null;
 }
 
@@ -24,32 +39,122 @@ const levelOptions: AcademicLevel[] = ['100', '200', '300', '400'];
 const PERMISSION_ITEMS = [
     {
         key: 'can_manage_announcements' as const,
-        label: 'Post Announcements',
-        description: 'Create, edit, publish and pin announcements & events',
+        label: 'Announcements',
+        description: 'Post and manage official announcements & broadcasts',
         color: 'blue',
     },
     {
         key: 'can_manage_materials' as const,
-        label: 'Manage Academic Content',
-        description: 'Upload materials, past questions, and manage courses',
+        label: 'Materials',
+        description: 'Upload learning materials and course files',
         color: 'green',
     },
     {
-        key: 'can_manage_lecturers' as const,
-        label: 'Manage Lecturers',
-        description: 'Add, edit, and deactivate lecturer directory entries',
+        key: 'can_manage_past_questions' as const,
+        label: 'Past Questions',
+        description: 'Upload and manage past exam question papers',
         color: 'purple',
     },
     {
-        key: 'can_manage_executives' as const,
-        label: 'Manage Executives',
-        description: 'Add, edit, and manage student executive positions',
+        key: 'can_manage_students' as const,
+        label: 'Students',
+        description: 'View student profiles and directory',
+        color: 'red',
+    },
+    {
+        key: 'can_manage_groups' as const,
+        label: 'Groups',
+        description: 'Moderate official class and department chat groups',
         color: 'amber',
     },
     {
-        key: 'can_manage_students' as const,
-        label: 'Manage Students',
-        description: 'View student profiles and verify registrations',
+        key: 'can_manage_group_media' as const,
+        label: 'Group Media',
+        description: 'Moderate media assets shared inside groups',
+        color: 'blue',
+    },
+    {
+        key: 'can_manage_messaging' as const,
+        label: 'Messaging',
+        description: 'Send direct broadcasts and view report logs',
+        color: 'green',
+    },
+    {
+        key: 'can_manage_news' as const,
+        label: 'News',
+        description: 'Publish and edit campus news feed articles',
+        color: 'purple',
+    },
+    {
+        key: 'can_manage_archives' as const,
+        label: 'Archive',
+        description: 'Manage files secure in repository archives',
+        color: 'amber',
+    },
+    {
+        key: 'can_manage_storage' as const,
+        label: 'Storage',
+        description: 'Manage file storage usage and quotas',
+        color: 'red',
+    },
+    {
+        key: 'can_manage_security' as const,
+        label: 'Security Settings',
+        description: 'Manage account security policy parameters',
+        color: 'blue',
+    },
+    {
+        key: 'can_manage_events' as const,
+        label: 'Events',
+        description: 'Manage scheduled events and event pools',
+        color: 'green',
+    },
+    {
+        key: 'can_manage_courses' as const,
+        label: 'Courses',
+        description: 'Manage departments course catalog data',
+        color: 'purple',
+    },
+    {
+        key: 'can_manage_cloud_archive' as const,
+        label: 'Cloud Archive',
+        description: 'Manage central resources database',
+        color: 'amber',
+    },
+    {
+        key: 'can_manage_lecturers' as const,
+        label: 'Lecturers',
+        description: 'Manage departments lecturers profiles directory',
+        color: 'red',
+    },
+    {
+        key: 'can_manage_executives' as const,
+        label: 'Executives',
+        description: 'Manage association executives leadership list',
+        color: 'blue',
+    },
+    {
+        key: 'can_manage_graduates' as const,
+        label: 'Graduates',
+        description: 'Access alumni database records list',
+        color: 'green',
+    },
+    {
+        key: 'can_manage_analytics' as const,
+        label: 'Analytics',
+        description: 'View dashboard analytics data metrics',
+        color: 'purple',
+    },
+    {
+        key: 'can_manage_logs' as const,
+        label: 'Activity Logs',
+        description: 'Read system audit logs history logs',
+        color: 'amber',
+    },
+    {
+        key: 'can_manage_settings' as const,
+        label: 'Settings',
+        description: 'Configure global system environment parameters',
         color: 'red',
     },
 ];
@@ -69,6 +174,21 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
         can_manage_lecturers: false,
         can_manage_executives: false,
         can_manage_students: false,
+        can_manage_groups: false,
+        can_manage_group_media: false,
+        can_manage_news: false,
+        can_manage_archives: false,
+        can_manage_messaging: false,
+        can_manage_events: false,
+        can_manage_past_questions: false,
+        can_manage_courses: false,
+        can_manage_cloud_archive: false,
+        can_manage_graduates: false,
+        can_manage_analytics: false,
+        can_manage_logs: false,
+        can_manage_settings: false,
+        can_manage_storage: false,
+        can_manage_security: false,
         assigned_level: null,
     });
     const [originalPermissions, setOriginalPermissions] = useState<ModeratorPermissions | null>(null);
@@ -94,6 +214,21 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
                         can_manage_lecturers: data.can_manage_lecturers ?? false,
                         can_manage_executives: data.can_manage_executives ?? false,
                         can_manage_students: data.can_manage_students ?? false,
+                        can_manage_groups: data.can_manage_groups ?? false,
+                        can_manage_group_media: data.can_manage_group_media ?? false,
+                        can_manage_news: data.can_manage_news ?? false,
+                        can_manage_archives: data.can_manage_archives ?? false,
+                        can_manage_messaging: data.can_manage_messaging ?? false,
+                        can_manage_events: data.can_manage_events ?? false,
+                        can_manage_past_questions: data.can_manage_past_questions ?? false,
+                        can_manage_courses: data.can_manage_courses ?? false,
+                        can_manage_cloud_archive: data.can_manage_cloud_archive ?? false,
+                        can_manage_graduates: data.can_manage_graduates ?? false,
+                        can_manage_analytics: data.can_manage_analytics ?? false,
+                        can_manage_logs: data.can_manage_logs ?? false,
+                        can_manage_settings: data.can_manage_settings ?? false,
+                        can_manage_storage: data.can_manage_storage ?? false,
+                        can_manage_security: data.can_manage_security ?? false,
                         assigned_level: data.assigned_level as AcademicLevel | null,
                     };
                     setPermissions(loaded);
@@ -106,6 +241,21 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
                         can_manage_lecturers: false,
                         can_manage_executives: false,
                         can_manage_students: false,
+                        can_manage_groups: false,
+                        can_manage_group_media: false,
+                        can_manage_news: false,
+                        can_manage_archives: false,
+                        can_manage_messaging: false,
+                        can_manage_events: false,
+                        can_manage_past_questions: false,
+                        can_manage_courses: false,
+                        can_manage_cloud_archive: false,
+                        can_manage_graduates: false,
+                        can_manage_analytics: false,
+                        can_manage_logs: false,
+                        can_manage_settings: false,
+                        can_manage_storage: false,
+                        can_manage_security: false,
                         assigned_level: null,
                     };
                     setPermissions(defaults);
@@ -180,6 +330,21 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
             can_manage_lecturers: true,
             can_manage_executives: true,
             can_manage_students: true,
+            can_manage_groups: true,
+            can_manage_group_media: true,
+            can_manage_news: true,
+            can_manage_archives: true,
+            can_manage_messaging: true,
+            can_manage_events: true,
+            can_manage_past_questions: true,
+            can_manage_courses: true,
+            can_manage_cloud_archive: true,
+            can_manage_graduates: true,
+            can_manage_analytics: true,
+            can_manage_logs: true,
+            can_manage_settings: true,
+            can_manage_storage: true,
+            can_manage_security: true,
         }));
     };
 
@@ -191,6 +356,21 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
             can_manage_lecturers: false,
             can_manage_executives: false,
             can_manage_students: false,
+            can_manage_groups: false,
+            can_manage_group_media: false,
+            can_manage_news: false,
+            can_manage_archives: false,
+            can_manage_messaging: false,
+            can_manage_events: false,
+            can_manage_past_questions: false,
+            can_manage_courses: false,
+            can_manage_cloud_archive: false,
+            can_manage_graduates: false,
+            can_manage_analytics: false,
+            can_manage_logs: false,
+            can_manage_settings: false,
+            can_manage_storage: false,
+            can_manage_security: false,
         }));
     };
 

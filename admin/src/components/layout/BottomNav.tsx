@@ -16,14 +16,14 @@ import MobileDrawer from './MobileDrawer';
 // No permission gating — all moderators see all pages
 const primaryNav = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, minRole: 'super_admin' as const },
-  { name: 'Students', href: '/students', icon: Users, minRole: 'moderator' as const },
-  { name: 'Groups', href: '/groups', icon: UsersRound, minRole: 'moderator' as const },
-  { name: 'Announce', href: '/announcements', icon: FileText, minRole: 'moderator' as const },
-  { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const },
+  { name: 'Students', href: '/students', icon: Users, minRole: 'moderator' as const, permission: 'can_manage_students' as const },
+  { name: 'Groups', href: '/groups', icon: UsersRound, minRole: 'moderator' as const, permission: 'can_manage_groups' as const },
+  { name: 'Announce', href: '/announcements', icon: FileText, minRole: 'moderator' as const, permission: 'can_manage_announcements' as const },
+  { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_materials' as const },
 ];
 
 export default function BottomNav() {
-  const { profile } = useAuthStore();
+  const { profile, permissions } = useAuthStore();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const userRole = profile?.role || 'student';
@@ -32,6 +32,9 @@ export default function BottomNav() {
     if (userRole === 'super_admin') return true;
     if (userRole === 'student') return false;
     if ((item.minRole as string) === 'super_admin') return false;
+    if (userRole === 'moderator' && item.permission) {
+      return !!(permissions as any)?.[item.permission];
+    }
     return true;
   });
 

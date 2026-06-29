@@ -1,0 +1,17 @@
+-- Migration to add all admin pages columns to moderator_permissions table
+ALTER TABLE IF EXISTS public.moderator_permissions 
+  ADD COLUMN IF NOT EXISTS can_manage_events BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_manage_past_questions BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_groups BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_group_media BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_news BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_archives BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_messaging BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_courses BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_manage_graduates BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_manage_analytics BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_manage_logs BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_manage_settings BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_manage_storage BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_security BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_manage_cloud_archive BOOLEAN DEFAULT FALSE;

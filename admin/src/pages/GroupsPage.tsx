@@ -150,6 +150,7 @@ export default function GroupsPage() {
 
   // ── Assign moderator ──────────────────────────────────────────────────────
   const handleAssignModerator = async (userId: string) => {
+    if (isModerator) return;
     if (!selectedGroup) return;
     setIsSubmitting(true);
     try {
@@ -164,8 +165,29 @@ export default function GroupsPage() {
       await supabase.from('users').update({ role: 'moderator', updated_at: new Date().toISOString() }).eq('id', userId).eq('role', 'student');
       // Create default permissions — ignoreDuplicates so existing permissions are preserved
       await supabase.from('moderator_permissions').upsert(
-        { user_id: userId, can_manage_announcements: true, can_manage_materials: true,
-          can_manage_lecturers: false, can_manage_executives: false, can_manage_students: false },
+        { 
+          user_id: userId, 
+          can_manage_announcements: true, 
+          can_manage_materials: true,
+          can_manage_lecturers: false, 
+          can_manage_executives: false, 
+          can_manage_students: false,
+          can_manage_groups: true,
+          can_manage_group_media: true,
+          can_manage_news: true,
+          can_manage_archives: true,
+          can_manage_messaging: true,
+          can_manage_events: false,
+          can_manage_past_questions: true,
+          can_manage_courses: false,
+          can_manage_cloud_archive: false,
+          can_manage_graduates: false,
+          can_manage_analytics: false,
+          can_manage_logs: false,
+          can_manage_settings: false,
+          can_manage_storage: true,
+          can_manage_security: true
+        },
         { onConflict: 'user_id', ignoreDuplicates: true }
       );
 
@@ -199,6 +221,7 @@ export default function GroupsPage() {
 
   // ── Remove moderator ──────────────────────────────────────────────────────
   const handleRemoveModerator = async () => {
+    if (isModerator) return;
     if (!selectedGroup?.moderator_id) return;
     setIsSubmitting(true);
     try {
@@ -247,6 +270,7 @@ export default function GroupsPage() {
 
   // ── Create group ──────────────────────────────────────────────────────────
   const handleCreateGroup = async (e: React.FormEvent) => {
+    if (isModerator) return;
     e.preventDefault();
     if (!createForm.name.trim()) return;
     setIsSubmitting(true);
@@ -289,6 +313,7 @@ export default function GroupsPage() {
 
   // ── Update group ──────────────────────────────────────────────────────────
   const handleUpdateGroup = async (e: React.FormEvent) => {
+    if (isModerator) return;
     e.preventDefault();
     if (!editForm) return;
     setIsSubmitting(true);
@@ -318,6 +343,7 @@ export default function GroupsPage() {
 
   // ── Delete group ──────────────────────────────────────────────────────────
   const handleDeleteGroup = async () => {
+    if (isModerator) return;
     if (!groupToDelete) return;
     setIsSubmitting(true);
     try {
@@ -336,6 +362,7 @@ export default function GroupsPage() {
 
   // ── Toggle chat ───────────────────────────────────────────────────────────
   const handleToggleChat = async (group: GroupWithDetails) => {
+    if (isModerator) return;
     const newVal = !group.chat_enabled;
     // Optimistic update
     useAdminDataStore.getState().updateGroup({ ...group, chat_enabled: newVal } as any);
@@ -563,13 +590,15 @@ export default function GroupsPage() {
               Level Progression
             </button>
           )}
-          <button
-            onClick={() => setActiveModal('create')}
-            className="flex items-center gap-2 px-6 py-3 bg-primary-950 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-primary-800 transition-all shadow-xl shadow-primary-950/20"
-          >
-            <Plus className="w-4 h-4" />
-            Create Group
-          </button>
+          {!isModerator && (
+            <button
+              onClick={() => setActiveModal('create')}
+              className="flex items-center gap-2 px-6 py-3 bg-primary-950 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-primary-800 transition-all shadow-xl shadow-primary-950/20"
+            >
+              <Plus className="w-4 h-4" />
+              Create Group
+            </button>
+          )}
         </div>
       </div>
 
@@ -709,7 +738,7 @@ export default function GroupsPage() {
                 </div>
 
                 {/* Action buttons */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className={isModerator ? "flex flex-col" : "grid grid-cols-2 gap-2"}>
                   <button
                     onClick={() => openMembersModal(group)}
                     className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-50 hover:bg-primary-50 hover:text-primary-950 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"

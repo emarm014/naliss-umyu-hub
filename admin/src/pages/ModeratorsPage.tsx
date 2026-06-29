@@ -351,7 +351,7 @@ export default function ModeratorsPage() {
         const { data: restrictData } = await supabase.from('system_settings').select('value').eq('key', 'restrict_moderators').maybeSingle();
         const isGloballyRestricted = restrictData?.value === 'true';
 
-        // Enable all content permissions and set assigned_level from the moderator's own level
+        // Enable default content permissions and set assigned_level from the moderator's own level
         await supabase.from('moderator_permissions').upsert(
           {
             user_id: user.id,
@@ -359,7 +359,22 @@ export default function ModeratorsPage() {
             can_manage_materials: true,
             can_manage_lecturers: false,
             can_manage_executives: false,
-            can_manage_moderators: true,
+            can_manage_students: true,
+            can_manage_groups: true,
+            can_manage_group_media: true,
+            can_manage_news: true,
+            can_manage_archives: true,
+            can_manage_messaging: true,
+            can_manage_events: false,
+            can_manage_past_questions: true,
+            can_manage_courses: false,
+            can_manage_cloud_archive: false,
+            can_manage_graduates: false,
+            can_manage_analytics: false,
+            can_manage_logs: false,
+            can_manage_settings: false,
+            can_manage_storage: true,
+            can_manage_security: true,
             is_restricted: isGloballyRestricted,
             assigned_level: user.level || null,
             updated_at: new Date().toISOString(),

@@ -120,26 +120,30 @@ function App() {
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
                   <Route path="/logs" element={<ActivityLogsPage />} />
+                  <Route path="/events" element={<EventsPage />} />
+                  <Route path="/event-pools" element={<EventPoolManagementPage />} />
                 </Route>
 
-                {/* Students — super_admin sees all; moderators see only their assigned level */}
-                <Route element={<RoleProtectedRoute minRole="moderator" />}>
+                {/* Students — gated by can_manage_students */}
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_students" />}>
                   <Route path="/students" element={<StudentsPage />} />
                 </Route>
 
-                {/* Announcements, Events, Materials, Past Questions
-                    All moderators can access these pages.
-                    The permission flags (can_manage_announcements / can_manage_materials)
-                    only control whether they can CREATE/EDIT/DELETE inside the page —
-                    not whether they can see the page at all. */}
-                <Route element={<RoleProtectedRoute minRole="moderator" />}>
+                {/* Granularly gated moderator pages */}
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_announcements" />}>
                   <Route path="/announcements" element={<AnnouncementsPage />} />
-                  <Route path="/events" element={<EventsPage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_materials" />}>
                   <Route path="/materials" element={<MaterialsPage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_past_questions" />}>
                   <Route path="/past-questions" element={<PastQuestionsPage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_archives" />}>
                   <Route path="/archive" element={<ArchiveManagementPage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_news" />}>
                   <Route path="/news" element={<NewsManagementPage />} />
-                  <Route path="/event-pools" element={<EventPoolManagementPage />} />
                 </Route>
 
                 <Route element={<RoleProtectedRoute minRole="super_admin" />}>
@@ -152,12 +156,22 @@ function App() {
                   <Route path="/executives" element={<ExecutivesPage />} />
                 </Route>
 
-                {/* Always accessible to any authenticated moderator/admin */}
-                <Route path="/groups" element={<GroupsPage />} />
-                <Route path="/group-media" element={<GroupMediaPage />} />
-                <Route path="/storage" element={<ModeratorStoragePage />} />
-                <Route path="/messaging" element={<MessagingPage />} />
-                <Route path="/security" element={<SecurityPage />} />
+                {/* Granularly gated moderator messaging, storage, and security */}
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_groups" />}>
+                  <Route path="/groups" element={<GroupsPage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_group_media" />}>
+                  <Route path="/group-media" element={<GroupMediaPage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_storage" />}>
+                  <Route path="/storage" element={<ModeratorStoragePage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_messaging" />}>
+                  <Route path="/messaging" element={<MessagingPage />} />
+                </Route>
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_security" />}>
+                  <Route path="/security" element={<SecurityPage />} />
+                </Route>
 
                 {/* Cloud Archive — super_admin only */}
                 <Route element={<RoleProtectedRoute minRole="super_admin" />}>

@@ -81,13 +81,14 @@ export default function StudentsPage() {
     }))
   );
   const { profile, permissions } = useAuthStore();
+  const isModerator = profile?.role === 'moderator';
 
   useEffect(() => {
     syncAll();
   }, [syncAll]);
 
   // Moderators are locked to their assigned level — they cannot see other levels
-  const assignedLevel = profile?.role === 'moderator' ? (permissions?.assigned_level || null) : null;
+  const assignedLevel = isModerator ? (permissions?.assigned_level || null) : null;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AccountStatus | 'all'>('all');
@@ -167,6 +168,7 @@ export default function StudentsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const handleStatusChange = async () => {
+    if (isModerator) return;
     if (!selectedUser || !confirmAction || isSubmittingAction) return;
     setIsSubmittingAction(true);
     setActionError(null);
@@ -239,6 +241,7 @@ export default function StudentsPage() {
   };
 
   const handleDeleteUser = async (user: UserWithDepartment) => {
+    if (isModerator) return;
     if (isSubmittingAction) return;
     setIsSubmittingAction(true);
     setActionError(null);
@@ -273,6 +276,7 @@ export default function StudentsPage() {
   };
 
   const handleVerify = async (userId: string) => {
+    if (isModerator) return;
     if (isSubmittingAction) return;
     setIsSubmittingAction(true);
     setActionError(null);
@@ -313,6 +317,7 @@ export default function StudentsPage() {
   };
 
   const handleRoleChange = async (user: UserWithDepartment, newRole: 'student' | 'moderator') => {
+    if (isModerator) return;
     if (isSubmittingAction) return;
     setIsSubmittingAction(true);
     // Optimistic update
@@ -342,7 +347,7 @@ export default function StudentsPage() {
       if (error) throw error;
 
       if (newRole === 'moderator') {
-        // Enable all content permissions and set assigned_level from the student's own level
+        // Enable default content permissions and set assigned_level from the student's own level
         await supabase.from('moderator_permissions').upsert(
           {
             user_id: user.id,
@@ -351,6 +356,21 @@ export default function StudentsPage() {
             can_manage_lecturers: false,
             can_manage_executives: false,
             can_manage_students: true,
+            can_manage_groups: true,
+            can_manage_group_media: true,
+            can_manage_news: true,
+            can_manage_archives: true,
+            can_manage_messaging: true,
+            can_manage_events: false,
+            can_manage_past_questions: true,
+            can_manage_courses: false,
+            can_manage_cloud_archive: false,
+            can_manage_graduates: false,
+            can_manage_analytics: false,
+            can_manage_logs: false,
+            can_manage_settings: false,
+            can_manage_storage: true,
+            can_manage_security: true,
             assigned_level: user.level || null,
             updated_at: new Date().toISOString(),
           },
@@ -727,49 +747,52 @@ export default function StudentsPage() {
                               <Shield className="w-5 h-5" />
                             </button>
                           )}
- 
-                          <button
-                            onClick={() => { setSelectedUser(user); setShowModal('edit'); }}
-                            className="p-2 text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl shadow-sm transition-all"
-                            title="Edit Student"
-                          >
-                            <Edit className="w-5 h-5" />
-                          </button>
- 
-                          <div className="w-px h-6 bg-gray-200 mx-1" />
- 
-                          {user.status === 'pending_verification' ? (
-                            <button
-                              onClick={() => handleVerify(user.id)}
-                              className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-[10px] font-black rounded-xl hover:bg-green-700 transition-all shadow-md shadow-green-500/20"
-                            >
-                              VERIFY
-                            </button>
-                          ) : user.status === 'active' ? (
-                            <div className="flex items-center gap-1.5">
+                          {!isModerator && (
+                             <>
                                <button
-                                 onClick={() => openConfirmModal(user, 'suspend')}
-                                 className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all"
-                                 title="Suspend User"
+                                 onClick={() => { setSelectedUser(user); setShowModal('edit'); }}
+                                 className="p-2 text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl shadow-sm transition-all"
+                                 title="Edit Student"
                                >
-                                 <UserX className="w-5 h-5" />
+                                 <Edit className="w-5 h-5" />
                                </button>
-                               <button
-                                 onClick={() => openConfirmModal(user, 'ban')}
-                                 className="p-2 text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all"
-                                 title="Ban User"
-                               >
-                                 <Ban className="w-5 h-5" />
-                               </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => openConfirmModal(user, 'activate')}
-                              className="inline-flex items-center px-4 py-2 bg-primary-950 text-white text-[10px] font-black rounded-xl hover:bg-primary-800 transition-all"
-                            >
-                              RESTORE
-                            </button>
-                          )}
+
+                               <div className="w-px h-6 bg-gray-200 mx-1" />
+
+                               {user.status === 'pending_verification' ? (
+                                 <button
+                                   onClick={() => handleVerify(user.id)}
+                                   className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-[10px] font-black rounded-xl hover:bg-green-700 transition-all shadow-md shadow-green-500/20"
+                                 >
+                                   VERIFY
+                                 </button>
+                               ) : user.status === 'active' ? (
+                                 <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={() => openConfirmModal(user, 'suspend')}
+                                      className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all"
+                                      title="Suspend User"
+                                    >
+                                      <UserX className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                      onClick={() => openConfirmModal(user, 'ban')}
+                                      className="p-2 text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all"
+                                      title="Ban User"
+                                    >
+                                      <Ban className="w-5 h-5" />
+                                    </button>
+                                 </div>
+                               ) : (
+                                 <button
+                                   onClick={() => openConfirmModal(user, 'activate')}
+                                   className="inline-flex items-center px-4 py-2 bg-primary-950 text-white text-[10px] font-black rounded-xl hover:bg-primary-800 transition-all"
+                                 >
+                                   RESTORE
+                                 </button>
+                               )}
+                             </>
+                           )}
  
                           {/* Role toggle — promote/demote moderator — super_admin only */}
                           {profile?.role === 'super_admin' && user.role !== 'super_admin' && user.status === 'active' && (
@@ -1129,7 +1152,7 @@ export default function StudentsPage() {
       )}
 
       {/* Add User Modal */}
-      {showModal === 'add' && (
+      {showModal === 'add' && !isModerator && (
         <AddUserModal
           onClose={() => setShowModal(null)}
           onSave={() => {
@@ -1140,7 +1163,7 @@ export default function StudentsPage() {
       )}
 
       {/* Edit User Modal */}
-      {showModal === 'edit' && selectedUser && (
+      {showModal === 'edit' && selectedUser && !isModerator && (
         <EditUserModal
           user={selectedUser!}
           onClose={() => setShowModal(null)}

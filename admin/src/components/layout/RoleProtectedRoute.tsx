@@ -33,6 +33,25 @@ export default function RoleProtectedRoute({ minRole, permission }: RoleProtecte
   }
 
   if (!hasAccess) {
+    if (userRole === 'moderator') {
+      const getFirstAccessibleRoute = (perms: any) => {
+        if (!perms) return '/login';
+        if (perms.can_manage_announcements) return '/announcements';
+        if (perms.can_manage_materials) return '/materials';
+        if (perms.can_manage_past_questions) return '/past-questions';
+        if (perms.can_manage_students) return '/students';
+        if (perms.can_manage_groups) return '/groups';
+        if (perms.can_manage_group_media) return '/group-media';
+        if (perms.can_manage_storage) return '/storage';
+        if (perms.can_manage_messaging) return '/messaging';
+        if (perms.can_manage_security) return '/security';
+        if (perms.can_manage_archives) return '/archive';
+        if (perms.can_manage_news) return '/news';
+        if (perms.can_manage_events) return '/events';
+        return '/login';
+      };
+      return <Navigate to={getFirstAccessibleRoute(permissions)} replace />;
+    }
     return <Navigate to="/" replace />;
   }
 

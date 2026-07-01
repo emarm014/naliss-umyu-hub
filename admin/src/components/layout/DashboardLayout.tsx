@@ -20,7 +20,7 @@ export default function DashboardLayout() {
   );
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile, isAdminOrModerator, signOut } = useAuthStore();
+  const { profile, permissions, isAdminOrModerator, signOut } = useAuthStore();
 
   useEffect(() => {
     if (isAdminOrModerator) {
@@ -61,10 +61,25 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     if (profile?.role === 'moderator' && location.pathname === '/') {
-      // Moderators always land on announcements as their home page
-      navigate('/announcements', { replace: true });
+      const getFirstAccessibleRoute = (perms: any) => {
+        if (!perms) return '/login';
+        if (perms.can_manage_announcements) return '/announcements';
+        if (perms.can_manage_materials) return '/materials';
+        if (perms.can_manage_past_questions) return '/past-questions';
+        if (perms.can_manage_students) return '/students';
+        if (perms.can_manage_groups) return '/groups';
+        if (perms.can_manage_group_media) return '/group-media';
+        if (perms.can_manage_storage) return '/storage';
+        if (perms.can_manage_messaging) return '/messaging';
+        if (perms.can_manage_security) return '/security';
+        if (perms.can_manage_archives) return '/archive';
+        if (perms.can_manage_news) return '/news';
+        if (perms.can_manage_events) return '/events';
+        return '/login';
+      };
+      navigate(getFirstAccessibleRoute(permissions), { replace: true });
     }
-  }, [profile?.role, location.pathname, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [profile?.role, permissions, location.pathname, navigate]);
 
   return (
     <div className="min-h-screen bg-gray-100">

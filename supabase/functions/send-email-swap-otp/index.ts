@@ -15,9 +15,6 @@ serve(async (req: Request) => {
   }
 
   try {
-    const envKeys = Object.keys(Deno.env.toObject()).filter(k => k.startsWith('SMTP') || k.includes('EMAIL') || k.includes('BREVO'));
-    return new Response(JSON.stringify({ envKeys }), { headers: corsHeaders });
-
     const payload = await req.json()
     const record = payload.record
 
@@ -84,7 +81,7 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         sender: { name: 'NALISS UMYU HUB', email: 'nalissumyuk@gmail.com' },
         to: [{ email: oldEmail }],
-        subject: 'Confirm Your Email Change — NALISS UMYU Hub',
+        subject: 'Confirm Your Email Change â€” NALISS UMYU Hub',
         htmlContent,
       }),
     })

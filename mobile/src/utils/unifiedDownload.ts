@@ -11,6 +11,7 @@ import {
     updateDownloadJobStatus, 
     insertTelemetryEvent 
 } from '../lib/database';
+import { trackDownloadTask, captureStoreError } from './sentry';
 
 // Global download deduplication map
 const activeDownloads = new Map<string, Promise<string | null>>();
@@ -94,6 +95,7 @@ export const UnifiedDownloadEngine = {
             let errorMsg = '';
             let fileSizeBytes = 0;
             let hashResult = 'unverified';
+            trackDownloadTask(fileId, 'started');
 
             // Check disk space (low storage awareness)
             try {
@@ -206,6 +208,7 @@ export const UnifiedDownloadEngine = {
                         } else {
                             hashResult = 'verified';
                             success = true;
+                            trackDownloadTask(fileId, 'completed', Date.now() - startTime, { size: fileSizeBytes });
                         }
 
                         // Complete SQLite update
@@ -240,6 +243,8 @@ export const UnifiedDownloadEngine = {
                 }
             } catch (err: any) {
                 errorMsg = err.message || String(err);
+                trackDownloadTask(fileId, 'failed', Date.now() - startTime, { error: errorMsg });
+                captureStoreError('UnifiedDownloadEngine', 'download', err, { fileId, url });
                 if (db) {
                     await db.runAsync(
                         "UPDATE offline_asset_manifest SET download_status = 'failed' WHERE asset_id = ?",

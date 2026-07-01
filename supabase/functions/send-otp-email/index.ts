@@ -35,7 +35,7 @@ serve(async (req: Request) => {
     let htmlContent: string
 
     if (actionType === 'recovery') {
-      // ── PASSWORD RESET — send a deep link that opens the app directly ──────
+      // â”€â”€ PASSWORD RESET â€” send a deep link that opens the app directly â”€â”€â”€â”€â”€â”€
       // Build the Supabase verify URL with the token hash and redirect_to
       // When the user taps this link:
       //   1. Supabase verifies the token and sets a recovery session
@@ -50,7 +50,7 @@ serve(async (req: Request) => {
       // Fall back to the app deep link if not provided
       const appRedirectUrl = redirectTo || 'naliss://auth/update-password'
 
-      // Build the Supabase verify URL — this is an HTTPS link that:
+      // Build the Supabase verify URL â€” this is an HTTPS link that:
       // 1. Verifies the token server-side
       // 2. Redirects to the app deep link (naliss://auth/update-password)
       const verifyUrl = `${SUPABASE_PROJECT_URL}/auth/v1/verify?token=${encodeURIComponent(tokenHash)}&type=recovery&redirect_to=${encodeURIComponent(appRedirectUrl)}`
@@ -69,7 +69,7 @@ serve(async (req: Request) => {
             <!-- Body -->
             <div style="padding: 40px 32px; text-align: center;">
               <div style="width: 72px; height: 72px; background-color: #f0fdf4; border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; border: 2px solid #bbf7d0;">
-                <span style="font-size: 32px; display: block; margin: 0 auto; line-height: 72px;">🔐</span>
+                <span style="font-size: 32px; display: block; margin: 0 auto; line-height: 72px;">ðŸ”</span>
               </div>
               
               <h2 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 16px;">Reset Your Password</h2>
@@ -106,7 +106,7 @@ serve(async (req: Request) => {
         </div>
       `
     } else {
-      // ── ALL OTHER EMAILS (signup OTP, magic link, etc.) — send 6-digit code ──
+      // â”€â”€ ALL OTHER EMAILS (signup OTP, magic link, etc.) â€” send 6-digit code â”€â”€
       if (!token) {
         return new Response(JSON.stringify({ error: { message: 'Missing token', http_code: 400 } }), { status: 400, headers: corsHeaders })
       }
@@ -114,7 +114,7 @@ serve(async (req: Request) => {
       const subjectMap: Record<string, string> = {
         signup: 'Your NALISS UMYU Hub Verification Code',
         magiclink: 'Your NALISS UMYU Hub Sign-In Code',
-        email_change: 'Confirm Your Email Change — NALISS UMYU Hub',
+        email_change: 'Confirm Your Email Change â€” NALISS UMYU Hub',
         reauthentication: 'Your NALISS UMYU Hub Re-Authentication Code',
       }
       subject = subjectMap[actionType] || 'Your NALISS UMYU Hub Verification Code'
@@ -132,7 +132,7 @@ serve(async (req: Request) => {
             <!-- Body -->
             <div style="padding: 40px 32px; text-align: center;">
               <div style="width: 72px; height: 72px; background-color: #f0fdf4; border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; border: 2px solid #bbf7d0;">
-                <span style="font-size: 32px; display: block; margin: 0 auto; line-height: 72px;">🛡️</span>
+                <span style="font-size: 32px; display: block; margin: 0 auto; line-height: 72px;">ðŸ›¡ï¸</span>
               </div>
               
               <h2 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 16px;">Authentication Code</h2>

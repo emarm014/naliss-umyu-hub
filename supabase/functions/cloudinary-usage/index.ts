@@ -70,7 +70,7 @@ Deno.serve(async (req: Request) => {
     const [usageRes, imageResourcesRes, reportRes] = await Promise.all([
       fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/usage`, { headers }),
       fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources?resource_type=image&max_results=500`, { headers }),
-      // Usage report for last 30 days — gives impressions, bandwidth breakdown, errors
+      // Usage report for last 30 days â€” gives impressions, bandwidth breakdown, errors
       fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/usage?date=${getDateDaysAgo(30)}`, { headers }),
     ]);
 
@@ -137,7 +137,7 @@ Deno.serve(async (req: Request) => {
       plan: usage.plan || 'Free',
       last_updated: usage.last_updated || new Date().toISOString(),
 
-      // ── Core quota meters ──────────────────────────────────────────────
+      // â”€â”€ Core quota meters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       storage: {
         used_bytes: usage.storage?.usage ?? totalBytesFromResources,
         limit_bytes: usage.storage?.limit ?? (25 * 1024 * 1024 * 1024),
@@ -168,10 +168,10 @@ Deno.serve(async (req: Request) => {
         percent: Math.min(100, ((usage.objects?.usage ?? totalFiles) / (usage.objects?.limit ?? 25000)) * 100),
       },
 
-      // ── Engagement metrics (what Cloudinary dashboard shows) ───────────
+      // â”€â”€ Engagement metrics (what Cloudinary dashboard shows) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       impressions: {
         images: usage.derived_images?.usage ?? usage.requests ?? 0,
-        // Cloudinary calls these "image impressions" — requests that served an image
+        // Cloudinary calls these "image impressions" â€” requests that served an image
         total: usage.requests ?? 0,
       },
       media_count: {
@@ -181,10 +181,10 @@ Deno.serve(async (req: Request) => {
         total: totalFiles,
       },
 
-      // ── Error summary ──────────────────────────────────────────────────
+      // â”€â”€ Error summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       errors: errorSummary,
 
-      // ── Resource breakdown ─────────────────────────────────────────────
+      // â”€â”€ Resource breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       resources: {
         total: totalFiles,
         images: totalImages,

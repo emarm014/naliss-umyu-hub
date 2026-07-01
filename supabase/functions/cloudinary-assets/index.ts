@@ -11,7 +11,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, content-type',
 };
 
-// Signed destroy — the only reliable way to delete from Cloudinary
+// Signed destroy â€” the only reliable way to delete from Cloudinary
 async function destroyAsset(publicId: string, resourceType: string): Promise<{ ok: boolean; result: string }> {
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const toSign = `public_id=${publicId}&timestamp=${timestamp}${API_SECRET}`;
@@ -58,7 +58,7 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured' }), { status: 500, headers: CORS });
   }
 
-  // ── DELETE a single asset (or bulk via body) ──────────────────────────────
+  // â”€â”€ DELETE a single asset (or bulk via body) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (req.method === 'DELETE') {
     try {
       const body = await req.json();
@@ -86,7 +86,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // ── GET all assets ────────────────────────────────────────────────────────
+  // â”€â”€ GET all assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (req.method === 'GET') {
     try {
       const basicAuth = btoa(`${API_KEY}:${API_SECRET}`);

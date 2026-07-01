@@ -1,5 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Logger } from '../utils/logger';
+import * as Sentry from '@sentry/react-native';
+import { trackOfflineSync } from '../utils/sentry';
 import { 
     verifyDatabaseIntegrity, 
     getAllPendingMediaManifests, 
@@ -57,16 +59,19 @@ export const IntegrityService = {
         try {
             const result = await verifyDatabaseIntegrity();
             if (!result.healthy) {
+                const err = new Error(`Database integrity issues detected: ${result.issues.join(', ')}`);
                 Logger.error(
                     'integrity-service', 
                     `Database integrity issues detected: ${result.issues.join(', ')}`,
-                    new Error('Database integrity check failed')
+                    err
                 );
+                Sentry.captureException(err, { tags: { service: 'IntegrityService', type: 'startup_database' } });
             } else {
                 Logger.info('integrity-service', 'Database integrity check PASSED successfully.');
             }
         } catch (err) {
             Logger.error('integrity-service', 'Fatal error during database integrity check', err);
+            Sentry.captureException(err, { tags: { service: 'IntegrityService', type: 'startup_database' } });
         }
     },
 
@@ -91,6 +96,7 @@ export const IntegrityService = {
             }
 
             Logger.info('integrity-service', 'Starting background file integrity self-healing scan.');
+            trackOfflineSync('self_healing_scan', 'started');
 
             // Retrieve all manifest records
             const { getDB } = require('../lib/database');
@@ -280,9 +286,12 @@ export const IntegrityService = {
                 const { useOfflineAssetStore } = require('../stores/offlineAsset.store');
                 useOfflineAssetStore.getState().startDownloader().catch(() => {});
             }
+            trackOfflineSync('self_healing_scan', 'completed', undefined, { missingCount, corruptedCount });
 
-        } catch (e) {
+        } catch (e: any) {
             Logger.error('integrity-service', 'Error during file integrity self-healing scan', e);
+            trackOfflineSync('self_healing_scan', 'failed', undefined, { error: e.message || String(e) });
+            Sentry.captureException(e, { tags: { service: 'IntegrityService', type: 'self_healing_scan' } });
         }
     }
 };

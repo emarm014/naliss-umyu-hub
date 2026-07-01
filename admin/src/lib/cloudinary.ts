@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import * as Sentry from '@sentry/react';
+import { trackCloudinary } from './sentry';
 
 
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dno3wqlm3';
@@ -115,6 +116,7 @@ export async function uploadToCloudinary(
     }
   });
 
+  const startTime = Date.now();
   try {
     const response = await fetch(uploadUrl, {
       method: 'POST',
@@ -128,12 +130,20 @@ export async function uploadToCloudinary(
     }
 
     const result = await response.json();
+    trackCloudinary('upload', result.public_id || file.name, Date.now() - startTime);
     return {
       secure_url: result.secure_url,
       original_filename: file.name,
     };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Upload failed';
+    const duration = Date.now() - startTime;
+    const errObj = err instanceof Error ? err : new Error(String(err));
+    trackCloudinary('upload', file.name, duration, errObj);
+    Sentry.captureException(errObj, { 
+      tags: { service: 'Cloudinary', operation: 'upload', location: 'cloudinary.upload' },
+      extra: { fileName: file.name, fileSize: file.size, folder, resourceType }
+    });
+    const msg = errObj.message;
     throw new Error(msg);
   }
 }

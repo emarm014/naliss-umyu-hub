@@ -4,7 +4,7 @@ import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { User as Profile } from '../types';
-import { captureStoreError, trackStoreAction, isNetworkError } from '../utils/sentry';
+import { captureStoreError, trackStoreAction, isNetworkError, setSentryUserContext, clearSentryUserContext } from '../utils/sentry';
 import { Logger } from '../utils/logger';
 import { withRetry } from '../utils/api-protection';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -91,6 +91,7 @@ export const useAuthStore = create<AuthState>()(
         const localProfile = await getLocalUserSession();
         if (localProfile) {
           set({ profile: localProfile as Profile });
+          setSentryUserContext(localProfile);
         }
       },
 
@@ -135,6 +136,7 @@ export const useAuthStore = create<AuthState>()(
           }
           
           set({ profile: merged as Profile, lastFetch: Date.now() });
+          setSentryUserContext(merged);
           
           // Anchor the fresh fetch payload into SQLite
           await saveLocalUserSession(merged);
@@ -329,7 +331,10 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setIsProfileComplete: (complete) => set({ isProfileComplete: complete }),
-      setProfile: (profile) => set({ profile: profile as any }),
+      setProfile: (profile) => {
+        set({ profile: profile as any });
+        if (profile) setSentryUserContext(profile);
+      },
 
       signOut: async () => {
         // ONLINE CONNECTIVITY GUARD GATEWAY
@@ -355,6 +360,7 @@ export const useAuthStore = create<AuthState>()(
         }
         // sees a clean slate and doesn't re-enter the ban-check with stale data.
         set({ session: null, user: null, profile: null, isProfileComplete: null, error: null, confirmedAvatarUrl: null, localAvatarUrl: null });
+        clearSentryUserContext();
         
         // Remove SQLite profile anchor to erase zombie data
         await clearLocalUserSession();
@@ -414,6 +420,9 @@ export const useAuthStore = create<AuthState>()(
           // handles users who had an avatar before this field was introduced
           if (!state.confirmedAvatarUrl && state.profile?.avatar_url) {
             state.confirmedAvatarUrl = state.profile.avatar_url;
+          }
+          if (state.profile) {
+            setSentryUserContext(state.profile);
           }
           
           // Verify that the local avatar file actually exists on disk.

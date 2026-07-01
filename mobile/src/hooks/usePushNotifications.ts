@@ -5,7 +5,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationStore } from '../stores/notification.store';
@@ -226,10 +226,10 @@ export function usePushNotifications() {
         useNotificationStore.getState().markAsRead(notifId);
         await supabase.from('notification_history').update({ is_read: true }).eq('notification_id', notifId).catch(() => {});
         logTelemetry(notifId, notifType, 'opened');
-      } else if (actionId === 'reply' && (response as any).userText && data?.group_id && user) {
+      } else if (actionId === 'reply' && (response as any).userText && (data as any)?.group_id && user) {
         const replyText = (response as any).userText;
         await supabase.from('messages').insert({
-          group_id: data.group_id,
+          group_id: (data as any).group_id,
           sender_id: user.id,
           content: replyText,
         });
@@ -242,14 +242,15 @@ export function usePushNotifications() {
             body: body || 'You scheduled a reminder.',
             data: data,
           },
-          trigger: { seconds: 3600 },
+          trigger: { seconds: 3600 } as any,
         });
         logTelemetry(notifId, notifType, 'dismissed');
-      } else if (actionId === 'download' && data?.file_url) {
+      } else if (actionId === 'download' && (data as any)?.file_url) {
         try {
-          const filename = data.file_url.split('/').pop() || 'downloaded_file';
+          const fileUrl = (data as any).file_url;
+          const filename = typeof fileUrl === 'string' ? fileUrl.split('/').pop() || 'downloaded_file' : 'downloaded_file';
           const localUri = `${FileSystem.documentDirectory}${filename}`;
-          await FileSystem.downloadAsync(data.file_url, localUri);
+          await FileSystem.downloadAsync(fileUrl, localUri);
         } catch {
           // silent
         }
@@ -363,7 +364,7 @@ async function configureNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('chat_actions', [
       {
         identifier: 'reply',
-        buttonTitleText: 'Reply',
+        buttonTitle: 'Reply',
         textInput: {
           submitButtonTitle: 'Send',
           placeholder: 'Type reply...',
@@ -372,12 +373,12 @@ async function configureNotificationCategories() {
       },
       {
         identifier: 'mark_read',
-        buttonTitleText: 'Mark as Read',
+        buttonTitle: 'Mark as Read',
         options: { opensAppToForeground: false },
       },
       {
         identifier: 'mute',
-        buttonTitleText: 'Mute Conversation',
+        buttonTitle: 'Mute Conversation',
         options: { opensAppToForeground: false },
       },
     ]);
@@ -385,17 +386,17 @@ async function configureNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('announcement_actions', [
       {
         identifier: 'open',
-        buttonTitleText: 'Open',
+        buttonTitle: 'Open',
         options: { opensAppToForeground: true },
       },
       {
         identifier: 'save',
-        buttonTitleText: 'Save',
+        buttonTitle: 'Save',
         options: { opensAppToForeground: false },
       },
       {
         identifier: 'dismiss',
-        buttonTitleText: 'Dismiss',
+        buttonTitle: 'Dismiss',
         options: { opensAppToForeground: false, isDestructive: true },
       },
     ]);
@@ -403,17 +404,17 @@ async function configureNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('event_actions', [
       {
         identifier: 'join',
-        buttonTitleText: 'Join',
+        buttonTitle: 'Join',
         options: { opensAppToForeground: true },
       },
       {
         identifier: 'interested',
-        buttonTitleText: 'Interested',
+        buttonTitle: 'Interested',
         options: { opensAppToForeground: false },
       },
       {
         identifier: 'dismiss',
-        buttonTitleText: 'Dismiss',
+        buttonTitle: 'Dismiss',
         options: { opensAppToForeground: false, isDestructive: true },
       },
     ]);
@@ -421,12 +422,12 @@ async function configureNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('quiz_actions', [
       {
         identifier: 'start_quiz',
-        buttonTitleText: 'Start Quiz',
+        buttonTitle: 'Start Quiz',
         options: { opensAppToForeground: true },
       },
       {
         identifier: 'remind_later',
-        buttonTitleText: 'Remind Me Later',
+        buttonTitle: 'Remind Me Later',
         options: { opensAppToForeground: false },
       },
     ]);
@@ -434,12 +435,12 @@ async function configureNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('material_actions', [
       {
         identifier: 'download',
-        buttonTitleText: 'Download File',
+        buttonTitle: 'Download File',
         options: { opensAppToForeground: false },
       },
       {
         identifier: 'bookmark',
-        buttonTitleText: 'Bookmark',
+        buttonTitle: 'Bookmark',
         options: { opensAppToForeground: false },
       },
     ]);
@@ -447,12 +448,12 @@ async function configureNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('security_actions', [
       {
         identifier: 'review',
-        buttonTitleText: 'Review Alert',
+        buttonTitle: 'Review Alert',
         options: { opensAppToForeground: true },
       },
       {
         identifier: 'secure_account',
-        buttonTitleText: 'Secure Account',
+        buttonTitle: 'Secure Account',
         options: { opensAppToForeground: true, isDestructive: true },
       },
     ]);

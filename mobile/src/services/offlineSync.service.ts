@@ -1,5 +1,6 @@
 import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
+import { trackOfflineSync, captureStoreError } from '../utils/sentry';
 import { useAuthStore } from '../stores/auth.store';
 import { useGroupStore } from '../stores/group.store';
 import { useMessageStore } from '../stores/message.store';
@@ -31,6 +32,7 @@ export const OfflineSyncService = {
         if (!authUser) return;
 
         Logger.info('offline-sync', 'Starting full bootstrap synchronization.');
+        trackOfflineSync('bootstrap', 'started');
         useOfflineAssetStore.getState().logTelemetry('bootstrap_started');
 
         try {
@@ -455,13 +457,16 @@ export const OfflineSyncService = {
             await useOfflineSearchStore.getState().rebuildIndex();
 
             useOfflineAssetStore.getState().logTelemetry('bootstrap_completed');
+            trackOfflineSync('bootstrap', 'completed');
             Logger.info('offline-sync', 'Bootstrap complete. Launching queue downloader.');
 
             // Trigger background queue downloader
             useOfflineAssetStore.getState().startDownloader().catch(() => {});
 
-        } catch (e) {
+        } catch (e: any) {
             Logger.error('offline-sync', 'Error running bootstrap synchronization', e);
+            trackOfflineSync('bootstrap', 'failed', undefined, { error: e.message || String(e) });
+            captureStoreError('OfflineSyncService', 'syncAll', e);
         }
     }
 };

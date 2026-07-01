@@ -19,6 +19,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../api/supabase/client';
+import { trackCloudinary } from '../utils/sentry';
 
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dno3wqlm3';
 const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'naliss_uploads';
@@ -76,6 +77,7 @@ export async function uploadToCloudinary(
 ): Promise<string> {
   const mimeType = blob.type.toLowerCase();
   const size = blob.size;
+  const startTime = Date.now();
 
   const isImage = mimeType.startsWith('image/');
   const isVideo = mimeType.startsWith('video/');
@@ -152,15 +154,20 @@ export async function uploadToCloudinary(
 
     const result = await response.json();
     if (!result.secure_url) {
-      throw new Error(result.error?.message || 'Upload failed. Please try again.');
+      const err = new Error(result.error?.message || 'Upload failed. Please try again.');
+      trackCloudinary('upload_blob', result.public_id || 'unknown', Date.now() - startTime, err);
+      throw err;
     }
+    trackCloudinary('upload_blob', result.public_id || 'unknown', Date.now() - startTime);
     return result.secure_url;
   } catch (error: any) {
     clearTimeout(timeoutId);
-    if (error?.name === 'AbortError') {
-      throw new Error('Upload timed out. Please check your connection and try again.');
-    }
-    throw new Error(error.message || 'Upload failed. Please try again.');
+    const duration = Date.now() - startTime;
+    const finalErr = error?.name === 'AbortError'
+      ? new Error('Upload timed out. Please check your connection and try again.')
+      : error;
+    trackCloudinary('upload_blob', folder, duration, finalErr);
+    throw finalErr;
   }
 }
 
@@ -183,6 +190,7 @@ export async function uploadLocalFileToCloudinary(
   onProgress?: (progress: number) => void
 ): Promise<string> {
   const mimeType = contentType.toLowerCase();
+  const startTime = Date.now();
   const isImage = mimeType.startsWith('image/');
   const isVideo = mimeType.startsWith('video/');
   const isAudio = mimeType.startsWith('audio/');
@@ -256,30 +264,52 @@ export async function uploadLocalFileToCloudinary(
       });
 
       xhr.addEventListener('load', () => {
+        const duration = Date.now() - startTime;
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const result = JSON.parse(xhr.responseText);
             if (result.secure_url) {
+              trackCloudinary('upload_local', result.public_id || fileName, duration);
               resolve(result.secure_url);
             } else {
-              reject(new Error(result.error?.message || 'Upload failed. Please try again.'));
+              const err = new Error(result.error?.message || 'Upload failed. Please try again.');
+              trackCloudinary('upload_local', fileName, duration, err);
+              reject(err);
             }
           } catch {
-            reject(new Error('Upload failed. Please try again.'));
+            const err = new Error('Upload failed. Please try again.');
+            trackCloudinary('upload_local', fileName, duration, err);
+            reject(err);
           }
         } else {
           try {
             const err = JSON.parse(xhr.responseText);
-            reject(new Error(err.error?.message || `Upload failed (${xhr.status}). Please try again.`));
+            const finalErr = new Error(err.error?.message || `Upload failed (${xhr.status}). Please try again.`);
+            trackCloudinary('upload_local', fileName, duration, finalErr);
+            reject(finalErr);
           } catch {
-            reject(new Error(`Upload failed (${xhr.status}). Please try again.`));
+            const finalErr = new Error(`Upload failed (${xhr.status}). Please try again.`);
+            trackCloudinary('upload_local', fileName, duration, finalErr);
+            reject(finalErr);
           }
         }
       });
 
-      xhr.addEventListener('error', () => reject(new Error('Upload failed. Please check your connection.')));
-      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled.')));
-      xhr.addEventListener('timeout', () => reject(new Error('Upload timed out. Please try again on a faster connection.')));
+      xhr.addEventListener('error', () => {
+        const err = new Error('Upload failed. Please check your connection.');
+        trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
+        reject(err);
+      });
+      xhr.addEventListener('abort', () => {
+        const err = new Error('Upload cancelled.');
+        trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
+        reject(err);
+      });
+      xhr.addEventListener('timeout', () => {
+        const err = new Error('Upload timed out. Please try again on a faster connection.');
+        trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
+        reject(err);
+      });
 
       const uploadUrl = getUploadUrl(contentType);
       xhr.open('POST', uploadUrl);

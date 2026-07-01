@@ -247,3 +247,107 @@ export function startTransaction(name: string, data?: Record<string, string>) {
     });
   };
 }
+
+export function setSentryUserContext(user: { 
+  id: string; 
+  email?: string; 
+  full_name?: string; 
+  role?: string; 
+  department?: string; 
+  level?: any; 
+  executive_role?: string; 
+  membership_status?: string; 
+}) {
+  Sentry.setUser({
+    id: user.id,
+    email: user.email || undefined,
+    username: user.full_name || undefined,
+  });
+  Sentry.setContext('user_profile', {
+    role: user.role,
+    department: user.department,
+    level: user.level,
+    executive_role: user.executive_role,
+    membership_status: user.membership_status,
+  });
+  if (user.role) Sentry.setTag('user.role', user.role);
+}
+
+export function clearSentryUserContext() {
+  Sentry.setUser(null);
+  Sentry.setContext('user_profile', null);
+}
+
+export function trackSqlTransaction(op: string, sql: string, durationMs: number, error?: any) {
+  Sentry.addBreadcrumb({
+    category: 'db.sqlite',
+    message: `SQL ${op} (${durationMs}ms)`,
+    data: {
+      op,
+      sql: sql?.slice(0, 200),
+      durationMs,
+      error: error ? (error.message ?? String(error)) : undefined,
+    },
+    level: error ? 'error' : 'info',
+  });
+}
+
+export function captureDatabaseError(op: string, error: unknown, extra?: Record<string, any>) {
+  Sentry.captureException(normalizeError(error), {
+    tags: { location: 'db.sqlite', op },
+    extra: { ...extra, originalError: error },
+  });
+}
+
+export function trackOfflineSync(
+  stage: string, 
+  status: 'started' | 'completed' | 'failed' | 'skipped', 
+  durationMs?: number, 
+  extra?: Record<string, any>
+) {
+  Sentry.addBreadcrumb({
+    category: 'sync.engine',
+    message: `Sync ${stage} [${status}]${durationMs != null ? ` (${durationMs}ms)` : ''}`,
+    data: { stage, status, durationMs, ...extra },
+    level: status === 'failed' ? 'error' : (status === 'skipped' ? 'warning' : 'info'),
+  });
+  Sentry.setTag('sync.state', status);
+}
+
+export function trackCloudinary(op: string, publicId: string, durationMs?: number, error?: any) {
+  Sentry.addBreadcrumb({
+    category: 'media.cloudinary',
+    message: `Cloudinary ${op} ${publicId?.slice(0, 60)}${durationMs != null ? ` (${durationMs}ms)` : ''}`,
+    data: { op, publicId, durationMs, error: error ? (error.message ?? String(error)) : undefined },
+    level: error ? 'error' : 'info',
+  });
+}
+
+export function trackDownloadTask(id: string, stage: string, durationMs?: number, extra?: Record<string, any>) {
+  Sentry.addBreadcrumb({
+    category: 'downloader',
+    message: `Download ${id} [${stage}]${durationMs != null ? ` (${durationMs}ms)` : ''}`,
+    data: { id, stage, durationMs, ...extra },
+    level: stage === 'failed' ? 'error' : 'info',
+  });
+}
+
+export function trackBackgroundWorker(
+  workerName: string, 
+  event: 'started' | 'completed' | 'failed', 
+  durationMs?: number, 
+  error?: any
+) {
+  Sentry.addBreadcrumb({
+    category: 'worker.background',
+    message: `Worker ${workerName} [${event}]${durationMs != null ? ` (${durationMs}ms)` : ''}`,
+    data: { workerName, event, durationMs, error: error ? (error.message ?? String(error)) : undefined },
+    level: event === 'failed' ? 'error' : 'info',
+  });
+}
+
+export function setSentryNetworkContext(isOnline: boolean, networkType?: string | null) {
+  Sentry.setTag('network.status', isOnline ? 'online' : 'offline');
+  if (networkType) Sentry.setTag('network.type', networkType);
+  Sentry.setContext('network', { isOnline, networkType });
+}

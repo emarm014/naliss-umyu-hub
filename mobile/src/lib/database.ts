@@ -1,12 +1,60 @@
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
+import { trackSqlTransaction, captureDatabaseError } from '../utils/sentry';
 
 let db: SQLite.SQLiteDatabase | null = null;
+
+function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLite.SQLiteDatabase {
+  const handler: ProxyHandler<SQLite.SQLiteDatabase> = {
+    get(target, prop, receiver) {
+      const originalValue = Reflect.get(target, prop, receiver);
+      if (typeof originalValue !== 'function') {
+        return originalValue;
+      }
+      
+      return async function (this: any, ...args: any[]) {
+        const start = Date.now();
+        const opName = String(prop);
+        
+        let sql = '';
+        if (
+          opName === 'execAsync' || 
+          opName === 'runAsync' || 
+          opName === 'getAllAsync' || 
+          opName === 'getFirstAsync' || 
+          opName === 'prepareAsync'
+        ) {
+          sql = typeof args[0] === 'string' ? args[0] : '';
+        }
+        
+        try {
+          const result = await originalValue.apply(target, args);
+          const duration = Date.now() - start;
+          if (sql) {
+            trackSqlTransaction(opName, sql, duration);
+          }
+          return result;
+        } catch (error) {
+          const duration = Date.now() - start;
+          if (sql) {
+            trackSqlTransaction(opName, sql, duration, error);
+            captureDatabaseError(opName, error, { sql, args, duration });
+          } else {
+            captureDatabaseError(opName, error, { args, duration });
+          }
+          throw error;
+        }
+      };
+    }
+  };
+  return new Proxy(originalDb, handler);
+}
 
 export const initDB = async () => {
     if (Platform.OS === 'web') return null;
     try {
-        db = await SQLite.openDatabaseAsync('chat.db');
+        const rawDb = await SQLite.openDatabaseAsync('chat.db');
+        db = wrapDatabaseWithObservability(rawDb);
         await db.execAsync(`
             PRAGMA journal_mode = WAL;
             CREATE TABLE IF NOT EXISTS local_messages (

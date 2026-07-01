@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import type { User, UserRole } from '../types';
+import { setSentryUserContext, clearSentryUserContext } from '../lib/sentry';
 
 interface AuthState {
   user: SupabaseUser | null;
@@ -80,14 +81,19 @@ export const useAuthStore = create<AuthState>()(
           // Ignore sign-out errors — always clear local state and redirect
         } finally {
           set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, error: null, isLoading: false });
+          clearSentryUserContext();
           window.location.href = '/login';
         }
       },
 
       updateProfile: (updates) => {
-        set((state) => ({
-          profile: state.profile ? { ...state.profile, ...updates } : null,
-        }));
+        set((state) => {
+          const nextProfile = state.profile ? { ...state.profile, ...updates } : null;
+          if (nextProfile) setSentryUserContext(nextProfile);
+          return {
+            profile: nextProfile,
+          };
+        });
       },
     }),
     {
@@ -118,6 +124,7 @@ async function fetchFullProfile(userId: string, set: (state: Partial<AuthState>)
         // They should be immediately signed out to resolve the desync.
         await supabase.auth.signOut();
         set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
+        clearSentryUserContext();
         window.location.href = '/login';
         return;
       }
@@ -136,6 +143,7 @@ async function fetchFullProfile(userId: string, set: (state: Partial<AuthState>)
       if (profile.status === 'banned' || profile.status === 'graduated') {
         await supabase.auth.signOut();
         set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
+        clearSentryUserContext();
         window.location.href = '/login';
         return;
       }
@@ -150,6 +158,7 @@ async function fetchFullProfile(userId: string, set: (state: Partial<AuthState>)
           // Still suspended — sign out
           await supabase.auth.signOut();
           set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
+          clearSentryUserContext();
           window.location.href = '/login';
           return;
         }
@@ -172,6 +181,7 @@ async function fetchFullProfile(userId: string, set: (state: Partial<AuthState>)
         if (permissions?.is_restricted === true) {
           await supabase.auth.signOut();
           set({ user: null, profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
+          clearSentryUserContext();
           alert('Access Restricted: Your moderator access has been restricted by the administrator.');
           window.location.href = '/login';
           return;
@@ -179,6 +189,7 @@ async function fetchFullProfile(userId: string, set: (state: Partial<AuthState>)
       }
 
       set({ profile, permissions, isAdminOrModerator, isLoading: false });
+      setSentryUserContext(profile);
     } else {
       set({ isLoading: false });
     }

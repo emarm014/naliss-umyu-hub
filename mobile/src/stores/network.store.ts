@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as Network from 'expo-network';
-import { trackNetworkChange } from '../utils/sentry';
+import { trackNetworkChange, setSentryNetworkContext } from '../utils/sentry';
 import { useMutationQueueStore } from './mutationQueue.store';
 import { useMessageStore } from './message.store';
 
@@ -68,6 +68,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         networkType: networkState.type,
         isOnline,
       });
+      setSentryNetworkContext(isOnline, networkState.type);
 
       return isOnline;
     } catch (error) {
@@ -82,6 +83,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       lastOnlineTime: new Date(),
       wasOffline: get().wasOffline || !get().isOnline,
     });
+    setSentryNetworkContext(true, get().networkType);
   },
 
   setOffline: () => {
@@ -90,6 +92,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       lastOfflineTime: new Date(),
       wasOffline: true,
     });
+    setSentryNetworkContext(false, get().networkType);
   },
 
   incrementPendingSync: () => set((state) => ({ pendingSyncCount: state.pendingSyncCount + 1 })),

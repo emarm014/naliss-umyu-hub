@@ -49,10 +49,10 @@ serve(async (req) => {
       notifTitle = '1-Hour Reminder!';
       notifBody = `The event "${pool.title}" starts in 1 hour. Get ready!`;
     } else if (payload.new_status === 'live') {
-      notifTitle = 'Event Pool is Live! 🚀';
+      notifTitle = 'Event Pool is Live! ðŸš€';
       notifBody = `The event "${pool.title}" has just started! Tap to join now.`;
     } else if (payload.new_status === 'completed') {
-      notifTitle = 'Event Completed 🏆';
+      notifTitle = 'Event Completed ðŸ†';
       notifBody = `The event "${pool.title}" has ended. Results are being calculated.`;
     } else {
       return new Response(JSON.stringify({ message: 'No notification needed for this state.' }), { status: 200 });

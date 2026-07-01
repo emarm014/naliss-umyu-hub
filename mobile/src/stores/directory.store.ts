@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Lecturer, Executive } from '../types';
 
@@ -85,7 +85,7 @@ export const useDirectoryStore = create<DirectoryState>()(
         }),
         {
             name: 'directory-storage',
-            storage: createJSONStorage(() => AsyncStorage),
+            storage: createJSONStorage(() => mmkvStorage),
             partialize: (state) => ({
                 lecturers: state.lecturers,
                 executives: state.executives,

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { captureStoreError, isNetworkError } from '../utils/sentry';
 
@@ -152,7 +152,7 @@ export const useAnnouncementStore = create<AnnouncementState>()(
     }),
     {
       name: 'announcement-storage',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvStorage),
       partialize: (state) => ({
         announcements: state.announcements,
         readIds: state.readIds,

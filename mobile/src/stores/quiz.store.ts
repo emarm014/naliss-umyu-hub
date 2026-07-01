@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 
 interface QuizState {
@@ -102,7 +102,7 @@ export const useQuizStore = create<QuizState>()(
     }),
     {
       name: 'naliss-quiz-pool-started-at',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvStorage),
       partialize: (state) => ({
         poolStartTimes: state.poolStartTimes,
         answers: state.answers,

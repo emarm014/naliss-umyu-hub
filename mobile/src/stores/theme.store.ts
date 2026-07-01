@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { Colors } from '../constants/Colors';
 
 interface ThemeState {
@@ -28,7 +28,7 @@ export const useThemeStore = create<ThemeState>()(
     }),
     {
       name: 'naliss-theme',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvStorage),
       partialize: (state) => ({ isDark: state.isDark }),
       // Rehydrate colors from persisted isDark flag
       onRehydrateStorage: () => (state) => {

@@ -224,10 +224,9 @@ export default function ResourcesScreen() {
         try {
           let localUri = fileUri;
           if (fileUri.startsWith('http')) {
-            const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase() || 'document.pdf';
-            const downloadDest = FileSystem.documentDirectory + safeName;
-            const downloadRes = await FileSystem.downloadAsync(fileUri, downloadDest);
-            localUri = downloadRes.uri;
+            const resultUri = await downloadFile(material.file_url, material.id, displayName);
+            if (!resultUri) return; // Download failed or cancelled
+            localUri = resultUri;
           }
 
           let contentUri = localUri;

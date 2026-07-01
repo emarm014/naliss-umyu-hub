@@ -8,6 +8,7 @@
     "userInterfaceStyle": "automatic",
     "scheme": "naliss",
     "sdkVersion": "54.0.0",
+    "jsEngine": "hermes",
     "updates": {
       "url": "https://u.expo.dev/9eb7911b-09b9-4238-a5c9-7979713f409c",
       "enabled": true,
@@ -47,12 +48,6 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -87,7 +82,16 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

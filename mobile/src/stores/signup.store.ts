@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 
 const SIGNUP_TIMEOUT_MS = 3_600_000; // 1 hour inactivity timeout
 
@@ -183,7 +183,7 @@ export const useSignupStore = create<SignupState>()(
     }),
     {
       name: 'naliss-signup-session',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvStorage),
       partialize: (state) => ({
         provider: state.provider,
         email: state.email,

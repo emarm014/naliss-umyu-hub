@@ -47,3 +47,6 @@ supabase/.temp/
 # Root-level lock files (managed per project)
 /package-lock.json
 /package.json
+
+# Binary archives
+supabase.zip

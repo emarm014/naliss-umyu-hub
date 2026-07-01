@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 
 interface SettingsState {
@@ -111,7 +111,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'naliss-settings-v2',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvStorage),
       partialize: (state) => ({
         maintenanceMode: state.maintenanceMode,
         readOnlyMode: state.readOnlyMode,

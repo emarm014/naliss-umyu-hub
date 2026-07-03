@@ -868,50 +868,26 @@ export const useCrossDeviceSyncStore = create<CrossDeviceSyncState>()(
                             }
                         }
 
-                        // Exponential backoff download loop
-                        let downloadSuccess = false;
-                        let retries = 3;
-                        let delay = 1000;
-
-                        while (retries > 0 && !downloadSuccess) {
-                            try {
-                                const downloadRes = await FileSystem.downloadAsync(item.file_url, item.local_path);
-                                if (downloadRes.status === 200) {
-                                    downloadSuccess = true;
-                                } else {
-                                    throw new Error(`Invalid status: ${downloadRes.status}`);
-                                }
-                            } catch (err) {
-                                retries--;
-                                if (retries === 0) throw err;
-                                await new Promise(r => setTimeout(r, delay));
-                                delay *= 2;
-                                Logger.warn('cross-device-sync', `Retry download for file ${item.id}. Retries remaining: ${retries}`);
+                        // Consolidated download through UnifiedDownloadEngine
+                        const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+                        const localUri = await UnifiedDownloadEngine.download(
+                            item.file_url,
+                            item.id,
+                            item.original_filename || `sync_${item.id}`,
+                            undefined,
+                            {
+                                assetType: `chat_${item.media_type || 'file'}`,
+                                expectedHash: item.sha256 || null,
+                                expectedSize: item.file_size || null,
+                                messageId: item.message_id || item.id,
+                                groupId: item.group_id || null,
+                                mimeType: item.mime_type || null
                             }
+                        );
+
+                        if (!localUri) {
+                            throw new Error(`UnifiedDownloadEngine failed for file ${item.id}`);
                         }
-
-                        // Hash verification
-                        const fileBase64 = await FileSystem.readAsStringAsync(item.local_path, { encoding: FileSystem.EncodingType.Base64 });
-                        const binaryStr = base64ToBinary(fileBase64);
-                        const computedHash = calculateSHA256(binaryStr);
-
-                        let verified = true;
-                        if (item.sha256 && item.sha256 !== computedHash) {
-                            verified = false;
-                            Logger.error('cross-device-sync', `Hash Failure: File integrity corrupted for ${item.id}`, new Error('Hash checksum corrupted'));
-                            await FileSystem.deleteAsync(item.local_path, { idempotent: true });
-                            throw new Error('Hash integrity check failed');
-                        }
-
-                        // Save manifest details
-                        await upsertMediaManifest({
-                            ...item,
-                            downloaded: 1,
-                            verified: verified ? 1 : 0,
-                            last_verified_at: new Date().toISOString(),
-                            content_hash: computedHash,
-                            sha256: item.sha256 || computedHash
-                        });
 
                         jobState.completed++;
                         Logger.info('cross-device-sync', `Media Downloaded & Verified: ${item.id}`);

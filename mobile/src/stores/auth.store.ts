@@ -45,6 +45,11 @@ interface AuthState {
   confirmedAvatarUrl: string | null;
   // Local file system URI for the cached avatar image to support offline rendering.
   localAvatarUrl: string | null;
+  pendingAvatarUpload: {
+    localUri: string;
+    mimeType: string;
+    fileName: string;
+  } | null;
   // True once zustand-persist has finished reading from AsyncStorage
   _hasHydrated: boolean;
 
@@ -66,6 +71,9 @@ interface AuthState {
   signOut: () => Promise<void>;
   setError: (error: string | null) => void;
   hydrateFromSQLite: () => Promise<void>;
+  syncPendingAvatar: () => Promise<void>;
+  verifyAndRepairProfile: () => Promise<void>;
+  removeLocalData: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -82,6 +90,7 @@ export const useAuthStore = create<AuthState>()(
       pendingProfileUpdates: {},
       confirmedAvatarUrl: null,
       localAvatarUrl: null,
+      pendingAvatarUpload: null,
       _hasHydrated: false,
 
       setSession: (session) => set({ session, isLoading: false }),
@@ -90,8 +99,13 @@ export const useAuthStore = create<AuthState>()(
       hydrateFromSQLite: async () => {
         const localProfile = await getLocalUserSession();
         if (localProfile) {
-          set({ profile: localProfile as Profile });
+          set({ 
+            profile: localProfile as Profile,
+            localAvatarUrl: localProfile.local_avatar_path || null
+          });
           setSentryUserContext(localProfile);
+          // Run self-healing check on hydrate
+          get().verifyAndRepairProfile().catch(() => {});
         }
       },
 
@@ -104,6 +118,8 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const fetchStartedAt = Date.now();
+        const { insertTelemetryEvent } = require('../lib/database');
+        const deviceId = require('./offlineAsset.store').useOfflineAssetStore.getState().deviceId || 'unknown';
 
         try {
           const { data, error } = await Logger.perf('auth.store', 'fetchProfile', () => 
@@ -117,20 +133,70 @@ export const useAuthStore = create<AuthState>()(
             }, { componentName: 'auth.store', operationName: 'fetchProfile' })
           );
 
+          if (error) {
+            const isNet = error.message?.toLowerCase().includes('network') || error.status === 0;
+            if (isNet) {
+              Logger.warn('auth.store', 'Network error during fetchProfile. Keeping cached local profile.');
+              await insertTelemetryEvent({
+                user_id: user.id,
+                device_id: deviceId,
+                event_type: 'retry_scheduled',
+                failure_reason: error.message || 'Network error',
+                worker_name: 'auth_store'
+              });
+              return;
+            }
+            throw error;
+          }
+
+          if (!data || Object.keys(data).length === 0) {
+            Logger.warn('auth.store', 'Empty server profile response. Skipping overwrite.');
+            await insertTelemetryEvent({
+              user_id: user.id,
+              device_id: deviceId,
+              event_type: 'empty_server_response_ignored',
+              worker_name: 'auth_store'
+            });
+            return;
+          }
+
+          // Version Control Check
+          const localProfile = get().profile;
+          if (localProfile) {
+            const localVersion = localProfile.profile_version || 1;
+            const serverVersion = (data as any).profile_version || 1;
+            const localUpdatedAt = localProfile.updated_at ? new Date(localProfile.updated_at).getTime() : 0;
+            const serverUpdatedAt = (data as any).updated_at ? new Date((data as any).updated_at).getTime() : 0;
+
+            if (serverVersion < localVersion || (serverVersion === localVersion && serverUpdatedAt <= localUpdatedAt)) {
+              Logger.info('auth.store', 'Stale server profile ignored.', { localVersion, serverVersion });
+              await insertTelemetryEvent({
+                user_id: user.id,
+                device_id: deviceId,
+                event_type: 'sync_skipped',
+                failure_reason: `Stale version: local=${localVersion}, server=${serverVersion}`,
+                worker_name: 'auth_store'
+              });
+              return;
+            }
+          }
+
+          const isBootstrap = !localProfile;
+          if (isBootstrap) {
+            await insertTelemetryEvent({
+              user_id: user.id,
+              device_id: deviceId,
+              event_type: 'bootstrap_started',
+              worker_name: 'auth_store'
+            });
+          }
+
           const currentState = get();
-          
-          // If a local optimistic update happened AFTER this fetch started,
-          // the fetched data is stale. Ignore it completely.
           if (currentState.lastLocalProfileUpdateAt && currentState.lastLocalProfileUpdateAt > fetchStartedAt) {
             return;
           }
 
-          // Apply any pending offline edits OVER the fetched server data.
           const merged: any = { ...(data as any), ...currentState.pendingProfileUpdates };
-
-          // IRON RULE: confirmedAvatarUrl always wins over anything from the DB.
-          // Once a user sets their avatar, no fetch — stale or fresh — can revert it.
-          // confirmedAvatarUrl is only cleared on sign-out.
           if (currentState.confirmedAvatarUrl) {
             merged.avatar_url = currentState.confirmedAvatarUrl;
           }
@@ -140,83 +206,129 @@ export const useAuthStore = create<AuthState>()(
           
           // Anchor the fresh fetch payload into SQLite
           await saveLocalUserSession(merged);
+          await insertTelemetryEvent({
+            user_id: user.id,
+            device_id: deviceId,
+            event_type: 'profile_downloaded',
+            worker_name: 'auth_store'
+          });
+          await insertTelemetryEvent({
+            user_id: user.id,
+            device_id: deviceId,
+            event_type: 'sqlite_saved',
+            worker_name: 'auth_store'
+          });
 
+          // Unify avatar download
           if (merged.avatar_url) {
-            cacheAvatarLocally(user.id, merged.avatar_url).then(localUri => {
-              if (localUri) {
-                set({ localAvatarUrl: localUri });
-              }
-            }).catch(() => {});
+            const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+            const localUri = await UnifiedDownloadEngine.download(
+              merged.avatar_url,
+              `user_avatar_${user.id}`,
+              `avatar_${user.id}.jpg`,
+              undefined,
+              { assetType: 'user_avatar' }
+            );
+            if (localUri) {
+              const updatedWithAvatar = { ...merged, local_avatar_path: localUri };
+              set({ localAvatarUrl: localUri, profile: updatedWithAvatar as Profile });
+              await saveLocalUserSession(updatedWithAvatar);
+              
+              await insertTelemetryEvent({
+                user_id: user.id,
+                device_id: deviceId,
+                event_type: 'avatar_downloaded',
+                worker_name: 'auth_store'
+              });
+              await insertTelemetryEvent({
+                user_id: user.id,
+                device_id: deviceId,
+                event_type: 'avatar_verified',
+                worker_name: 'auth_store'
+              });
+            }
+          }
+
+          if (isBootstrap) {
+            await insertTelemetryEvent({
+              user_id: user.id,
+              device_id: deviceId,
+              event_type: 'bootstrap_completed',
+              worker_name: 'auth_store'
+            });
           }
         } catch (err: any) {
-          // On network failure, keep the cached profile — don't clear it
           if (!isNetworkError(err)) {
-            // Real DB error — surface it so the UI can react
             set({ error: err.message || 'Failed to load profile' });
             captureStoreError('auth', 'fetchProfile', err, { userId: user.id });
           }
         }
       },
 
-      // Update profile fields and sync to auth metadata so chat shows updated info
+      // Update profile fields and sync in an offline-first manner
       updateProfile: async (updates) => {
         const { user, profile } = get();
         if (!user || !profile) return;
 
-        try {
-          const { data: rows, error: dbError } = await (supabase as any).from('users')
-            .update(updates as any)
-            .eq('id', user.id)
-            .select();
+        // 1. Instantly merge update into memory Zustand + MMKV cache
+        const merged = { ...profile, ...updates };
+        set({ profile: merged as Profile });
 
-          if (dbError) {
-            if (isNetworkError(dbError)) {
-              throw new Error('Network Connection Required: You must be connected to the internet to modify your profile.');
+        // 2. Instantly persist to permanent local SQLite database
+        await saveLocalUserSession(merged);
+
+        // 3. Queue update to Supabase via mutationQueue in background
+        const dbUpdates = { ...updates };
+        delete dbUpdates.localAvatarUrl;
+        
+        if (Object.keys(dbUpdates).length > 0) {
+          const { useMutationQueueStore } = require('./mutationQueue.store');
+          useMutationQueueStore.getState().enqueue({
+            table: 'users',
+            action: 'update',
+            payload: dbUpdates,
+            queryConstraints: {
+              eq: { id: user.id }
             }
-            throw dbError;
-          }
+          });
+          // Best-effort background queue execution
+          useMutationQueueStore.getState().processQueue().catch(() => {});
+        }
 
-          const updatedRow = rows?.[0];
-          if (updatedRow) {
-            const merged = { ...profile, ...updatedRow };
-            set({
-              profile: merged,
-              pendingProfileUpdates: {},
-              lastLocalProfileUpdateAt: null
-            });
-            
-            // Anchor updated profile to SQLite
-            await saveLocalUserSession(merged);
+        // 4. Log Telemetry
+        const { insertTelemetryEvent } = require('../lib/database');
+        const deviceId = require('./offlineAsset.store').useOfflineAssetStore.getState().deviceId || 'unknown';
+        await insertTelemetryEvent({
+          user_id: user.id,
+          device_id: deviceId,
+          event_type: 'profile_updated',
+          worker_name: 'auth_store'
+        });
+        await insertTelemetryEvent({
+          user_id: user.id,
+          device_id: deviceId,
+          event_type: 'sqlite_updated',
+          worker_name: 'auth_store'
+        });
 
-            if ((updates as any).avatar_url) {
-                set({ confirmedAvatarUrl: (updates as any).avatar_url });
-                cacheAvatarLocally(user.id, (updates as any).avatar_url).then(localUri => {
-                  if (localUri) set({ localAvatarUrl: localUri });
-                }).catch(() => {});
-            }
-          }
+        // 5. Update auth metadata & sender info
+        const metaUpdates: Record<string, any> = {};
+        if ((updates as any).username) metaUpdates.username = (updates as any).username;
+        if ((updates as any).avatar_url) metaUpdates.avatar_url = (updates as any).avatar_url;
+        if ((updates as any).display_name) metaUpdates.display_name = (updates as any).display_name;
+        if ((updates as any).full_name) metaUpdates.full_name = (updates as any).full_name;
 
-          const metaUpdates: Record<string, any> = {};
-          if ((updates as any).username) metaUpdates.username = (updates as any).username;
-          if ((updates as any).avatar_url) metaUpdates.avatar_url = (updates as any).avatar_url;
-          if ((updates as any).display_name) metaUpdates.display_name = (updates as any).display_name;
-          if ((updates as any).full_name) metaUpdates.full_name = (updates as any).full_name;
+        if (Object.keys(metaUpdates).length > 0) {
+          supabase.auth.updateUser({ data: metaUpdates }).catch(() => {}); 
+        }
 
-          if (Object.keys(metaUpdates).length > 0) {
-            supabase.auth.updateUser({ data: metaUpdates }).catch(() => {}); 
-          }
-
-          const senderPatch: { username?: string; avatar_url?: string; full_name?: string } = {};
-          if ((updates as any).username) senderPatch.username = (updates as any).username;
-          if ((updates as any).avatar_url) senderPatch.avatar_url = (updates as any).avatar_url;
-          if ((updates as any).full_name) senderPatch.full_name = (updates as any).full_name;
-          if (Object.keys(senderPatch).length > 0) {
-            const { useMessageStore } = require('./message.store');
-            useMessageStore.getState().patchSenderInfo(user.id, senderPatch);
-          }
-        } catch (err: any) {
-          captureStoreError('auth', 'updateProfile', err, { userId: user.id, updates: Object.keys(updates) });
-          throw err;
+        const senderPatch: { username?: string; avatar_url?: string; full_name?: string } = {};
+        if ((updates as any).username) senderPatch.username = (updates as any).username;
+        if ((updates as any).avatar_url) senderPatch.avatar_url = (updates as any).avatar_url;
+        if ((updates as any).full_name) senderPatch.full_name = (updates as any).full_name;
+        if (Object.keys(senderPatch).length > 0) {
+          const { useMessageStore } = require('./message.store');
+          useMessageStore.getState().patchSenderInfo(user.id, senderPatch);
         }
       },
 
@@ -337,17 +449,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       signOut: async () => {
-        // ONLINE CONNECTIVITY GUARD GATEWAY
-        const networkState = await NetInfo.fetch();
-        if (!networkState.isConnected || networkState.isInternetReachable === false) {
-          throw new Error('NETWORK_OFFLINE_SIGNOUT');
-        }
-
         const { user } = get();
-        // Capture userId BEFORE signOut fires the SIGNED_OUT event.
-        // ProtectedRoute's onAuthStateChange reads user.id from Zustand state
-        // to check ban/suspend — it must be available when the event fires.
         const userId = user?.id;
+        
         if (userId) {
           // Clear push token from DB on sign out (best-effort — don't block signout)
           (supabase as any).from('users')
@@ -358,15 +462,165 @@ export const useAuthStore = create<AuthState>()(
               () => {}
             );
         }
-        // sees a clean slate and doesn't re-enter the ban-check with stale data.
-        set({ session: null, user: null, profile: null, isProfileComplete: null, error: null, confirmedAvatarUrl: null, localAvatarUrl: null });
+
+        // Hardened Logout: Wipes memory auth state but preserves SQLite profile & vaults
+        set({ 
+          session: null, 
+          user: null, 
+          isProfileComplete: null, 
+          error: null 
+        });
         clearSentryUserContext();
         
-        // Remove SQLite profile anchor to erase zombie data
-        await clearLocalUserSession();
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // Ignore network errors on signout to prevent UI hanging
+        }
+      },
 
-        // CRITICAL: Clear all cached data to prevent data leak between users
-        // Wrap each in its own try/catch so one failure doesn't skip the rest
+      syncPendingAvatar: async () => {
+        const { pendingAvatarUpload, user, updateProfile } = get();
+        if (!pendingAvatarUpload || !user) return;
+
+        const isOnline = require('./network.store').useNetworkStore.getState().isOnline;
+        if (!isOnline) return;
+
+        try {
+          const { uploadLocalFileToCloudinary } = require('../lib/cloudinary');
+          const remoteUrl = await uploadLocalFileToCloudinary(
+            pendingAvatarUpload.localUri,
+            pendingAvatarUpload.fileName,
+            'avatars',
+            pendingAvatarUpload.mimeType
+          );
+
+          // Update profile with the remote URL
+          await updateProfile({ avatar_url: remoteUrl });
+
+          // Clear the pending job on success
+          set({ pendingAvatarUpload: null });
+          Logger.info('auth.store', 'Background avatar upload completed successfully.', { remoteUrl });
+        } catch (err) {
+          Logger.warn('auth.store', 'Background avatar upload failed, will retry.', err);
+        }
+      },
+
+      verifyAndRepairProfile: async () => {
+        const { user, profile, localAvatarUrl } = get();
+        if (!user) return;
+
+        try {
+          const db = getDB();
+          if (!db) return;
+
+          // 1. Repair missing SQLite profile row
+          const sqliteProfile = await getLocalUserSession();
+          if (!sqliteProfile && profile) {
+            Logger.warn('auth.store', 'Self-Healing: SQLite profile missing. Re-saving.');
+            await saveLocalUserSession(profile);
+            
+            const { getOrCreateDeviceId } = require('../utils/device');
+            const deviceId = await getOrCreateDeviceId();
+            await insertTelemetryEvent({
+              user_id: user.id,
+              device_id: deviceId,
+              event_type: 'sqlite_saved',
+              worker_name: 'auth_store'
+            });
+          }
+
+          // 2. Repair missing MMKV cache
+          if (sqliteProfile && !profile) {
+            Logger.warn('auth.store', 'Self-Healing: MMKV profile cache missing. Restoring from SQLite.');
+            set({ profile: sqliteProfile });
+          }
+
+          // 3. Verify local avatar file integrity
+          const resolvedProfile = sqliteProfile || profile;
+          if (resolvedProfile?.avatar_url) {
+            const expectedPath = localAvatarUrl || resolvedProfile.local_avatar_path;
+            let needsDownload = false;
+
+            if (expectedPath) {
+              const info = await FileSystem.getInfoAsync(expectedPath);
+              if (!info.exists || (info as any).size === 0) {
+                needsDownload = true;
+                Logger.warn('auth.store', 'Self-Healing: Local avatar file missing/empty.');
+              }
+            } else {
+              needsDownload = true;
+            }
+
+            if (needsDownload) {
+              const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+              const localPath = await UnifiedDownloadEngine.download(
+                resolvedProfile.avatar_url,
+                `user_avatar_${user.id}`,
+                `avatar_${user.id}.jpg`,
+                undefined,
+                { assetType: 'user_avatar' }
+              );
+              if (localPath) {
+                const updated = { ...resolvedProfile, local_avatar_path: localPath };
+                set({ localAvatarUrl: localPath, profile: updated as Profile });
+                await saveLocalUserSession(updated);
+
+                const { getOrCreateDeviceId } = require('../utils/device');
+                const deviceId = await getOrCreateDeviceId();
+                await insertTelemetryEvent({
+                  user_id: user.id,
+                  device_id: deviceId,
+                  event_type: 'avatar_repaired',
+                  worker_name: 'auth_store'
+                });
+              }
+            }
+          }
+        } catch (e) {
+          Logger.error('auth.store', 'Error in profile self-healing:', e);
+        }
+      },
+
+      removeLocalData: async () => {
+        // Clear SQLite user profile
+        await clearLocalUserSession();
+        
+        // Clear all SQLite tables
+        const activeDb = getDB();
+        if (activeDb) {
+            try {
+                await activeDb.runAsync('DELETE FROM local_messages');
+                await activeDb.runAsync('DELETE FROM local_assets');
+                await activeDb.runAsync('DELETE FROM local_media_manifest');
+                await activeDb.runAsync('DELETE FROM offline_asset_manifest');
+                await activeDb.runAsync('DELETE FROM offline_download_jobs');
+                await activeDb.runAsync('DELETE FROM offline_download_telemetry');
+                await activeDb.runAsync('DELETE FROM sync_checkpoint');
+                await activeDb.runAsync('DELETE FROM sync_journal');
+                await activeDb.runAsync('DELETE FROM media_sync_jobs');
+                await activeDb.runAsync('DELETE FROM offline_sync_state');
+                Logger.info('auth.store', 'SQLite database completely wiped.');
+            } catch (e) {
+                console.error('Failed to wipe SQLite database:', e);
+            }
+        }
+        
+        // Clear all files inside naliss_vault
+        try {
+            const { getVaultBase } = require('../utils/assetResolver');
+            const vaultBase = getVaultBase();
+            const info = await FileSystem.getInfoAsync(vaultBase);
+            if (info.exists) {
+                await FileSystem.deleteAsync(vaultBase, { idempotent: true });
+                Logger.info('auth.store', 'Local vault files deleted.');
+            }
+        } catch (e) {
+            console.error('Failed to clear local vault files:', e);
+        }
+        
+        // Clear Zustand stores in memory
+        set({ profile: null, confirmedAvatarUrl: null, localAvatarUrl: null, pendingAvatarUpload: null });
         try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}
         try { require('./group.store').useGroupStore.getState().clearGroups(); } catch {}
         try { require('./globalSync.store').useGlobalSyncStore.getState().terminate(); } catch {}
@@ -376,12 +630,6 @@ export const useAuthStore = create<AuthState>()(
         try { require('./directory.store').useDirectoryStore.getState().clearCache(); } catch {}
         try { require('./signup.store').useSignupStore.getState().reset(); } catch {}
         try { require('./notification.store').useNotificationStore.getState().clearNotifications(); } catch {}
-        
-        try {
-          await supabase.auth.signOut();
-        } catch {
-          // Ignore network errors on signout to prevent UI hanging
-        }
       },
 
       setError: (error) => set({ error }),
@@ -397,30 +645,28 @@ export const useAuthStore = create<AuthState>()(
         pendingProfileUpdates: state.pendingProfileUpdates,
         confirmedAvatarUrl: state.confirmedAvatarUrl,
         localAvatarUrl: state.localAvatarUrl,
+        pendingAvatarUpload: state.pendingAvatarUpload,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.isLoading = false;
           state._hasHydrated = true;
-          // If we have a cached session + complete profile, resolve isProfileComplete
-          // immediately — no network call needed, no spinner, instant app access
+          
           if (
             state.session &&
             ((state.profile?.role as string) === 'super_admin' ||
              (state.profile?.role as string) === 'system_owner' ||
              (state.profile?.registration_number && state.profile?.level))
           ) {
-            // Trust the cache — isProfileComplete is definitively true
             state.isProfileComplete = true;
           } else if (!state.session) {
-            // No session cached — user is logged out, no spinner needed
             state.isProfileComplete = null;
           }
-          // Seed confirmedAvatarUrl from profile if not already set —
-          // handles users who had an avatar before this field was introduced
+          
           if (!state.confirmedAvatarUrl && state.profile?.avatar_url) {
             state.confirmedAvatarUrl = state.profile.avatar_url;
           }
+          
           if (state.profile) {
             setSentryUserContext(state.profile);
           }
@@ -442,6 +688,11 @@ export const useAuthStore = create<AuthState>()(
             cacheAvatarLocally(state.user.id, state.profile.avatar_url).then(localUri => {
               if (localUri) useAuthStore.setState({ localAvatarUrl: localUri });
             });
+          }
+
+          // Trigger pending avatar background sync on rehydration
+          if (state.pendingAvatarUpload) {
+            state.syncPendingAvatar().catch(() => {});
           }
         }
       },

@@ -1,5 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as Sentry from "https://esm.sh/@sentry/deno";
+
+const SENTRY_DSN = Deno.env.get("SENTRY_DSN") || Deno.env.get("VITE_SENTRY_DSN") || "";
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    tracesSampleRate: 1.0,
+  });
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -254,7 +263,8 @@ Deno.serve(async (req) => {
           platform: 'unknown',
           expo_ticket_id: ticket.id || null,
           provider_status: ticket.status || null,
-          provider_error: ticket.message || (ticket.details?.error) || null
+          provider_error: ticket.message || (ticket.details?.error) || null,
+          push_token: ut.push_token
         });
 
         // Insert into unified history
@@ -284,6 +294,9 @@ Deno.serve(async (req) => {
 
   } catch (err: any) {
     console.error("[Push] Error:", err.message);
+    if (SENTRY_DSN) {
+      Sentry.captureException(err);
+    }
     return new Response(JSON.stringify({ success: false, error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

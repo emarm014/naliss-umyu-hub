@@ -136,7 +136,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           .eq('device_id', deviceId)
           .maybeSingle();
 
-        if (error) return;
+        if (error) {
+          if (error.status === 401 || error.message?.toLowerCase().includes('jwt') || error.message?.toLowerCase().includes('invalid')) {
+            console.warn('[ProtectedRoute] Active session check failed with 401/invalid token. Logging out...');
+            await supabase.auth.signOut();
+            useAuthStore.getState().setSession(null);
+            useAuthStore.getState().setUser(null);
+            useAuthStore.getState().setIsProfileComplete(null);
+            useAuthStore.getState().setProfile(null);
+          }
+          return;
+        }
         if (data && !data.is_active) {
           Alert.alert('Session Terminated', 'This device has been logged out remotely.');
           await supabase.auth.signOut();
@@ -434,7 +444,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
           if (profileError) throw normalizeError(profileError);
           if (profileData) {
-            useAuthStore.getState().setProfile(profileData as any);
+            // CRITICAL: Merge partial status fields into existing profile instead of replacing.
+            // This prevents wiping username, email, avatar, etc. on token refresh.
+            const existingProfile = useAuthStore.getState().profile;
+            const mergedProfile = existingProfile
+              ? { ...existingProfile, ...(profileData as any) }
+              : profileData;
+            useAuthStore.getState().setProfile(mergedProfile as any);
 
             // Sentry: breadcrumb for profile fetch result
             Sentry.addBreadcrumb({
@@ -501,6 +517,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               (profileData.registration_number && profileData.level)
             ) {
               useAuthStore.getState().setIsProfileComplete(true);
+              // Trigger self-healing profile verification on session startup
+              useAuthStore.getState().verifyAndRepairProfile().catch(() => {});
             } else {
               useAuthStore.getState().setIsProfileComplete(false);
               hydrateSignupStore(currentSession);

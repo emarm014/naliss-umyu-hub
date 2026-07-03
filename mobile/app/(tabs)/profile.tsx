@@ -299,30 +299,44 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?\n\nYour offline data will be preserved for your next login.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out',
         style: 'destructive',
         onPress: () => {
-          // Add a 300ms delay to allow the Alert modal to fully dismiss.
-          // If we navigate synchronously, React Navigation can silently drop
-          // the route change because the view hierarchy is locked during dismiss.
           setTimeout(async () => {
             try {
               await useAuthStore.getState().signOut();
             } catch (err: any) {
-              if (err.message === 'NETWORK_OFFLINE_SIGNOUT') {
-                setOfflineSignoutAttempted(true);
-                setTimeout(() => setOfflineSignoutAttempted(false), 5000);
-              } else {
-                Alert.alert('Error', 'Failed to sign out. Please try again.');
-              }
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
             }
           }, 300);
         },
       },
     ]);
+  };
+
+  const handleRemoveLocalData = async () => {
+    Alert.alert(
+      'Remove Local Data',
+      'This will permanently delete all offline cached files, messages, and profile data from this device.\n\nThis action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await useAuthStore.getState().removeLocalData();
+              Alert.alert('Done', 'All local data has been removed from this device.');
+            } catch (err: any) {
+              Alert.alert('Error', 'Failed to remove local data. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
 
@@ -974,6 +988,14 @@ export default function ProfileScreen() {
               iconBg={COLORS.actionRed} 
               label="Sign Out" 
               onPress={handleLogout} 
+              colors={colors}
+            />
+            <MenuItem 
+              icon="trash-outline" 
+              iconColor={COLORS.error} 
+              iconBg={'#fce4ec'} 
+              label="Remove Local Data" 
+              onPress={handleRemoveLocalData} 
               isLast
               colors={colors}
             />

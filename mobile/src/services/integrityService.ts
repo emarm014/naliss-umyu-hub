@@ -261,8 +261,12 @@ export const IntegrityService = {
                 
                 if (isOrphaned) {
                     Logger.info('integrity-service', `Cleaning up orphaned asset: ${asset.asset_id}`);
-                    if (info.exists) {
-                        await FileSystem.deleteAsync(path, { idempotent: true });
+                    try {
+                        if (info.exists) {
+                            await FileSystem.deleteAsync(path, { idempotent: true });
+                        }
+                    } catch (deleteErr) {
+                        Logger.error('integrity-service', `Failed to delete orphaned file: ${path}`, deleteErr);
                     }
                     await db.runAsync(
                         'DELETE FROM offline_asset_manifest WHERE asset_id = ?',

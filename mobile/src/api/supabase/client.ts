@@ -94,9 +94,39 @@ const fetchWithRetry = async (
     });
     clearTimeout(timeoutId);
     const durationMs = Date.now() - startMs;
-    const method = options.method ?? 'GET';
+    const currentMethod = options.method ?? 'GET';
 
     if (!response.ok) {
+      if (response.status === 401 && attempt === 0) {
+        // Expired token / session — try to refresh session silently
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            // Update options headers with the refreshed access token
+            if (options.headers) {
+              if (options.headers instanceof Headers) {
+                options.headers.set('Authorization', `Bearer ${session.access_token}`);
+              } else if (Array.isArray(options.headers)) {
+                const idx = options.headers.findIndex(([k]) => k.toLowerCase() === 'authorization');
+                if (idx !== -1) options.headers[idx] = ['Authorization', `Bearer ${session.access_token}`];
+                else options.headers.push(['Authorization', `Bearer ${session.access_token}`]);
+              } else {
+                (options.headers as Record<string, string>)['Authorization'] = `Bearer ${session.access_token}`;
+              }
+            }
+            return fetchWithRetry(url, options, attempt + 1);
+          } else {
+            console.warn('[Supabase Client] Session expired. Clearing local session...');
+            const { useAuthStore } = require('../../stores/auth.store');
+            useAuthStore.getState().signOut().catch(() => {});
+          }
+        } catch (refreshErr) {
+          console.error('[Supabase Client] Silent token refresh failed:', refreshErr);
+          const { useAuthStore } = require('../../stores/auth.store');
+          useAuthStore.getState().signOut().catch(() => {});
+        }
+      }
+
       // Non-2xx — always record as error breadcrumb
       Sentry.addBreadcrumb({
         category: 'api.supabase',
@@ -206,3 +236,18 @@ export const batchedSupabaseInsert = async (table: string, payload: any) => {
     }, 250);
   });
 };
+
+// Coalesce concurrent getSession calls to prevent gotrue-js lock contention (lock:naliss-session)
+if (supabase) {
+  const originalGetSession = supabase.auth.getSession.bind(supabase.auth);
+  let sessionPromise: Promise<any> | null = null;
+
+  supabase.auth.getSession = () => {
+    if (!sessionPromise) {
+      sessionPromise = originalGetSession().finally(() => {
+        sessionPromise = null;
+      });
+    }
+    return sessionPromise;
+  };
+}

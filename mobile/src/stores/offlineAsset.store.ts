@@ -150,6 +150,10 @@ export const useOfflineAssetStore = create<OfflineAssetStoreState>()(
                 set({ isInitialized: true });
                 get().startDownloader().catch(() => {});
                 get().calculateStorageUsage().catch(() => {});
+
+                // Start periodic integrity verification (every 90 days)
+                const { IntegrityService } = require('../services/integrity.service');
+                IntegrityService.startVerificationWorker(90).catch(() => {});
             },
 
             setDownloadPolicy: (policy) => {

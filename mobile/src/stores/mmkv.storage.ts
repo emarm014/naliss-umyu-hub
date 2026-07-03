@@ -50,11 +50,13 @@ const initStorage = async () => {
 
 initPromise = initStorage();
 
+export let migrationPromise: Promise<void>;
+
 // Custom StateStorage adapter wrapping MMKV with AsyncStorage fallback
-// Promisified to await the async SecureStore hardware unlock
+// Promisified to await the async SecureStore hardware unlock and migration completion
 export const mmkvStorage: StateStorage = {
   setItem: async (name, value) => {
-    await initPromise;
+    await migrationPromise;
     if (useFallback) {
       await AsyncStorage.setItem(name, value);
     } else {
@@ -62,7 +64,7 @@ export const mmkvStorage: StateStorage = {
     }
   },
   getItem: async (name) => {
-    await initPromise;
+    await migrationPromise;
     if (useFallback) {
       return await AsyncStorage.getItem(name);
     } else {
@@ -71,7 +73,7 @@ export const mmkvStorage: StateStorage = {
     }
   },
   removeItem: async (name) => {
-    await initPromise;
+    await migrationPromise;
     if (useFallback) {
       await AsyncStorage.removeItem(name);
     } else {
@@ -131,5 +133,5 @@ export const migrateAsyncStorageToMMKV = async () => {
   }
 };
 
-// Trigger migration check immediately on module load
-migrateAsyncStorageToMMKV().catch(() => {});
+// Trigger migration check immediately on module load and store promise
+migrationPromise = migrateAsyncStorageToMMKV().catch(() => {});

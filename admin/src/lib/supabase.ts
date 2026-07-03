@@ -100,10 +100,28 @@ const fetchWithRetry = async (
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session) {
+            // Update options headers with the refreshed access token
+            if (options.headers) {
+              if (options.headers instanceof Headers) {
+                options.headers.set('Authorization', `Bearer ${session.access_token}`);
+              } else if (Array.isArray(options.headers)) {
+                const idx = options.headers.findIndex(([k]) => k.toLowerCase() === 'authorization');
+                if (idx !== -1) options.headers[idx] = ['Authorization', `Bearer ${session.access_token}`];
+                else options.headers.push(['Authorization', `Bearer ${session.access_token}`]);
+              } else {
+                (options.headers as Record<string, string>)['Authorization'] = `Bearer ${session.access_token}`;
+              }
+            }
             return fetchWithRetry(url, options, attempt + 1);
+          } else {
+            console.warn('[Supabase Client] Session expired. Redirecting to login...');
+            await supabase.auth.signOut();
+            window.location.href = '/login';
           }
         } catch (refreshErr) {
           console.error('[Supabase Client] Silent token refresh failed:', refreshErr);
+          await supabase.auth.signOut();
+          window.location.href = '/login';
         }
       }
 

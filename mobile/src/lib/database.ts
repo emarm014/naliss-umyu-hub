@@ -270,6 +270,32 @@ export const initDB = async () => {
             } catch (_) {}
         }
 
+        // Safely alter local_user_session table to add required profile fields
+        const sessionAlters = [
+            'ALTER TABLE local_user_session ADD COLUMN full_name TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN phone TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN avatar_url TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN local_avatar_path TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN faculty TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN department TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN programme TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN executive_role TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN membership_status TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN biography TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN notification_preferences TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN privacy_preferences TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN appearance_settings TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN permissions TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN created_at TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN last_synced_at TEXT;',
+            'ALTER TABLE local_user_session ADD COLUMN profile_version INTEGER DEFAULT 1;'
+        ];
+        for (const query of sessionAlters) {
+            try {
+                await db.execAsync(query);
+            } catch (_) {}
+        }
+
         // Safely alter local_media_manifest table to add reference_count, content_hash, and priority
         try {
             await db.execAsync('ALTER TABLE local_media_manifest ADD COLUMN reference_count INTEGER DEFAULT 1;');
@@ -283,6 +309,35 @@ export const initDB = async () => {
         try {
             await db.execAsync('CREATE INDEX IF NOT EXISTS idx_manifest_content_hash ON local_media_manifest (content_hash);');
         } catch (_) {}
+
+        // Run dynamic migration block to upgrade old legacy records with Cloudinary URLs
+        try {
+            const unmigrated = await db.getAllAsync<any>(
+                "SELECT asset_id, remote_url FROM offline_asset_manifest WHERE public_id IS NULL AND remote_url LIKE '%cloudinary.com%'"
+            );
+            if (unmigrated && unmigrated.length > 0) {
+                const { CloudinaryUrlRegenerator } = require('../utils/assetResolver');
+                for (const row of unmigrated) {
+                    const parsed = CloudinaryUrlRegenerator.parseUrl(row.remote_url);
+                    if (parsed) {
+                        await db.runAsync(
+                            `UPDATE offline_asset_manifest 
+                             SET public_id = ?, resource_type = ?, format = ?, version = ? 
+                             WHERE asset_id = ?`,
+                            [
+                                parsed.publicId,
+                                parsed.resourceType || 'image',
+                                parsed.format || null,
+                                parsed.version || '1',
+                                row.asset_id
+                            ]
+                        );
+                    }
+                }
+            }
+        } catch (migErr) {
+            console.error('Failed to run Cloudinary metadata migration:', migErr);
+        }
 
         return db;
     } catch (e) {
@@ -324,19 +379,42 @@ export const upsertAssetCache = async (entityId: string, remoteUrl: string, loca
 export const saveLocalUserSession = async (profile: any) => {
     if (!db || !profile?.id) return;
     try {
-        const updatedAt = new Date().toISOString();
+        const updatedAt = profile.updated_at || new Date().toISOString();
+        const lastSyncedAt = profile.last_synced_at || new Date().toISOString();
+        
         await db.runAsync(
-            `INSERT OR REPLACE INTO local_user_session 
-            (id, username, email, level, department_id, raw_profile_json, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO local_user_session (
+                id, username, email, level, department_id, raw_profile_json, updated_at,
+                full_name, phone, avatar_url, local_avatar_path, faculty, department,
+                programme, executive_role, membership_status, biography,
+                notification_preferences, privacy_preferences, appearance_settings, permissions,
+                created_at, last_synced_at, profile_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 profile.id,
                 profile.username || null,
                 profile.email || null,
                 profile.level || null,
-                profile.department_id || null,
+                profile.department_id || profile.department || null,
                 JSON.stringify(profile),
-                updatedAt
+                updatedAt,
+                profile.full_name || null,
+                profile.phone || null,
+                profile.avatar_url || null,
+                profile.local_avatar_path || null,
+                profile.faculty || null,
+                profile.department || null,
+                profile.programme || null,
+                profile.executive_role || null,
+                profile.membership_status || null,
+                profile.biography || null,
+                profile.notification_preferences ? JSON.stringify(profile.notification_preferences) : null,
+                profile.privacy_preferences ? JSON.stringify(profile.privacy_preferences) : null,
+                profile.appearance_settings || profile.settings ? JSON.stringify(profile.appearance_settings || profile.settings) : null,
+                profile.permissions ? JSON.stringify(profile.permissions) : null,
+                profile.created_at || null,
+                lastSyncedAt,
+                profile.profile_version || 1
             ]
         );
     } catch (e) {
@@ -347,11 +425,42 @@ export const saveLocalUserSession = async (profile: any) => {
 export const getLocalUserSession = async () => {
     if (!db) return null;
     try {
-        const result = await db.getFirstAsync<{ raw_profile_json: string }>(
-            'SELECT raw_profile_json FROM local_user_session LIMIT 1'
+        const result = await db.getFirstAsync<any>(
+            'SELECT * FROM local_user_session LIMIT 1'
         );
-        if (result?.raw_profile_json) {
-            return JSON.parse(result.raw_profile_json);
+        if (result) {
+            let profile: any = {};
+            if (result.raw_profile_json) {
+                try {
+                    profile = JSON.parse(result.raw_profile_json);
+                } catch (_) {}
+            }
+            return {
+                ...profile,
+                id: result.id,
+                username: result.username,
+                email: result.email,
+                level: result.level,
+                department_id: result.department_id,
+                full_name: result.full_name,
+                phone: result.phone,
+                avatar_url: result.avatar_url,
+                local_avatar_path: result.local_avatar_path,
+                faculty: result.faculty,
+                department: result.department,
+                programme: result.programme,
+                executive_role: result.executive_role,
+                membership_status: result.membership_status,
+                biography: result.biography,
+                notification_preferences: result.notification_preferences ? JSON.parse(result.notification_preferences) : undefined,
+                privacy_preferences: result.privacy_preferences ? JSON.parse(result.privacy_preferences) : undefined,
+                appearance_settings: result.appearance_settings ? JSON.parse(result.appearance_settings) : undefined,
+                permissions: result.permissions ? JSON.parse(result.permissions) : undefined,
+                created_at: result.created_at,
+                updated_at: result.updated_at,
+                last_synced_at: result.last_synced_at,
+                profile_version: result.profile_version || 1
+            };
         }
         return null;
     } catch (e) {
@@ -1001,8 +1110,9 @@ export const upsertOfflineAsset = async (asset: any) => {
                 asset_id, asset_type, user_id, remote_url, local_path, 
                 sha256, mime_type, size, version, download_status, 
                 verified, created_at, updated_at, last_accessed_at, 
-                device_origin, sync_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                device_origin, sync_version,
+                public_id, resource_type, format, bytes, width, height, duration, original_filename, uploaded_at, last_verified_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 asset.asset_id,
                 asset.asset_type,
@@ -1019,7 +1129,17 @@ export const upsertOfflineAsset = async (asset: any) => {
                 asset.updated_at || now,
                 asset.last_accessed_at || now,
                 asset.device_origin || null,
-                asset.sync_version || 1
+                asset.sync_version || 1,
+                asset.public_id || null,
+                asset.resource_type || null,
+                asset.format || null,
+                asset.bytes || asset.size || null,
+                asset.width || null,
+                asset.height || null,
+                asset.duration || null,
+                asset.original_filename || null,
+                asset.uploaded_at || null,
+                asset.last_verified_at || null
             ]
         );
     } catch (e) {

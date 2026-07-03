@@ -117,15 +117,23 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
       get().syncAll(false); // respect TTL — only re-fetches if stale
     }, BG_SYNC_INTERVAL);
 
+    let lastBackgroundTime = 0;
+
     // AppState listener — re-sync when app comes back to foreground (only if online)
     const appStateSub = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
-      if (nextState === 'active') {
+      if (nextState === 'background') {
+        lastBackgroundTime = Date.now();
+      } else if (nextState === 'active') {
         // Force a fresh network check before syncing to avoid spamming failed requests
         const isOnline = await useNetworkStore.getState().checkNetworkStatus();
         if (isOnline) {
+          const timeInBackground = lastBackgroundTime ? Date.now() - lastBackgroundTime : 0;
+          // Only force sync if backgrounded for more than 2 minutes (120,000 ms)
+          const forceSync = timeInBackground > 120000;
+
           // Thundering herd prevention for app foreground transitions
           const jitterDelay = Math.random() * 5000;
-          setTimeout(() => get().syncAll(true), jitterDelay);
+          setTimeout(() => get().syncAll(forceSync), jitterDelay);
         }
       }
     });

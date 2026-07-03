@@ -17,16 +17,22 @@ export interface OfflineMutation {
 
 interface MutationQueueState {
   queue: OfflineMutation[];
+  failedQueue: OfflineMutation[];
   isProcessing: boolean;
   enqueue: (mutation: Omit<OfflineMutation, 'id' | 'timestamp'>) => void;
   processQueue: () => Promise<void>;
   clearQueue: () => void;
+  clearFailedQueue: () => void;
+  retryFailedQueue: () => void;
 }
+
+const loggedFatalMutations = new Set<string>();
 
 export const useMutationQueueStore = create<MutationQueueState>()(
   persist(
     (set, get) => ({
       queue: [],
+      failedQueue: [],
       isProcessing: false,
 
       enqueue: (mutation) => {
@@ -57,6 +63,7 @@ export const useMutationQueueStore = create<MutationQueueState>()(
         
         // We will keep track of mutations that failed with transient network errors so we can re-enqueue them
         const failedMutations: OfflineMutation[] = [];
+        const newFailedQueue: OfflineMutation[] = [...get().failedQueue];
         let networkInterrupted = false;
 
         for (const mut of currentQueue) {
@@ -104,24 +111,41 @@ export const useMutationQueueStore = create<MutationQueueState>()(
               failedMutations.push(mut);
               networkInterrupted = true;
             } else {
-              // Critical code/db/RLS violation error — log to Sentry but discard to prevent queue blockage
-              Logger.error('mutationQueue', `Fatal mutation error, discarding from queue`, err, { id: mut.id });
+              // Critical code/db/RLS violation error — log once, move to failedQueue to prevent queue blockage
+              const errKey = `${mut.id}-${err?.message || 'unknown'}`;
+              if (!loggedFatalMutations.has(errKey)) {
+                loggedFatalMutations.add(errKey);
+                Logger.error('mutationQueue', `Fatal mutation error, moving to failedQueue`, err, { id: mut.id });
+              }
+              newFailedQueue.push(mut);
             }
           }
         }
 
         // Restore the failed items back into the queue
-        set({ queue: failedMutations, isProcessing: false });
-        Logger.info('mutationQueue', `Finished processing queue. Remaining items: ${failedMutations.length}`);
+        set({ queue: failedMutations, failedQueue: newFailedQueue, isProcessing: false });
+        Logger.info('mutationQueue', `Finished processing queue. Remaining active items: ${failedMutations.length}, failed items: ${newFailedQueue.length}`);
       },
 
-      clearQueue: () => set({ queue: [] })
+      clearQueue: () => set({ queue: [] }),
+      clearFailedQueue: () => set({ failedQueue: [] }),
+      retryFailedQueue: () => {
+        const failed = get().failedQueue;
+        if (failed.length === 0) return;
+        
+        // Push failed mutations back into primary queue sorted by original timestamp
+        set((state) => ({
+          queue: [...state.queue, ...failed].sort((a, b) => a.timestamp - b.timestamp),
+          failedQueue: []
+        }));
+      }
     }),
     {
       name: 'mutation-queue-storage',
       storage: createJSONStorage(() => mmkvStorage),
       partialize: (state) => ({
-        queue: state.queue
+        queue: state.queue,
+        failedQueue: state.failedQueue
       })
     }
   )

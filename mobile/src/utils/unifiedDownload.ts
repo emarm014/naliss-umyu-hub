@@ -70,6 +70,23 @@ export const UnifiedDownloadEngine = {
             priority?: number;
             expectedHash?: string | null;
             expectedSize?: number | null;
+            
+            // Cloudinary metadata overrides
+            publicId?: string | null;
+            resourceType?: string | null;
+            version?: string | null;
+            format?: string | null;
+            bytes?: number | null;
+            width?: number | null;
+            height?: number | null;
+            duration?: number | null;
+            originalFilename?: string | null;
+            uploadedAt?: string | null;
+
+            // Message / group links
+            messageId?: string | null;
+            groupId?: string | null;
+            mimeType?: string | null;
         } = {}
     ): Promise<string | null> {
         const db = getDB();
@@ -95,6 +112,7 @@ export const UnifiedDownloadEngine = {
             let errorMsg = '';
             let fileSizeBytes = 0;
             let hashResult = 'unverified';
+            let computedHash = '';
             trackDownloadTask(fileId, 'started');
 
             // Check disk space (low storage awareness)
@@ -111,7 +129,8 @@ export const UnifiedDownloadEngine = {
                     throw new Error('Low disk space. Download cancelled.');
                 }
             } catch (err: any) {
-                if (err.message.includes('space')) throw err;
+                Logger.warn('unified-downloader', `Disk space check warning: ${err.message || err}`);
+                if (err.message?.includes('space') || err.message?.includes('storage') || err.message?.includes('Disk')) throw err;
             }
 
             // Centralized path creation
@@ -125,19 +144,23 @@ export const UnifiedDownloadEngine = {
 
             // Extract Cloudinary metadata safely
             const parsedCloudinary = CloudinaryUrlRegenerator.parseUrl(url);
+            const publicId = options.publicId || parsedCloudinary?.publicId || null;
+            const resourceType = options.resourceType || parsedCloudinary?.resourceType || null;
+            const format = options.format || parsedCloudinary?.format || null;
+            const version = options.version || parsedCloudinary?.version || '1';
 
             // Log Queued state
             await insertTelemetryEvent({
                 user_id: userId,
                 device_id: deviceId,
                 asset_id: fileId,
-                public_id: parsedCloudinary?.publicId || null,
+                public_id: publicId,
                 job_id: 'job_' + fileId,
                 event_type: 'queued',
                 file_size: options.expectedSize || 0
             });
 
-            // SQLite manifest update: mark as downloading
+            // SQLite manifest updates: mark as downloading
             if (db) {
                 await upsertOfflineAsset({
                     asset_id: fileId,
@@ -150,121 +173,210 @@ export const UnifiedDownloadEngine = {
                     download_status: 'downloading',
                     verified: 0,
                     device_origin: deviceId,
-                    public_id: parsedCloudinary?.publicId || null,
-                    resource_type: parsedCloudinary?.resourceType || null,
-                    format: parsedCloudinary?.format || null,
-                    version: parsedCloudinary?.version || '1'
+                    public_id: publicId,
+                    resource_type: resourceType,
+                    format: format,
+                    version: version,
+                    bytes: options.bytes || options.expectedSize || null,
+                    width: options.width || null,
+                    height: options.height || null,
+                    duration: options.duration || null,
+                    original_filename: options.originalFilename || displayName,
+                    uploaded_at: options.uploadedAt || null
                 });
+
+                if (assetType.startsWith('chat_') || options.messageId || options.groupId) {
+                    const { upsertMediaManifest } = require('../lib/database');
+                    await upsertMediaManifest({
+                        id: fileId,
+                        message_id: options.messageId || fileId,
+                        user_id: userId,
+                        group_id: options.groupId || null,
+                        file_url: url,
+                        local_path: localPath,
+                        media_type: assetType.replace('chat_', ''),
+                        mime_type: options.mimeType || null,
+                        file_size: options.expectedSize || 0,
+                        sha256: options.expectedHash || null,
+                        downloaded: 0,
+                        verified: 0,
+                        device_id: deviceId
+                    });
+                }
             }
 
-            // Start Download lifecycle state
-            await insertTelemetryEvent({
-                user_id: userId,
-                device_id: deviceId,
-                asset_id: fileId,
-                public_id: parsedCloudinary?.publicId || null,
-                job_id: 'job_' + fileId,
-                event_type: 'started',
-                attempt_count: attempt,
-                network_type: useNetworkStore.getState().networkType || 'unknown'
-            });
+            // Retry Loop with Exponential Backoff
+            let retries = 3;
+            let delay = 1000;
+            
+            while (retries > 0 && !success) {
+                const attemptStartTime = Date.now();
+                
+                // Log attempt start telemetry
+                await insertTelemetryEvent({
+                    user_id: userId,
+                    device_id: deviceId,
+                    asset_id: fileId,
+                    public_id: publicId,
+                    job_id: 'job_' + fileId,
+                    event_type: attempt === 1 ? 'started' : 'resumed',
+                    attempt_count: attempt,
+                    network_type: useNetworkStore.getState().networkType || 'unknown'
+                });
 
-            try {
-                const downloadResumable = FileSystem.createDownloadResumable(
-                    url,
-                    localPath,
-                    {
-                        headers: {
-                            'Accept': '*/*',
-                            'User-Agent': 'NALISS-Hub/1.0',
+                try {
+                    const downloadResumable = FileSystem.createDownloadResumable(
+                        url,
+                        localPath,
+                        {
+                            headers: {
+                                'Accept': '*/*',
+                                'User-Agent': 'NALISS-Hub/1.0',
+                            }
+                        },
+                        (progress) => {
+                            const pct = progress.totalBytesExpectedToWrite > 0
+                                ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
+                                : 0;
+                            onProgress?.(pct);
                         }
-                    },
-                    (progress) => {
-                        const pct = progress.totalBytesExpectedToWrite > 0
-                            ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
-                            : 0;
-                        onProgress?.(pct);
-                    }
-                );
+                    );
 
-                const result = await downloadResumable.downloadAsync();
+                    const result = await downloadResumable.downloadAsync();
 
-                if (result && result.uri && result.status === 200) {
-                    finalUri = result.uri;
-                    const info = await FileSystem.getInfoAsync(finalUri);
-                    fileSizeBytes = (info as any).size || 0;
+                    if (result && result.uri && result.status === 200) {
+                        finalUri = result.uri;
+                        const info = await FileSystem.getInfoAsync(finalUri);
+                        fileSizeBytes = (info as any).size || 0;
 
-                    if (fileSizeBytes > 0) {
-                        // Integrity checks (SHA-256)
-                        const base64Str = await FileSystem.readAsStringAsync(finalUri, { encoding: FileSystem.EncodingType.Base64 });
-                        const binaryStr = base64ToBinary(base64Str);
-                        const computedHash = calculateSHA256(binaryStr);
+                        if (fileSizeBytes > 0) {
+                            // Integrity checks (SHA-256)
+                            const base64Str = await FileSystem.readAsStringAsync(finalUri, { encoding: FileSystem.EncodingType.Base64 });
+                            const binaryStr = base64ToBinary(base64Str);
+                            computedHash = calculateSHA256(binaryStr);
 
-                        const expectedHash = options.expectedHash;
-                        if (expectedHash && expectedHash !== computedHash) {
-                            hashResult = 'failed';
-                            await FileSystem.deleteAsync(finalUri, { idempotent: true });
-                            throw new Error('SHA-256 hash mismatch verification failed.');
+                            const expectedHash = options.expectedHash;
+                            const expectedSize = options.expectedSize;
+                            
+                            if (expectedHash && expectedHash !== computedHash) {
+                                hashResult = 'failed';
+                                await FileSystem.deleteAsync(finalUri, { idempotent: true });
+                                throw new Error('SHA-256 hash mismatch verification failed.');
+                            } else if (expectedSize && fileSizeBytes !== expectedSize) {
+                                hashResult = 'size_failed';
+                                await FileSystem.deleteAsync(finalUri, { idempotent: true });
+                                throw new Error(`File size mismatch. Expected ${expectedSize} bytes, got ${fileSizeBytes} bytes.`);
+                            } else {
+                                hashResult = expectedHash ? 'verified' : 'size_verified';
+                                success = true;
+                                trackDownloadTask(fileId, 'completed', Date.now() - startTime, { size: fileSizeBytes });
+                            }
                         } else {
-                            hashResult = 'verified';
-                            success = true;
-                            trackDownloadTask(fileId, 'completed', Date.now() - startTime, { size: fileSizeBytes });
+                            throw new Error('Downloaded file has zero size bytes');
+                        }
+                    } else {
+                        throw new Error(`Download failed with HTTP status code ${result?.status || 'unknown'}`);
+                    }
+                } catch (err: any) {
+                    retries--;
+                    errorMsg = err.message || String(err);
+                    
+                    // Log Telemetry: retry event
+                    if (retries > 0) {
+                        await insertTelemetryEvent({
+                            user_id: userId,
+                            device_id: deviceId,
+                            asset_id: fileId,
+                            public_id: publicId,
+                            job_id: 'job_' + fileId,
+                            attempt_count: attempt,
+                            network_type: useNetworkStore.getState().networkType || 'unknown',
+                            download_duration: Date.now() - attemptStartTime,
+                            failure_reason: `Retry: ${errorMsg}`,
+                            event_type: 'retry'
+                        });
+                        attempt++;
+                        await new Promise(r => setTimeout(r, delay));
+                        delay *= 2;
+                    } else {
+                        // Max retries reached — fail permanently
+                        trackDownloadTask(fileId, 'failed', Date.now() - startTime, { error: errorMsg });
+                        captureStoreError('UnifiedDownloadEngine', 'download', err, { fileId, url });
+                        
+                        try {
+                            const info = await FileSystem.getInfoAsync(localPath);
+                            if (info.exists) {
+                                await FileSystem.deleteAsync(localPath, { idempotent: true });
+                            }
+                        } catch (delErr) {
+                            Logger.error('unified-downloader', `Failed to delete partial download at ${localPath}`, delErr);
                         }
 
-                        // Complete SQLite update
                         if (db) {
                             await db.runAsync(
-                                `UPDATE offline_asset_manifest 
-                                 SET download_status = 'completed', verified = 1, sha256 = ?, size = ?, bytes = ?, last_verified_at = ?, updated_at = ? 
-                                 WHERE asset_id = ?`,
-                                [computedHash, fileSizeBytes, fileSizeBytes, new Date().toISOString(), new Date().toISOString(), fileId]
+                                "UPDATE offline_asset_manifest SET download_status = 'failed' WHERE asset_id = ?",
+                                [fileId]
                             );
-                            await updateDownloadJobStatus('job_' + fileId, 'completed');
+                            await updateDownloadJobStatus('job_' + fileId, 'failed', errorMsg);
+                            
+                            if (assetType.startsWith('chat_') || options.messageId || options.groupId) {
+                                await db.runAsync(
+                                    "UPDATE local_media_manifest SET downloaded = 0, verified = 0, updated_at = ? WHERE id = ?",
+                                    [new Date().toISOString(), fileId]
+                                );
+                            }
                         }
 
                         await insertTelemetryEvent({
                             user_id: userId,
                             device_id: deviceId,
                             asset_id: fileId,
-                            public_id: parsedCloudinary?.publicId || null,
+                            public_id: publicId,
                             job_id: 'job_' + fileId,
                             attempt_count: attempt,
                             network_type: useNetworkStore.getState().networkType || 'unknown',
                             download_duration: Date.now() - startTime,
-                            file_size: fileSizeBytes,
+                            failure_reason: errorMsg,
                             hash_result: hashResult,
-                            event_type: 'completed'
+                            event_type: 'failed'
                         });
-                    } else {
-                        throw new Error('Downloaded file has zero size bytes');
                     }
-                } else {
-                    throw new Error(`Download failed with HTTP status code ${result?.status || 'unknown'}`);
                 }
-            } catch (err: any) {
-                errorMsg = err.message || String(err);
-                trackDownloadTask(fileId, 'failed', Date.now() - startTime, { error: errorMsg });
-                captureStoreError('UnifiedDownloadEngine', 'download', err, { fileId, url });
+            }
+
+            if (success && finalUri) {
+                // Complete SQLite updates
                 if (db) {
                     await db.runAsync(
-                        "UPDATE offline_asset_manifest SET download_status = 'failed' WHERE asset_id = ?",
-                        [fileId]
+                        `UPDATE offline_asset_manifest 
+                         SET download_status = 'completed', verified = 1, sha256 = ?, size = ?, bytes = ?, last_verified_at = ?, updated_at = ? 
+                         WHERE asset_id = ?`,
+                        [computedHash, fileSizeBytes, fileSizeBytes, new Date().toISOString(), new Date().toISOString(), fileId]
                     );
-                    await updateDownloadJobStatus('job_' + fileId, 'failed', errorMsg);
+                    await updateDownloadJobStatus('job_' + fileId, 'completed');
+                    
+                    if (assetType.startsWith('chat_') || options.messageId || options.groupId) {
+                        await db.runAsync(
+                            `UPDATE local_media_manifest 
+                             SET downloaded = 1, verified = 1, sha256 = ?, file_size = ?, last_verified_at = ?, updated_at = ?, content_hash = ?
+                             WHERE id = ?`,
+                            [computedHash, fileSizeBytes, new Date().toISOString(), new Date().toISOString(), computedHash, fileId]
+                        );
+                    }
                 }
 
                 await insertTelemetryEvent({
                     user_id: userId,
                     device_id: deviceId,
                     asset_id: fileId,
-                    public_id: parsedCloudinary?.publicId || null,
+                    public_id: publicId,
                     job_id: 'job_' + fileId,
                     attempt_count: attempt,
                     network_type: useNetworkStore.getState().networkType || 'unknown',
                     download_duration: Date.now() - startTime,
-                    failure_reason: errorMsg,
+                    file_size: fileSizeBytes,
                     hash_result: hashResult,
-                    event_type: 'failed'
+                    event_type: 'completed'
                 });
             }
 

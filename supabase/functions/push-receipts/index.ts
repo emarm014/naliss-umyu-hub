@@ -1,4 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as Sentry from "https://esm.sh/@sentry/deno";
+
+const SENTRY_DSN = Deno.env.get("SENTRY_DSN") || Deno.env.get("VITE_SENTRY_DSN") || "";
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    tracesSampleRate: 1.0,
+  });
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -11,7 +20,7 @@ Deno.serve(async (req) => {
     const timeLimit = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const { data: pendingTelemetry, error: fetchErr } = await supabase
       .from("notification_telemetry")
-      .select("user_id, notification_id, expo_ticket_id")
+      .select("user_id, notification_id, expo_ticket_id, push_token")
       .eq("status", "sent")
       .gt("created_at", timeLimit)
       .not("expo_ticket_id", "is", null)
@@ -63,7 +72,7 @@ Deno.serve(async (req) => {
 
         // Auto cleanup invalid tokens
         if (providerError === "DeviceNotRegistered" || providerError === "InvalidCredentials") {
-          tokensToDelete.push({ user_id: record.user_id });
+          tokensToDelete.push({ user_id: record.user_id, token: record.push_token });
         }
       }
 
@@ -91,17 +100,38 @@ Deno.serve(async (req) => {
     // 4. Cleanup invalid tokens
     if (tokensToDelete.length > 0) {
       for (const t of tokensToDelete) {
-        // Delete from user_push_tokens
-        await supabase
-          .from("user_push_tokens")
-          .delete()
-          .eq("user_id", t.user_id);
+        if (t.token) {
+          // Delete only the specific invalid token from device list
+          await supabase
+            .from("user_push_tokens")
+            .delete()
+            .eq("push_token", t.token);
 
-        // Update users table
-        await supabase
-          .from("users")
-          .update({ push_token: null })
-          .eq("id", t.user_id);
+          // Check if user has any remaining tokens left
+          const { data: remaining } = await supabase
+            .from("user_push_tokens")
+            .select("push_token")
+            .eq("user_id", t.user_id);
+
+          if (!remaining || remaining.length === 0) {
+            // Update users table only if no remaining active tokens exist
+            await supabase
+              .from("users")
+              .update({ push_token: null })
+              .eq("id", t.user_id);
+          }
+        } else {
+          // Fallback: delete by user_id if token is somehow null (stale telemetry)
+          await supabase
+            .from("user_push_tokens")
+            .delete()
+            .eq("user_id", t.user_id);
+
+          await supabase
+            .from("users")
+            .update({ push_token: null })
+            .eq("id", t.user_id);
+        }
       }
     }
 
@@ -109,6 +139,9 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err: any) {
+    if (SENTRY_DSN) {
+      Sentry.captureException(err);
+    }
     return new Response(JSON.stringify({ success: false, error: err.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

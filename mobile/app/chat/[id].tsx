@@ -259,10 +259,12 @@ export default function ChatScreen() {
         const initChat = async () => {
             if (id) {
                 await messageStore.initSQLiteCache();
+                if (!isMounted.current) return;
                 
                 // 1. INSTANT display — show cached messages from SQLite with zero loading state
                 const { getMessagesByGroup } = require('../../src/lib/database');
                 const cached = await getMessagesByGroup(id);
+                if (!isMounted.current) return;
                 
                 if (cached.length > 0) {
                     messageStore.setMessages(id, cached);
@@ -280,12 +282,14 @@ export default function ChatScreen() {
                 // 3. Fetch members FIRST so membersRef is populated before realtime starts
                 // This prevents unnecessary extra DB fetches for sender info on first messages
                 await fetchMembers();
+                if (!isMounted.current) return;
 
                 // 4. Set up real-time so no messages are missed during fetch
                 setupRealtime();
 
                 // 5. Miss-recovery: fetch messages that arrived while offline (fast delta)
                 await fetchMissedMessages();
+                if (!isMounted.current) return;
 
                 // 6. Background sync — fetch fresh data without blocking UI
                 fetchGroupDetails();
@@ -556,6 +560,54 @@ export default function ChatScreen() {
             // silent
         }
     };
+
+    const renderMemberItem = React.useCallback(({ item: member }: { item: any }) => {
+        const isYou = member.id === currentUser?.id;
+        return (
+        <TouchableOpacity
+            style={styles.memberItem}
+            onPress={() => {
+                setShowMembersList(false);
+                setViewingProfile(member);
+            }}
+        >
+            {(() => {
+                const cleanUrl = getCleanAvatarUrl(member.avatar_url);
+                return cleanUrl ? (
+                    <Image source={{ uri: cleanUrl }} style={styles.memberAvatar} />
+                ) : (
+                    <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ fontWeight: 'bold', color: '#64748b' }}>
+                            {member.username?.charAt(0)?.toUpperCase() || 'U'}
+                        </Text>
+                    </View>
+                );
+            })()}
+            <View style={styles.memberInfo}>
+                <View style={styles.memberNameRow}>
+                    <Text style={styles.memberFullName}>
+                        {isYou ? `${member.full_name} (You)` : member.full_name}
+                    </Text>
+                    {(() => {
+                        const { useNetworkStore } = require('../../src/stores/network.store');
+                        const isOnline = useNetworkStore.getState().isOnline;
+                        if (!isOnline) return null;
+                        
+                        const isUserOnline = isYou || (member.last_active_at && (new Date().getTime() - new Date(member.last_active_at).getTime() < 300000));
+                        if (isUserOnline) {
+                            return <View style={styles.memberOnlineDot} />;
+                        }
+                        return null;
+                    })()}
+                </View>
+                <Text style={styles.memberUsername}>@{member.username}</Text>
+            </View>
+            <View style={styles.memberLevelBadge}>
+                <Text style={styles.memberLevelText}>{member.level}</Text>
+            </View>
+        </TouchableOpacity>
+        );
+    }, [currentUser?.id]);
 
     const setupRealtime = () => {
         // Clean up any existing channel first
@@ -2962,56 +3014,16 @@ export default function ChatScreen() {
                             })()
                         }</Text>
 
-                        <ScrollView style={styles.membersList}>
-                            {members.map((member) => {
-                                const isYou = member.id === currentUser?.id;
-                                return (
-                                <TouchableOpacity
-                                    key={member.id}
-                                    style={styles.memberItem}
-                                    onPress={() => {
-                                        setShowMembersList(false);
-                                        setViewingProfile(member);
-                                    }}
-                                >
-                                    {(() => {
-                                        const cleanUrl = getCleanAvatarUrl(member.avatar_url);
-                                        return cleanUrl ? (
-                                            <Image source={{ uri: cleanUrl }} style={styles.memberAvatar} />
-                                        ) : (
-                                            <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
-                                                <Text style={{ fontWeight: 'bold', color: '#64748b' }}>
-                                                    {member.username?.charAt(0)?.toUpperCase() || 'U'}
-                                                </Text>
-                                            </View>
-                                        );
-                                    })()}
-                                    <View style={styles.memberInfo}>
-                                        <View style={styles.memberNameRow}>
-                                            <Text style={styles.memberFullName}>
-                                                {isYou ? `${member.full_name} (You)` : member.full_name}
-                                            </Text>
-                                            {(() => {
-                                                const { useNetworkStore } = require('../../src/stores/network.store');
-                                                const isOnline = useNetworkStore.getState().isOnline;
-                                                if (!isOnline) return null;
-                                                
-                                                const isUserOnline = isYou || (member.last_active_at && (new Date().getTime() - new Date(member.last_active_at).getTime() < 300000));
-                                                if (isUserOnline) {
-                                                    return <View style={styles.memberOnlineDot} />;
-                                                }
-                                                return null;
-                                            })()}
-                                        </View>
-                                        <Text style={styles.memberUsername}>@{member.username}</Text>
-                                    </View>
-                                    <View style={styles.memberLevelBadge}>
-                                        <Text style={styles.memberLevelText}>{member.level}</Text>
-                                    </View>
-                                </TouchableOpacity>
-                                );
-                            })}
-                        </ScrollView>
+                        <FlatList
+                            style={styles.membersList}
+                            data={members}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderMemberItem}
+                            initialNumToRender={20}
+                            maxToRenderPerBatch={20}
+                            windowSize={10}
+                            removeClippedSubviews={Platform.OS === 'android'}
+                        />
             </SafeBottomSheet>
 
             {/* ========== PROFILE VIEW MODAL ========== */}

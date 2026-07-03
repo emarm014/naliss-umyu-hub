@@ -113,7 +113,11 @@ export default function EssayEngineScreen() {
                 if (existing) {
                     setPoolStartedAt(existing);
                 } else {
-                    const now = Date.now();
+                    // Call the secure start_quiz RPC on the server to lock in start time
+                    await supabase.rpc('start_quiz', { p_pool_id: id });
+                    
+                    const { data: serverTimeData } = await supabase.rpc('get_server_time');
+                    const now = serverTimeData ? new Date(serverTimeData).getTime() : Date.now();
                     store.setPoolStartTime(id, now);
                     setPoolStartedAt(now);
                 }
@@ -128,30 +132,41 @@ export default function EssayEngineScreen() {
     useEffect(() => {
         if (isLoading || !poolInfo) return;
 
+        // Initialize timeLeft once based on server-offset corrected times
+        const adjustedNow = new Date(Date.now() + serverTimeOffset);
+        let initialTimeLeft = 999999;
+
+        if (poolInfo.end_time) {
+            const endDate = new Date(poolInfo.end_time);
+            initialTimeLeft = Math.min(initialTimeLeft, differenceInSeconds(endDate, adjustedNow));
+        }
+
+        if (poolInfo.target_constraints?.total_time_limit_sec) {
+            const targetDate = new Date(poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000);
+            initialTimeLeft = Math.min(initialTimeLeft, differenceInSeconds(targetDate, adjustedNow));
+        }
+
+        setTimeLeft(initialTimeLeft > 0 ? initialTimeLeft : 0);
+
+        let lastTickTime = Date.now();
         const interval = setInterval(() => {
-            const adjustedNow = new Date(Date.now() + serverTimeOffset);
-            let timeIsUp = false;
+            const nowClient = Date.now();
+            let deltaSecs = Math.round((nowClient - lastTickTime) / 1000);
+            // Protect against negative deltas due to client clock rollback
+            if (deltaSecs <= 0) deltaSecs = 1;
+            lastTickTime = nowClient;
 
-            if (poolInfo.end_time) {
-                const endDate = new Date(poolInfo.end_time);
-                if (differenceInSeconds(endDate, adjustedNow) <= 0) timeIsUp = true;
-                else setTimeLeft(differenceInSeconds(endDate, adjustedNow));
-            }
-
-            if (poolInfo.target_constraints?.total_time_limit_sec) {
-                const targetDate = new Date(poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000);
-                if (differenceInSeconds(targetDate, adjustedNow) <= 0) timeIsUp = true;
-                else {
-                    const diff = differenceInSeconds(targetDate, adjustedNow);
-                    if (timeLeft === null || diff < timeLeft) setTimeLeft(diff);
+            setTimeLeft(prev => {
+                if (prev === null) return null;
+                const next = prev - deltaSecs;
+                if (next <= 0) {
+                    clearInterval(interval);
+                    setTimeLeft(0);
+                    handleFinalSubmit(true);
+                    return 0;
                 }
-            }
-
-            if (timeIsUp) {
-                clearInterval(interval);
-                setTimeLeft(0);
-                handleFinalSubmit(true);
-            }
+                return next;
+            });
         }, 1000);
 
         return () => clearInterval(interval);

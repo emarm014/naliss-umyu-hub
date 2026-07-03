@@ -70,9 +70,30 @@ export default function FileUpload({
                     originalFilename: result.original_filename || file.name
                 })));
                 
-                const results = await Promise.all(uploadPromises);
-                setUploadProgress('Upload complete!');
-                onMultiUploadComplete(results);
+                const settledResults = await Promise.allSettled(uploadPromises);
+                const successful = settledResults
+                    .filter((r): r is PromiseFulfilledResult<{url: string, file: File, originalFilename: string}> => r.status === 'fulfilled')
+                    .map(r => r.value);
+                
+                const failedCount = settledResults.filter(r => r.status === 'rejected').length;
+
+                if (successful.length > 0) {
+                    setUploadProgress(failedCount > 0 ? `Upload complete! (${failedCount} failed)` : 'Upload complete!');
+                    onMultiUploadComplete(successful);
+                }
+                
+                if (failedCount > 0) {
+                    const errors = settledResults
+                        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+                        .map(r => r.reason?.message || 'Unknown error');
+                    
+                    setUploadError(`⚠️ ${failedCount} file(s) failed to upload.`);
+                    if (onUploadError) onUploadError(new Error(errors.join(', ')));
+                    // Throw to jump to catch block for cleanup state if no files succeeded
+                    if (successful.length === 0) {
+                        throw new Error('All files failed to upload.');
+                    }
+                }
             } else {
                 const file = files[0];
                 const result = await uploadToCloudinary(file, folder);

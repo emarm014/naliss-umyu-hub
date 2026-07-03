@@ -14,7 +14,7 @@ Sentry.init({
   ],
   // Performance Monitoring
   tracesSampleRate: 1.0, 
-  tracePropagationTargets: ["localhost", /^\/api/],
+  tracePropagationTargets: ["localhost", /^\/api/, /\.supabase\.co/],
   // Session Replays
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 1.0,

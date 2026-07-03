@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../src/constants/Colors';
@@ -182,6 +182,63 @@ export default function SearchScreen() {
     </TouchableOpacity>
   );
 
+  // Build a unified flat array of section headers + items for FlatList virtualization
+  type SearchSectionItem =
+    | { _type: 'section_header'; _key: string; title: string; count: number }
+    | { _type: 'announcement'; _key: string; item: any }
+    | { _type: 'event'; _key: string; item: any }
+    | { _type: 'resource'; _key: string; item: any }
+    | { _type: 'past_question'; _key: string; item: any; index: number }
+    | { _type: 'message'; _key: string; item: any };
+
+  const searchSections = useMemo<SearchSectionItem[]>(() => {
+    const sections: SearchSectionItem[] = [];
+
+    if ((activeTab === 'All Results' || activeTab === 'Announcements') && filteredAnnouncements.length > 0) {
+      sections.push({ _type: 'section_header', _key: 'header_announcements', title: 'ANNOUNCEMENTS', count: filteredAnnouncements.length });
+      filteredAnnouncements.forEach(a => sections.push({ _type: 'announcement', _key: `ann_${a.id}`, item: a }));
+    }
+    if ((activeTab === 'All Results' || activeTab === 'Events') && filteredEvents.length > 0) {
+      sections.push({ _type: 'section_header', _key: 'header_events', title: 'UPCOMING EVENTS', count: filteredEvents.length });
+      filteredEvents.forEach(e => sections.push({ _type: 'event', _key: `evt_${e.id}`, item: e }));
+    }
+    if ((activeTab === 'All Results' || activeTab === 'Resources') && filteredResources.length > 0) {
+      sections.push({ _type: 'section_header', _key: 'header_resources', title: 'ACADEMIC RESOURCES', count: filteredResources.length });
+      filteredResources.forEach(r => sections.push({ _type: 'resource', _key: `res_${r.id}`, item: r }));
+    }
+    if ((activeTab === 'All Results' || activeTab === 'Past Questions') && filteredPastQuestions.length > 0) {
+      sections.push({ _type: 'section_header', _key: 'header_pq', title: 'PAST QUESTIONS', count: filteredPastQuestions.length });
+      filteredPastQuestions.forEach((pq, i) => sections.push({ _type: 'past_question', _key: `pq_${pq.id}`, item: pq, index: i }));
+    }
+    if ((activeTab === 'All Results' || activeTab === 'Messages') && filteredMessages.length > 0) {
+      sections.push({ _type: 'section_header', _key: 'header_messages', title: 'OFFLINE MESSAGES', count: filteredMessages.length });
+      filteredMessages.forEach(m => sections.push({ _type: 'message', _key: `msg_${m.entity_id}`, item: m }));
+    }
+
+    return sections;
+  }, [activeTab, filteredAnnouncements, filteredEvents, filteredResources, filteredPastQuestions, filteredMessages]);
+
+  const renderSearchItem = useCallback(({ item: row }: { item: SearchSectionItem }) => {
+    if (row._type === 'section_header') {
+      return (
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>{row.title}</Text>
+            <Text style={styles.resultCount}>{row.count} results</Text>
+          </View>
+        </View>
+      );
+    }
+    switch (row._type) {
+      case 'announcement': return renderAnnouncementCard(row.item);
+      case 'event': return renderEventCard(row.item);
+      case 'resource': return renderResourceCard(row.item);
+      case 'past_question': return renderPastQuestionCard(row.item, row.index);
+      case 'message': return renderMessageCard(row.item);
+      default: return null;
+    }
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -232,79 +289,31 @@ export default function SearchScreen() {
       </View>
 
       {/* Results Content */}
-      <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
-        
-        {(activeTab === 'All Results' || activeTab === 'Announcements') && filteredAnnouncements.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>ANNOUNCEMENTS</Text>
-              <Text style={styles.resultCount}>{filteredAnnouncements.length} results</Text>
+      <FlatList
+        style={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        data={searchSections}
+        keyExtractor={(item) => item._key}
+        renderItem={renderSearchItem}
+        initialNumToRender={20}
+        maxToRenderPerBatch={15}
+        windowSize={10}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListEmptyComponent={
+          query.length > 0 ? (
+            <View style={{ alignItems: 'center', marginTop: 100 }}>
+              <Ionicons name="search-outline" size={48} color={COLORS.textMuted} />
+              <Text style={{ fontFamily: 'Inter-Medium', color: COLORS.textMuted, marginTop: 16 }}>No results found for "{searchQuery}"</Text>
             </View>
-            {filteredAnnouncements.map(renderAnnouncementCard)}
-          </View>
-        )}
-
-        {(activeTab === 'All Results' || activeTab === 'Events') && filteredEvents.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>UPCOMING EVENTS</Text>
-              <Text style={styles.resultCount}>{filteredEvents.length} results</Text>
+          ) : (
+            <View style={{ alignItems: 'center', marginTop: 100 }}>
+               <Ionicons name="search" size={48} color={COLORS.textMuted} opacity={0.5} />
+               <Text style={{ fontFamily: 'Inter-Medium', color: COLORS.textMuted, marginTop: 16 }}>Type above to search the hub</Text>
             </View>
-            {filteredEvents.map(renderEventCard)}
-          </View>
-        )}
-
-        {(activeTab === 'All Results' || activeTab === 'Resources') && filteredResources.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>ACADEMIC RESOURCES</Text>
-              <Text style={styles.resultCount}>{filteredResources.length} results</Text>
-            </View>
-            {filteredResources.map(renderResourceCard)}
-          </View>
-        )}
-
-        {(activeTab === 'All Results' || activeTab === 'Past Questions') && filteredPastQuestions.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>PAST QUESTIONS</Text>
-              <Text style={styles.resultCount}>{filteredPastQuestions.length} results</Text>
-            </View>
-            {filteredPastQuestions.map((item, index) => renderPastQuestionCard(item, index))}
-          </View>
-        )}
-
-        {(activeTab === 'All Results' || activeTab === 'Messages') && filteredMessages.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>OFFLINE MESSAGES</Text>
-              <Text style={styles.resultCount}>{filteredMessages.length} results</Text>
-            </View>
-            {filteredMessages.map(renderMessageCard)}
-          </View>
-        )}
-
-        {query.length > 0 && 
-         filteredAnnouncements.length === 0 && 
-         filteredEvents.length === 0 &&
-         filteredResources.length === 0 && 
-         filteredPastQuestions.length === 0 && 
-         filteredMessages.length === 0 && (
-          <View style={{ alignItems: 'center', marginTop: 100 }}>
-            <Ionicons name="search-outline" size={48} color={COLORS.textMuted} />
-            <Text style={{ fontFamily: 'Inter-Medium', color: COLORS.textMuted, marginTop: 16 }}>No results found for "{searchQuery}"</Text>
-          </View>
-        )}
-
-        {query.length === 0 && (
-          <View style={{ alignItems: 'center', marginTop: 100 }}>
-             <Ionicons name="search" size={48} color={COLORS.textMuted} opacity={0.5} />
-             <Text style={{ fontFamily: 'Inter-Medium', color: COLORS.textMuted, marginTop: 16 }}>Type above to search the hub</Text>
-          </View>
-        )}
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
+          )
+        }
+        ListFooterComponent={<View style={{ height: 40 }} />}
+      />
     </SafeAreaView>
   );
 }

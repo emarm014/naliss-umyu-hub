@@ -162,9 +162,13 @@ export default function RegisterOTP() {
           Alert.alert('New Code Sent', 'A fresh 6-digit code was sent to your email.');
         }
       }
-    } catch {
+    } catch (err: any) {
       if (isMounted.current && !isAutoSend) {
-        Alert.alert('Resend Failed', 'Could not resend the code. Please check your connection.');
+        if (err?.status === 429 || err?.message?.includes('429') || err?.message?.toLowerCase().includes('rate limit')) {
+          Alert.alert('Too Many Requests', 'You are requesting codes too quickly. Please wait a moment and try again.');
+        } else {
+          Alert.alert('Resend Failed', 'Could not resend the code. Please check your connection.');
+        }
       }
     }
   }, [email]);

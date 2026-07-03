@@ -58,26 +58,22 @@ export const interceptAndDownloadMedia = async (message: any) => {
     }
 
     try {
-        const fs = FileSystem as any;
-        const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
-        if (!docDir) return message;
-        const base = docDir.endsWith('/') ? docDir : `${docDir}/`;
-        
-        // Ensure a unique filename based on ID
-        const ext = message.media_url.split('.').pop()?.split('?')[0] || 'tmp';
-        const localPath = `${base}media_${message.id}.${ext}`;
-        
-        const info = await FileSystem.getInfoAsync(localPath);
-        if (info.exists) {
-            message.local_media_path = `file://${localPath}`;
-        } else {
-            const downloadRes = await FileSystem.downloadAsync(message.media_url, localPath);
-            if (downloadRes.status === 200) {
-                message.local_media_path = downloadRes.uri;
+        const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+        const assetType = `chat_${message.media_type || 'image'}`;
+        const localUri = await UnifiedDownloadEngine.download(
+            message.media_url,
+            message.id,
+            `media_${message.id}`,
+            undefined,
+            {
+                assetType,
+                messageId: message.id,
+                groupId: message.group_id || null,
+                mimeType: message.mime_type || null
             }
-        }
-        
-        if (message.local_media_path) {
+        );
+        if (localUri) {
+            message.local_media_path = localUri;
             await updateLocalMediaPath(message.id, message.local_media_path);
         }
     } catch (e) {
@@ -212,6 +208,10 @@ export const useMessageStore = create<MessageState>()(
             },
 
             editMessage: async (messageId: string, groupId: string, newContent: string) => {
+                const originalMsg = get().cache[groupId]?.find(m => m.id === messageId);
+                const prevContent = originalMsg?.content;
+                const prevEditedAt = originalMsg?.edited_at;
+
                 const editedAt = new Date().toISOString();
                 get().updateMessage(groupId, messageId, { content: newContent, edited_at: editedAt });
 
@@ -223,11 +223,16 @@ export const useMessageStore = create<MessageState>()(
 
                     if (error) throw error;
                 } catch (err) {
-                    Logger.error('message.store', 'Failed to edit message', err);
+                    Logger.error('message.store', 'Failed to edit message, rolling back optimistic state', err);
+                    get().updateMessage(groupId, messageId, { content: prevContent, edited_at: prevEditedAt });
                 }
             },
 
             softDeleteMessage: async (messageId: string, groupId: string) => {
+                const originalMsg = get().cache[groupId]?.find(m => m.id === messageId);
+                const prevContent = originalMsg?.content;
+                const prevIsDeleted = originalMsg?.is_deleted;
+
                 get().updateMessage(groupId, messageId, { content: '', is_deleted: true });
 
                 try {
@@ -236,7 +241,8 @@ export const useMessageStore = create<MessageState>()(
 
                     if (error) throw error;
                 } catch (err) {
-                    Logger.error('message.store', 'Failed to soft delete message', err);
+                    Logger.error('message.store', 'Failed to soft delete message, rolling back optimistic state', err);
+                    get().updateMessage(groupId, messageId, { content: prevContent, is_deleted: prevIsDeleted });
                 }
             },
 
@@ -376,9 +382,12 @@ export const useMessageStore = create<MessageState>()(
                 if (get().isFlushing) return;
                 set({ isFlushing: true });
 
+                const sleepHelper = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
                 try {
                     Logger.info('message.store', 'Starting background flush of unsent messages...');
                     const allGroups = get().cache;
+                    let attempt = 0;
                     
                     for (const groupId of Object.keys(allGroups)) {
                         const unsentMessages = allGroups[groupId].filter(m => m.status === 'unsent');
@@ -397,10 +406,21 @@ export const useMessageStore = create<MessageState>()(
 
                             try {
                                 await get().processUnifiedQueueItem(groupId, msg);
+                                // Throttle successive sends
+                                await sleepHelper(500);
+                                attempt = 0; // reset retry counter on success
                             } catch (err: any) {
-                                const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network');
+                                const isNetwork = err?.status === 0 || 
+                                                  err?.message?.toLowerCase().includes('network') || 
+                                                  err?.message?.toLowerCase().includes('failed to fetch');
+                                
                                 get().updateMessage(groupId, msg.id, { status: isNetwork ? 'unsent' : 'error' });
+                                
                                 if (isNetwork) {
+                                    attempt++;
+                                    const backoffDelay = Math.min(1500 * Math.pow(2, attempt) + Math.random() * 1000, 30000);
+                                    Logger.warn('message.store', `Network error flushing message, backoff delay: ${Math.round(backoffDelay)}ms`, { id: msg.id });
+                                    await sleepHelper(backoffDelay);
                                     set({ isFlushing: false });
                                     return;
                                 }

@@ -165,9 +165,8 @@ class RealtimeCoordinator {
       // Validate websocket session connectivity
       const isConnected = supabase.realtime.isConnected();
       if (!isConnected) {
-        diagnosticsManager.logTelemetry('realtime', 'WebSocket connection lost, triggering reconnect');
-        this.disconnectAll();
-        this.connectAll();
+        diagnosticsManager.logTelemetry('realtime', 'WebSocket connection lost, prompting socket connect()');
+        supabase.realtime.connect();
       }
     }, 15000);
   }

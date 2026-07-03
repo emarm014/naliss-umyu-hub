@@ -235,23 +235,6 @@ export default function ProfileScreen() {
   // 200 concurrent connection limit on the Supabase Free Tier.
   // Profile is now fetched exclusively via pull-to-refresh and App Foreground.
 
-  const handleClearArchiveCache = async () => {
-    try {
-      const fs = FileSystem as any;
-      const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
-      const base = docDir.endsWith('/') ? docDir : `${docDir}/`;
-      const archiveFolderUri = `${base}naliss_vault/`;
-      
-      await FileSystem.deleteAsync(archiveFolderUri, { idempotent: true });
-      Alert.alert(
-        "Storage Cleaned", 
-        "All offline cached archive documents have been safely removed. Metadata records remain fully intact."
-      );
-    } catch (err) {
-      captureUIError('ProfileScreen.clearArchiveCache', err);
-      Alert.alert('Error', 'Failed to clear local storage cache.');
-    }
-  };
 
   const handleUpdateProfile = async () => {
     if (!storeProfile?.id) return;
@@ -924,14 +907,6 @@ export default function ProfileScreen() {
               colors={colors}
             />
             <MenuItem 
-              icon="cloud-download" 
-              iconColor="#10b981" 
-              iconBg="rgba(16, 185, 129, 0.15)" 
-              label="Offline Storage & Diagnostics" 
-              onPress={() => router.push('/offline-dashboard')}
-              colors={colors}
-            />
-            <MenuItem 
               icon="notifications" 
               iconColor="#ea580c" 
               iconBg={COLORS.actionOrange} 
@@ -948,14 +923,6 @@ export default function ProfileScreen() {
                 setShowNotifications(true);
               }}
               rightContent={<Ionicons name="chevron-forward" size={20} color={colors.textMuted} />}
-              colors={colors}
-            />
-            <MenuItem 
-              icon="trash" 
-              iconColor={isDark ? '#fca5a5' : '#ef4444'} 
-              iconBg={isDark ? '#451a1a' : '#fef2f2'} 
-              label="Clear Cached Resources" 
-              onPress={handleClearArchiveCache}
               colors={colors}
             />
             <MenuItem 

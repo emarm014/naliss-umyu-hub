@@ -7,7 +7,7 @@ const API_SECRET  = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, content-type',
 };
 
@@ -69,8 +69,8 @@ Deno.serve(async (req: Request) => {
     // Fetch usage stats, resource counts, and report data in parallel
     const [usageRes, imageResourcesRes, reportRes] = await Promise.all([
       fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/usage`, { headers }),
-      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources?resource_type=image&max_results=500`, { headers }),
-      // Usage report for last 30 days â€” gives impressions, bandwidth breakdown, errors
+      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/image?max_results=500`, { headers }),
+      // Usage report for last 30 days — gives impressions, bandwidth breakdown, errors
       fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/usage?date=${getDateDaysAgo(30)}`, { headers }),
     ]);
 
@@ -87,8 +87,8 @@ Deno.serve(async (req: Request) => {
 
     // Also fetch raw (documents) and video resources
     const [rawRes, videoRes] = await Promise.all([
-      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources?resource_type=raw&max_results=500`, { headers }),
-      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources?resource_type=video&max_results=500`, { headers }),
+      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/raw?max_results=500`, { headers }),
+      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/video?max_results=500`, { headers }),
     ]);
 
     const [rawResources, videoResources] = await Promise.all([

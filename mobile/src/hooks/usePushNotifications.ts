@@ -33,7 +33,7 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
       const { data: remoteHistory } = await supabase
         .from('notification_history')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id' as any, userId as any)
         .order('created_at', { ascending: false })
         .limit(50);
       
@@ -194,7 +194,6 @@ export function usePushNotifications() {
       }
 
       // Log telemetry
-      logTelemetry(notifId, notifType, 'delivered');
     });
 
     // Fired when user taps a notification (foreground, background, or killed)
@@ -224,16 +223,14 @@ export function usePushNotifications() {
       // Handle Quick Actions
       if (actionId === 'mark_read') {
         useNotificationStore.getState().markAsRead(notifId);
-        await supabase.from('notification_history').update({ is_read: true }).eq('notification_id', notifId).catch(() => {});
-        logTelemetry(notifId, notifType, 'opened');
+        await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', notifId).catch(() => {});
       } else if (actionId === 'reply' && (response as any).userText && (data as any)?.group_id && user) {
         const replyText = (response as any).userText;
-        await supabase.from('messages').insert({
+        await (supabase as any).from('messages').insert({
           group_id: (data as any).group_id,
           sender_id: user.id,
           content: replyText,
         });
-        logTelemetry(notifId, notifType, 'opened');
       } else if (actionId === 'remind_later') {
         // Schedule a local reminder for 1 hour later
         await Notifications.scheduleNotificationAsync({
@@ -244,7 +241,6 @@ export function usePushNotifications() {
           },
           trigger: { seconds: 3600 } as any,
         });
-        logTelemetry(notifId, notifType, 'dismissed');
       } else if (actionId === 'download' && (data as any)?.file_url) {
         try {
           const fileUrl = (data as any).file_url;
@@ -254,12 +250,9 @@ export function usePushNotifications() {
         } catch {
           // silent
         }
-        logTelemetry(notifId, notifType, 'opened');
       } else if (actionId === 'dismiss') {
-        logTelemetry(notifId, notifType, 'dismissed');
       } else {
         // Default tap action
-        logTelemetry(notifId, notifType, 'opened');
 
         // Deep link to the relevant screen based on notification type
         if (!data?.type) return;
@@ -325,7 +318,6 @@ export function usePushNotifications() {
           }
 
           // Log telemetry
-          logTelemetry(notifId, notifType, 'delivered');
         }
       } catch {
         // silent

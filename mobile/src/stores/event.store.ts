@@ -1,3 +1,4 @@
+import * as Notifications from 'expo-notifications';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
@@ -37,6 +38,48 @@ interface EventState {
 }
 
 const CACHE_TTL = Infinity; // No TTL — cached events available offline indefinitely
+
+
+export async function scheduleTimetableAlarms(events: Event[]) {
+    try {
+        // Filter events for lectures, exams, or timetable slots
+        const academicEvents = events.filter(ev => {
+            const text = ((ev.title || '') + ' ' + (ev.description || '')).toLowerCase();
+            return text.includes('lecture') || text.includes('exam') || text.includes('timetable_slot') || text.includes('timetable');
+        });
+
+        // Cancel all previously scheduled notifications (or you could track them, but for simplicity we can cancel all or just let expo handle it if we have specific IDs. Since we don't have the previous IDs, we can cancel all scheduled notifications, or ideally just the ones we own. For this scope, we'll cancel all to prevent duplication of timetable alarms as requested, or just rely on a specific logic if possible. Actually the prompt says "matching our timetable structure". We can't cancel by ID if we don't know it, so we'll cancel all scheduled ones that might match).
+        // A safer way is to fetch all scheduled and cancel those that match our pattern.
+        const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+        for (const notif of scheduled) {
+            if (notif.content.title?.includes('Upcoming Academic Session')) {
+                await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+            }
+        }
+
+        for (const ev of academicEvents) {
+            let eventDateStr = ev.start_date;
+            if (ev.start_time) {
+                eventDateStr += 'T' + ev.start_time;
+            }
+            const targetDate = new Date(eventDateStr);
+            const alarmTime = new Date(targetDate.getTime() - (15 * 60 * 1000));
+            
+            if (alarmTime.getTime() > Date.now()) {
+                await Notifications.scheduleNotificationAsync({
+                    content: {
+                        title: "Upcoming Academic Session",
+                        body: `Your lecture/exam '${ev.title}' is starting in 15 minutes. Check your seat and location!`,
+                        data: { eventId: ev.id },
+                    },
+                    trigger: { date: alarmTime } as any,
+                });
+            }
+        }
+    } catch (e) {
+        console.error('Error scheduling timetable alarms:', e);
+    }
+}
 
 export const useEventStore = create<EventState>()(
     persist(
@@ -81,7 +124,10 @@ export const useEventStore = create<EventState>()(
                         event_pools: undefined
                     }));
 
+                    
                     set({ events: mappedEvents as unknown as Event[], isLoading: false, lastFetch: Date.now() });
+                    scheduleTimetableAlarms(mappedEvents as unknown as Event[]);
+
                 } catch {
                     // Keep cached data on network failure
                     set({ isLoading: false });

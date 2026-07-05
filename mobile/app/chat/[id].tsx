@@ -2455,7 +2455,7 @@ export default function ChatScreen() {
         const selectedIndex = mediaArray.findIndex(m => m.id === targetMessageId);
         
         router.push({
-            pathname: '/viewer',
+            pathname: '/viewer' as any,
             params: {
                 mediaArray: JSON.stringify(mediaArray),
                 selectedIndex: Math.max(0, selectedIndex).toString()
@@ -2471,10 +2471,10 @@ export default function ChatScreen() {
                 <KeyboardAvoidingView
                     style={[{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 12}
                 >
             {/* Header */}
-            <View style={[styles.header, styles.headerLight, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+            <View style={[styles.header, styles.headerLight, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
                 <TouchableOpacity style={styles.backButton} onPress={goBack}>
                     <Ionicons name="chevron-back" size={24} color={colors.text} />
                 </TouchableOpacity>
@@ -2969,7 +2969,7 @@ export default function ChatScreen() {
             <SafeBottomSheet
                 visible={showAttachmentMenu}
                 onClose={() => setShowAttachmentMenu(false)}
-                contentStyle={styles.attachmentMenu}
+                contentStyle={[styles.attachmentMenu, { paddingBottom: Math.max(insets.bottom + 16, 24), backgroundColor: colors.card }]}
                 animationType="fade"
             >
                             <TouchableOpacity style={styles.attachmentItem} onPress={() => { setShowAttachmentMenu(false); handlePickAndCropImage(); }}>
@@ -3235,12 +3235,12 @@ export default function ChatScreen() {
 
             {/* Footer / Input Area */}
             {isChatRestricted ? (
-                <View style={[styles.readOnlyContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 16, backgroundColor: colors.card }]}>
+                <View style={[styles.readOnlyContainer, { paddingBottom: Math.max(insets.bottom, 16), backgroundColor: colors.card }]}>
                     <Ionicons name="lock-closed" size={20} color="#64748b" />
                     <Text style={[styles.readOnlyText, { color: colors.textSecondary }]}>Institutional Read-Only Mode Active</Text>
                 </View>
             ) : group?.chat_enabled === false ? (
-                <View style={[styles.readOnlyContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 12 : 16, backgroundColor: isDark ? '#1a0a0a' : '#fef2f2' }]}>
+                <View style={[styles.readOnlyContainer, { paddingBottom: Math.max(insets.bottom, 16), backgroundColor: isDark ? '#1a0a0a' : '#fef2f2' }]}>
                     <Ionicons name="chatbubble-ellipses-outline" size={20} color="#ef4444" />
                     <Text style={[styles.readOnlyText, { color: '#ef4444' }]}>Chat has been disabled for this group</Text>
                 </View>
@@ -3250,10 +3250,8 @@ export default function ChatScreen() {
                         backgroundColor: isDark ? '#000000' : colors.card, 
                         borderTopColor: isDark ? '#121212' : colors.border,
                         paddingBottom: isKeyboardActive
-                            ? 0
-                            : (Platform.OS === 'ios'
-                                ? (insets.bottom > 0 ? insets.bottom + 8 : 16)
-                                : (insets.bottom > 0 ? insets.bottom + 12 : 16))
+                            ? 12
+                            : Math.max(insets.bottom, 16)
                     }]}>
                         <TouchableOpacity 
                             style={styles.stickerButton}
@@ -3328,7 +3326,6 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#e8ecf1' },
     header: {
         flexDirection: 'row', alignItems: 'center',
-        paddingTop: Platform.OS === 'ios' ? 56 : 40,
         paddingBottom: 16, paddingHorizontal: 16,
     },
     headerLight: { backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
@@ -3560,7 +3557,7 @@ const styles = StyleSheet.create({
     // Input
     inputContainer: {
         flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10,
-        paddingVertical: 10, paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+        paddingVertical: 10,
         backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#f1f5f9',
     },
     readOnlyContainer: {
@@ -3568,7 +3565,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 16,
-        paddingBottom: Platform.OS === 'ios' ? 32 : 16,
         backgroundColor: '#f8fafc',
         borderTopWidth: 1,
         borderTopColor: '#f1f5f9',
@@ -3825,7 +3821,6 @@ const styles = StyleSheet.create({
     attachmentMenu: {
         backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24,
         padding: 24, flexDirection: 'row', justifyContent: 'space-around',
-        paddingBottom: Platform.OS === 'ios' ? 44 : 24,
     },
     attachmentItem: { alignItems: 'center', gap: 8 },
     attachmentIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },

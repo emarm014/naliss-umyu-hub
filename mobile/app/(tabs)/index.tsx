@@ -5,6 +5,7 @@ import {
   StatusBar, Platform, Alert,
 } from 'react-native';
 import { SafeModal } from '../../src/components/common/overlays';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -134,6 +135,7 @@ export default function HomeScreen() {
   const notifications = useNotificationStore(s => s.notifications);
   const unreadCount = notifications.filter(n => !n.isRead).length;
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const updateProfile = useAuthStore(s => s.updateProfile);
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
@@ -300,7 +302,7 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.card} translucent={false} />
       {/* Top Bar */}
-      <View style={[styles.topBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <View style={[styles.topBar, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
         <View style={styles.topBarLeft}>
           <View>
             <NetworkStatusDot />
@@ -636,10 +638,14 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   topBar: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) + 12 : 60,
-    paddingBottom: 15, paddingHorizontal: 20,
-    backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingBottom: 16,
+      paddingHorizontal: 20,
+      backgroundColor: '#FFFFFF',
+      borderBottomWidth: 1,
+      borderBottomColor: '#F1F5F9',
   },
   topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   appName: { fontFamily: 'Inter-Bold', fontSize: 18, color: '#1B5E20', letterSpacing: 0.2 },

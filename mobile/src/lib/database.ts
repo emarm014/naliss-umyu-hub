@@ -55,6 +55,8 @@ export const initDB = async () => {
     try {
         const rawDb = await SQLite.openDatabaseAsync('chat.db');
         db = wrapDatabaseWithObservability(rawDb);
+        // Enforce busy timeout loop to insulate the database against thread blockages
+        await db.execAsync('PRAGMA busy_timeout = 5000;');
         await db.execAsync(`
             PRAGMA journal_mode = WAL;
             CREATE TABLE IF NOT EXISTS local_messages (
@@ -188,38 +190,12 @@ export const initDB = async () => {
                 tokenize='porter unicode61'
             );
 
-            CREATE TABLE IF NOT EXISTS offline_asset_manifest (
-                asset_id TEXT PRIMARY KEY,
-                asset_type TEXT NOT NULL,
-                user_id TEXT,
-                remote_url TEXT,
-                local_path TEXT,
-                sha256 TEXT,
-                mime_type TEXT,
-                size INTEGER,
-                version INTEGER DEFAULT 1,
-                download_status TEXT DEFAULT 'pending',
-                verified INTEGER DEFAULT 0,
-                created_at TEXT,
-                updated_at TEXT,
-                last_accessed_at TEXT,
-                device_origin TEXT,
-                sync_version INTEGER DEFAULT 1
-            );
+            
             CREATE INDEX IF NOT EXISTS idx_asset_type ON offline_asset_manifest (asset_type);
             CREATE INDEX IF NOT EXISTS idx_asset_user_id ON offline_asset_manifest (user_id);
             CREATE INDEX IF NOT EXISTS idx_asset_download_status ON offline_asset_manifest (download_status);
 
-            CREATE TABLE IF NOT EXISTS offline_download_jobs (
-                job_id TEXT PRIMARY KEY,
-                asset_id TEXT NOT NULL,
-                priority INTEGER DEFAULT 50,
-                retry_count INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'pending',
-                error_message TEXT,
-                next_retry_at TEXT,
-                created_at TEXT
-            );
+            
             CREATE INDEX IF NOT EXISTS idx_job_status ON offline_download_jobs (status);
             CREATE INDEX IF NOT EXISTS idx_job_priority ON offline_download_jobs (priority);
 
@@ -384,12 +360,8 @@ export const saveLocalUserSession = async (profile: any) => {
         
         await db.runAsync(
             `INSERT OR REPLACE INTO local_user_session (
-                id, username, email, level, department_id, raw_profile_json, updated_at,
-                full_name, phone, avatar_url, local_avatar_path, faculty, department,
-                programme, executive_role, membership_status, biography,
-                notification_preferences, privacy_preferences, appearance_settings, permissions,
-                created_at, last_synced_at, profile_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                id, username, email, level, department_id, raw_profile_json, updated_at, last_synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 profile.id,
                 profile.username || null,
@@ -398,27 +370,11 @@ export const saveLocalUserSession = async (profile: any) => {
                 profile.department_id || profile.department || null,
                 JSON.stringify(profile),
                 updatedAt,
-                profile.full_name || null,
-                profile.phone || null,
-                profile.avatar_url || null,
-                profile.local_avatar_path || null,
-                profile.faculty || null,
-                profile.department || null,
-                profile.programme || null,
-                profile.executive_role || null,
-                profile.membership_status || null,
-                profile.biography || null,
-                profile.notification_preferences ? JSON.stringify(profile.notification_preferences) : null,
-                profile.privacy_preferences ? JSON.stringify(profile.privacy_preferences) : null,
-                profile.appearance_settings || profile.settings ? JSON.stringify(profile.appearance_settings || profile.settings) : null,
-                profile.permissions ? JSON.stringify(profile.permissions) : null,
-                profile.created_at || null,
-                lastSyncedAt,
-                profile.profile_version || 1
+                lastSyncedAt
             ]
         );
     } catch (e) {
-        console.error('SQLite saveLocalUserSession error:', e);
+        console.error('SQLite streamlined saveLocalUserSession error:', e);
     }
 };
 
@@ -859,23 +815,20 @@ export const upsertContentManifest = async (entry: any) => {
         const now = new Date().toISOString();
         await db.runAsync(
             `INSERT OR REPLACE INTO content_manifest (
-                id, content_type, content_id, user_id, raw_data, 
-                sync_version, server_updated_at, local_updated_at, device_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
                 `${entry.content_type}_${entry.content_id}`,
                 entry.content_type,
                 entry.content_id,
                 entry.user_id || null,
                 entry.raw_data ? JSON.stringify(entry.raw_data) : null,
-                entry.sync_version || 1,
                 entry.server_updated_at || null,
-                entry.local_updated_at || now,
-                entry.device_id || null
+                entry.local_updated_at || now
             ]
         );
     } catch (e) {
-        console.error('SQLite upsertContentManifest error:', e);
+        console.error('SQLite streamlined upsertContentManifest error:', e);
     }
 };
 
@@ -1257,39 +1210,6 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
     }
 };
 
-export const insertTelemetryEvent = async (event: any) => {
-    if (!db) return;
-    try {
-        const id = 'tel_' + Math.random().toString(36).substring(2, 15);
-        await db.runAsync(
-            `INSERT INTO offline_download_telemetry (
-                telemetry_id, timestamp, user_id, device_id, asset_id,
-                public_id, job_id, attempt_count, network_type,
-                download_duration, file_size, failure_reason,
-                hash_result, worker_name, event_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                id,
-                event.timestamp || new Date().toISOString(),
-                event.user_id || null,
-                event.device_id || null,
-                event.asset_id || null,
-                event.public_id || null,
-                event.job_id || null,
-                event.attempt_count || 0,
-                event.network_type || null,
-                event.download_duration || 0,
-                event.file_size || 0,
-                event.failure_reason || null,
-                event.hash_result || null,
-                event.worker_name || 'unified_downloader',
-                event.event_type
-            ]
-        );
-    } catch (e) {
-        console.error('SQLite insertTelemetryEvent error:', e);
-    }
-};
 
 export const pruneTelemetryEvents = async (maxAgeDays = 90) => {
     if (!db) return;

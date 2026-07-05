@@ -19,9 +19,6 @@ export default function NotepadDashboard() {
     const [searchQuery, setSearchQuery] = useState('');
 
     const insets = useSafeAreaInsets();
-    const FAB_MIN_BOTTOM = 24;
-    const safeBottomOffset = Math.max(insets.bottom + 16, FAB_MIN_BOTTOM);
-    const containerPaddingBottom = safeBottomOffset + 56 + 16;
 
     // O(1) performance lookup mapping (Memoized)
     const filteredNotes = useMemo(() => {
@@ -94,7 +91,6 @@ export default function NotepadDashboard() {
         listContent: {
             paddingTop: 20,
             paddingHorizontal: 16,
-            paddingBottom: containerPaddingBottom,
         },
         noteCard: {
             backgroundColor: isDark ? '#1E1E1E' : '#FFFFFF',
@@ -152,7 +148,6 @@ export default function NotepadDashboard() {
         },
         fab: {
             position: 'absolute',
-            bottom: safeBottomOffset,
             right: 24,
             width: 56,
             height: 56,
@@ -196,11 +191,11 @@ export default function NotepadDashboard() {
                 <FlatList
                     data={filteredNotes}
                     keyExtractor={(item) => item.id}
-                    contentContainerStyle={styles.listContent}
+                    contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(insets.bottom + 16, 24) + 72 }]}
                     renderItem={({ item }) => (
                         <TouchableOpacity 
                             style={styles.noteCard}
-                            onPress={() => router.push({ pathname: '/notepad/create', params: { id: item.id } })}
+                            onPress={() => router.push({ pathname: '/notepad/create' as any, params: { id: item.id } })}
                         >
                             {item.courseCode && (
                                 <Text style={styles.courseCode}>{item.courseCode} • {item.courseLevel}</Text>
@@ -226,8 +221,8 @@ export default function NotepadDashboard() {
             )}
 
             <TouchableOpacity 
-                style={styles.fab}
-                onPress={() => router.push('/notepad/create')}
+                style={[styles.fab, { bottom: Math.max(insets.bottom + 16, 24) }]}
+                onPress={() => router.push('/notepad/create' as any)}
             >
                 <Ionicons name="add" size={32} color="#FFFFFF" />
             </TouchableOpacity>

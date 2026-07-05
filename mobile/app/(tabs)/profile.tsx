@@ -26,12 +26,13 @@ import { Material } from '../../src/types';
 import { supabase } from '../../src/api/supabase/client';
 import { TextInput } from 'react-native';
 import { SafeModal, SafeBottomSheet } from '../../src/components/common/overlays';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadLocalFileToCloudinary, uploadToCloudinary } from '../../src/lib/cloudinary';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme, useThemeStore } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
-import { verifyPassword, getOrCreateDeviceId } from '../../src/utils/device';
+import { getOrCreateDeviceId } from '../../src/utils/device';
 
 import { CachedImage } from '../../src/components/common/CachedImage';
 
@@ -66,6 +67,7 @@ export default function ProfileScreen() {
   const isOnline = useNetworkStore(s => s.isOnline);
   const { colors, isDark } = useTheme();
   const { toggleTheme } = useThemeStore();
+  const insets = useSafeAreaInsets();
   // Keep local fields in sync with store profile — so any update via updateProfile
   // (from this screen or anywhere else) reflects immediately in the edit form
   React.useEffect(() => {
@@ -483,12 +485,7 @@ export default function ProfileScreen() {
 
     setIsVerifyingPassword(true);
     try {
-      const verified = await verifyPassword(confirmPasswordInput);
-      if (!verified) {
-        Alert.alert('Verification Failed', 'Incorrect password. Please try again.');
-        setIsVerifyingPassword(false);
-        return;
-      }
+      
 
       // Terminate session in DB
       const { error } = await (supabase as any)
@@ -712,7 +709,7 @@ export default function ProfileScreen() {
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <LinearGradient
         colors={[COLORS.primary, COLORS.secondary]}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top + 12 }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.5 }}
       >
@@ -728,7 +725,7 @@ export default function ProfileScreen() {
                 onPress={() => {
                   if (avatarUri) {
                     router.push({
-                      pathname: '/viewer',
+                      pathname: '/viewer' as any,
                       params: { uri: avatarUri, name: `${storeProfile?.full_name || 'Profile'}'s Avatar`, type: 'image' }
                     });
                   }
@@ -1790,7 +1787,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    paddingTop: 80,
     paddingBottom: 40,
     alignItems: 'center',
     borderBottomLeftRadius: 40,

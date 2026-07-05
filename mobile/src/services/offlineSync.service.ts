@@ -8,7 +8,6 @@ import { useAnnouncementStore } from '../stores/announcement.store';
 import { useEventStore } from '../stores/event.store';
 import { useResourceStore } from '../stores/resource.store';
 import { useDirectoryStore } from '../stores/directory.store';
-import { useOfflineAssetStore } from '../stores/offlineAsset.store';
 import { useOfflineSearchStore } from '../stores/offlineSearch.store';
 import {
     initDB,
@@ -33,7 +32,6 @@ export const OfflineSyncService = {
 
         Logger.info('offline-sync', 'Starting full bootstrap synchronization.');
         trackOfflineSync('bootstrap', 'started');
-        useOfflineAssetStore.getState().logTelemetry('bootstrap_started');
 
         try {
             await initDB();
@@ -51,7 +49,7 @@ export const OfflineSyncService = {
                 syncState = await getSyncState(userId);
             }
 
-            const deviceId = useOfflineAssetStore.getState().deviceId || 'unknown';
+            const deviceId = 'unknown';
 
             const fs = FileSystem as any;
             const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
@@ -96,13 +94,6 @@ export const OfflineSyncService = {
 
                     // Register avatar asset if present
                     if (group.avatar_url && group.avatar_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `group_avatar_${group.id}`,
-                            asset_type: 'group_avatar',
-                            remote_url: group.avatar_url,
-                            local_path: `${vaultBase}avatars/avatar_group_${group.id}.${getExt(group.avatar_url)}`,
-                            priority: 20
-                        });
                     }
                 }
             }
@@ -127,13 +118,6 @@ export const OfflineSyncService = {
 
                     // Register profile avatar asset
                     if (user.avatar_url && user.avatar_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `user_avatar_${user.id}`,
-                            asset_type: 'user_avatar',
-                            remote_url: user.avatar_url,
-                            local_path: `${vaultBase}avatars/avatar_user_${user.id}.${getExt(user.avatar_url)}`,
-                            priority: 10
-                        });
                     }
                 }
             }
@@ -208,16 +192,6 @@ export const OfflineSyncService = {
 
                             const localPath = `${vaultBase}${folderName}media_${msg.id}.${getExt(fileUrl)}`;
                             
-                            await useOfflineAssetStore.getState().registerAsset({
-                                asset_id: msg.id,
-                                asset_type: `chat_${type}`,
-                                remote_url: fileUrl,
-                                local_path: localPath,
-                                sha256: msg.metadata?.sha256 || null,
-                                mime_type: msg.metadata?.mime_type || null,
-                                size: msg.metadata?.size || null,
-                                priority: type === 'image' ? 30 : type === 'audio' ? 50 : type === 'video' ? 70 : 60
-                            });
                         }
                     }
                 }
@@ -245,13 +219,6 @@ export const OfflineSyncService = {
 
                     // Register cover image
                     if (ann.cover_image_url && ann.cover_image_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `announcement_cover_${ann.id}`,
-                            asset_type: 'announcement_cover',
-                            remote_url: ann.cover_image_url,
-                            local_path: `${vaultBase}announcement_files/cover_${ann.id}.${getExt(ann.cover_image_url)}`,
-                            priority: 40
-                        });
                     }
                 }
             }
@@ -278,13 +245,6 @@ export const OfflineSyncService = {
 
                     // Register cover image
                     if (evt.cover_image_url && evt.cover_image_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `event_cover_${evt.id}`,
-                            asset_type: 'event_cover',
-                            remote_url: evt.cover_image_url,
-                            local_path: `${vaultBase}event_resources/cover_${evt.id}.${getExt(evt.cover_image_url)}`,
-                            priority: 45
-                        });
                     }
                 }
             }
@@ -311,14 +271,6 @@ export const OfflineSyncService = {
 
                     // Register file asset
                     if (mat.file_url && mat.file_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `material_${mat.id}`,
-                            asset_type: 'study_material',
-                            remote_url: mat.file_url,
-                            local_path: `${vaultBase}study_materials/mat_${mat.id}.${getExt(mat.file_url)}`,
-                            priority: 50,
-                            size: mat.file_size || null
-                        });
                     }
                 }
             }
@@ -345,14 +297,6 @@ export const OfflineSyncService = {
 
                     // Register past question PDF file
                     if (q.file_url && q.file_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `past_question_${q.id}`,
-                            asset_type: 'study_material',
-                            remote_url: q.file_url,
-                            local_path: `${vaultBase}study_materials/pq_${q.id}.${getExt(q.file_url)}`,
-                            priority: 55,
-                            size: q.file_size || null
-                        });
                     }
                 }
             }
@@ -401,13 +345,6 @@ export const OfflineSyncService = {
 
                     // Register avatar
                     if (lec.avatar_url && lec.avatar_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `lecturer_avatar_${lec.id}`,
-                            asset_type: 'user_avatar',
-                            remote_url: lec.avatar_url,
-                            local_path: `${vaultBase}avatars/avatar_lec_${lec.id}.${getExt(lec.avatar_url)}`,
-                            priority: 15
-                        });
                     }
                 }
             }
@@ -434,13 +371,6 @@ export const OfflineSyncService = {
 
                     // Register avatar
                     if (exec.avatar_url && exec.avatar_url.startsWith('http')) {
-                        await useOfflineAssetStore.getState().registerAsset({
-                            asset_id: `executive_avatar_${exec.id}`,
-                            asset_type: 'user_avatar',
-                            remote_url: exec.avatar_url,
-                            local_path: `${vaultBase}avatars/avatar_exec_${exec.id}.${getExt(exec.avatar_url)}`,
-                            priority: 16
-                        });
                     }
                 }
             }
@@ -456,12 +386,10 @@ export const OfflineSyncService = {
             // Rebuild offline FTS5 search index
             await useOfflineSearchStore.getState().rebuildIndex();
 
-            useOfflineAssetStore.getState().logTelemetry('bootstrap_completed');
             trackOfflineSync('bootstrap', 'completed');
             Logger.info('offline-sync', 'Bootstrap complete. Launching queue downloader.');
 
             // Trigger background queue downloader
-            useOfflineAssetStore.getState().startDownloader().catch(() => {});
 
         } catch (e: any) {
             Logger.error('offline-sync', 'Error running bootstrap synchronization', e);

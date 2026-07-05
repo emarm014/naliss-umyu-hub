@@ -7,7 +7,7 @@ const API_SECRET = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,DELETE',
+  'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, content-type',
 };
 

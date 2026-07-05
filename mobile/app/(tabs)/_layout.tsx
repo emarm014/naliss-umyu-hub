@@ -9,17 +9,10 @@ import { useGroupStore } from '../../src/stores/group.store';
 export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-
-  // Ensure there is always a minimum visual gap, but push higher if safe area requires it
-  const TAB_BAR_HEIGHT = 72;
-  const MIN_BOTTOM_MARGIN = 12;
-
-  // The actual distance from the bottom of the screen
-  const safeBottomOffset = Math.max(insets.bottom, MIN_BOTTOM_MARGIN);
-
-  // The padding needed for the screens behind the tab bar so content isn't hidden
-  // TAB_BAR_HEIGHT + safeBottomOffset + Extra Visual Padding
-  const containerPaddingBottom = TAB_BAR_HEIGHT + safeBottomOffset + 16;
+  
+  // Calculate the absolute baseline safety threshold for the device's navigation style
+  const safeBottomOffset = insets.bottom > 0 ? insets.bottom : 12;
+  const safeTopOffset = insets.top > 0 ? insets.top : 24;
 
   const groups = useGroupStore((state) => state.groups);
   const isBadgeCleared = useGroupStore((state) => state.isBadgeCleared);
@@ -34,16 +27,17 @@ export default function TabsLayout() {
   const renderTabLabel = (text: string) => ({ color, focused }: { color: string; focused: boolean }) => (
     <Text
       numberOfLines={1}
-      adjustsFontSizeToFit={false}
+      adjustsFontSizeToFit={true}
       allowFontScaling={false}
       style={{
         color,
-        fontSize: 12,
+        fontSize: 10,
         fontWeight: '600',
         fontFamily: 'Inter-SemiBold',
         textAlign: 'center',
         letterSpacing: -0.2,
         marginTop: 2,
+        width: '100%',
       }}
     >
       {text}
@@ -77,7 +71,7 @@ export default function TabsLayout() {
       }}
       sceneContainerStyle={{
         backgroundColor: colors.background,
-        paddingBottom: containerPaddingBottom,
+        paddingBottom: safeBottomOffset + 76,
       }}
       screenOptions={{
         headerShown: false,
@@ -89,19 +83,15 @@ export default function TabsLayout() {
           bottom: safeBottomOffset,
           left: 16,
           right: 16,
-          height: 72,
-          borderRadius: 36,
-          backgroundColor: isDark ? '#131f28' : '#ffffff',
-          borderTopWidth: 0,
+          height: 64,
+          borderRadius: 16,
+          backgroundColor: '#FFFFFF',
           elevation: 8,
-          shadowColor: '#000',
+          shadowColor: '#000000',
           shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: isDark ? 0.4 : 0.12,
-          shadowRadius: 8,
-          borderWidth: 1,
-          borderColor: isDark ? '#1c2d3a' : '#e2e8f0',
-          paddingBottom: 0,
-          paddingTop: 0,
+          shadowOpacity: 0.08,
+          shadowRadius: 10,
+          borderTopWidth: 0,
         },
         tabBarItemStyle: {
           flex: 1,
@@ -112,11 +102,12 @@ export default function TabsLayout() {
           alignItems: 'center',
         },
         tabBarLabelStyle: {
+          fontSize: 10,
           fontFamily: 'Inter-SemiBold',
-          fontSize: 12,
-          fontWeight: '600',
-          marginTop: 2,
+          letterSpacing: -0.2, // Gives micro-clearance to long words
+          width: '100%',       // Guaranteed to prevent truncation like RESOUR...
         },
+        tabBarShowLabel: true,
       }}
     >
       <Tabs.Screen

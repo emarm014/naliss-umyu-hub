@@ -34,7 +34,7 @@ export default function ViewerScreen() {
   const mediaFiles = JSON.parse(params.mediaArray as string || '[]');
   const startIndex = parseInt(params.selectedIndex as string || '0', 10);
   
-  const { bottom } = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
   const activeVideoRef = useRef<Video>(null);
   const [currentIndex, setCurrentIndex] = useState(startIndex);
@@ -144,7 +144,7 @@ export default function ViewerScreen() {
       />
       
       {/* Top Header Controls */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12, height: insets.top + 50 }]}>
         <BlurView intensity={80} style={StyleSheet.absoluteFill} />
         <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
@@ -184,7 +184,7 @@ export default function ViewerScreen() {
         )}
 
         {/* Lower Sub-Container: Utility Actions */}
-        <View style={[styles.lowerSubContainer, { paddingBottom: bottom > 0 ? bottom : 16 }]}>
+        <View style={[styles.bottomActionBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <TouchableOpacity style={styles.footerAction} onPress={saveToDevice}>
             <Ionicons name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'} size={24} color={isSaved ? '#10b981' : '#FFF'} />
             <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
@@ -208,8 +208,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 90,
-    paddingTop: 40,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -256,7 +254,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 20,
   },
-  lowerSubContainer: {
+  bottomActionBar: {
     width: '100%',
     backgroundColor: 'rgba(0,0,0,0.5)',
     flexDirection: 'row',

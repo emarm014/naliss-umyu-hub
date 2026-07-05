@@ -56,6 +56,10 @@ console.error = (...args) => {
   }
 };
 
+// Inject explicit global async exception handlers
+(globalThis as any).onunhandledrejection = (id: any, error: any) => {
+    console.error('Captured Unhandled Promise Rejection:', error);
+};
 import { useEffect, useState, useRef } from 'react';
 import { LogBox } from 'react-native';
 LogBox.ignoreLogs([

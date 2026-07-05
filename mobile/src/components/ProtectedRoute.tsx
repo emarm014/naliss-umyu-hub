@@ -342,58 +342,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       // login, check if the user is actually banned/suspended — if so, show
       // the restriction screen instead of logging them out silently.
       if (event === 'SIGNED_OUT' && !currentSession) {
-        // OFFLINE GUARD: Supabase auto-refresh will throw AuthRetryableFetchError
-        // and trigger a SIGNED_OUT event if the network drops completely during a token refresh.
-        // We MUST ignore this false-positive logout if we are not online.
-        if (!useNetworkStore.getState().isOnline) {
-          Sentry.addBreadcrumb({ 
-            category: 'auth', 
-            message: 'Ignored SIGNED_OUT event due to offline state (preventing AuthRetryableFetchError false logout)',
-            level: 'warning'
-          });
-          return;
-        }
-
-        const prevUserId = useAuthStore.getState().user?.id;
-        if (prevUserId) {
-          try {
-            const { data: statusCheck } = await (supabase as any).from('users')
-              .select('status, banned_reason, suspended_until, suspension_reason')
-              .eq('id', prevUserId)
-              .maybeSingle() as any;
-
-            if (statusCheck?.status === 'banned') {
-              setRestrictionInfo({
-                type: 'banned',
-                reason: statusCheck.banned_reason || null,
-                until: null,
-              });
-              // Keep the local session state so restriction screen stays visible
-              // Don't call setSession(null) — that would trigger the login redirect
-              return;
-            }
-            if (statusCheck?.status === 'suspended') {
-              const suspendedUntil = statusCheck.suspended_until ? new Date(statusCheck.suspended_until) : null;
-              if (!suspendedUntil || suspendedUntil > new Date()) {
-                setRestrictionInfo({
-                  type: 'suspended',
-                  reason: statusCheck.suspension_reason || null,
-                  until: suspendedUntil,
-                });
-                // Keep the local session state so restriction screen stays visible
-                return;
-              }
-            }
-          } catch {
-            // Network error — fall through to normal sign-out handling
-          }
-        }
-        // Normal sign-out (not ban/suspend) — clear state as usual
+        if (!useNetworkStore.getState().isOnline) return;
         useAuthStore.getState().setSession(null);
         useAuthStore.getState().setUser(null);
         useAuthStore.getState().setIsProfileComplete(null);
         useAuthStore.getState().setProfile(null);
-        // Sentry: clear user identity on sign-out
         Sentry.setUser(null);
         return;
       }

@@ -58,7 +58,8 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 }
 
                 // 3. Download if not found or URL changed
-                const filename = `${assetType}_${entityId}_${Date.now()}.jpg`;
+                // Fix: Unique, stable filename layout preventing disk clutter
+                const filename = `${assetType}_${entityId}.jpg`;
                 const fileUri = `${FileSystem.documentDirectory}${filename}`;
                 
                 const result = await FileSystem.downloadAsync(remoteUrl, fileUri);

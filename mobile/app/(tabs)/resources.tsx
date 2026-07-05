@@ -852,7 +852,7 @@ function CourseTile({ course }: { course: Course }) {
   return (
     <View style={[styles.courseCard, { backgroundColor: theme.isDark ? theme.cardBg : '#FFFFFF', borderColor: theme.border }]}>
       {/* Gradient strip — left side */}
-      <LinearGradient colors={palette.grad} style={styles.courseStrip} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
+      <LinearGradient colors={palette.grad as any} style={styles.courseStrip} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
         <Text style={styles.courseStripCode} numberOfLines={2}>{code}</Text>
         <View style={styles.courseStripUnits}>
           <Text style={styles.courseStripUnitsNum}>{creditNum}</Text>
@@ -908,7 +908,7 @@ function StaffTile({ lecturer, onPress, isDark }: { lecturer: Lecturer, onPress:
     <TouchableOpacity style={[styles.lecturerCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={onPress} activeOpacity={0.92}>
       {/* Gradient header strip */}
       <LinearGradient
-        colors={headerColors}
+        colors={headerColors as any}
         style={styles.lecturerHeader}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -978,7 +978,7 @@ function ExecTile({ executive, onPress, isDark }: { executive: any, onPress: () 
     <TouchableOpacity style={[styles.execCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={onPress} activeOpacity={0.92}>
       {/* Green gradient header — same style as lecturer card */}
       <LinearGradient
-        colors={headerColors}
+        colors={headerColors as any}
         style={styles.execHeader}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -1057,7 +1057,7 @@ function DetailModal({ visible, onClose, title, subtitle, image, details, isExec
     return (
         <SafeBottomSheet visible={visible} onClose={onClose} contentStyle={styles.modalContent}>
                     {/* Gradient header */}
-                    <LinearGradient colors={gradColors} style={styles.modalGradientHeader} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                    <LinearGradient colors={gradColors as any} style={styles.modalGradientHeader} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                         <TouchableOpacity style={styles.modalCloseBtn} onPress={onClose}>
                             <Ionicons name="close" size={20} color="#fff" />
                         </TouchableOpacity>

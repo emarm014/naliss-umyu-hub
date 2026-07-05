@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 import { supabase } from '../api/supabase/client';
 import { trackCloudinary } from '../utils/sentry';
 
@@ -202,120 +202,125 @@ export async function uploadLocalFileToCloudinary(
     throw new Error(`Unsupported MIME type: ${mimeType || 'unknown'}`);
   }
 
-  return new Promise(async (resolve, reject) => {
-    // 1. Attempt signed signature retrieval, fallback to unsigned preset if it fails
-    let signatureData: any = null;
-    try {
-      signatureData = await fetchUploadSignature(folder);
-    } catch (err) {
-      console.warn('Failed to fetch Cloudinary signed upload token, falling back to unsigned upload preset:', err);
-    }
-
-    FileSystem.getInfoAsync(localUri).then((fileInfo) => {
-      if (!fileInfo.exists) {
-        return reject(new Error('Selected file does not exist on this device.'));
-      }
-      
-      const size = fileInfo.size || 0;
-      if (isImage && size > 5 * 1024 * 1024) {
-        return reject(new Error('Image file size exceeds the 5MB limit.'));
-      }
-      if (isVideo && size > 15 * 1024 * 1024) {
-        return reject(new Error('Video file size exceeds the 15MB limit.'));
-      }
-      if ((isAudio || isDoc) && size > 5 * 1024 * 1024) {
-        return reject(new Error('File size exceeds the 5MB limit.'));
-      }
-
-      const formData = new FormData();
-      formData.append('file', {
-        uri: localUri,
-        name: fileName,
-        type: contentType,
-      } as any);
-
-      if (signatureData) {
-        // 1. folder
-        if (signatureData.folder) {
-          formData.append('folder', signatureData.folder);
+  return new Promise((resolve, reject) => {
+    (async () => {
+      try {
+        // 1. Attempt signed signature retrieval, fallback to unsigned preset if it fails
+        let signatureData: any = null;
+        try {
+          signatureData = await fetchUploadSignature(folder);
+        } catch (err) {
+          console.warn('Failed to fetch Cloudinary signed upload token, falling back to unsigned upload preset:', err);
         }
-        // 2. timestamp
-        formData.append('timestamp', signatureData.timestamp);
-        // 3. upload_preset
-        formData.append('upload_preset', signatureData.upload_preset || CLOUDINARY_SIGNED_PRESET);
 
-        // Other required parameters
-        formData.append('api_key', signatureData.api_key);
-        formData.append('signature', signatureData.signature);
-      } else {
-        // Fallback to unsigned preset
-        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-        if (folder) formData.append('folder', folder);
-      }
-
-      const xhr = new XMLHttpRequest();
-      xhr.timeout = 180000; // 3 minutes for large files
-
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable && onProgress) {
-          const pct = Math.min(Math.round((event.loaded / event.total) * 100), 99);
-          onProgress(pct);
+        const fileInfo = await FileSystem.getInfoAsync(localUri);
+        if (!fileInfo.exists) {
+          return reject(new Error('Selected file does not exist on this device.'));
         }
-      });
+        
+        const size = fileInfo.size || 0;
+        if (isImage && size > 5 * 1024 * 1024) {
+          return reject(new Error('Image file size exceeds the 5MB limit.'));
+        }
+        if (isVideo && size > 15 * 1024 * 1024) {
+          return reject(new Error('Video file size exceeds the 15MB limit.'));
+        }
+        if ((isAudio || isDoc) && size > 5 * 1024 * 1024) {
+          return reject(new Error('File size exceeds the 5MB limit.'));
+        }
 
-      xhr.addEventListener('load', () => {
-        const duration = Date.now() - startTime;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const result = JSON.parse(xhr.responseText);
-            if (result.secure_url) {
-              trackCloudinary('upload_local', result.public_id || fileName, duration);
-              resolve(result.secure_url);
-            } else {
-              const err = new Error(result.error?.message || 'Upload failed. Please try again.');
+        const formData = new FormData();
+        formData.append('file', {
+          uri: localUri,
+          name: fileName,
+          type: contentType,
+        } as any);
+
+        if (signatureData) {
+          // 1. folder
+          if (signatureData.folder) {
+            formData.append('folder', signatureData.folder);
+          }
+          // 2. timestamp
+          formData.append('timestamp', signatureData.timestamp);
+          // 3. upload_preset
+          formData.append('upload_preset', signatureData.upload_preset || CLOUDINARY_SIGNED_PRESET);
+
+          // Other required parameters
+          formData.append('api_key', signatureData.api_key);
+          formData.append('signature', signatureData.signature);
+        } else {
+          // Fallback to unsigned preset
+          formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+          if (folder) formData.append('folder', folder);
+        }
+
+        const xhr = new XMLHttpRequest();
+        xhr.timeout = 180000; // 3 minutes for large files
+
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable && onProgress) {
+            const pct = Math.min(Math.round((event.loaded / event.total) * 100), 99);
+            onProgress(pct);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          const duration = Date.now() - startTime;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const result = JSON.parse(xhr.responseText);
+              if (result.secure_url) {
+                trackCloudinary('upload_local', result.public_id || fileName, duration);
+                resolve(result.secure_url);
+              } else {
+                const err = new Error(result.error?.message || 'Upload failed. Please try again.');
+                trackCloudinary('upload_local', fileName, duration, err);
+                reject(err);
+              }
+            } catch {
+              const err = new Error('Upload failed. Please try again.');
               trackCloudinary('upload_local', fileName, duration, err);
               reject(err);
             }
-          } catch {
-            const err = new Error('Upload failed. Please try again.');
-            trackCloudinary('upload_local', fileName, duration, err);
-            reject(err);
+          } else {
+            try {
+              const err = JSON.parse(xhr.responseText);
+              const finalErr = new Error(err.error?.message || `Upload failed (${xhr.status}). Please try again.`);
+              trackCloudinary('upload_local', fileName, duration, finalErr);
+              reject(finalErr);
+            } catch {
+              const finalErr = new Error(`Upload failed (${xhr.status}). Please try again.`);
+              trackCloudinary('upload_local', fileName, duration, finalErr);
+              reject(finalErr);
+            }
           }
-        } else {
-          try {
-            const err = JSON.parse(xhr.responseText);
-            const finalErr = new Error(err.error?.message || `Upload failed (${xhr.status}). Please try again.`);
-            trackCloudinary('upload_local', fileName, duration, finalErr);
-            reject(finalErr);
-          } catch {
-            const finalErr = new Error(`Upload failed (${xhr.status}). Please try again.`);
-            trackCloudinary('upload_local', fileName, duration, finalErr);
-            reject(finalErr);
-          }
-        }
-      });
+        });
 
-      xhr.addEventListener('error', () => {
-        const err = new Error('Upload failed. Please check your connection.');
-        trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
-        reject(err);
-      });
-      xhr.addEventListener('abort', () => {
-        const err = new Error('Upload cancelled.');
-        trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
-        reject(err);
-      });
-      xhr.addEventListener('timeout', () => {
-        const err = new Error('Upload timed out. Please try again on a faster connection.');
-        trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
-        reject(err);
-      });
+        xhr.addEventListener('error', () => {
+          const err = new Error('Upload failed. Please check your connection.');
+          trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
+          reject(err);
+        });
+        xhr.addEventListener('abort', () => {
+          const err = new Error('Upload cancelled.');
+          trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
+          reject(err);
+        });
+        xhr.addEventListener('timeout', () => {
+          const err = new Error('Upload timed out. Please try again on a faster connection.');
+          trackCloudinary('upload_local', fileName, Date.now() - startTime, err);
+          reject(err);
+        });
 
-      const uploadUrl = getUploadUrl(contentType);
-      xhr.open('POST', uploadUrl);
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.send(formData);
-    }).catch(reject);
+        const uploadUrl = getUploadUrl(contentType);
+        xhr.open('POST', uploadUrl);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.send(formData);
+      } catch (err) {
+        reject(err);
+      }
+    })();
   });
 }
 

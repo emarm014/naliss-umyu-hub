@@ -117,7 +117,8 @@ export default function EventPoolRoom() {
                 // 4. Restore Progress from MMKV Synchronous Storage
                 const savedProgress = await mmkvStorage.getItem(`pool_progress_${id}`);
                 if (savedProgress) {
-                    const parsed = JSON.parse(savedProgress);
+                    let parsed = null;
+                    try { parsed = savedProgress ? JSON.parse(savedProgress) : null; } catch { parsed = null; }
                     if (parsed.startedAt) setPoolStartedAt(parsed.startedAt);
                     else setPoolStartedAt(Date.now());
 
@@ -561,11 +562,11 @@ export default function EventPoolRoom() {
                         {pool.type === 'voting' ? 'Debate Voting Room' : 'Talent Show Voting Room'}
                     </Text>
                     <Text style={[styles.bannerText, { color: subtextColor, marginBottom: 24, textAlign: 'center' }]}>
-                        Cast your secure vote. Verify your selection before finalizing, as votes cannot be retracted.
+                        Submit your vote.
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push(`/event-pool/voting/${id}`)}
+                        onPress={() => router.push((`/event-pool/voting/${(event as any)?.id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Voting Room</Text>
                     </TouchableOpacity>
@@ -607,7 +608,7 @@ export default function EventPoolRoom() {
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push(`/event-pool/quiz/${id}`)}
+                        onPress={() => router.push((`/event-pool/quiz/${(event as any)?.id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Secure Quiz Room</Text>
                     </TouchableOpacity>
@@ -624,7 +625,7 @@ export default function EventPoolRoom() {
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push(`/event-pool/essay/${id}`)}
+                        onPress={() => router.push((`/event-pool/essay/${(event as any)?.id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Writing Room</Text>
                     </TouchableOpacity>
@@ -641,7 +642,7 @@ export default function EventPoolRoom() {
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push(`/event-pool/challenge/${id}`)}
+                        onPress={() => router.push((`/event-pool/challenge/${(event as any)?.id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Upload Room</Text>
                     </TouchableOpacity>

@@ -118,8 +118,8 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const fetchStartedAt = Date.now();
-        const { insertTelemetryEvent } = require('../lib/database');
-        const deviceId = require('./offlineAsset.store').useOfflineAssetStore.getState().deviceId || 'unknown';
+        
+        const deviceId = 'unknown';
 
         try {
           const { data, error } = await Logger.perf('auth.store', 'fetchProfile', () => 
@@ -137,13 +137,7 @@ export const useAuthStore = create<AuthState>()(
             const isNet = error.message?.toLowerCase().includes('network') || error.status === 0;
             if (isNet) {
               Logger.warn('auth.store', 'Network error during fetchProfile. Keeping cached local profile.');
-              await insertTelemetryEvent({
-                user_id: user.id,
-                device_id: deviceId,
-                event_type: 'retry_scheduled',
-                failure_reason: error.message || 'Network error',
-                worker_name: 'auth_store'
-              });
+              
               return;
             }
             throw error;
@@ -151,44 +145,28 @@ export const useAuthStore = create<AuthState>()(
 
           if (!data || Object.keys(data).length === 0) {
             Logger.warn('auth.store', 'Empty server profile response. Skipping overwrite.');
-            await insertTelemetryEvent({
-              user_id: user.id,
-              device_id: deviceId,
-              event_type: 'empty_server_response_ignored',
-              worker_name: 'auth_store'
-            });
+            
             return;
           }
 
           // Version Control Check
           const localProfile = get().profile;
           if (localProfile) {
-            const localVersion = localProfile.profile_version || 1;
+            const localVersion = (localProfile as any).profile_version || 1;
             const serverVersion = (data as any).profile_version || 1;
             const localUpdatedAt = localProfile.updated_at ? new Date(localProfile.updated_at).getTime() : 0;
             const serverUpdatedAt = (data as any).updated_at ? new Date((data as any).updated_at).getTime() : 0;
 
             if (serverVersion < localVersion || (serverVersion === localVersion && serverUpdatedAt <= localUpdatedAt)) {
               Logger.info('auth.store', 'Stale server profile ignored.', { localVersion, serverVersion });
-              await insertTelemetryEvent({
-                user_id: user.id,
-                device_id: deviceId,
-                event_type: 'sync_skipped',
-                failure_reason: `Stale version: local=${localVersion}, server=${serverVersion}`,
-                worker_name: 'auth_store'
-              });
+              
               return;
             }
           }
 
           const isBootstrap = !localProfile;
           if (isBootstrap) {
-            await insertTelemetryEvent({
-              user_id: user.id,
-              device_id: deviceId,
-              event_type: 'bootstrap_started',
-              worker_name: 'auth_store'
-            });
+            
           }
 
           const currentState = get();
@@ -206,18 +184,8 @@ export const useAuthStore = create<AuthState>()(
           
           // Anchor the fresh fetch payload into SQLite
           await saveLocalUserSession(merged);
-          await insertTelemetryEvent({
-            user_id: user.id,
-            device_id: deviceId,
-            event_type: 'profile_downloaded',
-            worker_name: 'auth_store'
-          });
-          await insertTelemetryEvent({
-            user_id: user.id,
-            device_id: deviceId,
-            event_type: 'sqlite_saved',
-            worker_name: 'auth_store'
-          });
+          
+          
 
           // Unify avatar download
           if (merged.avatar_url) {
@@ -234,28 +202,13 @@ export const useAuthStore = create<AuthState>()(
               set({ localAvatarUrl: localUri, profile: updatedWithAvatar as Profile });
               await saveLocalUserSession(updatedWithAvatar);
               
-              await insertTelemetryEvent({
-                user_id: user.id,
-                device_id: deviceId,
-                event_type: 'avatar_downloaded',
-                worker_name: 'auth_store'
-              });
-              await insertTelemetryEvent({
-                user_id: user.id,
-                device_id: deviceId,
-                event_type: 'avatar_verified',
-                worker_name: 'auth_store'
-              });
+              
+              
             }
           }
 
           if (isBootstrap) {
-            await insertTelemetryEvent({
-              user_id: user.id,
-              device_id: deviceId,
-              event_type: 'bootstrap_completed',
-              worker_name: 'auth_store'
-            });
+            
           }
         } catch (err: any) {
           if (!isNetworkError(err)) {
@@ -296,20 +249,10 @@ export const useAuthStore = create<AuthState>()(
         }
 
         // 4. Log Telemetry
-        const { insertTelemetryEvent } = require('../lib/database');
-        const deviceId = require('./offlineAsset.store').useOfflineAssetStore.getState().deviceId || 'unknown';
-        await insertTelemetryEvent({
-          user_id: user.id,
-          device_id: deviceId,
-          event_type: 'profile_updated',
-          worker_name: 'auth_store'
-        });
-        await insertTelemetryEvent({
-          user_id: user.id,
-          device_id: deviceId,
-          event_type: 'sqlite_updated',
-          worker_name: 'auth_store'
-        });
+        
+        const deviceId = 'unknown';
+        
+        
 
         // 5. Update auth metadata & sender info
         const metaUpdates: Record<string, any> = {};
@@ -502,7 +445,7 @@ export const useAuthStore = create<AuthState>()(
           set({ pendingAvatarUpload: null });
           Logger.info('auth.store', 'Background avatar upload completed successfully.', { remoteUrl });
         } catch (err) {
-          Logger.warn('auth.store', 'Background avatar upload failed, will retry.', err);
+          Logger.warn('auth.store', 'Background avatar upload failed, will retry.', err as any);
         }
       },
 
@@ -511,6 +454,7 @@ export const useAuthStore = create<AuthState>()(
         if (!user) return;
 
         try {
+          const { getDB } = require('../lib/database');
           const db = getDB();
           if (!db) return;
 
@@ -522,12 +466,7 @@ export const useAuthStore = create<AuthState>()(
             
             const { getOrCreateDeviceId } = require('../utils/device');
             const deviceId = await getOrCreateDeviceId();
-            await insertTelemetryEvent({
-              user_id: user.id,
-              device_id: deviceId,
-              event_type: 'sqlite_saved',
-              worker_name: 'auth_store'
-            });
+            
           }
 
           // 2. Repair missing MMKV cache
@@ -568,12 +507,7 @@ export const useAuthStore = create<AuthState>()(
 
                 const { getOrCreateDeviceId } = require('../utils/device');
                 const deviceId = await getOrCreateDeviceId();
-                await insertTelemetryEvent({
-                  user_id: user.id,
-                  device_id: deviceId,
-                  event_type: 'avatar_repaired',
-                  worker_name: 'auth_store'
-                });
+                
               }
             }
           }
@@ -587,13 +521,13 @@ export const useAuthStore = create<AuthState>()(
         await clearLocalUserSession();
         
         // Clear all SQLite tables
+        const { getDB } = require('../lib/database');
         const activeDb = getDB();
         if (activeDb) {
             try {
                 await activeDb.runAsync('DELETE FROM local_messages');
                 await activeDb.runAsync('DELETE FROM local_assets');
                 await activeDb.runAsync('DELETE FROM local_media_manifest');
-                await activeDb.runAsync('DELETE FROM offline_asset_manifest');
                 await activeDb.runAsync('DELETE FROM offline_download_jobs');
                 await activeDb.runAsync('DELETE FROM offline_download_telemetry');
                 await activeDb.runAsync('DELETE FROM sync_checkpoint');
@@ -670,33 +604,8 @@ export const useAuthStore = create<AuthState>()(
           if (state.profile) {
             setSentryUserContext(state.profile);
           }
-          
-          // Verify that the local avatar file actually exists on disk.
-          // If it is missing (e.g. cleared by OS), re-cache it.
-          if (state.localAvatarUrl) {
-            FileSystem.getInfoAsync(state.localAvatarUrl).then(info => {
-              if (!info.exists && state.profile?.avatar_url && state.user?.id) {
-                cacheAvatarLocally(state.user.id, state.profile.avatar_url).then(localUri => {
-                  if (localUri) useAuthStore.setState({ localAvatarUrl: localUri });
-                  else useAuthStore.setState({ localAvatarUrl: null });
-                });
-              }
-            }).catch(() => {
-              useAuthStore.setState({ localAvatarUrl: null });
-            });
-          } else if (state.profile?.avatar_url && state.user?.id) {
-            cacheAvatarLocally(state.user.id, state.profile.avatar_url).then(localUri => {
-              if (localUri) useAuthStore.setState({ localAvatarUrl: localUri });
-            });
-          }
-
-          // Trigger pending avatar background sync on rehydration
-          if (state.pendingAvatarUpload) {
-            state.syncPendingAvatar().catch(() => {});
-          }
         }
       },
     }
   )
 );
-

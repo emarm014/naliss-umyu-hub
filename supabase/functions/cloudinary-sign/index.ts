@@ -5,22 +5,27 @@ const CLOUD_NAME = Deno.env.get('CLOUDINARY_CLOUD_NAME') ?? '';
 const API_KEY    = Deno.env.get('CLOUDINARY_API_KEY') ?? '';
 const API_SECRET = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const getCORSHeaders = (req: Request) => {
+  const origin = req.headers.get('Origin') || '*';
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 };
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCORSHeaders(req);
   // CORS preflight request
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   // Enforce authentication
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
   }
 
   const supabase = createClient(
@@ -31,15 +36,15 @@ Deno.serve(async (req: Request) => {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
   }
 
   if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
-    return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured on server' }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured on server' }), { status: 500, headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
   }
 
   try {
@@ -92,13 +97,13 @@ Deno.serve(async (req: Request) => {
       }),
       { 
         status: 200, 
-        headers: { ...CORS, 'Content-Type': 'application/json' } 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     );
   } catch (err: any) {
     return new Response(
       JSON.stringify({ error: err.message || 'Signature generation failed' }), 
-      { status: 500, headers: CORS }
+      { status: 500, headers: corsHeaders }
     );
   }
 });

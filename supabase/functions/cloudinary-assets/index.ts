@@ -5,10 +5,14 @@ const CLOUD_NAME = Deno.env.get('CLOUDINARY_CLOUD_NAME') ?? '';
 const API_KEY    = Deno.env.get('CLOUDINARY_API_KEY') ?? '';
 const API_SECRET = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const getCORSHeaders = (req: Request) => {
+  const origin = req.headers.get('Origin') || '*';
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 };
 
 // Signed destroy — the only reliable way to delete from Cloudinary
@@ -35,10 +39,11 @@ async function destroyAsset(publicId: string, resourceType: string): Promise<{ o
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  const corsHeaders = getCORSHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const authHeader = req.headers.get('Authorization');
-  if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -47,15 +52,15 @@ Deno.serve(async (req: Request) => {
   );
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
 
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
   if (!profile || !['super_admin', 'moderator'].includes(profile.role)) {
-    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders });
   }
 
   if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
-    return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured' }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured' }), { status: 500, headers: corsHeaders });
   }
 
   // â”€â”€ DELETE a single asset (or bulk via body) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -79,10 +84,10 @@ Deno.serve(async (req: Request) => {
       const allOk = results.every(r => r.ok);
       return new Response(JSON.stringify({ results, success: allOk }), {
         status: allOk ? 200 : 207,
-        headers: { ...CORS, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } catch (err) {
-      return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: CORS });
+      return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: corsHeaders });
     }
   }
 
@@ -134,14 +139,14 @@ Deno.serve(async (req: Request) => {
       assets.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       return new Response(JSON.stringify({ assets, total: assets.length }), {
-        headers: { ...CORS, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } catch (err) {
       return new Response(JSON.stringify({ error: `Failed to fetch assets: ${err}` }), {
-        status: 500, headers: CORS,
+        status: 500, headers: corsHeaders,
       });
     }
   }
 
-  return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: CORS });
+  return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
 });

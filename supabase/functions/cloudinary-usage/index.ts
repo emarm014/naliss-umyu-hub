@@ -5,22 +5,25 @@ const CLOUD_NAME  = Deno.env.get('CLOUDINARY_CLOUD_NAME') ?? '';
 const API_KEY     = Deno.env.get('CLOUDINARY_API_KEY') ?? '';
 const API_SECRET  = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const getCORSHeaders = (req: Request) => {
+  const origin = req.headers.get('Origin') || '*';
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 };
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
-
-
+  const corsHeaders = getCORSHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const authHeader = req.headers.get('Authorization');
   console.log('authHeader exists:', !!authHeader);
   if (!authHeader) {
     console.error('No authorization header provided');
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
   }
 
   const supabase = createClient(
@@ -33,14 +36,14 @@ Deno.serve(async (req: Request) => {
   console.log('auth.getUser result:', !!user, 'error:', authError);
   if (authError || !user) {
     console.error('User verification failed:', authError);
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
   }
 
   const { data: profile, error: dbError } = await supabase.from('users').select('role').eq('id', user.id).single();
   console.log('db user role fetch result:', profile?.role, 'error:', dbError);
   if (!profile || !['super_admin', 'moderator'].includes(profile.role)) {
     console.error('Forbidden role:', profile?.role, 'dbError:', dbError);
-    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders });
   }
 
   const adminSupabase = createClient(
@@ -49,7 +52,7 @@ Deno.serve(async (req: Request) => {
   );
 
   if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
-    return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured on server' }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Cloudinary credentials not configured on server' }), { status: 500, headers: corsHeaders });
   }
 
   // 1. Try reading from database cache first
@@ -67,7 +70,7 @@ Deno.serve(async (req: Request) => {
       if (ageMs < 60 * 60 * 1000) {
         console.log('Serving from cache snapshot, age:', ageMs);
         return new Response(JSON.stringify(cached.data), {
-          headers: { ...CORS, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
     }
@@ -89,7 +92,7 @@ Deno.serve(async (req: Request) => {
 
     if (!usageRes.ok) {
       const errText = await usageRes.text();
-      return new Response(JSON.stringify({ error: `Cloudinary API error: ${usageRes.status} - ${errText}` }), { status: 502, headers: CORS });
+      return new Response(JSON.stringify({ error: `Cloudinary API error: ${usageRes.status} - ${errText}` }), { status: 502, headers: corsHeaders });
     }
 
     const [usage, imageResources, usageReport] = await Promise.all([
@@ -218,12 +221,12 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(JSON.stringify(response), {
-      headers: { ...CORS, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: `Failed to fetch Cloudinary stats: ${err}` }), {
       status: 500,
-      headers: { ...CORS, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });

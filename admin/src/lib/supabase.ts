@@ -51,6 +51,11 @@ const fetchWithRetry = async (
   options: RequestInit = {},
   attempt = 0
 ): Promise<Response> => {
+  const urlStr = typeof url === 'string' ? url : (url as URL).toString();
+  if (urlStr.includes('/functions/v1/')) {
+    return fetch(url, options);
+  }
+
   const method = options.method || 'GET';
   if (method !== 'GET' && method !== 'HEAD') {
     await acquireOutboundToken();

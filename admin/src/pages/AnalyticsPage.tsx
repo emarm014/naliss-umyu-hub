@@ -54,14 +54,9 @@ export default function AnalyticsPage() {
     setCloudLoading(true);
     setCloudError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setCloudError('Not authenticated'); setCloudLoading(false); return; }
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cloudinary-usage`,
-        { headers: { Authorization: `Bearer ${session.access_token}` } }
-      );
-      const data = await res.json();
-      if (!res.ok) { setCloudError(data?.error || 'Cloudinary API error'); setCloudLoading(false); return; }
+      const { data, error } = await supabase.functions.invoke('cloudinary-usage');
+      if (error) throw error;
+      if (!data) throw new Error('No data received from Cloudinary usage service');
       setCloudStats({
         plan: data.plan || 'Free',
         storage:         { used_bytes: 0, used_human: '0 B', limit_human: '25 GB', percent: 0, ...data.storage },

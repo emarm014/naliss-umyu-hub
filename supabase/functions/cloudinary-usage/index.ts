@@ -8,14 +8,20 @@ const API_SECRET  = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
+
 
   const authHeader = req.headers.get('Authorization');
-  if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  console.log('authHeader exists:', !!authHeader);
+  if (!authHeader) {
+    console.error('No authorization header provided');
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  }
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -24,10 +30,16 @@ Deno.serve(async (req: Request) => {
   );
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  console.log('auth.getUser result:', !!user, 'error:', authError);
+  if (authError || !user) {
+    console.error('User verification failed:', authError);
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  }
 
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
+  const { data: profile, error: dbError } = await supabase.from('users').select('role').eq('id', user.id).single();
+  console.log('db user role fetch result:', profile?.role, 'error:', dbError);
   if (!profile || !['super_admin', 'moderator'].includes(profile.role)) {
+    console.error('Forbidden role:', profile?.role, 'dbError:', dbError);
     return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: CORS });
   }
 
@@ -53,6 +65,7 @@ Deno.serve(async (req: Request) => {
       const ageMs = Date.now() - new Date(cached.last_updated).getTime();
       // Cache for 1 hour to prevent Cloudinary rate limiting
       if (ageMs < 60 * 60 * 1000) {
+        console.log('Serving from cache snapshot, age:', ageMs);
         return new Response(JSON.stringify(cached.data), {
           headers: { ...CORS, 'Content-Type': 'application/json' },
         });

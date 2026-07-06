@@ -136,8 +136,12 @@ export async function uploadToCloudinary(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000);
 
+  const uploadUrl = signatureData?.cloud_name 
+    ? `https://api.cloudinary.com/v1_1/${signatureData.cloud_name}/image/upload` 
+    : CLOUDINARY_IMAGE_URL;
+
   try {
-    const response = await fetch(CLOUDINARY_IMAGE_URL, {
+    const response = await fetch(uploadUrl, {
       method: 'POST',
       body: formData,
       headers: {
@@ -313,7 +317,14 @@ export async function uploadLocalFileToCloudinary(
           reject(err);
         });
 
-        const uploadUrl = getUploadUrl(contentType);
+        const folderType = contentType.toLowerCase().startsWith('image/') 
+          ? 'image' 
+          : contentType.toLowerCase().startsWith('video/') 
+            ? 'video' 
+            : 'raw';
+        const uploadUrl = signatureData?.cloud_name
+          ? `https://api.cloudinary.com/v1_1/${signatureData.cloud_name}/${folderType}/upload`
+          : getUploadUrl(contentType);
         xhr.open('POST', uploadUrl);
         xhr.setRequestHeader('Accept', 'application/json');
         xhr.send(formData);

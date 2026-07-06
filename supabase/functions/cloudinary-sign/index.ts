@@ -8,13 +8,13 @@ const API_SECRET = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 Deno.serve(async (req: Request) => {
   // CORS preflight request
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: CORS });
+    return new Response('ok', { headers: CORS });
   }
 
   // Enforce authentication

@@ -8,10 +8,10 @@ const API_SECRET = Deno.env.get('CLOUDINARY_API_SECRET') ?? '';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Signed destroy â€” the only reliable way to delete from Cloudinary
+// Signed destroy — the only reliable way to delete from Cloudinary
 async function destroyAsset(publicId: string, resourceType: string): Promise<{ ok: boolean; result: string }> {
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const toSign = `public_id=${publicId}&timestamp=${timestamp}${API_SECRET}`;
@@ -35,7 +35,7 @@ async function destroyAsset(publicId: string, resourceType: string): Promise<{ o
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });

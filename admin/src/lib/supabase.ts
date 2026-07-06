@@ -85,10 +85,7 @@ const fetchWithRetry = async (
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
-      headers: {
-        ...existingHeaders,
-        'Connection': 'keep-alive',
-      },
+      headers: existingHeaders,
     });
     clearTimeout(timeoutId);
     const durationMs = Date.now() - startMs;

@@ -76,8 +76,8 @@ export default function AnalyticsPage() {
         requests:        data.requests || 0,
       });
       setCloudLastFetch(new Date());
-    } catch {
-      setCloudError('Could not reach Cloudinary. Check API credentials in Supabase secrets.');
+    } catch (err: any) {
+      setCloudError(`Could not reach Cloudinary: ${err?.message || err || 'Unknown Error'}`);
     } finally {
       setCloudLoading(false);
     }

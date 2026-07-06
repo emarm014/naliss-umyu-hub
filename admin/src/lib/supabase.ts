@@ -83,7 +83,6 @@ const fetchWithRetry = async (
   }
 
   const startMs = Date.now();
-  const urlStr = typeof url === 'string' ? url : (url as URL).toString();
   const urlPath = urlStr.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
 
   try {

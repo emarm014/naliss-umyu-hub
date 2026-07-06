@@ -55,7 +55,7 @@ export default function AnalyticsPage() {
     setCloudLoading(true);
     setCloudError(null);
     try {
-      const { data, error } = await supabase.functions.invoke('cloudinary-usage');
+      const { data, error } = await supabase.functions.invoke('cloud-data');
       if (error) throw error;
       if (!data) throw new Error('No data received from Cloudinary usage service');
       setCloudStats({

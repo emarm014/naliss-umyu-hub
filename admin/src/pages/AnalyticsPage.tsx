@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import * as Sentry from '@sentry/react';
 import {
   Cloud, Database, HardDrive, BookOpen, AlertCircle, CheckCircle2,
   Users, LayoutDashboard, MessageSquare, ShieldCheck, Clock,
@@ -72,7 +73,18 @@ export default function AnalyticsPage() {
       });
       setCloudLastFetch(new Date());
     } catch (err: any) {
-      setCloudError(`Could not reach Cloudinary: ${err?.message || err || 'Unknown Error'}`);
+      console.error('[Cloudinary Fetch Error]', err);
+      Sentry.captureException(err, {
+        tags: { location: 'AnalyticsPage.fetchCloudStats' },
+        extra: {
+          errorMessage: err?.message,
+          errorName: err?.name,
+          errorStack: err?.stack,
+          fullContext: err?.context || err,
+          rawError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+        },
+      });
+      setCloudError(`Could not reach Cloudinary: ${err?.message || err || 'Unknown Error'} (Check Sentry for details)`);
     } finally {
       setCloudLoading(false);
     }

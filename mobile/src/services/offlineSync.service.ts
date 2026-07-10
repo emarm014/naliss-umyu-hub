@@ -18,7 +18,6 @@ import {
     batchInsertMessages,
     getContentManifestsByType
 } from '../lib/database';
-import * as FileSystem from 'expo-file-system/legacy';
 
 const SCHEMA_VERSION = 1;
 
@@ -51,14 +50,6 @@ export const OfflineSyncService = {
 
             const deviceId = 'unknown';
 
-            const fs = FileSystem as any;
-            const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
-            const base = docDir.endsWith('/') ? docDir : `${docDir}/`;
-            const vaultBase = `${base}naliss_vault/`;
-
-            // Helper to get extension
-            const getExt = (url: string) => url.split('.').pop()?.split('?')[0] || 'dat';
-
             // ----------------------------------------------------
             // Stage 1: Sync Groups
             // ----------------------------------------------------
@@ -68,7 +59,8 @@ export const OfflineSyncService = {
                 .eq('user_id', userId) as any);
 
             if (memError) throw memError;
-            const groupIds = (memberships as any[]).map(m => m.group_id);
+            // Fix: Add null check to prevent crash if memberships is null
+            const groupIds = (memberships || []).map((m: any) => m.group_id);
 
             if (groupIds.length > 0) {
                 const { data: groupsResult, error: grpError } = await ((supabase as any).from('groups')
@@ -91,10 +83,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register avatar asset if present
-                    if (group.avatar_url && group.avatar_url.startsWith('http')) {
-                    }
                 }
             }
 
@@ -115,10 +103,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register profile avatar asset
-                    if (user.avatar_url && user.avatar_url.startsWith('http')) {
-                    }
                 }
             }
 
@@ -145,7 +129,7 @@ export const OfflineSyncService = {
                     query = query.gt('created_at', lastLocalTimestamp);
                 }
 
-                query = query.order('created_at', { ascending: true }).limit(300);
+                query = query.order('created_at', { ascending: true }).limit(1000);
                 const { data: serverMsgs, error: msgsError } = await (query as any);
 
                 if (!msgsError && serverMsgs && serverMsgs.length > 0) {
@@ -173,26 +157,8 @@ export const OfflineSyncService = {
                     const newOnes = formatted.filter(m => !existingIds.has(m.id));
                     if (newOnes.length > 0) {
                         const merged = [...existing, ...newOnes]
-                            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                            .slice(-300);
+                            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
                         messageStore.setMessages(gId, merged);
-                    }
-
-                    // Register attachments into the manifest
-                    for (const msg of formatted) {
-                        const isMedia = msg.media_url || (msg.content && msg.content.startsWith('http') && ['image', 'video', 'document', 'audio'].includes(msg.message_type));
-                        if (isMedia) {
-                            const fileUrl = msg.media_url || msg.content;
-                            const type = msg.message_type || 'image';
-                            
-                            let folderName = 'chat_media/';
-                            if (type === 'audio') folderName = 'voice_notes/';
-                            else if (type === 'video') folderName = 'videos/';
-                            else if (type === 'document') folderName = 'documents/';
-
-                            const localPath = `${vaultBase}${folderName}media_${msg.id}.${getExt(fileUrl)}`;
-                            
-                        }
                     }
                 }
             }
@@ -216,10 +182,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register cover image
-                    if (ann.cover_image_url && ann.cover_image_url.startsWith('http')) {
-                    }
                 }
             }
 
@@ -242,10 +204,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register cover image
-                    if (evt.cover_image_url && evt.cover_image_url.startsWith('http')) {
-                    }
                 }
             }
 
@@ -268,10 +226,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register file asset
-                    if (mat.file_url && mat.file_url.startsWith('http')) {
-                    }
                 }
             }
 
@@ -294,10 +248,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register past question PDF file
-                    if (q.file_url && q.file_url.startsWith('http')) {
-                    }
                 }
             }
 
@@ -342,10 +292,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register avatar
-                    if (lec.avatar_url && lec.avatar_url.startsWith('http')) {
-                    }
                 }
             }
 
@@ -368,10 +314,6 @@ export const OfflineSyncService = {
                         sync_version: 1,
                         device_id: deviceId
                     });
-
-                    // Register avatar
-                    if (exec.avatar_url && exec.avatar_url.startsWith('http')) {
-                    }
                 }
             }
 

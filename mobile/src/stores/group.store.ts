@@ -41,15 +41,26 @@ export const useGroupStore = create<GroupState>()(
                 const isFresh = lastFetched && Date.now() - new Date(lastFetched).getTime() < CACHE_TTL && groups.length > 0;
                 if (!force && isFresh) return;
 
-                // OFFLINE GUARD: serve cached data immediately
+                // LOCAL-FIRST: read from SQLite cache immediately (always works)
+                if (!force && groups.length === 0) {
+                    try {
+                        const { getCachedEntityList } = require('../lib/database');
+                        const cached = await getCachedEntityList('groups');
+                        if (cached.length > 0) {
+                            set({ groups: cached as any, isLoading: false });
+                        }
+                    } catch { /* fall through to server fetch */ }
+                }
+
+                // Silent refresh if we still have no data
+                if (get().groups.length === 0) set({ isLoading: true });
+
+                // OFFLINE GUARD: if offline, data from SQLite is already displayed
                 const { useNetworkStore } = require('./network.store');
                 if (!useNetworkStore.getState().isOnline) {
                   set({ isLoading: false });
                   return;
                 }
-
-                // Silent refresh if we already have groups
-                if (groups.length === 0) set({ isLoading: true });
 
                 try {
                     const { data: { session } } = await supabase.auth.getSession();
@@ -61,7 +72,7 @@ export const useGroupStore = create<GroupState>()(
                         .eq('user_id', session.user.id) as any);
 
                     if (memError) throw memError;
-                    const groupIds = (memberships as any[]).map(m => m.group_id);
+                    const groupIds = (memberships || []).map((m: any) => m.group_id);
 
                     if (groupIds.length === 0) {
                         set({ groups: [], isLoading: false, lastFetched: new Date().toISOString() });
@@ -85,7 +96,7 @@ export const useGroupStore = create<GroupState>()(
                     const lastMsgMap: Record<string, any> = {};
                     
                     if (groupIds.length > 0) {
-                        const lastMsgPromises = groupIds.map(gId => 
+                        const lastMsgPromises = groupIds.map((gId: string) => 
                             (supabase as any).from('messages')
                                 .select('id, group_id, content, content_type, message_type, created_at, sender:users!messages_sender_id_fkey(username, full_name)')
                                 .eq('group_id', gId)
@@ -93,6 +104,8 @@ export const useGroupStore = create<GroupState>()(
                                 .order('created_at', { ascending: false })
                                 .limit(1)
                                 .maybeSingle()
+                                // Fix: Handle individual promise failures gracefully
+                                .catch((err: any) => ({ data: null, error: err }))
                         );
                         
                         const lastMsgResults = await Promise.all(lastMsgPromises);
@@ -138,6 +151,9 @@ export const useGroupStore = create<GroupState>()(
                         };
                     });
 
+                    // Cache to SQLite for local-first reads
+                    const { cacheEntityList } = require('../lib/database');
+                    cacheEntityList('groups', processed, session.user.id).catch(() => {});
                     set({ groups: processed, isLoading: false, lastFetched: new Date().toISOString() });
                 } catch (err: unknown) {
                     captureStoreError('group', 'fetchGroups', err);

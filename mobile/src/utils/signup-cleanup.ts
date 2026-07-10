@@ -1,6 +1,5 @@
 import { supabase } from '../api/supabase/client';
 import { useSignupStore } from '../stores/signup.store';
-import { useMessageStore } from '../stores/message.store';
 import { useGroupStore } from '../stores/group.store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

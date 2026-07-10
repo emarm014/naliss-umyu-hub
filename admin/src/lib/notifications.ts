@@ -33,7 +33,7 @@ export async function sendPushNotification(payload: PushPayload): Promise<void> 
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify(payload),
-    }).catch(() => {});
+    }).catch((err) => console.error('[Admin Notifications] push send failed:', err));
   } catch {
     // silent
   }

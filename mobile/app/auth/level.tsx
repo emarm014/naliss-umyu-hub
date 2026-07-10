@@ -13,7 +13,7 @@ import { useGroupStore } from '../../src/stores/group.store';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
-import { captureUIError, trackFeature, startTransaction } from '../../src/utils/sentry';
+import { captureUIError,  startTransaction } from '../../src/utils/sentry';
 
 const LEVELS = [
   { id: '100', title: '100 Level', desc: 'Freshman year — foundation courses' },

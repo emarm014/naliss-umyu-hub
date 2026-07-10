@@ -3,7 +3,7 @@ import { View, Text, FlatList, TextInput, TouchableOpacity, useColorScheme, Styl
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNoteStore, LocalNote } from '../../src/stores/note.store';
+import { useNoteStore } from '../../src/stores/note.store';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { format } from 'date-fns';
 
@@ -14,7 +14,6 @@ export default function NotepadDashboard() {
     
     // Auth Store Level for Smart Filtering
     const profile = useAuthStore((state) => state.profile);
-    const userLevel = profile?.level || 'All';
 
     const [searchQuery, setSearchQuery] = useState('');
 

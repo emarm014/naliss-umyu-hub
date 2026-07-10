@@ -15,6 +15,7 @@ import {
     batchInsertMessages
 } from '../lib/database';
 import * as FileSystem from 'expo-file-system/legacy';
+import { AssetPathResolver } from '../utils/assetResolver';
 
 interface MessageCache {
     [groupId: string]: any[];
@@ -43,6 +44,7 @@ interface MessageState {
     sendGroupMessage: (groupId: string, msgPayload: any, fileUri?: string) => Promise<void>;
     processUnifiedQueueItem: (groupId: string, msg: any) => Promise<void>;
     flushUnsentMessageQueue: () => Promise<void>;
+    resetStuckMessages: () => void;
     setUploadProgress: (messageId: string, progress: number) => void;
     editMessage: (messageId: string, groupId: string, newContent: string) => Promise<void>;
     softDeleteMessage: (messageId: string, groupId: string) => Promise<void>;
@@ -63,18 +65,17 @@ export const interceptAndDownloadMedia = async (message: any) => {
         const localUri = await UnifiedDownloadEngine.download(
             message.media_url,
             message.id,
-            `media_${message.id}`,
             undefined,
-            {
-                assetType,
-                messageId: message.id,
-                groupId: message.group_id || null,
-                mimeType: message.mime_type || null
-            }
+            assetType
         );
         if (localUri) {
             message.local_media_path = localUri;
             await updateLocalMediaPath(message.id, message.local_media_path);
+            // Track download for cross-device restore
+            try {
+                const { DownloadTracker } = require('../services/downloadTracker.service');
+                DownloadTracker.recordDownload(message.id, assetType, message.media_url);
+            } catch {}
         }
     } catch (e) {
         Logger.error('message.store', 'Failed to intercept media for offline caching:', e);
@@ -97,14 +98,13 @@ export const useMessageStore = create<MessageState>()(
             },
 
             setMessages: async (groupId, messages) => {
-                const cappedMessages = messages.slice(-300);
-                const latest = cappedMessages.length > 0
-                    ? cappedMessages[cappedMessages.length - 1]?.created_at
+                const latest = messages.length > 0
+                    ? messages[messages.length - 1]?.created_at
                     : null;
 
                 // Redesign: Transactional sequential insertion to guarantee SQLite owns the message before state update
                 const enhancedMessages: any[] = [];
-                for (const msg of cappedMessages) {
+                for (const msg of messages) {
                     const enhancedMsg = await interceptAndDownloadMedia(msg);
                     enhancedMessages.push(enhancedMsg);
                 }
@@ -133,7 +133,6 @@ export const useMessageStore = create<MessageState>()(
 
                     const updated = [...existing, enhancedMsg]
                         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                        .slice(-300);
 
                     const isConfirmed = message.id && !String(message.id).startsWith('temp-');
 
@@ -224,7 +223,10 @@ export const useMessageStore = create<MessageState>()(
                     if (error) throw error;
                 } catch (err) {
                     Logger.error('message.store', 'Failed to edit message, rolling back optimistic state', err);
-                    get().updateMessage(groupId, messageId, { content: prevContent, edited_at: prevEditedAt });
+                    // Fix: Only rollback if we have the original values
+                    if (prevContent !== undefined) {
+                        get().updateMessage(groupId, messageId, { content: prevContent, edited_at: prevEditedAt });
+                    }
                 }
             },
 
@@ -265,7 +267,6 @@ export const useMessageStore = create<MessageState>()(
 
                     const merged = [...existing, ...newOnes]
                         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                        .slice(-300);
 
                     const latest = merged[merged.length - 1]?.created_at;
                     return {
@@ -338,8 +339,9 @@ export const useMessageStore = create<MessageState>()(
                 };
 
                 const isMediaMessage = msg.media_url || msg.fileUri;
+                const localUri = isMediaMessage ? (msg.fileUri || msg.media_url) : null;
 
-                if (msg.message_type !== 'text' && msg.message_type !== 'sticker' && isMediaMessage) {
+                if (msg.message_type !== 'text' && msg.message_type !== 'sticker' && isMediaMessage && localUri) {
                     const type = msg.message_type;
                     const mimeType = type === 'image' ? 'image/jpeg'
                         : type === 'video' ? 'video/mp4'
@@ -352,7 +354,6 @@ export const useMessageStore = create<MessageState>()(
                         : 'chat-docs';
 
                     const uploadName = `${Date.now()}-${msg.metadata?.name || 'file'}`;
-                    const localUri = msg.fileUri || msg.media_url;
 
                     finalContentUrl = await uploadLocalFileToCloudinary(
                         localUri,
@@ -364,7 +365,6 @@ export const useMessageStore = create<MessageState>()(
 
                     get().setUploadProgress(msg.id, 100);
                     msg.media_url = finalContentUrl;
-                    msg.fileUri = undefined;
                     payload.content = finalContentUrl;
                 }
 
@@ -375,7 +375,47 @@ export const useMessageStore = create<MessageState>()(
 
                 if (error) throw error;
 
-                get().updateMessage(groupId, msg.id, { id: (data as any).id, content: finalContentUrl, status: 'sent', fileUri: undefined });
+                const realId = (data as any).id;
+                let localMediaPath = msg.local_media_path || null;
+
+                // After successful upload + insert, save local copy to vault for offline access
+                if (!localMediaPath && localUri && localUri.startsWith('file://')) {
+                    try {
+                        const assetType = `chat_${msg.message_type || 'image'}`;
+                        const vaultPath = AssetPathResolver.resolveLocalPath(realId, assetType, finalContentUrl);
+                        await FileSystem.makeDirectoryAsync(
+                            vaultPath.substring(0, vaultPath.lastIndexOf('/')),
+                            { intermediates: true }
+                        );
+                        await FileSystem.copyAsync({ from: localUri, to: vaultPath });
+                        localMediaPath = vaultPath;
+                        await updateLocalMediaPath(realId, localMediaPath);
+                    } catch (e) {
+                        Logger.warn('message.store', 'Failed to persist local media copy to vault', { id: realId, error: e });
+                    }
+                }
+
+                const updates: any = { id: realId, content: finalContentUrl, status: 'sent', fileUri: undefined };
+                if (localMediaPath) {
+                    updates.local_media_path = localMediaPath;
+                }
+                get().updateMessage(groupId, msg.id, updates);
+            },
+
+            resetStuckMessages: () => {
+                const allGroups = get().cache;
+                let stuckCount = 0;
+                for (const groupId of Object.keys(allGroups)) {
+                    for (const msg of allGroups[groupId]) {
+                        if (msg.status === 'sending') {
+                            get().updateMessage(groupId, msg.id, { status: 'unsent' });
+                            stuckCount++;
+                        }
+                    }
+                }
+                if (stuckCount > 0) {
+                    Logger.info('message.store', `Reset ${stuckCount} stuck sending messages to unsent`);
+                }
             },
 
             flushUnsentMessageQueue: async () => {
@@ -383,14 +423,14 @@ export const useMessageStore = create<MessageState>()(
                 set({ isFlushing: true });
 
                 const sleepHelper = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+                const MAX_RETRIES = 5;
 
                 try {
                     Logger.info('message.store', 'Starting background flush of unsent messages...');
                     const allGroups = get().cache;
-                    let attempt = 0;
                     
                     for (const groupId of Object.keys(allGroups)) {
-                        const unsentMessages = allGroups[groupId].filter(m => m.status === 'unsent');
+                        const unsentMessages = allGroups[groupId].filter(m => m.status === 'unsent' || m.status === 'sending');
                         if (unsentMessages.length === 0) continue;
 
                         Logger.info('message.store', `Flushing ${unsentMessages.length} unsent messages for group ${groupId}`);
@@ -402,27 +442,36 @@ export const useMessageStore = create<MessageState>()(
                                 return;
                             }
 
-                            get().updateMessage(groupId, msg.id, { status: 'sending' });
+                            let retries = 0;
+                            let success = false;
 
-                            try {
-                                await get().processUnifiedQueueItem(groupId, msg);
-                                // Throttle successive sends
-                                await sleepHelper(500);
-                                attempt = 0; // reset retry counter on success
-                            } catch (err: any) {
-                                const isNetwork = err?.status === 0 || 
-                                                  err?.message?.toLowerCase().includes('network') || 
-                                                  err?.message?.toLowerCase().includes('failed to fetch');
-                                
-                                get().updateMessage(groupId, msg.id, { status: isNetwork ? 'unsent' : 'error' });
-                                
-                                if (isNetwork) {
-                                    attempt++;
-                                    const backoffDelay = Math.min(1500 * Math.pow(2, attempt) + Math.random() * 1000, 30000);
-                                    Logger.warn('message.store', `Network error flushing message, backoff delay: ${Math.round(backoffDelay)}ms`, { id: msg.id });
-                                    await sleepHelper(backoffDelay);
-                                    set({ isFlushing: false });
-                                    return;
+                            while (!success && retries <= MAX_RETRIES) {
+                                get().updateMessage(groupId, msg.id, { status: 'sending' });
+
+                                try {
+                                    await get().processUnifiedQueueItem(groupId, msg);
+                                    await sleepHelper(500);
+                                    success = true;
+                                } catch (err: any) {
+                                    const isNetwork = err?.status === 0 || 
+                                                      err?.message?.toLowerCase().includes('network') || 
+                                                      err?.message?.toLowerCase().includes('failed to fetch');
+                                    
+                                    if (isNetwork) {
+                                        retries++;
+                                        if (retries > MAX_RETRIES) {
+                                            get().updateMessage(groupId, msg.id, { status: 'unsent' });
+                                            Logger.warn('message.store', `Gave up flushing message after ${MAX_RETRIES} retries`, { id: msg.id });
+                                            break;
+                                        }
+                                        const backoffDelay = Math.min(1500 * Math.pow(2, retries) + Math.random() * 1000, 30000);
+                                        Logger.warn('message.store', `Network error flushing message, retry ${retries}/${MAX_RETRIES}, delay: ${Math.round(backoffDelay)}ms`, { id: msg.id });
+                                        await sleepHelper(backoffDelay);
+                                    } else {
+                                        get().updateMessage(groupId, msg.id, { status: 'error' });
+                                        Logger.error('message.store', 'Non-network error flushing message', { id: msg.id, error: err });
+                                        break;
+                                    }
                                 }
                             }
                         }

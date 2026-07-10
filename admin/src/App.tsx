@@ -75,7 +75,13 @@ function App() {
 
   useEffect(() => {
     const cleanupRef = { fn: undefined as (() => void) | void };
-    initialize().then((fn) => { cleanupRef.fn = fn; });
+    // Fix: Add error handling to initialization
+    initialize()
+      .then((fn) => { cleanupRef.fn = fn; })
+      .catch((error) => {
+        console.error('Failed to initialize app:', error);
+        // Optionally show error UI or retry
+      });
 
     const handleFocus = () => {
       // Quiet background check to sync changes seamlessly without showing full-page blocking loaders

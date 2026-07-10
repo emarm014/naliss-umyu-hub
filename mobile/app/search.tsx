@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, FlatList,  Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../src/constants/Colors';
 import { router } from 'expo-router';
 
-import { downloadFile } from '../src/utils';
+import { downloadFile, extractFileNameFromUrl } from '../src/utils';
 import { useAnnouncementStore, useResourceStore, useEventStore } from '../src/stores';
 import { format } from 'date-fns';
 
@@ -67,7 +67,7 @@ export default function SearchScreen() {
   const handleDownload = async (material: any) => {
     if (!material.file_url) return;
     try {
-      const fileName = material.file_name || material.file_url.split('/').pop() || 'material.pdf';
+      const fileName = material.file_name || extractFileNameFromUrl(material.file_url, 'material.pdf');
       await downloadFile(material.file_url, material.id, fileName);
       if (incrementDownloadCount) {
         const type = (material as any).material_type ? 'material' : 'past_question';

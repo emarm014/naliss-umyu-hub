@@ -1,59 +1,132 @@
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { trackSqlTransaction, captureDatabaseError } from '../utils/sentry';
 
 let db: SQLite.SQLiteDatabase | null = null;
+let recoveryPromise: Promise<boolean> | null = null;
+let currentRawDb: SQLite.SQLiteDatabase | null = null;
+let isRecovering = false;
+
+function isNativeNpe(error: any): boolean {
+  return String(error).includes('NullPointerException');
+}
+
+async function recoverDatabase(): Promise<boolean> {
+  if (recoveryPromise) return recoveryPromise;
+  isRecovering = true;
+
+  recoveryPromise = (async () => {
+    console.warn('SQLite attempting database recovery...');
+    try {
+      try { await (db as any)?.closeAsync?.(); } catch (_) {}
+      db = null;
+      currentRawDb = null;
+      const dbPath = `${FileSystem.documentDirectory}SQLite/chat.db`;
+      const info = await FileSystem.getInfoAsync(dbPath);
+      if (info.exists) {
+        await FileSystem.deleteAsync(dbPath, { idempotent: true });
+        console.warn('SQLite deleted corrupted database file, reinitializing...');
+      }
+      const newDb = await initDB();
+      if (newDb) {
+        console.warn('SQLite recovery successful');
+        return true;
+      }
+      console.error('SQLite recovery failed — initDB returned null');
+      return false;
+    } catch (e) {
+      console.error('SQLite recovery failed with exception:', e);
+      return false;
+    } finally {
+      recoveryPromise = null;
+      isRecovering = false;
+    }
+  })();
+
+  return recoveryPromise;
+}
+
+function wrapStatementMethods(stmt: any): void {
+  const origExecute = stmt.executeAsync.bind(stmt);
+  const origFinalize = stmt.finalizeAsync.bind(stmt);
+
+  stmt.executeAsync = async (...args: any[]) => {
+    try {
+      return await origExecute(...args);
+    } catch (error) {
+      if (isNativeNpe(error) && !isRecovering) recoverDatabase();
+      throw error;
+    }
+  };
+
+  stmt.finalizeAsync = async (...args: any[]) => {
+    try {
+      return await origFinalize(...args);
+    } catch (error) {
+      if (isNativeNpe(error) && !isRecovering) recoverDatabase();
+      throw error;
+    }
+  };
+}
 
 function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLite.SQLiteDatabase {
-  const handler: ProxyHandler<SQLite.SQLiteDatabase> = {
-    get(target, prop, receiver) {
-      const originalValue = Reflect.get(target, prop, receiver);
-      if (typeof originalValue !== 'function') {
-        return originalValue;
-      }
-      
-      return async function (this: any, ...args: any[]) {
+  const wrap = (methodName: string) => {
+    return async (...args: any[]): Promise<any> => {
+      const sql = typeof args[0] === 'string' ? args[0] : '';
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const activeDb: any = currentRawDb || originalDb;
+        const method = activeDb[methodName]?.bind(activeDb);
+        if (!method) break;
+
         const start = Date.now();
-        const opName = String(prop);
-        
-        let sql = '';
-        if (
-          opName === 'execAsync' || 
-          opName === 'runAsync' || 
-          opName === 'getAllAsync' || 
-          opName === 'getFirstAsync' || 
-          opName === 'prepareAsync'
-        ) {
-          sql = typeof args[0] === 'string' ? args[0] : '';
-        }
-        
         try {
-          const result = await originalValue.apply(target, args);
-          const duration = Date.now() - start;
-          if (sql) {
-            trackSqlTransaction(opName, sql, duration);
+          const result = await method(...args);
+
+          if (methodName === 'prepareAsync' && result) {
+            wrapStatementMethods(result);
           }
+
+          const duration = Date.now() - start;
+          if (sql) trackSqlTransaction(methodName, sql, duration);
           return result;
         } catch (error) {
           const duration = Date.now() - start;
           if (sql) {
-            trackSqlTransaction(opName, sql, duration, error);
-            captureDatabaseError(opName, error, { sql, args, duration });
+            trackSqlTransaction(methodName, sql, duration, error);
+            captureDatabaseError(methodName, error, { sql, args, duration });
           } else {
-            captureDatabaseError(opName, error, { args, duration });
+            captureDatabaseError(methodName, error, { args, duration });
+          }
+
+          if (isNativeNpe(error) && !isRecovering) {
+            const recovered = await recoverDatabase();
+            if (recovered && attempt < 2) continue;
           }
           throw error;
         }
-      };
-    }
+      }
+    };
   };
-  return new Proxy(originalDb, handler);
+
+  const db = originalDb as any;
+  db.execAsync = wrap('execAsync');
+  db.runAsync = wrap('runAsync');
+  db.getAllAsync = wrap('getAllAsync');
+  db.getFirstAsync = wrap('getFirstAsync');
+  db.prepareAsync = wrap('prepareAsync');
+  if (typeof db.withTransactionAsync === 'function') {
+    db.withTransactionAsync = wrap('withTransactionAsync');
+  }
+  return db as SQLite.SQLiteDatabase;
 }
 
 export const initDB = async () => {
     if (Platform.OS === 'web') return null;
     try {
         const rawDb = await SQLite.openDatabaseAsync('chat.db');
+        currentRawDb = rawDb;
         db = wrapDatabaseWithObservability(rawDb);
         // Enforce busy timeout loop to insulate the database against thread blockages
         await db.execAsync('PRAGMA busy_timeout = 5000;');
@@ -190,15 +263,6 @@ export const initDB = async () => {
                 tokenize='porter unicode61'
             );
 
-            
-            CREATE INDEX IF NOT EXISTS idx_asset_type ON offline_asset_manifest (asset_type);
-            CREATE INDEX IF NOT EXISTS idx_asset_user_id ON offline_asset_manifest (user_id);
-            CREATE INDEX IF NOT EXISTS idx_asset_download_status ON offline_asset_manifest (download_status);
-
-            
-            CREATE INDEX IF NOT EXISTS idx_job_status ON offline_download_jobs (status);
-            CREATE INDEX IF NOT EXISTS idx_job_priority ON offline_download_jobs (priority);
-
             CREATE TABLE IF NOT EXISTS offline_sync_state (
                 user_id TEXT PRIMARY KEY,
                 last_sync TEXT,
@@ -226,25 +290,6 @@ export const initDB = async () => {
             );
             CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON offline_download_telemetry (timestamp);
         `);
-
-        // Safely alter offline_asset_manifest to add Cloudinary metadata columns
-        const manifestAlters = [
-            'ALTER TABLE offline_asset_manifest ADD COLUMN public_id TEXT;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN resource_type TEXT;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN format TEXT;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN bytes INTEGER;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN width INTEGER;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN height INTEGER;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN duration REAL;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN original_filename TEXT;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN uploaded_at TEXT;',
-            'ALTER TABLE offline_asset_manifest ADD COLUMN last_verified_at TEXT;'
-        ];
-        for (const query of manifestAlters) {
-            try {
-                await db.execAsync(query);
-            } catch (_) {}
-        }
 
         // Safely alter local_user_session table to add required profile fields
         const sessionAlters = [
@@ -285,35 +330,6 @@ export const initDB = async () => {
         try {
             await db.execAsync('CREATE INDEX IF NOT EXISTS idx_manifest_content_hash ON local_media_manifest (content_hash);');
         } catch (_) {}
-
-        // Run dynamic migration block to upgrade old legacy records with Cloudinary URLs
-        try {
-            const unmigrated = await db.getAllAsync<any>(
-                "SELECT asset_id, remote_url FROM offline_asset_manifest WHERE public_id IS NULL AND remote_url LIKE '%cloudinary.com%'"
-            );
-            if (unmigrated && unmigrated.length > 0) {
-                const { CloudinaryUrlRegenerator } = require('../utils/assetResolver');
-                for (const row of unmigrated) {
-                    const parsed = CloudinaryUrlRegenerator.parseUrl(row.remote_url);
-                    if (parsed) {
-                        await db.runAsync(
-                            `UPDATE offline_asset_manifest 
-                             SET public_id = ?, resource_type = ?, format = ?, version = ? 
-                             WHERE asset_id = ?`,
-                            [
-                                parsed.publicId,
-                                parsed.resourceType || 'image',
-                                parsed.format || null,
-                                parsed.version || '1',
-                                row.asset_id
-                            ]
-                        );
-                    }
-                }
-            }
-        } catch (migErr) {
-            console.error('Failed to run Cloudinary metadata migration:', migErr);
-        }
 
         return db;
     } catch (e) {
@@ -434,7 +450,7 @@ export const clearLocalUserSession = async () => {
     }
 };
 
-export const getMessagesByGroup = async (groupId: string, limit = 300) => {
+export const getMessagesByGroup = async (groupId: string, limit = 100000) => {
     if (!db) return [];
     try {
         // Fetch the newest messages up to the limit, sorted ascending chronologically
@@ -745,8 +761,6 @@ export const verifyDatabaseIntegrity = async (): Promise<{healthy: boolean; issu
             'sync_journal', 
             'content_manifest', 
             'sync_checkpoint',
-            'offline_asset_manifest',
-            'offline_download_jobs',
             'offline_sync_state'
         ];
         for (const table of tablesToCheck) {
@@ -1054,128 +1068,6 @@ export const searchOffline = async (query: string, filters?: { type?: string; gr
     }
 };
 
-export const upsertOfflineAsset = async (asset: any) => {
-    if (!db) return;
-    try {
-        const now = new Date().toISOString();
-        await db.runAsync(
-            `INSERT OR REPLACE INTO offline_asset_manifest (
-                asset_id, asset_type, user_id, remote_url, local_path, 
-                sha256, mime_type, size, version, download_status, 
-                verified, created_at, updated_at, last_accessed_at, 
-                device_origin, sync_version,
-                public_id, resource_type, format, bytes, width, height, duration, original_filename, uploaded_at, last_verified_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                asset.asset_id,
-                asset.asset_type,
-                asset.user_id || null,
-                asset.remote_url || null,
-                asset.local_path || null,
-                asset.sha256 || null,
-                asset.mime_type || null,
-                asset.size || null,
-                asset.version || 1,
-                asset.download_status || 'pending',
-                asset.verified || 0,
-                asset.created_at || now,
-                asset.updated_at || now,
-                asset.last_accessed_at || now,
-                asset.device_origin || null,
-                asset.sync_version || 1,
-                asset.public_id || null,
-                asset.resource_type || null,
-                asset.format || null,
-                asset.bytes || asset.size || null,
-                asset.width || null,
-                asset.height || null,
-                asset.duration || null,
-                asset.original_filename || null,
-                asset.uploaded_at || null,
-                asset.last_verified_at || null
-            ]
-        );
-    } catch (e) {
-        console.error('SQLite upsertOfflineAsset error:', e);
-    }
-};
-
-export const getOfflineAsset = async (id: string): Promise<any | null> => {
-    if (!db) return null;
-    try {
-        const row = await db.getFirstAsync<any>(
-            'SELECT * FROM offline_asset_manifest WHERE asset_id = ?',
-            [id]
-        );
-        if (row) {
-            return {
-                ...row,
-                verified: row.verified === 1
-            };
-        }
-        return null;
-    } catch (e) {
-        console.error('SQLite getOfflineAsset error:', e);
-        return null;
-    }
-};
-
-export const getAllPendingOfflineAssets = async (): Promise<any[]> => {
-    if (!db) return [];
-    try {
-        return await db.getAllAsync<any>(
-            "SELECT * FROM offline_asset_manifest WHERE download_status = 'pending' OR download_status = 'failed'"
-        );
-    } catch (e) {
-        console.error('SQLite getAllPendingOfflineAssets error:', e);
-        return [];
-    }
-};
-
-export const upsertDownloadJob = async (job: any) => {
-    if (!db) return;
-    try {
-        const now = new Date().toISOString();
-        await db.runAsync(
-            `INSERT OR REPLACE INTO offline_download_jobs (
-                job_id, asset_id, priority, retry_count, status, 
-                error_message, next_retry_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                job.job_id,
-                job.asset_id,
-                job.priority || 50,
-                job.retry_count || 0,
-                job.status || 'pending',
-                job.error_message || null,
-                job.next_retry_at || null,
-                job.created_at || now
-            ]
-        );
-    } catch (e) {
-        console.error('SQLite upsertDownloadJob error:', e);
-    }
-};
-
-export const updateDownloadJobStatus = async (jobId: string, status: string, error?: string) => {
-    if (!db) return;
-    try {
-        if (error) {
-            await db.runAsync(
-                'UPDATE offline_download_jobs SET status = ?, error_message = ? WHERE job_id = ?',
-                [status, error, jobId]
-            );
-        } else {
-            await db.runAsync(
-                'UPDATE offline_download_jobs SET status = ? WHERE job_id = ?',
-                [status, jobId]
-            );
-        }
-    } catch (e) {
-        console.error('SQLite updateDownloadJobStatus error:', e);
-    }
-};
-
 export const updateSyncState = async (userId: string, state: any) => {
     if (!db) return;
     try {
@@ -1210,13 +1102,48 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
     }
 };
 
-
-export const pruneTelemetryEvents = async (maxAgeDays = 90) => {
-    if (!db) return;
+// ── Local-first entity cache ──────────────────────────────────────────────
+// Stores full entity lists in content_manifest so reads are instant from SQLite.
+export const cacheEntityList = async (contentType: string, entities: any[], userId: string) => {
+    if (!db || !entities.length) return;
+    const now = new Date().toISOString();
     try {
-        const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
-        await db.runAsync('DELETE FROM offline_download_telemetry WHERE timestamp < ?', [cutoff]);
+        for (const entity of entities) {
+            const id = entity.id || entity.content_id;
+            if (!id) continue;
+            await db.runAsync(
+                `INSERT OR REPLACE INTO content_manifest (id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    `${contentType}_${id}`,
+                    contentType,
+                    id,
+                    userId,
+                    JSON.stringify(entity),
+                    entity.updated_at || entity.created_at || now,
+                    now
+                ]
+            );
+        }
     } catch (e) {
-        console.error('SQLite pruneTelemetryEvents error:', e);
+        console.error('SQLite cacheEntityList error:', e);
+    }
+};
+
+export const getCachedEntityList = async (contentType: string): Promise<any[]> => {
+    if (!db) return [];
+    try {
+        const rows = await db.getAllAsync<any>(
+            'SELECT * FROM content_manifest WHERE content_type = ? ORDER BY local_updated_at DESC',
+            [contentType]
+        );
+        return rows
+            .map(row => {
+                try { return row.raw_data ? JSON.parse(row.raw_data) : null; } catch { return null; }
+            })
+            .filter(Boolean);
+    } catch (e) {
+        console.error('SQLite getCachedEntityList error:', e);
+        return [];
     }
 };

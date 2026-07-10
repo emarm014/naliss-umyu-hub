@@ -7,13 +7,18 @@ export const saveMediaToDevice = async (localPath: string, mimeType: string, fil
         const info = await FileSystem.getInfoAsync(localPath);
         if (!info.exists) return { success: false, error: 'File cache missing' };
 
-        if (mimeType.startsWith('image/') || mimeType.startsWith('video/')) {
+        // Handle both short codes ('image', 'video') and full MIME types ('image/jpeg', 'video/mp4')
+        const type = mimeType.toLowerCase();
+        const isImage = type === 'image' || type.startsWith('image/');
+        const isVideo = type === 'video' || type.startsWith('video/');
+
+        if (isImage || isVideo) {
             const permission = await MediaLibrary.requestPermissionsAsync();
             if (!permission.granted) return { success: false, error: 'Permission denied' };
             await MediaLibrary.saveToLibraryAsync(localPath);
             return { success: true };
         } else {
-            await Sharing.shareAsync(localPath, { mimeType });
+            await Sharing.shareAsync(localPath, { mimeType: 'application/octet-stream' });
             return { success: true };
         }
     } catch (e) {

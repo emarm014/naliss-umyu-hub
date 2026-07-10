@@ -8,6 +8,7 @@ import { useAuthStore } from '../../../src/stores';
 import { useVotingStore } from '../../../src/stores/voting.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { differenceInSeconds } from 'date-fns';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Candidate = {
     id: string;
@@ -35,6 +36,7 @@ export default function VotingEngineScreen() {
     const submitVote = useVotingStore((s) => s.submitVote);
     const clearVoteDraft = useVotingStore((s) => s.clearVoteDraft);
     const isSubmittingGlobal = useVotingStore((s) => s.isSubmitting);
+    const insets = useSafeAreaInsets();
 
     const [poolInfo, setPoolInfo] = useState<any>(null);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -281,7 +283,7 @@ export default function VotingEngineScreen() {
                 )}
             </ScrollView>
 
-            <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+            <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: Math.max(insets.bottom + 16, 16) }]}>
                 <TouchableOpacity
                     disabled={!selectedCandidateId || isTimeUp || isSubmittingGlobal}
                     onPress={handleVoteSubmit}

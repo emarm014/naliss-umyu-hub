@@ -17,11 +17,12 @@ import {
   useColorScheme,
 } from 'react-native';
 import { useResourceStore, useDirectoryStore, useAuthStore } from '../../src/stores';
-import { downloadFile, extractFileNameFromUrl } from '../../src/utils/download';
+import { downloadFile, extractFileNameFromUrl, getVaultFilePath } from '../../src/utils/download';
+import * as Sharing from 'expo-sharing';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { SafeBottomSheet } from '../../src/components/common/overlays';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
-import { Material, Course, Lecturer, Executive, AcademicLevel } from '../../src/types';
+import { Material, Course, Lecturer,  AcademicLevel } from '../../src/types';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,9 +30,7 @@ import { COLORS } from '../../src/constants/Colors';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useTheme } from '../../src/stores/theme.store';
-import * as Sharing from 'expo-sharing';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
 
@@ -112,7 +111,6 @@ export default function ResourcesScreen() {
   const [readerTitle, setReaderTitle] = useState('');
   const [readerId, setReaderId] = useState<string | undefined>(undefined);
 
-  const isAdmin = user?.role === 'super_admin' || user?.role === ('system_owner' as any);
 
   const isMaterialsLoading = resourcesLoading && materials.length === 0;
   const isPastQLoading = resourcesLoading && pastQuestions.length === 0;
@@ -220,34 +218,6 @@ export default function ResourcesScreen() {
         // Vault check failed — fall back to Cloudinary URL (requires internet)
       }
 
-      if (fileType === 'pdf' || fileType === 'document') {
-        try {
-          let localUri = fileUri;
-          if (fileUri.startsWith('http')) {
-            const resultUri = await downloadFile(material.file_url, material.id, displayName);
-            if (!resultUri) return; // Download failed or cancelled
-            localUri = resultUri;
-          }
-
-          let contentUri = localUri;
-          if (Platform.OS === 'android') {
-            contentUri = await FileSystem.getContentUriAsync(localUri);
-          }
-
-          await Sharing.shareAsync(contentUri, {
-            mimeType: fileType === 'pdf' ? 'application/pdf' : '*/*',
-            dialogTitle: 'Open document with...'
-          });
-
-          const type = (material as any).material_type ? 'material' : 'past_question';
-          await incrementViewCount(material.id, type);
-        } catch (error) {
-          captureUIError('ResourcesScreen.handleRead.NativeOpen', error, { materialId: material.id });
-          Alert.alert('Error', 'Could not open the document natively.');
-        }
-        return; // Gracefully handle navigation: return immediately so we drop straight back into the catalog!
-      }
-
       setReaderUrl(fileUri);
       setReaderFileType(fileType);
       setReaderTitle(displayName);
@@ -269,13 +239,24 @@ export default function ResourcesScreen() {
       const displayName = material.file_name || extractFileNameFromUrl(material.file_url, material.title);
       const resultUri = await downloadFile(material.file_url, material.id, displayName);
       if (resultUri) {
-        // Only count and refresh if download actually succeeded
-        const type = (material as any).material_type ? 'material' : 'past_question';
-        await incrementDownloadCount(material.id, type);
-        await refreshDownloadedStatus();
+        await downloadCompleted(material);
       }
     } catch (err) {
       captureUIError('ResourcesScreen.handleDownload', err, { materialId: material.id });
+    }
+  };
+
+  const downloadCompleted = async (material: Material) => {
+    const type = (material as any).material_type ? 'material' : 'past_question';
+    await incrementDownloadCount(material.id, type);
+    await refreshDownloadedStatus();
+    // Track download for cross-device restore
+    if (material.file_url) {
+      const { DownloadTracker } = require('../../src/services/downloadTracker.service');
+      DownloadTracker.recordDownload(material.id, 'document', material.file_url, {
+        title: material.title,
+        file_name: material.file_name,
+      });
     }
   };
 
@@ -431,6 +412,7 @@ export default function ResourcesScreen() {
             materialsBySemester={materialsBySemester} 
             downloadedIds={downloadedIds}
             handleDownload={handleDownload}
+            handleDownloadComplete={downloadCompleted}
             handleRead={handleRead}
             handleDelete={handleDelete}
             type={activeMainTab}
@@ -468,7 +450,7 @@ export default function ResourcesScreen() {
 
 // Sub-components
 
-function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, handleDownload, handleRead, handleDelete, type, searchQuery }: any) {
+function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, handleDownload, handleDownloadComplete, handleRead, handleDelete, type, searchQuery }: any) {
   if (loading && materialsBySemester.first.length === 0 && materialsBySemester.second.length === 0) {
     return <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />;
   }
@@ -491,6 +473,7 @@ function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, hand
                 material={m} 
                 downloadedIds={downloadedIds}
                 onDownload={handleDownload} 
+                onDownloadComplete={handleDownloadComplete}
                 onRead={handleRead}
                 onDelete={() => handleDelete(m.id, type === 'past_q' ? 'past_questions' : 'materials')}
               />
@@ -507,6 +490,7 @@ function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, hand
                 material={m} 
                 downloadedIds={downloadedIds}
                 onDownload={handleDownload} 
+                onDownloadComplete={handleDownloadComplete}
                 onRead={handleRead}
                 onDelete={() => handleDelete(m.id, type === 'past_q' ? 'past_questions' : 'materials')}
               />
@@ -523,6 +507,7 @@ function MaterialsTabContent({ loading, materialsBySemester, downloadedIds, hand
                     material={m} 
                     downloadedIds={downloadedIds}
                     onDownload={handleDownload} 
+                    onDownloadComplete={handleDownloadComplete}
                     onRead={handleRead}
                     onDelete={() => handleDelete(m.id, type === 'past_q' ? 'past_questions' : 'materials')}
                 />
@@ -646,7 +631,7 @@ function DirectoryTabContent({ activeTab, setActiveTab, lecturers, executives, l
   );
 }
 
-function ResourceCard({ material, downloadedIds, onDownload, onRead, onDelete }: any) {
+function ResourceCard({ material, downloadedIds, onDownload, onDownloadComplete, onRead, onDelete }: any) {
   const theme = useSemanticTheme();
   const { profile } = useAuthStore();
   
@@ -683,6 +668,7 @@ function ResourceCard({ material, downloadedIds, onDownload, onRead, onDelete }:
             fileAsset={fileAsset} 
             isDownloaded={downloadedIds.includes(material.id)}
             onDownload={() => onDownload({ ...material, file_url: fileAsset.url, file_name: fileAsset.name, file_size: fileAsset.size, file_mime_type: fileAsset.type })}
+            onDownloadComplete={() => onDownloadComplete({ ...material, file_url: fileAsset.url, file_name: fileAsset.name, file_size: fileAsset.size, file_mime_type: fileAsset.type })}
             onRead={() => onRead({ ...material, file_url: fileAsset.url, file_name: fileAsset.name, file_size: fileAsset.size, file_mime_type: fileAsset.type })}
          />
       ))}
@@ -690,7 +676,7 @@ function ResourceCard({ material, downloadedIds, onDownload, onRead, onDelete }:
   );
 }
 
-function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }: any) {
+function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownloadComplete, onRead }: any) {
   const url = (fileAsset.url || '').toLowerCase();
   const mime = (fileAsset.type || '').toLowerCase();
   const [downloadProgress, setDownloadProgress] = React.useState<number | null>(null);
@@ -741,6 +727,34 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }
 
   const fileSizeMB = ((fileAsset.size || 0) / 1024 / 1024).toFixed(1);
 
+  const handleBookPress = async () => {
+    if (!localDownloaded) {
+      onRead();
+      return;
+    }
+    const displayName = fileAsset.name || extractFileNameFromUrl(fileAsset.url, material.id);
+    const vaultPath = getVaultFilePath(material.id, displayName, fileAsset.url);
+    Alert.alert('Open file', displayName, [
+      { text: 'Open in App', onPress: onRead },
+      {
+        text: 'Open with...',
+        onPress: async () => {
+          try {
+            const isAvail = await Sharing.isAvailableAsync();
+            if (!isAvail) {
+              Alert.alert('Unavailable', 'No apps available to open this file.');
+              return;
+            }
+            await Sharing.shareAsync(vaultPath.startsWith('file://') ? vaultPath : `file://${vaultPath}`);
+          } catch (err) {
+            Alert.alert('Error', 'Could not open file with external app.');
+          }
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const handleDownloadPress = async () => {
     if (localDownloaded) {
       onRead();
@@ -764,13 +778,9 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }
       );
 
       if (resultUri) {
-        setDownloadProgress(100);
-        setTimeout(() => {
-          if (!isMountedRef.current) return; 
-          setLocalDownloaded(true);
-          setDownloadProgress(null);
-          onDownload();
-        }, 400);
+        setLocalDownloaded(true);
+        setDownloadProgress(null);
+        onDownloadComplete();
       } else {
         if (isMountedRef.current) setDownloadProgress(null);
       }
@@ -806,7 +816,7 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onRead }
       </View>
 
       <View style={[styles.resActions, { marginLeft: 8 }]}>
-        <TouchableOpacity onPress={onRead} style={[styles.resActionBtn, { backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : (theme.isDark ? '#0c4a6e' : '#F0F9FF') }]}>
+        <TouchableOpacity onPress={handleBookPress} style={[styles.resActionBtn, { backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : (theme.isDark ? '#0c4a6e' : '#F0F9FF') }]}>
           <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? '#166534' : (theme.isDark ? COLORS.primary : '#005A36')} />
         </TouchableOpacity>
         
@@ -899,7 +909,6 @@ function CourseTile({ course }: { course: Course }) {
 function StaffTile({ lecturer, onPress, isDark }: { lecturer: Lecturer, onPress: () => void, isDark?: boolean }) {
   const theme = useSemanticTheme();
   const hasPhoto = !!lecturer.avatar_url;
-  const initials = lecturer.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   const title = lecturer.title || 'Lecturer';
   const position = lecturer.position || 'Departmental Staff';
   const headerColors = theme.isDark ? ['#064e3b', '#1B5E20', '#2E7D32'] : ['#0B522E', '#146E3D', '#1C8A4F'];
@@ -915,13 +924,7 @@ function StaffTile({ lecturer, onPress, isDark }: { lecturer: Lecturer, onPress:
       >
         {/* Avatar */}
         <View style={styles.lecturerAvatarRing}>
-          {hasPhoto ? (
-            <CachedImage entityId={lecturer.id} remoteUrl={getOptimizedCloudinaryUrl(lecturer.avatar_url!, 200, 200)} assetType="lecturer" style={styles.lecturerAvatar} />
-          ) : (
-            <View style={[styles.lecturerAvatarPlaceholder, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-              <Text style={styles.lecturerInitials}>{initials}</Text>
-            </View>
-          )}
+          <CachedImage entityId={lecturer.id} remoteUrl={hasPhoto ? getOptimizedCloudinaryUrl(lecturer.avatar_url!, 200, 200) : null} assetType="lecturer" style={styles.lecturerAvatar} fallbackName={lecturer.full_name} />
         </View>
 
         {/* Title badge */}
@@ -969,7 +972,6 @@ function ExecTile({ executive, onPress, isDark }: { executive: any, onPress: () 
   const name = executive.user?.full_name || executive.full_name || 'Executive';
   const avatar = executive.user?.avatar_url || executive.avatar_url;
   const hasPhoto = !!avatar;
-  const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
   const position = executive.position || 'Student Representative';
   const session = executive.academic_session || 'Current';
   const headerColors = theme.isDark ? ['#064e3b', '#1B5E20', '#2d6a4f'] : ['#0B522E', '#146E3D', '#1C8A4F'];
@@ -985,13 +987,7 @@ function ExecTile({ executive, onPress, isDark }: { executive: any, onPress: () 
       >
         {/* Avatar — left aligned */}
         <View style={styles.execAvatarRing}>
-          {hasPhoto ? (
-            <CachedImage entityId={executive.id} remoteUrl={getOptimizedCloudinaryUrl(avatar, 200, 200)} assetType="executive" style={styles.execAvatar} />
-          ) : (
-            <View style={[styles.execAvatarPlaceholder, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-              <Text style={styles.execInitials}>{initials}</Text>
-            </View>
-          )}
+          <CachedImage entityId={executive.id} remoteUrl={hasPhoto ? getOptimizedCloudinaryUrl(avatar, 200, 200) : null} assetType="executive" style={styles.execAvatar} fallbackName={name} />
         </View>
 
         {/* Session badge — top right */}

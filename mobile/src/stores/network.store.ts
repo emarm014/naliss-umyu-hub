@@ -14,6 +14,8 @@ interface NetworkState {
   wasOffline: boolean; // tracks if we were offline and just came back
 
   checkNetworkStatus: () => Promise<boolean>;
+  startListening: () => void;
+  stopListening: () => void;
   setOnline: () => void;
   setOffline: () => void;
   incrementPendingSync: () => void;
@@ -21,6 +23,8 @@ interface NetworkState {
   resetPendingSync: () => void;
   clearWasOffline: () => void;
 }
+
+let networkSubscription: { remove: () => void } | null = null;
 
 // Callbacks to run when coming back online
 const onlineCallbacks: Array<() => void> = [];
@@ -33,13 +37,50 @@ export const registerOnlineCallback = (cb: () => void) => {
 };
 
 export const useNetworkStore = create<NetworkState>((set, get) => ({
-  isOnline: true, // Optimistic default — corrected immediately by checkNetworkStatus on mount
+  isOnline: true,
   isConnected: null,
   networkType: null,
   lastOnlineTime: new Date(),
   lastOfflineTime: null,
   pendingSyncCount: 0,
   wasOffline: false,
+
+  startListening: () => {
+    if (networkSubscription) return;
+    try {
+      networkSubscription = Network.addNetworkStateListener((state) => {
+        const reachable = state.isInternetReachable !== false;
+        const isOnline = !!(state.isConnected && reachable);
+        const wasOnline = get().isOnline;
+
+        set({
+          isConnected: state.isConnected ?? false,
+          networkType: state.type,
+          isOnline,
+        });
+
+        if (!wasOnline && isOnline) {
+          get().setOnline();
+          trackNetworkChange(true, state.type);
+          onlineCallbacks.forEach(cb => { try { cb(); } catch {} });
+        } else if (wasOnline && !isOnline) {
+          get().setOffline();
+          trackNetworkChange(false, state.type);
+        }
+
+        setSentryNetworkContext(isOnline, state.type);
+      });
+    } catch {
+      // Fallback: listener not available
+    }
+  },
+
+  stopListening: () => {
+    if (networkSubscription) {
+      networkSubscription.remove();
+      networkSubscription = null;
+    }
+  },
 
   checkNetworkStatus: async () => {
     try {
@@ -108,8 +149,13 @@ export const useNetworkStatus = () => {
 };
 
 // Replay queued offline mutations automatically upon online recovery
-registerOnlineCallback(() => {
-  useMutationQueueStore.getState().processQueue().catch(() => {});
-  // Also flush our dedicated chat message queue
-  useMessageStore.getState().flushUnsentMessageQueue().catch(() => {});
+registerOnlineCallback(async () => {
+  try {
+    // Fix: Process queues sequentially to avoid database lock contention
+    await useMutationQueueStore.getState().processQueue();
+    // Then flush message queue after mutation queue completes
+    await useMessageStore.getState().flushUnsentMessageQueue();
+  } catch (error) {
+    console.error('Failed to process offline queues:', error);
+  }
 });

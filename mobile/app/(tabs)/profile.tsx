@@ -16,7 +16,6 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useResourceStore, useAuthStore, useNetworkStore } from '../../src/stores';
-import { AcademicLevel } from '../../src/types';
 import { getCleanAvatarUrl } from '../../src/utils';
 
 import { LinearGradient } from 'expo-linear-gradient';
@@ -58,7 +57,6 @@ export default function ProfileScreen() {
   const storeProfile = useAuthStore(s => s.profile);
   const updateProfile = useAuthStore(s => s.updateProfile);
   const updatePreferences = useAuthStore(s => s.updatePreferences);
-  const fetchProfile = useAuthStore(s => s.fetchProfile);
   const lastFetch = useAuthStore(s => s.lastFetch);
   const lastLocalProfileUpdateAt = useAuthStore(s => s.lastLocalProfileUpdateAt);
   const confirmedAvatarUrl = useAuthStore(s => s.confirmedAvatarUrl);
@@ -301,29 +299,6 @@ export default function ProfileScreen() {
       },
     ]);
   };
-
-  const handleRemoveLocalData = async () => {
-    Alert.alert(
-      'Remove Local Data',
-      'This will permanently delete all offline cached files, messages, and profile data from this device.\n\nThis action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Everything',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await useAuthStore.getState().removeLocalData();
-              Alert.alert('Done', 'All local data has been removed from this device.');
-            } catch (err: any) {
-              Alert.alert('Error', 'Failed to remove local data. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
 
   const handleAvatarPress = () => {
     Alert.alert('Update Profile Picture', 'How would you like to update your avatar?', [
@@ -740,6 +715,7 @@ export default function ProfileScreen() {
                     remoteUrl={avatarUri}
                     assetType="user"
                     style={styles.avatar}
+                    fallbackName={storeProfile?.full_name}
                   />
                 ) : (
                   <View style={styles.avatarPlaceholder}>
@@ -952,15 +928,6 @@ export default function ProfileScreen() {
               iconBg={COLORS.actionRed} 
               label="Sign Out" 
               onPress={handleLogout} 
-              colors={colors}
-            />
-            <MenuItem 
-              icon="trash-outline" 
-              iconColor={COLORS.error} 
-              iconBg={'#fce4ec'} 
-              label="Remove Local Data" 
-              onPress={handleRemoveLocalData} 
-              isLast
               colors={colors}
             />
           </View>

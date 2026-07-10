@@ -11,7 +11,7 @@ import { useSignupStore } from '../../src/stores/signup.store';
 import { useNetworkStore } from '../../src/stores/network.store';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
-import { captureUIError, trackFeature } from '../../src/utils/sentry';
+import { captureUIError } from '../../src/utils/sentry';
 import * as Sentry from '@sentry/react-native';
 import { useRegistrationLimiter } from '../../src/stores/registration-limiter.store';
 

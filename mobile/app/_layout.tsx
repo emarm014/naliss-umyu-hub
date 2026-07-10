@@ -60,7 +60,7 @@ console.error = (...args) => {
 (globalThis as any).onunhandledrejection = (id: any, error: any) => {
     console.error('Captured Unhandled Promise Rejection:', error);
 };
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { LogBox } from 'react-native';
 LogBox.ignoreLogs([
   'getInfoAsync is deprecated',
@@ -92,8 +92,8 @@ import { useNetworkStore, registerOnlineCallback } from '../src/stores/network.s
 import { useGlobalSyncStore } from '../src/stores/globalSync.store';
 import { useMessageStore } from '../src/stores/message.store';
 import { useGroupStore } from '../src/stores/group.store';
-import { View, Text, Animated, Easing, AppState, AppStateStatus } from 'react-native';
-import { COLORS } from '../src/constants/Colors';
+import { View, Text, AppState, AppStateStatus, Appearance } from 'react-native';
+import { ThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { NalissLogo } from '../src/components/NalissLogo';
 import { initDB } from '../src/lib/database';
 import { useAuthStore } from '../src/stores/auth.store';
@@ -111,19 +111,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSignupStore } from '../src/stores/signup.store';
 import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
 import { useThemeStore } from '../src/stores/theme.store';
-import { FileService } from '../src/services/file.service';
 
-// ── AppState breadcrumbs ──────────────────────────────────────────────────────
-// Records every foreground/background transition so Sentry shows the exact
-// moment the user backgrounded the app before a crash or ANR.
-AppState.addEventListener('change', (nextState: AppStateStatus) => {
-  Sentry.addBreadcrumb({
-    category: 'app.lifecycle',
-    message: `AppState → ${nextState}`,
-    level: nextState === 'active' ? 'info' : 'warning',
-    data: { state: nextState },
-  });
-});
+
 
 // ── Kill detection key ────────────────────────────────────────────────────────
 // Written to AsyncStorage when app goes to background during an active signup.
@@ -219,6 +208,14 @@ function RootLayoutNav() {
   // Register 60s Presence Heartbeat
   useHeartbeat();
 
+  // ── Sync Native Theme with Zustand ──────────────────────────────────────────
+  // This completely overrides the user's phone OS dark mode setting so the app
+  // native elements (like Navigation Bars, Pickers, Status Bar) strictly follow
+  // the app's internal light/dark toggle.
+  useEffect(() => {
+    Appearance.setColorScheme(isDark ? 'dark' : 'light');
+  }, [isDark]);
+
   // ── Kill detection: wipe signup session if app was killed mid-signup ─────
   // On every cold launch, check if the kill-detection key exists.
   // If it does, the app was killed while a signup was in progress → restart.
@@ -240,29 +237,8 @@ function RootLayoutNav() {
     };
     checkKill();
 
-    // Clean up old files from the vault (e.g. older than 30 days) to prevent OOM/storage bloating
-    FileService.cleanVault(30);
   }, []);
 
-  // ── Background/foreground tracking for kill detection ────────────────────
-  // Write the key when going to background during signup.
-  // Clear it when coming back to foreground (app was not killed).
-  useEffect(() => {
-    const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === 'background' || nextState === 'inactive') {
-        // Going to background — write kill-detection key if signup is active
-        const signupState = useSignupStore.getState();
-        if (signupState.hasActiveSession()) {
-          AsyncStorage.setItem(SIGNUP_BG_KEY, '1').catch(() => {});
-        }
-      } else if (nextState === 'active') {
-        // Came back to foreground — app was NOT killed, clear the key
-        AsyncStorage.removeItem(SIGNUP_BG_KEY).catch(() => {});
-      }
-    };
-    const sub = AppState.addEventListener('change', handleAppStateChange);
-    return () => sub.remove();
-  }, []);
   useEffect(() => {
     async function prepareAppLifecycle() {
       try {
@@ -301,30 +277,39 @@ function RootLayoutNav() {
   }, []);
 
   useEffect(() => {
-    const check = () => useNetworkStore.getState().checkNetworkStatus();
-    check();
-    // Reduced polling: 5s when active (down from 2s) — less battery drain
-    // Most network changes are detected by the OS anyway via Network.getNetworkStateAsync
-    let interval: ReturnType<typeof setInterval> | null = setInterval(check, 5000);
+    const netStore = useNetworkStore.getState();
+    netStore.checkNetworkStatus();
+    netStore.startListening();
 
-    const handleAppState = (nextState: string) => {
-      if (nextState === 'active') {
-        // App came to foreground — check immediately then resume polling
-        check();
-        if (!interval) interval = setInterval(check, 5000);
-      } else {
-        // App went to background — stop polling to save battery
-        if (interval) { clearInterval(interval); interval = null; }
+    let fallbackInterval: ReturnType<typeof setInterval> | null = setInterval(
+      () => netStore.checkNetworkStatus(),
+      30000
+    );
+
+    const handleAppState = (nextState: AppStateStatus) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        const signupState = useSignupStore.getState();
+        if (signupState.hasActiveSession()) {
+          AsyncStorage.setItem(SIGNUP_BG_KEY, '1').catch((err) => console.error('[Layout] save bg signup flag failed:', err));
+        }
+        if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null; }
+        netStore.stopListening();
+      } else if (nextState === 'active') {
+        AsyncStorage.removeItem(SIGNUP_BG_KEY).catch((err) => console.error('[Layout] remove bg signup flag failed:', err));
+        netStore.checkNetworkStatus();
+        netStore.startListening();
+        if (!fallbackInterval) fallbackInterval = setInterval(() => netStore.checkNetworkStatus(), 30000);
       }
     };
 
     const sub = AppState.addEventListener('change', handleAppState);
     return () => {
-      if (interval) clearInterval(interval);
+      if (fallbackInterval) clearInterval(fallbackInterval);
+      netStore.stopListening();
       sub.remove();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Stable empty deps — checkNetworkStatus accessed via getState() to avoid re-run loop
+  }, []);
 
   // Register reconnection callback — when device comes back online, re-sync AND re-open realtime channels
   useEffect(() => {
@@ -429,25 +414,27 @@ function RootLayoutNav() {
   }
 
   return (
-    <ProtectedRoute>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="auth" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="+not-found" />
-        <Stack.Screen 
-          name="viewer" 
-          options={{
-            headerShown: false,
-            presentation: 'modal',
-            animation: 'slide_from_bottom'
-          }} 
-        />
-      </Stack>
-      <GroupMembershipHandler />
-      <HeartbeatBanner />
-      <OverlayManager />
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-    </ProtectedRoute>
+    <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+      <ProtectedRoute>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="auth" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="+not-found" />
+          <Stack.Screen 
+            name="viewer" 
+            options={{
+              headerShown: false,
+              presentation: 'modal',
+              animation: 'slide_from_bottom'
+            }} 
+          />
+        </Stack>
+        <GroupMembershipHandler />
+        <HeartbeatBanner />
+        <OverlayManager />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+      </ProtectedRoute>
+    </ThemeProvider>
   );
 }
 

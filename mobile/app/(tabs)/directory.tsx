@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDirectoryStore } from '../../src/stores';
 import { COLORS } from '../../src/constants/Colors';
-import { Lecturer, Executive } from '../../src/types';
+import { Lecturer } from '../../src/types';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 const { width } = Dimensions.get('window');
@@ -204,8 +204,8 @@ function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cachedUri && onPressAvatar(cachedUri, staff.full_name)}
-                    disabled={!cachedUri}
+                    onPress={() => cachedUri ? onPressAvatar(cachedUri, staff.full_name) : null}
+                    activeOpacity={0.8}
                 >
                     {cachedUri ? (
                         <Image source={{ uri: cachedUri }} style={styles.avatar} />
@@ -265,16 +265,14 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cachedUri && onPressAvatar(cachedUri, fullName)}
-                    disabled={!cachedUri}
+                    onPress={() => cachedUri ? onPressAvatar(cachedUri, fullName) : null}
+                    activeOpacity={0.8}
                 >
                     {cachedUri ? (
                         <Image source={{ uri: cachedUri }} style={styles.avatar} />
                     ) : (
                         <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: COLORS.secondary + '20' }]}>
-                            <Text style={[styles.avatarPlaceholderText, { color: COLORS.secondary }]}>
-                                {fullName.charAt(0)}
-                            </Text>
+                            <Text style={styles.avatarPlaceholderText}>{fullName.charAt(0)}</Text>
                         </View>
                     )}
                 </TouchableOpacity>

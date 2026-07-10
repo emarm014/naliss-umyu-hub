@@ -34,7 +34,7 @@ export async function sendPushNotification(payload: PushPayload): Promise<void> 
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify(payload),
-    }).catch(() => {}); // silent — push failure never affects core functionality
+    }).catch((err) => console.error('[Notifications] push send failed:', err));
   } catch {
     // silent
   }

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
 import { supabase } from '../../lib/supabase';
+import { getFirstAccessibleRoute } from '../../utils/access';
 import LoadingSpinner from '../ui/LoadingSpinner';
 
 const getOrCreateDeviceId = () => {
@@ -171,22 +172,6 @@ export default function ProtectedRoute() {
   // Moderator landing: redirect from super_admin-only routes to first accessible page
   // NOTE: /lecturers and /executives are super_admin-only — never redirect moderators there
   if (profile?.role === 'moderator' && location.pathname === '/') {
-    const getFirstAccessibleRoute = (perms: any) => {
-      if (!perms) return '/login';
-      if (perms.can_manage_announcements) return '/announcements';
-      if (perms.can_manage_materials) return '/materials';
-      if (perms.can_manage_past_questions) return '/past-questions';
-      if (perms.can_manage_students) return '/students';
-      if (perms.can_manage_groups) return '/groups';
-      if (perms.can_manage_group_media) return '/group-media';
-      if (perms.can_manage_storage) return '/storage';
-      if (perms.can_manage_messaging) return '/messaging';
-      if (perms.can_manage_security) return '/security';
-      if (perms.can_manage_archives) return '/archive';
-      if (perms.can_manage_news) return '/news';
-      if (perms.can_manage_events) return '/events';
-      return '/login';
-    };
     return <Navigate to={getFirstAccessibleRoute(permissions)} replace />;
   }
 

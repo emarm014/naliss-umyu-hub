@@ -10,7 +10,6 @@ import { COLORS } from '../../../src/constants/Colors';
 import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { getCleanAvatarUrl } from '../../../src/utils';
-import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../../src/components/common/CachedImage';
 
@@ -47,7 +46,6 @@ export default function LecturerDetailScreen() {
     ? lecturer.qualifications.split('\n').filter(Boolean)
     : [];
 
-  const socialLinks = lecturer.social_links || {};
 
   return (
     <View style={styles.root}>
@@ -240,16 +238,9 @@ function LecturerHeroAvatar({ entityId, avatarUrl, initials, title, onPressAvata
       <TouchableOpacity
         style={styles.avatarRing}
         onPress={onPressAvatar}
-        disabled={!optimizedUrl}
         activeOpacity={0.8}
       >
-        {optimizedUrl ? (
-          <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="lecturer" style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarInitials}>{initials}</Text>
-          </View>
-        )}
+          <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="lecturer" style={styles.avatar} fallbackInitials={initials} />
       </TouchableOpacity>
 
       {/* Title badge */}

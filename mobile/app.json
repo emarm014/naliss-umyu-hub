@@ -19,7 +19,7 @@
       "policy": "sdkVersion"
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-icon.jpg",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -88,10 +88,12 @@
         {
           "android": {
             "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "windowSoftInputMode": "adjustPan"
           }
         }
-      ]
+      ],
+      "./plugins/withAndroidAbiFilters.js"
     ],
     "experiments": {
       "typedRoutes": true

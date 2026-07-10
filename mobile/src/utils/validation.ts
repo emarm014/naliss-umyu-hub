@@ -1,14 +1,4 @@
 export const INSTITUTIONAL_EMAIL_REGEX = /^(lis|blis)\d{6}@students\.umyu\.edu\.ng$/i;
-export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-
-/**
- * Validates that the file size is within the allowed limit.
- * @param size - File size in bytes
- * @returns boolean
- */
-export const validateFileSize = (size: number): boolean => {
-  return size <= MAX_FILE_SIZE;
-};
 
 /**
  * Validates that the registration number matches the expected UMYU format

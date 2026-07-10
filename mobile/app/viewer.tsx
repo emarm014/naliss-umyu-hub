@@ -1,11 +1,11 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { FlatList, View, Image, Dimensions, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Alert, StatusBar } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { FlatList, View, Image,  useWindowDimensions, TouchableOpacity, Text, StyleSheet, Alert, StatusBar } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { saveCategorizedFileToDevice, saveMediaToDevice } from '../src/utils/mediaSaver';
+import {  saveMediaToDevice } from '../src/utils/mediaSaver';
 import { showToast } from '../src/components/common/overlays';
 import { BlurView } from 'expo-blur';
 import { UniversalViewer } from '../src/components/common/UniversalViewer';

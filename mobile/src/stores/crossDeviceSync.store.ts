@@ -234,18 +234,18 @@ export const useCrossDeviceSyncStore = create<CrossDeviceSyncState>()(
                 const { registerOnlineCallback } = require('./network.store');
                 registerOnlineCallback(() => {
                     Logger.info('cross-device-sync', 'Network connected. Resuming bootstrap synchronization.');
-                    get().startSync(true).catch(() => {});
+                    get().startSync(true).catch((err) => console.error('[CrossDeviceSync] online resume failed:', err));
                 });
 
                 // AppState foreground transitions
                 AppState.addEventListener('change', (nextState: AppStateStatus) => {
                     if (nextState === 'active' && useNetworkStore.getState().isOnline) {
-                        get().startSync(false).catch(() => {});
+                        get().startSync(false).catch((err) => console.error('[CrossDeviceSync] foreground sync failed:', err));
                     }
                 });
 
                 // Trigger startup synchronization in the background
-                get().startSync(false).catch(() => {});
+                get().startSync(false).catch((err) => console.error('[CrossDeviceSync] startup sync failed:', err));
                 set({ isInitialized: true });
             },
 
@@ -259,6 +259,12 @@ export const useCrossDeviceSyncStore = create<CrossDeviceSyncState>()(
 
                 const authStore = useAuthStore.getState();
                 if (!authStore.user) return;
+
+                if (!useNetworkStore.getState().isOnline) {
+                    Logger.info('cross-device-sync', 'Offline — sync deferred');
+                    set({ isSyncing: false });
+                    return;
+                }
 
                 set({ isSyncing: true });
                 Logger.info('cross-device-sync', 'Bootstrap Sync Started. Initializing checkpoint runner.');
@@ -299,7 +305,7 @@ export const useCrossDeviceSyncStore = create<CrossDeviceSyncState>()(
                             .eq('user_id', userId) as any);
 
                         if (memError) throw memError;
-                        const groupIds = (memberships as any[]).map(m => m.group_id);
+                        const groupIds = (memberships || []).map((m: any) => m.group_id);
 
                         if (groupIds.length > 0) {
                             const { data: groupsResult, error: grpError } = await ((supabase as any).from('groups')
@@ -410,8 +416,7 @@ export const useCrossDeviceSyncStore = create<CrossDeviceSyncState>()(
                                 const newOnes = formatted.filter(m => !existingIds.has(m.id));
                                 if (newOnes.length > 0) {
                                     const merged = [...existing, ...newOnes]
-                                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                                        .slice(-300);
+                                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
                                     messageStore.setMessages(groupId, merged);
                                 }
 
@@ -873,16 +878,8 @@ export const useCrossDeviceSyncStore = create<CrossDeviceSyncState>()(
                         const localUri = await UnifiedDownloadEngine.download(
                             item.file_url,
                             item.id,
-                            item.original_filename || `sync_${item.id}`,
                             undefined,
-                            {
-                                assetType: `chat_${item.media_type || 'file'}`,
-                                expectedHash: item.sha256 || null,
-                                expectedSize: item.file_size || null,
-                                messageId: item.message_id || item.id,
-                                groupId: item.group_id || null,
-                                mimeType: item.mime_type || null
-                            }
+                            `chat_${item.media_type || 'file'}`
                         );
 
                         if (!localUri) {

@@ -49,14 +49,25 @@ export const useResourceStore = create<ResourceState>()(
                 const isFresh = lastFetchMaterials && Date.now() - lastFetchMaterials < CACHE_TTL && materials.length > 0;
                 if (!force && isFresh) return;
 
-                // OFFLINE GUARD: serve cached data immediately
+                // LOCAL-FIRST: read from SQLite cache immediately (always works)
+                if (!force && materials.length === 0) {
+                    try {
+                        const { getCachedEntityList } = require('../lib/database');
+                        const cached = await getCachedEntityList('materials');
+                        if (cached.length > 0) {
+                            set({ materials: cached as any, isLoading: false });
+                        }
+                    } catch { /* fall through to server fetch */ }
+                }
+
+                // OFFLINE GUARD: if offline, data from SQLite is already displayed
                 const { useNetworkStore } = require('./network.store');
                 if (!useNetworkStore.getState().isOnline) {
                   set({ isLoading: false });
                   return;
                 }
 
-                if (materials.length === 0) set({ isLoading: true });
+                if (get().materials.length === 0) set({ isLoading: true });
                 set({ error: null });
 
                 try {
@@ -75,6 +86,8 @@ export const useResourceStore = create<ResourceState>()(
                     if (error) throw error;
                     
                     const materials = (data as unknown) as Material[];
+                    const { cacheEntityList } = require('../lib/database');
+                    cacheEntityList('materials', materials, '').catch(() => {});
                     set({ materials, isLoading: false, lastFetchMaterials: Date.now() });
                     get().refreshDownloadedStatus();
                 } catch (err) {
@@ -88,14 +101,25 @@ export const useResourceStore = create<ResourceState>()(
                 const isFresh = lastFetchPastQuestions && Date.now() - lastFetchPastQuestions < CACHE_TTL && pastQuestions.length > 0;
                 if (!force && isFresh) return;
 
-                // OFFLINE GUARD: serve cached data immediately
+                // LOCAL-FIRST: read from SQLite cache immediately (always works)
+                if (!force && pastQuestions.length === 0) {
+                    try {
+                        const { getCachedEntityList } = require('../lib/database');
+                        const cached = await getCachedEntityList('past_questions');
+                        if (cached.length > 0) {
+                            set({ pastQuestions: cached as any, isLoading: false });
+                        }
+                    } catch { /* fall through to server fetch */ }
+                }
+
+                // OFFLINE GUARD: if offline, data from SQLite is already displayed
                 const { useNetworkStore } = require('./network.store');
                 if (!useNetworkStore.getState().isOnline) {
                   set({ isLoading: false });
                   return;
                 }
 
-                if (pastQuestions.length === 0) set({ isLoading: true });
+                if (get().pastQuestions.length === 0) set({ isLoading: true });
                 set({ error: null });
 
                 try {
@@ -111,6 +135,8 @@ export const useResourceStore = create<ResourceState>()(
                     if (error) throw error;
                     
                     const pastQuestions = (data as unknown) as PastQuestion[];
+                    const { cacheEntityList } = require('../lib/database');
+                    cacheEntityList('past_questions', pastQuestions, '').catch(() => {});
                     set({ pastQuestions, isLoading: false, lastFetchPastQuestions: Date.now() });
                     get().refreshDownloadedStatus();
                 } catch (err) {
@@ -124,14 +150,25 @@ export const useResourceStore = create<ResourceState>()(
                 const isFresh = lastFetchCourses && Date.now() - lastFetchCourses < CACHE_TTL && courses.length > 0;
                 if (!force && isFresh) return;
 
-                // OFFLINE GUARD: serve cached data immediately
+                // LOCAL-FIRST: read from SQLite cache immediately (always works)
+                if (!force && courses.length === 0) {
+                    try {
+                        const { getCachedEntityList } = require('../lib/database');
+                        const cached = await getCachedEntityList('courses');
+                        if (cached.length > 0) {
+                            set({ courses: cached as any, isLoading: false });
+                        }
+                    } catch { /* fall through to server fetch */ }
+                }
+
+                // OFFLINE GUARD: if offline, data from SQLite is already displayed
                 const { useNetworkStore } = require('./network.store');
                 if (!useNetworkStore.getState().isOnline) {
                   set({ isLoading: false });
                   return;
                 }
 
-                if (courses.length === 0) set({ isLoading: true });
+                if (get().courses.length === 0) set({ isLoading: true });
 
                 try {
                     let query: any = (supabase as any).from('courses')
@@ -139,6 +176,8 @@ export const useResourceStore = create<ResourceState>()(
                         .eq('is_active', true);
                     const { data, error } = await query.order('code');
                     if (error) throw error;
+                    const { cacheEntityList } = require('../lib/database');
+                    cacheEntityList('courses', data, '').catch(() => {});
                     set({ courses: (data as unknown) as Course[], isLoading: false, lastFetchCourses: Date.now() });
                 } catch (err) {
                     captureStoreError('resource', 'fetchCourses', err, { level });

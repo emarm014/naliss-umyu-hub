@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../api/supabase/client';
-import { captureStoreError } from '../utils/sentry';
 import * as Sentry from '@sentry/react-native';
 import { useAuthStore } from './auth.store';
 import { useAnnouncementStore } from './announcement.store';
@@ -10,6 +9,7 @@ import { useResourceStore } from './resource.store';
 import { useGroupStore } from './group.store';
 import { useDirectoryStore } from './directory.store';
 import { useMessageStore } from './message.store';
+import { useNoteStore } from './note.store';
 import { useNetworkStore } from './network.store';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -40,6 +40,9 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
   initialize: () => {
     if (get().isInitialized) return;
 
+    // Reset any messages stuck in 'sending' from a previous kill
+    useMessageStore.getState().resetStuckMessages();
+
     // Only do initial sync if online — cached data is already in stores from AsyncStorage
     const isOnline = useNetworkStore.getState().isOnline;
     if (isOnline) {
@@ -47,6 +50,13 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     }
     get()._openChannels();
     get()._startBackgroundSync();
+
+    // Restore previously downloaded files + notes on this device (new device login)
+    if (isOnline) {
+      const { DownloadTracker } = require('../services/downloadTracker.service');
+      DownloadTracker.restoreUserDownloads();
+      useNoteStore.getState().fetchCloudNotes();
+    }
 
     set({ isInitialized: true });
   },

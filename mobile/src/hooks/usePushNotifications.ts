@@ -5,11 +5,12 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
-import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationStore } from '../stores/notification.store';
 import { upsertEntityFromNotification } from '../utils/notifications';
+import { extractFileNameFromUrl } from '../utils/download';
+import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
 
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -63,12 +64,9 @@ async function cacheMediaForNotification(data: any): Promise<any> {
   const imageUrl = data?.cover_image_url || data?.file_url || data?.image_url || data?.avatar_url || null;
   if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('http')) return data;
   try {
-    const filename = imageUrl.split('/').pop()?.split('?')[0] || 'cached_image';
-    const localUri = `${FileSystem.documentDirectory}${filename}`;
-    const info = await FileSystem.getInfoAsync(localUri);
-    if (!info.exists) {
-      await FileSystem.downloadAsync(imageUrl, localUri);
-    }
+    const fileId = `notif_cache_${Date.now()}`;
+    const localUri = await UnifiedDownloadEngine.download(imageUrl, fileId, undefined, 'cache');
+    if (!localUri) return data;
     return {
       ...data,
       cover_image_url: localUri,
@@ -158,7 +156,7 @@ export function usePushNotifications() {
             minimumInterval: 15 * 60,
             stopOnTerminate: false,
             startOnBoot: true,
-          }).catch(() => {});
+          }).catch((err) => console.error('[PushNotifications] background fetch registration failed:', err));
         }
       });
     }
@@ -223,7 +221,7 @@ export function usePushNotifications() {
       // Handle Quick Actions
       if (actionId === 'mark_read') {
         useNotificationStore.getState().markAsRead(notifId);
-        await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', notifId).catch(() => {});
+        await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', notifId).catch((err: any) => console.error('[PushNotifications] mark notification read failed:', err));
       } else if (actionId === 'reply' && (response as any).userText && (data as any)?.group_id && user) {
         const replyText = (response as any).userText;
         await (supabase as any).from('messages').insert({
@@ -244,9 +242,7 @@ export function usePushNotifications() {
       } else if (actionId === 'download' && (data as any)?.file_url) {
         try {
           const fileUrl = (data as any).file_url;
-          const filename = typeof fileUrl === 'string' ? fileUrl.split('/').pop() || 'downloaded_file' : 'downloaded_file';
-          const localUri = `${FileSystem.documentDirectory}${filename}`;
-          await FileSystem.downloadAsync(fileUrl, localUri);
+          await UnifiedDownloadEngine.download(fileUrl, `notif_dl_${Date.now()}`);
         } catch {
           // silent
         }

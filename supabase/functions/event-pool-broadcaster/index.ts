@@ -6,8 +6,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function generateHash(token: string, type: string, entityId: string): Promise<string> {
-  const timeWindow = Math.floor(Date.now() / 60000); // 1-minute window
-  const input = `${token}:${type}:${entityId}:${timeWindow}`;
+  const input = `${token}:${type}:${entityId}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -66,11 +65,6 @@ serve(async (req) => {
       .eq('users.status', 'active')
       .neq('users.notif_events', false);
     
-    if (pool.participation_rule !== 'open') {
-      // Future expansion: filter tokenQuery based on pool.target_constraints
-      // e.g., tokenQuery = tokenQuery.in('user_id', targetedUserIds)
-    }
-
     const { data: tokens, error: tokenError } = await tokenQuery;
     
     if (tokenError || !tokens || tokens.length === 0) {
@@ -111,7 +105,6 @@ serve(async (req) => {
       };
     });
 
-    const chunks = [];
     const telemetryRecords = [];
     const historyRecords = [];
     const notifId = `event_pool_${pool.id}_${Date.now()}`;
@@ -169,7 +162,7 @@ serve(async (req) => {
       await supabase.from('notification_history').upsert(historyRecords, { onConflict: 'user_id,notification_id' }).catch(() => {});
     }
 
-    return new Response(JSON.stringify({ success: true, batchesSent: chunks.length, sent: uniqueTokens.length }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, sent: uniqueTokens.length }), { status: 200 });
   } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }

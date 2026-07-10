@@ -21,8 +21,7 @@ const corsHeaders = {
 };
 
 async function generateHash(token: string, type: string, entityId: string): Promise<string> {
-  const timeWindow = Math.floor(Date.now() / 60000); // 1-minute window
-  const input = `${token}:${type}:${entityId}:${timeWindow}`;
+  const input = `${token}:${type}:${entityId}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);

@@ -54,11 +54,15 @@ export const useAnnouncementStore = create<AnnouncementState>()(
         // Stale-while-revalidate: show cached data immediately, refresh in background
         if (!force && isFresh) return;
 
-        // OFFLINE GUARD: If offline and we have cached data, serve it immediately
-        const { useNetworkStore } = require('./network.store');
-        if (!useNetworkStore.getState().isOnline) {
-          set({ isLoading: false });
-          return;
+        // LOCAL-FIRST: read from SQLite cache immediately (always works)
+        if (!force && announcements.length === 0) {
+            try {
+                const { getCachedEntityList } = require('../lib/database');
+                const cached = await getCachedEntityList('announcements');
+                if (cached.length > 0) {
+                    set({ announcements: cached as any, isLoading: false });
+                }
+            } catch { /* fall through to server fetch */ }
         }
 
         // SESSION GUARD: Don't query if unauthenticated — avoids 401 spam after logout
@@ -68,8 +72,15 @@ export const useAnnouncementStore = create<AnnouncementState>()(
           return;
         }
 
-        // If we have cached data, don't show loading spinner — update silently
-        if (announcements.length === 0) set({ isLoading: true });
+        // OFFLINE GUARD: if offline, data from SQLite is already displayed
+        const { useNetworkStore } = require('./network.store');
+        if (!useNetworkStore.getState().isOnline) {
+          set({ isLoading: false });
+          return;
+        }
+
+        // If we still have no data, show loading spinner
+        if (get().announcements.length === 0) set({ isLoading: true });
         set({ error: null });
 
         try {
@@ -95,6 +106,8 @@ export const useAnnouncementStore = create<AnnouncementState>()(
             throw err;
           }
 
+          const { cacheEntityList } = require('../lib/database');
+          cacheEntityList('announcements', data, session.user.id).catch(() => {});
           set({ announcements: (data as unknown) as Announcement[], isLoading: false, lastFetch: Date.now() });
         } catch (error) {
           // Offline or network error — keep showing cached data, don't clear it

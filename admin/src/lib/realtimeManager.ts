@@ -20,7 +20,6 @@ class RealtimeManager {
   constructor() {
     if (typeof window !== 'undefined') {
       document.addEventListener('visibilitychange', this.handleVisibilityChange);
-      window.addEventListener('online', this.handleOnline);
     }
   }
 
@@ -58,11 +57,7 @@ class RealtimeManager {
             this.handleIncomingEvent(table, payload);
           }
         )
-        .subscribe((status) => {
-          if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-            this.handleReconnect(table);
-          }
-        });
+        .subscribe();
 
       this.channels.set(table, channel);
     });
@@ -116,39 +111,7 @@ class RealtimeManager {
     }
   };
 
-  private handleOnline = () => {
-    if (this.isSubscribed) {
-      this.disconnectAll();
-      this.connectAll();
-    }
-  };
 
-  private handleReconnect(table: string, attempt = 0) {
-    const delay = Math.min(1000 * 2 ** attempt, 30000);
-    setTimeout(() => {
-      if (!this.isSubscribed || !this.isVisible) return;
-      const existing = this.channels.get(table);
-      if (existing) {
-        supabase.removeChannel(existing);
-        this.channels.delete(table);
-      }
-      const channel = supabase
-        .channel(`admin_rt_mgr_${table}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table },
-          (payload) => {
-            this.handleIncomingEvent(table, payload);
-          }
-        )
-        .subscribe((status) => {
-          if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-            this.handleReconnect(table, attempt + 1);
-          }
-        });
-      this.channels.set(table, channel);
-    }, delay);
-  }
 }
 
 export const adminRealtimeManager = new RealtimeManager();

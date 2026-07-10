@@ -134,4 +134,4 @@ export const migrateAsyncStorageToMMKV = async () => {
 };
 
 // Trigger migration check immediately on module load and store promise
-migrationPromise = migrateAsyncStorageToMMKV().catch(() => {});
+migrationPromise = migrateAsyncStorageToMMKV().catch((err) => console.error('[MMKV] migration failed:', err));

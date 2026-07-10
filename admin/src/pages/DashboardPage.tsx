@@ -73,20 +73,23 @@ export default function DashboardPage() {
 
   // Fetch Cloudinary storage on mount for accurate storage card
   useEffect(() => {
-    const fetchCloudStorage = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cloudinary-usage`,
-          { headers: { Authorization: `Bearer ${session.access_token}` } }
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data?.storage?.used_bytes != null) {
-          setCloudStorageBytes(data.storage.used_bytes);
+    const fetchCloudStorage = async (retries = 2) => {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const { data, error } = await supabase.functions.invoke('cloud-data');
+          if (error) throw error;
+          if (data?.storage?.used_bytes != null) {
+            setCloudStorageBytes(data.storage.used_bytes);
+          }
+          return;
+        } catch (err) {
+          if (attempt < retries) {
+            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            continue;
+          }
+          console.warn('[Storage Card] Failed to fetch Cloudinary storage:', err);
         }
-      } catch { /* silent — dashboard still works with DB estimate */ }
+      }
     };
     fetchCloudStorage();
   }, []);

@@ -54,39 +54,50 @@ export default function AnalyticsPage() {
   const fetchCloudStats = useCallback(async () => {
     setCloudLoading(true);
     setCloudError(null);
-    try {
-      const { data, error } = await supabase.functions.invoke('cloud-data');
-      if (error) throw error;
-      if (!data) throw new Error('No data received from Cloudinary usage service');
-      setCloudStats({
-        plan: data.plan || 'Free',
-        storage:         { used_bytes: 0, used_human: '0 B', limit_human: '25 GB', percent: 0, ...data.storage },
-        bandwidth:       { used_human: '0 B', limit_human: '25 GB', percent: 0, ...data.bandwidth },
-        transformations: { used: 0, limit: 25000, percent: 0, ...data.transformations },
-        credits:         { used: 0, limit: 25, percent: 0, ...data.credits },
-        impressions:     { total: 0, ...(data.impressions || {}) },
-        media_count:     { images: 0, videos: 0, raw: 0, total: 0, ...(data.media_count || {}) },
-        resources:       { total: 0, images: 0, videos: 0, raw: 0, ...data.resources },
-        errors:          { bad_request: 0, unauthorized: 0, not_found: 0, timeout: 0, rate_limited: 0, fallback_image: 0, ...(data.errors || {}) },
-        folders:         Array.isArray(data.folders) ? data.folders : [],
-        requests:        data.requests || 0,
-      });
-      setCloudLastFetch(new Date());
-    } catch (err: any) {
-      console.error('[Cloudinary Fetch Error]', err);
-      Sentry.captureException(err, {
-        tags: { location: 'AnalyticsPage.fetchCloudStats' },
-        extra: {
-          errorMessage: err?.message,
-          errorName: err?.name,
-          errorStack: err?.stack,
-          fullContext: err?.context || err,
-          rawError: JSON.stringify(err, Object.getOwnPropertyNames(err))
-        },
-      });
-      setCloudError(`Could not reach Cloudinary: ${err?.message || err || 'Unknown Error'} (Check Sentry for details)`);
-    } finally {
-      setCloudLoading(false);
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      try {
+        const { data, error } = await supabase.functions.invoke('cloud-data', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (error) throw error;
+        if (!data) throw new Error('No data received from Cloudinary usage service');
+        setCloudStats({
+          plan: data.plan || 'Free',
+          storage:         { used_bytes: 0, used_human: '0 B', limit_human: '25 GB', percent: 0, ...data.storage },
+          bandwidth:       { used_human: '0 B', limit_human: '25 GB', percent: 0, ...data.bandwidth },
+          transformations: { used: 0, limit: 25000, percent: 0, ...data.transformations },
+          credits:         { used: 0, limit: 25, percent: 0, ...data.credits },
+          impressions:     { total: 0, ...(data.impressions || {}) },
+          media_count:     { images: 0, videos: 0, raw: 0, total: 0, ...(data.media_count || {}) },
+          resources:       { total: 0, images: 0, videos: 0, raw: 0, ...data.resources },
+          errors:          { bad_request: 0, unauthorized: 0, not_found: 0, timeout: 0, rate_limited: 0, fallback_image: 0, ...(data.errors || {}) },
+          folders:         Array.isArray(data.folders) ? data.folders : [],
+          requests:        data.requests || 0,
+        });
+        setCloudLastFetch(new Date());
+        setCloudLoading(false);
+        return;
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        console.error('[Cloudinary Fetch Error]', err);
+        Sentry.captureException(err, {
+          tags: { location: 'AnalyticsPage.fetchCloudStats' },
+          extra: {
+            errorMessage: err?.message,
+            errorName: err?.name,
+            errorStack: err?.stack,
+            fullContext: err?.context || err,
+            rawError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+          },
+        });
+        setCloudError(`Could not reach Cloudinary: ${err?.message || err || 'Unknown Error'} (Check Sentry for details)`);
+        setCloudLoading(false);
+      }
     }
   }, []);
 

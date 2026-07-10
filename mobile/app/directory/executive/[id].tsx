@@ -11,7 +11,6 @@ import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { format } from 'date-fns';
 import { getCleanAvatarUrl } from '../../../src/utils';
-import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../../src/components/common/CachedImage';
 
@@ -237,16 +236,9 @@ function ExecutiveHeroAvatar({ entityId, avatarUrl, initials, isActive, onPressA
       <TouchableOpacity
         style={styles.avatarRing}
         onPress={onPressAvatar}
-        disabled={!optimizedUrl}
         activeOpacity={0.8}
       >
-        {optimizedUrl ? (
-          <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="executive" style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarInitials}>{initials}</Text>
-          </View>
-        )}
+          <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="executive" style={styles.avatar} fallbackInitials={initials} />
       </TouchableOpacity>
 
       {/* Status badge */}

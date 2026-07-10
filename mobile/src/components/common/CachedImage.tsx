@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Image, ImageStyle, StyleProp, View, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { Image, ImageStyle, StyleProp, View, ActivityIndicator, TouchableOpacity, Alert, Text } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getAssetCache, upsertAssetCache } from '../../lib/database';
 import { useThemeStore } from '../../stores/theme.store';
 import { saveMediaToDevice } from '../../utils/mediaSaver';
 import { showToast } from './overlays';
+import { Ionicons } from '@expo/vector-icons';
 
 interface CachedImageProps {
     entityId: string;
@@ -12,11 +13,14 @@ interface CachedImageProps {
     assetType: 'user' | 'executive' | 'lecturer';
     style?: StyleProp<ImageStyle>;
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+    fallbackName?: string | null;
+    fallbackInitials?: string | null;
 }
 
-export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover' }: CachedImageProps) {
+export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials }: CachedImageProps) {
     const [localUri, setLocalUri] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
+    const [hasError, setHasError] = useState<boolean>(false);
     const { colors, isDark } = useThemeStore();
 
     const handleLongPress = async () => {
@@ -32,6 +36,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
 
     useEffect(() => {
         let isMounted = true;
+        setHasError(false);
         
         const loadAsset = async () => {
             if (!entityId || !remoteUrl) {
@@ -88,10 +93,23 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         };
     }, [entityId, remoteUrl, assetType]);
 
-    if (!localUri && !remoteUrl) {
-        // Fallback UI when no image is available
+    const initials = fallbackInitials || (fallbackName ? fallbackName.slice(0, 2).toUpperCase() : null);
+
+    if ((!localUri && !remoteUrl) || hasError) {
         return (
-            <View style={[style, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]} />
+            <TouchableOpacity
+                style={[style, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]}
+                onLongPress={handleLongPress}
+                activeOpacity={0.9}
+            >
+                {initials ? (
+                    <Text style={{ fontSize: Math.min((style as any)?.width || 48, 48) * 0.4, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8' }}>
+                        {initials}
+                    </Text>
+                ) : (
+                    <Ionicons name="person" size={Math.min((style as any)?.width || 48, 48) * 0.5} color={isDark ? '#475569' : '#94a3b8'} />
+                )}
+            </TouchableOpacity>
         );
     }
 
@@ -105,7 +123,8 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 source={{ uri: localUri || remoteUrl! }}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode={resizeMode}
-                onLoad={() => setLoading(false)}
+                onLoad={() => { setLoading(false); setHasError(false); }}
+                onError={() => { setLoading(false); setHasError(true); }}
             />
             {loading && (
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? 'rgba(15,23,42,0.5)' : 'rgba(241,245,249,0.5)' }}>

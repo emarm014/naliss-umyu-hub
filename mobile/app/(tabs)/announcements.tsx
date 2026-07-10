@@ -15,7 +15,7 @@ import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
-import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
+import {  SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 const { width } = Dimensions.get('window');
 
 const CATEGORIES = ['All', 'Academic', 'Social', 'Event', 'General'];
@@ -364,7 +364,6 @@ const overlayStyles = StyleSheet.create({
 function AnnouncementCard({ announcement, user, onDelete, onApply }: { announcement: any; user: any; onDelete: (id: string) => void; onApply: () => void }) {
     const cat = CATEGORY_CONFIG[(announcement.category || 'general').toLowerCase()] || DEFAULT_CAT;
     const priority = PRIORITY_CONFIG[announcement.priority] || PRIORITY_CONFIG.normal;
-    const hasCover = !!announcement.cover_image_url;
     const timeAgo = announcement.created_at
         ? (() => { try { return formatDistanceToNow(new Date(announcement.created_at), { addSuffix: true }); } catch { return ''; } })()
         : '';
@@ -454,7 +453,6 @@ function AnnouncementCard({ announcement, user, onDelete, onApply }: { announcem
 
 function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
     const status = STATUS_CONFIG[event.status] || STATUS_CONFIG.draft;
-    const hasCover = !!event.cover_image_url;
     const isOngoing = event.status === 'ongoing';
     const eventGradient: [string, string] = isOngoing ? ['#065f46', '#059669'] : ['#1e3a8a', '#2563eb'];
     const { colors } = useTheme();

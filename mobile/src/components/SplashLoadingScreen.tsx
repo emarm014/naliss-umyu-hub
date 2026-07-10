@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { NalissLogo } from './NalissLogo';
 import { COLORS } from '../constants/Colors';
 import { useThemeStore } from '../stores/theme.store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface SplashLoadingScreenProps {
   message?: string;
@@ -11,6 +12,7 @@ interface SplashLoadingScreenProps {
 
 export function SplashLoadingScreen({ message }: SplashLoadingScreenProps) {
   const { isDark } = useThemeStore();
+  const insets = useSafeAreaInsets();
 
   const pulseAnim = useRef(new Animated.Value(0.95)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -121,7 +123,7 @@ export function SplashLoadingScreen({ message }: SplashLoadingScreenProps) {
         </View>
       </Animated.View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { bottom: Math.max(insets.bottom + 16, 40) }]}>
         <Text style={[styles.copyright, { color: isDark ? 'rgba(255,255,255,0.25)' : '#94a3b8' }]}>
           UMYU CHAPTER • © 2026
         </Text>

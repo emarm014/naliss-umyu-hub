@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { supabase } from '../../src/api/supabase/client';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
-import { formatDistanceToNowStrict, isAfter, isBefore, differenceInSeconds } from 'date-fns';
+import {   isBefore, differenceInSeconds } from 'date-fns';
 
 const { width } = Dimensions.get('window');
 

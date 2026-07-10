@@ -47,7 +47,8 @@ export const useOverlayStore = create<OverlayState>((set) => ({
         set((state) => {
             const overlay = state.overlays.find(o => o.id === id);
             if (overlay && overlay.onResult) {
-                setTimeout(() => overlay.onResult!(result, data), 0);
+                // Fix: Use optional chaining to prevent crash if onResult becomes undefined
+                setTimeout(() => overlay.onResult?.(result, data), 0);
             }
             return { overlays: state.overlays.filter(o => o.id !== id) };
         });

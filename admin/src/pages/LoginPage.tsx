@@ -87,7 +87,7 @@ export default function LoginPage() {
       if (e.name === 'AbortError' || e.message?.includes('fetch') || e.message === 'Failed to fetch') {
         setError('Network timeout. The server took too long to respond. Please check your connection and try again.');
       } else {
-        await supabase.auth.signOut().catch(() => {});
+        await supabase.auth.signOut().catch((err) => console.error('[Admin Login] signOut after login error failed:', err));
         setError(e.message || 'Failed to sign in. Please check your credentials.');
       }
     } finally {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import { realtimeCoordinator } from '../lib/runtime/realtime';
+import { adminRealtimeManager as realtimeCoordinator } from '../lib/realtimeManager';
 import { queryClient } from '../lib/queryClient';
 
 // ── Paginated user fetcher ────────────────────────────────────────────────────
@@ -127,10 +127,7 @@ interface AdminDataState {
   handleRealtimeEvent: (payload: any) => Promise<void>;
   subscribe: () => void;
   unsubscribe: () => void;
-  resubscribe: () => void;
   _channels: RealtimeChannel[];
-  _syncTimer: ReturnType<typeof setTimeout> | null;
-  _rtSyncTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export const useAdminDataStore = create<AdminDataState>((set, get) => ({
@@ -158,8 +155,6 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
   error: null,
   syncWarnings: [],
   _channels: [],
-  _syncTimer: null,
-  _rtSyncTimer: null,
 
   // ── Full sync — ALL queries backed by TanStack Query Client ────────────────
   syncAll: async (force = false) => {
@@ -167,10 +162,13 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     const lastSyncTime = get().lastSync ? new Date(get().lastSync!) : null;
     const isInitialLoad = !get().lastSync;
 
-    if (get().isSyncing || (!force && !isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5000)) {
+    // Fix: Atomically check and set isSyncing to prevent race condition
+    const currentState = get();
+    if (currentState.isSyncing || (!force && !isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5000)) {
       return;
     }
 
+    // Set isSyncing immediately before any async operations
     set({ isSyncing: true, error: null });
 
     const failedKeys: string[] = [];
@@ -647,9 +645,4 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     realtimeCoordinator.unsubscribe(get().handleRealtimeEvent);
   },
 
-  resubscribe: () => {
-    get().unsubscribe();
-    get().subscribe();
-    get().syncAll(true);
-  },
 }));

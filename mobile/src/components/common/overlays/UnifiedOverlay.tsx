@@ -51,7 +51,6 @@ export const SafeOverlayContainer = ({
     dismissible = true,
     overlayStyle
 }: SafeOverlayProps) => {
-    const isDark = useColorScheme() === 'dark';
     const opacity = useRef(new Animated.Value(0)).current;
     const translateY = useRef(new Animated.Value(100)).current;
     const scale = useRef(new Animated.Value(0.9)).current;

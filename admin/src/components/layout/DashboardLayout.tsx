@@ -6,16 +6,15 @@ import BottomNav from './BottomNav';
 import { useAdminDataStore } from '../../store/adminData.store';
 import { useAuthStore } from '../../store/auth.store';
 import { supabase } from '../../lib/supabase';
+import { getFirstAccessibleRoute } from '../../utils/access';
 import { useShallow } from 'zustand/react/shallow';
-import { runtimeCoordinator } from '../../lib/runtime/coordinator';
 
 export default function DashboardLayout() {
-  const { syncAll, subscribe, unsubscribe, resubscribe } = useAdminDataStore(
+  const { syncAll, subscribe, unsubscribe } = useAdminDataStore(
     useShallow((state) => ({
       syncAll: state.syncAll,
       subscribe: state.subscribe,
       unsubscribe: state.unsubscribe,
-      resubscribe: state.resubscribe,
     }))
   );
   const navigate = useNavigate();
@@ -24,21 +23,19 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     if (isAdminOrModerator) {
-      runtimeCoordinator.initialize();
       syncAll(false);
       subscribe();
       return () => {
         unsubscribe();
-        runtimeCoordinator.shutdown();
       };
     }
   }, [isAdminOrModerator]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const handleOnline = () => { resubscribe(); };
+    const handleOnline = () => { syncAll(true); };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [resubscribe]);
+  }, [syncAll]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -61,22 +58,6 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     if (profile?.role === 'moderator' && location.pathname === '/') {
-      const getFirstAccessibleRoute = (perms: any) => {
-        if (!perms) return '/login';
-        if (perms.can_manage_announcements) return '/announcements';
-        if (perms.can_manage_materials) return '/materials';
-        if (perms.can_manage_past_questions) return '/past-questions';
-        if (perms.can_manage_students) return '/students';
-        if (perms.can_manage_groups) return '/groups';
-        if (perms.can_manage_group_media) return '/group-media';
-        if (perms.can_manage_storage) return '/storage';
-        if (perms.can_manage_messaging) return '/messaging';
-        if (perms.can_manage_security) return '/security';
-        if (perms.can_manage_archives) return '/archive';
-        if (perms.can_manage_news) return '/news';
-        if (perms.can_manage_events) return '/events';
-        return '/login';
-      };
       navigate(getFirstAccessibleRoute(permissions), { replace: true });
     }
   }, [profile?.role, permissions, location.pathname, navigate]);

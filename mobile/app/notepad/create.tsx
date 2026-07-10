@@ -4,11 +4,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNoteStore, LocalNote } from '../../src/stores/note.store';
+import { useNoteStore } from '../../src/stores/note.store';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { useResourceStore } from '../../src/stores/resource.store';
 import { SafeOverlayContainer } from '../../src/components/common/overlays';
-import { ContinuousHandoutCamera } from '../../src/components/ContinuousHandoutCamera';
 
 export default function CreateNoteScreen() {
     const router = useRouter();

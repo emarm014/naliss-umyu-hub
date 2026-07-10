@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
+import { Logger } from '../utils/logger';
 
 export interface Event {
     id: string;
@@ -95,15 +96,26 @@ export const useEventStore = create<EventState>()(
 
                 if (!force && isFresh) return;
 
-                // OFFLINE GUARD: serve cached data immediately
+                // LOCAL-FIRST: read from SQLite cache immediately (always works)
+                if (!force && events.length === 0) {
+                    try {
+                        const { getCachedEntityList } = require('../lib/database');
+                        const cached = await getCachedEntityList('events');
+                        if (cached.length > 0) {
+                            set({ events: cached as any, isLoading: false });
+                        }
+                    } catch { /* fall through to server fetch */ }
+                }
+
+                // Silent background refresh if we still have no data
+                if (get().events.length === 0) set({ isLoading: true });
+
+                // OFFLINE GUARD: if offline, data from SQLite is already displayed
                 const { useNetworkStore } = require('./network.store');
                 if (!useNetworkStore.getState().isOnline) {
                   set({ isLoading: false });
                   return;
                 }
-
-                // Silent background refresh if we already have data
-                if (events.length === 0) set({ isLoading: true });
 
                 try {
                     let query = (supabase as any).from('events')
@@ -118,18 +130,20 @@ export const useEventStore = create<EventState>()(
 
                     if (error) throw error;
 
-                    const mappedEvents = data.map((ev: any) => ({
+                    const mappedEvents = (data || []).map((ev: any) => ({
                         ...ev,
                         pool_id: ev.event_pools && ev.event_pools.length > 0 ? ev.event_pools[0].id : null,
                         event_pools: undefined
                     }));
 
                     
+                    const { cacheEntityList } = require('../lib/database');
+                    cacheEntityList('events', mappedEvents, '').catch(() => {});
                     set({ events: mappedEvents as unknown as Event[], isLoading: false, lastFetch: Date.now() });
                     scheduleTimetableAlarms(mappedEvents as unknown as Event[]);
 
-                } catch {
-                    // Keep cached data on network failure
+                } catch (err) {
+                    Logger.error('event-store', 'fetchEvents failed', err);
                     set({ isLoading: false });
                 }
             },

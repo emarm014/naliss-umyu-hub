@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, Text, View } from 'react-native';
+import {  Text, View } from 'react-native';
 import { useTheme } from '../../src/stores/theme.store';
 import { trackScreen } from '../../src/utils/sentry';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +12,6 @@ export default function TabsLayout() {
   
   // Calculate the absolute baseline safety threshold for the device's navigation style
   const safeBottomOffset = insets.bottom > 0 ? insets.bottom : 12;
-  const safeTopOffset = insets.top > 0 ? insets.top : 24;
 
   const groups = useGroupStore((state) => state.groups);
   const isBadgeCleared = useGroupStore((state) => state.isBadgeCleared);
@@ -28,11 +27,12 @@ export default function TabsLayout() {
     <Text
       numberOfLines={1}
       adjustsFontSizeToFit={true}
+      minimumFontScale={0.6}
       allowFontScaling={false}
       style={{
         color,
-        fontSize: 10,
-        fontWeight: '600',
+        fontSize: 9.5,
+        fontWeight: '700',
         fontFamily: 'Inter-SemiBold',
         textAlign: 'center',
         letterSpacing: -0.2,
@@ -47,16 +47,16 @@ export default function TabsLayout() {
   const renderTabIcon = (iconName: string, outlineName: string) => ({ color, focused }: { color: string; focused: boolean }) => (
     <View
       style={{
-        width: 48,
-        height: 48,
-        borderRadius: 24,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         backgroundColor: focused ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)') : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
       }}
     >
-      <Ionicons name={(focused ? iconName : outlineName) as any} size={24} color={color} />
+      <Ionicons name={(focused ? iconName : outlineName) as any} size={22} color={color} />
     </View>
   );
 
@@ -81,10 +81,10 @@ export default function TabsLayout() {
         tabBarStyle: {
           position: 'absolute',
           bottom: safeBottomOffset,
-          left: 16,
-          right: 16,
-          height: 64,
-          borderRadius: 16,
+          left: 12,
+          right: 12,
+          height: 66,
+          borderRadius: 20,
           backgroundColor: '#FFFFFF',
           elevation: 8,
           shadowColor: '#000000',
@@ -95,14 +95,13 @@ export default function TabsLayout() {
         },
         tabBarItemStyle: {
           flex: 1,
-          marginVertical: 8,
-          paddingHorizontal: 10,
+          paddingHorizontal: 0,
           paddingVertical: 4,
           justifyContent: 'center',
           alignItems: 'center',
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9.5,
           fontFamily: 'Inter-SemiBold',
           letterSpacing: -0.2, // Gives micro-clearance to long words
           width: '100%',       // Guaranteed to prevent truncation like RESOUR...

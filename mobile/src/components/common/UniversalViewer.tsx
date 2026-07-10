@@ -22,9 +22,8 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
 import * as Sentry from '@sentry/react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeOverlayContainer, showToast } from './overlays';
-import { saveCategorizedFileToDevice, saveMediaToDevice } from '../../utils/mediaSaver';
+import {  saveMediaToDevice } from '../../utils/mediaSaver';
 import Pdf from 'react-native-pdf';
 
 const { width, height } = Dimensions.get('window');
@@ -113,98 +112,21 @@ interface ZoomableImageProps {
 }
 
 const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError }) => {
-  const [html, setHtml] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    if (Platform.OS === 'android') {
-      let cancelled = false;
-      const load = async () => {
-        try {
-          setLoading(true);
-          const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-          let mime = 'image/jpeg';
-          const lowerUri = uri.toLowerCase();
-          if (lowerUri.endsWith('.png')) {
-            mime = 'image/png';
-          } else if (lowerUri.endsWith('.gif')) {
-            mime = 'image/gif';
-          } else if (lowerUri.endsWith('.webp')) {
-            mime = 'image/webp';
-          }
-          const dataUri = `data:${mime};base64,${base64}`;
-          const htmlContent = `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,minimum-scale=1,user-scalable=yes">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{background:#000;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-img{max-width:100%;max-height:100%;object-fit:contain}
-</style></head><body>
-<img src="${dataUri}" onerror="window.ReactNativeWebView.postMessage('error')"/>
-</body></html>`;
-          if (!cancelled) {
-            setHtml(htmlContent);
-            setLoading(false);
-          }
-        } catch {
-          if (!cancelled) {
-            onImageError();
-            setLoading(false);
-          }
-        }
-      };
-      load();
-      return () => { cancelled = true; };
-    }
-  }, [uri]);
-
-  if (Platform.OS === 'ios') {
-    return (
-      <ScrollView
-        maximumZoomScale={5}
-        minimumZoomScale={1}
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
-      >
-        <Image
-          source={{ uri }}
-          style={styles.image}
-          resizeMode="contain"
-          onError={onImageError}
-        />
-      </ScrollView>
-    );
-  }
-
-  if (loading || !html) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
   return (
-    <WebView
-      source={{ html }}
-      style={{ flex: 1, backgroundColor: '#000', width }}
-      originWhitelist={['*']}
-      allowFileAccess
-      allowFileAccessFromFileURLs
-      allowUniversalAccessFromFileURLs
-      mixedContentMode="always"
-      javaScriptEnabled
-      domStorageEnabled
-      builtInZoomControls={true}
-      displayZoomControls={false}
-      scalesPageToFit={true}
-      onMessage={(event) => {
-        if (event.nativeEvent.data === 'error') {
-          onImageError();
-        }
-      }}
-    />
+    <ScrollView
+      maximumZoomScale={5}
+      minimumZoomScale={1}
+      showsHorizontalScrollIndicator={false}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+    >
+      <Image
+        source={{ uri }}
+        style={styles.image}
+        resizeMode="contain"
+        onError={onImageError}
+      />
+    </ScrollView>
   );
 };
 
@@ -276,10 +198,10 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
       return (
         <View style={{ flex: 1 }}>
           {pdfEngine === 'local' && (
-            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={2.2} onSingleTap={onSingleTap} />
+            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={1.0} onSingleTap={onSingleTap} />
           )}
           {pdfEngine === 'local_hd' && (
-            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={3.5} onSingleTap={onSingleTap} />
+            <PdfJsViewer localUri={localUri} remoteUrl={fileUri} scaleMultiplier={1.8} onSingleTap={onSingleTap} />
           )}
           {pdfEngine === 'google' && (
             <GooglePdfViewer remoteUrl={fileUri} isOffline={isOffline} />
@@ -382,69 +304,66 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           }
         }
 
-        // 2. Check viewer cache (previously previewed)
-        const dirInfo = await FileSystem.getInfoAsync(VIEWER_CACHE);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(VIEWER_CACHE, { intermediates: true });
-        }
-
         // Use viewer URL (applies fl_attachment for non-image files)
         const viewerUrl = getViewerUrl(fileUri);
-        const realName = extractFileNameFromUrl(viewerUrl, fileName);
-        let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-        // Enforce file extension based on fileType if missing
-        const lowerName = safeName.toLowerCase();
-        if (fileType === 'video' && !lowerName.match(/\.(mp4|mkv|webm|avi|mov|flv|3gp|wmv)$/)) {
-          safeName = `${safeName}.mp4`;
-        } else if (fileType === 'audio' && !lowerName.match(/\.(mp3|wav|m4a|aac|ogg|wma)$/)) {
-          safeName = `${safeName}.mp3`;
-        } else if (fileType === 'pdf' && !lowerName.endsWith('.pdf')) {
-          safeName = `${safeName}.pdf`;
-        } else if (fileType === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) {
-          safeName = `${safeName}.jpg`;
+        // 3. Download file — to vault path when fileId is available (eliminates dual cache),
+        //    otherwise to viewer cache
+        const destinationPath = fileId
+          ? getVaultFilePath(fileId, fileName, fileUri)
+          : (() => {
+              const realName = extractFileNameFromUrl(viewerUrl, fileName);
+              let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
+              const lowerName = safeName.toLowerCase();
+              if (fileType === 'video' && !lowerName.match(/\.(mp4|mkv|webm|avi|mov|flv|3gp|wmv)$/)) safeName += '.mp4';
+              else if (fileType === 'audio' && !lowerName.match(/\.(mp3|wav|m4a|aac|ogg|wma)$/)) safeName += '.mp3';
+              else if (fileType === 'pdf' && !lowerName.endsWith('.pdf')) safeName += '.pdf';
+              else if (fileType === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) safeName += '.jpg';
+              return `${VIEWER_CACHE}${safeName}`;
+            })();
+
+        const destDir = destinationPath.substring(0, destinationPath.lastIndexOf('/') + 1);
+        const dirInfo = await FileSystem.getInfoAsync(destDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
         }
 
-        const cachePath = `${VIEWER_CACHE}${safeName}`;
-
-        const cacheInfo = await FileSystem.getInfoAsync(cachePath);
-        // Only use cache if file exists AND has real content (size > 0 bytes)
-        if (cacheInfo.exists && (cacheInfo as any).size > 0) {
+        // Check if file already exists at destination
+        const existingInfo = await FileSystem.getInfoAsync(destinationPath);
+        if (existingInfo.exists && (existingInfo as any).size > 0) {
           if (!cancelled) {
-            setLocalUri(cachePath);
+            setLocalUri(destinationPath);
             setIsOffline(true);
             setIsDownloading(false);
           }
           return;
         }
-        // Delete empty cached file before re-downloading
-        if (cacheInfo.exists) {
-          await FileSystem.deleteAsync(cachePath, { idempotent: true });
+        if (existingInfo.exists) {
+          await FileSystem.deleteAsync(destinationPath, { idempotent: true });
         }
 
-        // 3. Download to viewer cache
         const downloadResumable = FileSystem.createDownloadResumable(
           viewerUrl,
-          cachePath,
-          {
-            headers: {
-              'Accept': '*/*',
-              'User-Agent': 'NALISS-Hub/1.0',
-            },
+          destinationPath,
+        {
+          headers: {
+            'Accept': '*/*',
+            'User-Agent': 'NALISS-Hub/1.0',
           },
-          (progress) => {
-            const pct = progress.totalBytesExpectedToWrite > 0
-              ? Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100)
-              : 0;
-            if (!cancelled) setDownloadProgress(pct);
-          }
-        );
+        },
+        (progress) => {
+          const pct = progress.totalBytesExpectedToWrite > 0
+            ? Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100)
+            : 0;
+          if (!cancelled) setDownloadProgress(pct);
+        }
+      );
 
-        const result = await downloadResumable.downloadAsync();
-        if (!cancelled) {
-          if (result && result.status === 200) {
-            // File downloaded successfully — use it directly
-            setLocalUri(result.uri);
+      const result = await downloadResumable.downloadAsync();
+      if (!cancelled) {
+        if (result && result.status === 200) {
+          // File downloaded successfully — use it directly
+          setLocalUri(result.uri);
             setIsOffline(false);
           } else {
             setDownloadError('Could not load file. Tap retry.');
@@ -480,27 +399,50 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   }, [isVisible]);
 
   const [isSaved, setIsSaved] = React.useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
 
   if (!isVisible) return null;
 
+  const mimeMap: Record<string, string> = {
+    image: 'image/jpeg',
+    video: 'video/mp4',
+    pdf: 'application/pdf',
+    audio: 'audio/mpeg',
+    document: 'application/octet-stream',
+  };
+
   const saveToDevice = async () => {
     try {
-      const uriToSave = localUri || fileUri;
-      if (!uriToSave) return;
+      let fileToSave = localUri;
 
-      // Ensure we have a local file — download if needed
-      let localFile = localUri;
-      if (!localFile || (!localFile.startsWith('file://') && !localFile.startsWith('/'))) {
-        // Not a local file — need to download first
-        Alert.alert('Preparing file…', 'Downloading file before saving. Please wait.');
-        return; 
+      // If not cached locally, download first, then save
+      if (!fileToSave || (!fileToSave.startsWith('file://') && !fileToSave.startsWith('/'))) {
+        setIsSaving(true);
+        const viewerUrl = getViewerUrl(fileUri);
+        const destPath = fileId
+          ? getVaultFilePath(fileId, fileName, fileUri)
+          : `${FileSystem.cacheDirectory}temp_save_${Date.now()}_${fileName}`;
+
+        const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
+        const dirInfo = await FileSystem.getInfoAsync(destDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
+        }
+
+        const resumable = FileSystem.createDownloadResumable(viewerUrl, destPath);
+        const result = await resumable.downloadAsync();
+        if (!result || result.status !== 200) {
+          Alert.alert('Save Failed', 'Could not download the file before saving.');
+          setIsSaving(false);
+          return;
+        }
+        fileToSave = result.uri;
+        setIsSaving(false);
       }
 
-      // Normalize to file:// URI
-      const fileUriNorm = localFile.startsWith('file://') ? localFile : `file://${localFile}`;
-
-      // Call the new background save utility directly
-      const result = await saveMediaToDevice(fileUriNorm, fileType, fileName);
+      const fileUriNorm = fileToSave.startsWith('file://') ? fileToSave : `file://${fileToSave}`;
+      const mimeType = mimeMap[fileType] || 'application/octet-stream';
+      const result = await saveMediaToDevice(fileUriNorm, mimeType, fileName);
 
       if (result.success) {
         setIsSaved(true);
@@ -512,6 +454,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     } catch (err: any) {
       Sentry.captureException(err, { tags: { location: 'UniversalViewer.saveToDevice' }, extra: { fileType, fileName } });
       Alert.alert('Error', 'Could not save the file to public storage. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -581,7 +525,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   onPress={() => setPdfEngine('local')}
                 >
                   <Ionicons name="document-text-outline" size={14} color={pdfEngine === 'local' ? '#fff' : '#64748b'} />
-                  <Text style={[engineStyles.btnText, pdfEngine === 'local' && engineStyles.btnTextActive]}>Local Std</Text>
+                  <Text style={[engineStyles.btnText, pdfEngine === 'local' && engineStyles.btnTextActive]}>Fit Width</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -589,7 +533,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   onPress={() => setPdfEngine('local_hd')}
                 >
                   <Ionicons name="sparkles-outline" size={14} color={pdfEngine === 'local_hd' ? '#fff' : '#64748b'} />
-                  <Text style={[engineStyles.btnText, pdfEngine === 'local_hd' && engineStyles.btnTextActive]}>Local HD</Text>
+                  <Text style={[engineStyles.btnText, pdfEngine === 'local_hd' && engineStyles.btnTextActive]}>Closer View</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -649,17 +593,21 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           {shouldShowControls && showDownload && (
             <View style={[styles.footer, !showShare && { justifyContent: 'center' }, isLandscape && styles.landscapeOverlayFooter]}>
               <TouchableOpacity
-                style={[styles.footerAction, (!localUri && isDownloading) && { opacity: 0.5 }]}
+                style={[styles.footerAction, ((!localUri && isDownloading) || isSaving) && { opacity: 0.5 }]}
                 onPress={saveToDevice}
-                disabled={isDownloading && !localUri}
+                disabled={(isDownloading && !localUri) || isSaving}
               >
-                <Ionicons
-                  name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
-                  size={20}
-                  color={isSaved ? '#10b981' : COLORS.primary}
-                />
+                {isSaving ? (
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                ) : (
+                  <Ionicons
+                    name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
+                    size={20}
+                    color={isSaved ? '#10b981' : COLORS.primary}
+                  />
+                )}
                 <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
-                  {isSaved ? 'Saved!' : 'Save to Device'}
+                  {isSaving ? 'Saving…' : isSaved ? 'Saved!' : 'Save to Device'}
                 </Text>
               </TouchableOpacity>
               {showShare && (
@@ -676,191 +624,35 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   );
 };
 
-// ── Visual Scan Engine for Mobile (Cloudinary page images) ───────────────────
-function MobileVisualScan({ url }: { url: string }) {
-  const MAX_PAGES = 50;
-  const [pages, setPages] = React.useState<number[]>([1]);
-  const [failed, setFailed] = React.useState<Set<number>>(new Set());
-
-  const pageUrl = (page: number) => {
-    const match = url.match(/res\.cloudinary\.com\/([^/]+)\/(?:raw|image)\/upload\/(?:v\d+\/)?(.+)$/);
-    if (!match) return null;
-    const [, cloud, path] = match;
-    const pathNoExt = path.replace(/\.[^.]+$/, '');
-    return `https://res.cloudinary.com/${cloud}/image/upload/pg_${page},w_1200,c_limit,f_jpg,q_auto:best/${pathNoExt}.jpg`;
-  };
-
-  if (!url.includes('res.cloudinary.com')) {
-    return (
-      <View style={styles.center}>
-        <Ionicons name="alert-circle-outline" size={40} color="#f59e0b" />
-        <Text style={styles.loadingText}>Visual Scan requires Cloudinary URL</Text>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#e2e8f0' }} contentContainerStyle={{ padding: 16, gap: 16 }}>
-      {pages.map(page => {
-        const imgUrl = pageUrl(page);
-        if (!imgUrl || failed.has(page)) return null;
-        return (
-          <View key={page} style={{ alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>
-              Page {page}
-            </Text>
-            <Image
-              source={{ uri: imgUrl }}
-              style={{ width: width - 32, height: (width - 32) * 1.4, borderRadius: 12, backgroundColor: '#fff' }}
-              resizeMode="contain"
-              onLoad={() => {
-                if (page < MAX_PAGES) {
-                  setPages(prev => prev.includes(page + 1) ? prev : [...prev, page + 1]);
-                }
-              }}
-              onError={() => setFailed(prev => new Set([...prev, page]))}
-            />
-          </View>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-// ── Video Player — HTML5 WebView (same as admin) + expo-av fallback ──────────
-// Primary: HTML5 <video> in WebView — handles streaming, seeking, all formats
-// Fallback: expo-av Video component (tap "Native Player" button)
+// ── Video Player — expo-av native player ─────────────────────────────────────
 function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
-  const [useNative, setUseNative] = React.useState(false);
-  const insets = useSafeAreaInsets();
-  const safeBottomOffset = Math.max(insets.bottom + 8, 16);
-
-  // Normalize URI for expo-av: local paths must have file:// prefix
-  // The web player handles bare paths via allowFileAccess, but expo-av requires file://
   const rawSrc = localUri || remoteUrl;
   const videoSrc = rawSrc && !rawSrc.startsWith('http') && !rawSrc.startsWith('file://')
     ? `file://${rawSrc}`
     : rawSrc;
 
-  const isLocal = videoSrc && (videoSrc.startsWith('file://') || videoSrc.startsWith('/'));
-
-  // Auto-switch to Native Player for local files, as WebView HTML5 video does not support file:// on Android
-  React.useEffect(() => {
-    if (isLocal) {
-      setUseNative(true);
-    }
-  }, [isLocal]);
-
-  if (useNative) {
-    return (
-      <View style={styles.videoContainer}>
-        <Video
-          source={{
-            uri: videoSrc,
-            overrideFileExtension: 'mp4',
-          } as any}
-          rate={1.0}
-          volume={1.0}
-          isMuted={false}
-          resizeMode={ResizeMode.CONTAIN}
-          shouldPlay={false}
-          progressUpdateIntervalMillis={500}
-          useNativeControls={true}
-          style={styles.video}
-          onError={(err) => {
-            Sentry.captureException(new Error(`expo-av Video error: ${JSON.stringify(err)}`), {
-              tags: { location: 'UniversalViewer.VideoPlayer.native' },
-              extra: { videoSrc, rawSrc },
-            });
-            if (!isLocal) {
-              setUseNative(false);
-            } else {
-              Alert.alert('Playback Error', 'Could not play the offline video file. The file may be corrupted.');
-            }
-          }}
-        />
-        {!isLocal && (
-          <TouchableOpacity
-            onPress={() => setUseNative(false)}
-            style={[videoStyles.switchBtn, { bottom: safeBottomOffset }]}
-          >
-            <Ionicons name="globe-outline" size={14} color="#fff" />
-            <Text style={videoStyles.switchBtnText}>Web Player</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  }
-
-  // HTML5 video player — same approach as admin InstitutionalDocumentViewer
-  const srcJson = JSON.stringify(videoSrc);
-  const html = `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{background:#000;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
-video{width:100%;max-height:100vh;outline:none}
-#err{display:none;flex-direction:column;align-items:center;justify-content:center;
-gap:12px;color:#ef4444;padding:24px;text-align:center;min-height:60vh}
-#err p{color:#94a3b8;font-size:13px}
-</style></head><body>
-<video id="v" src=${srcJson} controls playsinline preload="metadata"
-  onerror="document.getElementById('v').style.display='none';document.getElementById('err').style.display='flex'">
-  <source src=${srcJson}>
-</video>
-<div id="err">
-  <strong style="color:#ef4444">Video could not be played</strong>
-  <p>Try the Native Player option below</p>
-</div>
-</body></html>`;
-
   return (
     <View style={styles.videoContainer}>
-      <WebView
-        source={{ html }}
-        style={{ flex: 1, backgroundColor: '#000', width: '100%', alignSelf: 'stretch' }}
-        originWhitelist={['*']}
-        allowFileAccess
-        allowFileAccessFromFileURLs
-        allowUniversalAccessFromFileURLs
-        mixedContentMode="always"
-        javaScriptEnabled
-        mediaPlaybackRequiresUserAction={false}
-        allowsInlineMediaPlayback
-        allowsFullscreenVideo
+      <Video
+        source={{ uri: videoSrc } as any}
+        rate={1.0}
+        volume={1.0}
+        isMuted={false}
+        resizeMode={ResizeMode.CONTAIN}
+        shouldPlay={false}
+        useNativeControls={true}
+        style={styles.video}
+        onError={(err) => {
+          Sentry.captureException(new Error(`expo-av Video error: ${JSON.stringify(err)}`), {
+            tags: { location: 'UniversalViewer.VideoPlayer' },
+            extra: { videoSrc },
+          });
+          Alert.alert('Playback Error', 'Could not play this video. The file may be corrupted or in an unsupported format.');
+        }}
       />
-      <TouchableOpacity
-        onPress={() => setUseNative(true)}
-        style={[videoStyles.switchBtn, { bottom: safeBottomOffset }]}
-      >
-        <Ionicons name="phone-portrait-outline" size={14} color="#fff" />
-        <Text style={videoStyles.switchBtnText}>Native Player</Text>
-      </TouchableOpacity>
     </View>
   );
 }
-
-const videoStyles = StyleSheet.create({
-  switchBtn: {
-    position: 'absolute',
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  switchBtnText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-});
 
 // Google Document Viewer for high-clarity remote vector rendering
 function GooglePdfViewer({ remoteUrl, isOffline }: { remoteUrl: string; isOffline: boolean }) {
@@ -928,38 +720,127 @@ function MicrosoftPdfViewer({ remoteUrl, isOffline }: { remoteUrl: string; isOff
   );
 }
 
-// react-native-pdf Hardware Accelerated Renderer - maximum vector clarity
-function PdfJsViewer({ localUri, remoteUrl, onSingleTap }: { localUri: string | null; remoteUrl: string; scaleMultiplier?: number; onSingleTap?: () => void }) {
-  // Ensure localUri is properly formatted for react-native-pdf if present
+// react-native-pdf Hardware Accelerated Renderer — full-width, zoom, rotation, page counter
+function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }: {
+  localUri: string | null;
+  remoteUrl: string;
+  scaleMultiplier?: number;
+  onSingleTap?: () => void;
+}) {
+  const [numPages, setNumPages] = React.useState(0);
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
+  const [zoom, setZoom] = React.useState(scaleMultiplier);
+
   let source;
   if (localUri) {
-    source = { uri: localUri.startsWith('file://') ? localUri : `file://${localUri}` };
+    source = { uri: localUri.startsWith('file://') ? localUri : `file://${localUri}`, cache: true };
   } else {
     source = { uri: remoteUrl, cache: true };
   }
 
+  const rotContainer = rotation !== 0
+    ? { transform: [{ rotate: `${rotation}deg` }] }
+    : {};
+
   return (
-    <View style={{ flex: 1, width: '100%', height: '100%', backgroundColor: '#1e293b' }}>
-      <Pdf
-        source={source}
-        style={{ flex: 1, width: '100%', height: '100%', backgroundColor: 'transparent' }}
-        scale={2.5}
-        minScale={1.0}
-        maxScale={5.0}
-        singlePage={false}
-        enableAntialiasing={true}
-        enablePaging={true}
-        fitPolicy={0}
-        onPageSingleTap={(page, x, y) => {
-          if (onSingleTap) onSingleTap();
-        }}
-        onError={(error) => {
-          Sentry.captureException(new Error(`PDF rendering error: ${error}`));
-        }}
-      />
+    <View style={{ flex: 1, backgroundColor: '#1e293b' }}>
+      <View style={[{ flex: 1, width: '100%' }, rotContainer]}>
+        <Pdf
+          source={source}
+          style={{ flex: 1, width: '100%', backgroundColor: 'transparent' }}
+          scale={zoom}
+          minScale={0.5}
+          maxScale={5.0}
+          singlePage={false}
+          enableAntialiasing={true}
+          enablePaging={false}
+          fitPolicy={0}
+          spacing={16}
+          onLoadComplete={(count) => { setNumPages(count); }}
+          onPageChanged={(page) => { setCurrentPage(page); }}
+          onPageSingleTap={() => onSingleTap?.()}
+          onError={(error) => {
+            Sentry.captureException(new Error(`PDF rendering error: ${error}`));
+          }}
+        />
+      </View>
+
+      <View style={pdfCtrl.container}>
+        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))}>
+          <Ionicons name="remove" size={18} color="#fff" />
+        </TouchableOpacity>
+        <Text style={pdfCtrl.label}>{Math.round(zoom * 100)}%</Text>
+        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setZoom(z => Math.min(5, +(z + 0.25).toFixed(2)))}>
+          <Ionicons name="add" size={18} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setZoom(scaleMultiplier)}>
+          <Ionicons name="resize" size={16} color="#fff" />
+        </TouchableOpacity>
+        <View style={pdfCtrl.divider} />
+        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setRotation(r => (r + 90) % 360)}>
+          <Ionicons name="refresh-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+        <View style={pdfCtrl.divider} />
+        <View style={pdfCtrl.pageBadge}>
+          <Ionicons name="document-text-outline" size={12} color="#94a3b8" />
+          <Text style={pdfCtrl.pageText}>{currentPage}/{numPages || '?'}</Text>
+        </View>
+      </View>
     </View>
   );
 }
+
+const pdfCtrl = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
+  },
+  btn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#e2e8f0',
+    minWidth: 40,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  divider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#334155',
+    marginHorizontal: 4,
+  },
+  pageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  pageText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94a3b8',
+    fontVariant: ['tabular-nums'],
+  },
+});
 
 function AudioPlayer({ uri, fileName }: { uri: string; fileName: string }) {
   const [sound, setSound] = React.useState<Audio.Sound | null>(null);

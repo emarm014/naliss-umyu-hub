@@ -125,7 +125,7 @@ export const getOfflineImageUri = async (remoteUrl: string): Promise<string> => 
             // Validate download
             const fileInfo = await FileSystem.getInfoAsync(result.uri);
             if ((fileInfo as any).size === 0) {
-                await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+                await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch((err) => console.error('[OfflineImage] delete zero-size file failed:', err));
                 return null;
             }
 

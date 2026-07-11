@@ -48,8 +48,8 @@ export default function SecurityPage() {
 
   // Email Change state
   const [newEmail, setNewEmail] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [emailSwapPhase, setEmailSwapPhase] = useState<'idle' | 'otp' | 'newEmail'>('idle');
+  const [emailCurrentPassword, setEmailCurrentPassword] = useState('');
+  const [showEmailCurrentPassword, setShowEmailCurrentPassword] = useState(false);
   const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -153,59 +153,9 @@ export default function SecurityPage() {
   }, [profile?.id]);
 
   // ── Email Update Handlers ──────────────────────────────────────────────────
-  const handleInitiateEmailSwap = async () => {
-    setEmailError('');
-    setEmailSuccess('');
-    setIsUpdatingEmail(true);
-    try {
-      const { error } = await supabase.auth.reauthenticate();
-      if (error) throw error;
-      setEmailSwapPhase('otp');
-      setEmailSuccess(`A verification code has been dispatched to your current email address.`);
-    } catch (err: any) {
-      console.error('Failed to initiate email change:', err);
-      setEmailError(err.message || 'Failed to initiate email change.');
-    } finally {
-      setIsUpdatingEmail(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setEmailError('');
-    setEmailSuccess('');
-
-    if (!otpCode || otpCode.length !== 6) {
-      setEmailError('Please enter a valid 6-digit OTP code.');
-      return;
-    }
-
-    setIsUpdatingEmail(true);
-    try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user || !user.email) {
-        throw new Error('Could not resolve current authenticated administrator session.');
-      }
-      const { error } = await supabase.auth.verifyOtp({
-        email: user.email,
-        token: otpCode,
-        type: 'reauthentication' as any,
-      });
-
-      if (error) throw error;
-
-      setEmailSwapPhase('newEmail');
-      setEmailSuccess('Code verified successfully. Please enter your new email address.');
-    } catch (err: any) {
-      console.error('Failed to verify OTP:', err);
-      setEmailError(err.message || 'Invalid or expired OTP.');
-    } finally {
-      setIsUpdatingEmail(false);
-    }
-  };
-
   const handleExecuteEmailSwap = async (e: React.FormEvent) => {
     e.preventDefault();
+    clearMessages();
     setEmailError('');
     setEmailSuccess('');
 
@@ -213,9 +163,26 @@ export default function SecurityPage() {
       setEmailError('Please enter a new valid email address.');
       return;
     }
+    if (!emailCurrentPassword) {
+      setEmailError('Current password is required to change your email.');
+      return;
+    }
 
     setIsUpdatingEmail(true);
     try {
+      // 1. Verify current password
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: profile?.email || '',
+        password: emailCurrentPassword,
+      });
+
+      if (authError) {
+        setEmailError('Incorrect current password.');
+        setIsUpdatingEmail(false);
+        return;
+      }
+
+      // 2. Execute swap
       const { error } = await supabase.rpc('execute_email_swap_v2', {
         p_new_email: newEmail,
       });
@@ -227,9 +194,8 @@ export default function SecurityPage() {
       }
 
       setEmailSuccess('Email address updated successfully!');
-      setEmailSwapPhase('idle');
       setNewEmail('');
-      setOtpCode('');
+      setEmailCurrentPassword('');
     } catch (err: any) {
       console.error('Failed to execute email change:', err);
       setEmailError(err.message || 'Failed to finalize email change.');
@@ -463,94 +429,58 @@ export default function SecurityPage() {
                 </div>
               )}
 
-              {emailSwapPhase === 'idle' && (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Current Email</label>
+              <form onSubmit={handleExecuteEmailSwap} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Current Email</label>
+                  <input
+                    type="text"
+                    value={profile?.email || ''}
+                    disabled
+                    className="w-full px-5 py-4 bg-gray-100 border-none rounded-2xl text-sm font-semibold text-gray-500 cursor-not-allowed"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">New Email</label>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800"
+                    placeholder="admin@example.com"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Current Password (To Verify Identity)</label>
+                  <div className="relative">
                     <input
-                      type="text"
-                      value={profile?.email || ''}
-                      disabled
-                      className="w-full px-5 py-4 bg-gray-100 border-none rounded-2xl text-sm font-semibold text-gray-500 cursor-not-allowed"
+                      type={showEmailCurrentPassword ? 'text' : 'password'}
+                      value={emailCurrentPassword}
+                      onChange={(e) => setEmailCurrentPassword(e.target.value)}
+                      className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800"
+                      placeholder="••••••••"
+                      required
                     />
-                  </div>
-                  <div className="flex gap-4 mt-4">
                     <button
                       type="button"
-                      onClick={handleInitiateEmailSwap}
-                      disabled={isUpdatingEmail}
-                      className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20 active:scale-95"
+                      onClick={() => setShowEmailCurrentPassword(!showEmailCurrentPassword)}
+                      className="absolute right-5 top-4 text-gray-400 hover:text-gray-600"
                     >
-                      {isUpdatingEmail ? 'Requesting...' : 'Change Email'}
+                      {showEmailCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
                 </div>
-              )}
 
-              {emailSwapPhase === 'otp' && (
-                <form onSubmit={handleVerifyOtp} className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Verification Code (OTP)</label>
-                    <input
-                      type="text"
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                      className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800 tracking-widest text-center text-lg"
-                      placeholder="000000"
-                      maxLength={6}
-                      required
-                    />
-                  </div>
-                  <div className="flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => { setEmailSwapPhase('idle'); setEmailError(''); setEmailSuccess(''); }}
-                      className="flex-1 py-5 bg-gray-50 text-gray-400 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isUpdatingEmail}
-                      className="flex-1 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20"
-                    >
-                      {isUpdatingEmail ? 'Verifying...' : 'Verify OTP'}
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {emailSwapPhase === 'newEmail' && (
-                <form onSubmit={handleExecuteEmailSwap} className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">New Email</label>
-                    <input
-                      type="email"
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 text-sm font-semibold text-gray-800"
-                      placeholder="admin@example.com"
-                      required
-                    />
-                  </div>
-                  <div className="flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => { setEmailSwapPhase('idle'); setEmailError(''); setEmailSuccess(''); }}
-                      className="flex-1 py-5 bg-gray-50 text-gray-400 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isUpdatingEmail}
-                      className="flex-1 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20"
-                    >
-                      {isUpdatingEmail ? 'Updating...' : 'Confirm New Email'}
-                    </button>
-                  </div>
-                </form>
-              )}
+                <button
+                  type="submit"
+                  disabled={isUpdatingEmail}
+                  className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20 active:scale-95"
+                >
+                  {isUpdatingEmail ? 'Updating...' : 'Change Email'}
+                </button>
+              </form>
             </div>
           </div>
 

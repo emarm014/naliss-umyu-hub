@@ -7,7 +7,7 @@ export const queryClient = new QueryClient({
       gcTime: 30 * 60 * 1000,    // 30 minutes garbage collection
       retry: 3,
       retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
-      refetchOnWindowFocus: false, // Managed by focal triggers
+      refetchOnWindowFocus: true, // Fix 4: Enabled to catch stale data on return
       refetchOnReconnect: true,
     },
   },

@@ -87,14 +87,21 @@ function App() {
       // Quiet background check to sync changes seamlessly without showing full-page blocking loaders
       const hasUser = useAuthStore.getState().user;
       if (hasUser) {
-        syncAll();
+        syncAll(true);
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocus();
       }
     };
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleVisibility);
 
     return () => { 
       if (cleanupRef.fn) cleanupRef.fn(); 
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [initialize, syncAll]);
 

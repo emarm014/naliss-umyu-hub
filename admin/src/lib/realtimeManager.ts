@@ -8,6 +8,8 @@ type RealtimeCallback = (payload: {
   oldRecord: any;
 }) => void;
 
+export type ConnectionStatus = 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
+
 class RealtimeManager {
   private channels: Map<string, RealtimeChannel> = new Map();
   private callbacks: Set<RealtimeCallback> = new Set();
@@ -16,6 +18,10 @@ class RealtimeManager {
   private pendingEvents: any[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private tables: string[] = [];
+  
+  private connectionStatus: ConnectionStatus = 'DISCONNECTED';
+  private statusCallbacks: Set<(status: ConnectionStatus) => void> = new Set();
+  private healthChannel: RealtimeChannel | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -42,9 +48,35 @@ class RealtimeManager {
       this.disconnectAll();
     }
   }
+  
+  public onStatusChange(callback: (status: ConnectionStatus) => void) {
+    this.statusCallbacks.add(callback);
+    callback(this.connectionStatus);
+    return () => {
+      this.statusCallbacks.delete(callback);
+    };
+  }
+  
+  private setStatus(status: ConnectionStatus) {
+    if (this.connectionStatus !== status) {
+      this.connectionStatus = status;
+      this.statusCallbacks.forEach((cb) => cb(status));
+    }
+  }
 
   private connectAll() {
-    if (!this.isVisible) return;
+    if (!this.healthChannel) {
+      this.setStatus('CONNECTING');
+      this.healthChannel = supabase.channel('system_health');
+      this.healthChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          this.setStatus('CONNECTED');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          this.setStatus('DISCONNECTED');
+        }
+      });
+    }
+
     this.tables.forEach((table) => {
       if (this.channels.has(table)) return;
 
@@ -68,9 +100,19 @@ class RealtimeManager {
       supabase.removeChannel(channel);
     });
     this.channels.clear();
+    
+    if (this.healthChannel) {
+      supabase.removeChannel(this.healthChannel);
+      this.healthChannel = null;
+    }
+    this.setStatus('DISCONNECTED');
   }
 
   private handleIncomingEvent(table: string, payload: any) {
+    // If the tab is hidden, drop the event to save processing.
+    // When the tab regains focus, syncAll(true) will fetch fresh data anyway.
+    if (!this.isVisible) return;
+
     // Event batching within 75ms to prevent render storms
     this.pendingEvents.push({
       table,
@@ -102,16 +144,11 @@ class RealtimeManager {
     if (visible === this.isVisible) return;
     this.isVisible = visible;
 
-    if (visible) {
-      // Tab is visible again, reconnect all channels
-      this.connectAll();
-    } else {
-      // Tab is hidden, disconnect all channels to save connections/bandwidth
-      this.disconnectAll();
-    }
+    // Fix 1: We no longer disconnect channels on hidden!
+    // Disconnecting causes reconnect storms and orphans other channels.
+    // Instead, we just pause processing in handleIncomingEvent and let 
+    // App.tsx's focus handler trigger a syncAll(true) when we return.
   };
-
-
 }
 
 export const adminRealtimeManager = new RealtimeManager();

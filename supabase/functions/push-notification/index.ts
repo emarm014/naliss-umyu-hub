@@ -17,7 +17,7 @@ const INTERNAL_SECRET = Deno.env.get("PUSH_INTERNAL_SECRET") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-secret",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-secret, baggage, sentry-trace",
 };
 
 async function generateHash(token: string, type: string, entityId: string): Promise<string> {

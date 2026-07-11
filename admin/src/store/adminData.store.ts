@@ -171,13 +171,13 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     // Set isSyncing immediately before any async operations
     set({ isSyncing: true, error: null });
 
-    // Safety fallback: if sync takes longer than 30s, force reset isSyncing to prevent infinite lock
+    // Safety fallback: if sync takes longer than 60s, force reset isSyncing
     const safetyTimeout = setTimeout(() => {
       if (get().isSyncing) {
-        console.warn('[Sync Engine] Sync took longer than 30s. Force resetting isSyncing state.');
+        console.warn('[Sync Engine] Sync took longer than 60s. Force resetting isSyncing state.');
         set({ isSyncing: false });
       }
-    }, 30000);
+    }, 60000);
 
     const failedKeys: string[] = [];
 
@@ -326,14 +326,11 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         }),
       ];
 
-      // Run sequential batches of 4 to prevent browser queue stalling
+      // Run all queries concurrently. Modern browsers (HTTP/2) handle 20+ multiplexed requests instantly.
+      // TanStack Query will also deduplicate any identical in-flight queries.
       const combinedResults: Record<string, any> = {};
-      const batchSize = 4;
-      for (let i = 0; i < tasks.length; i += batchSize) {
-        const batch = tasks.slice(i, i + batchSize);
-        const batchResults = await Promise.all(batch.map(t => t()));
-        batchResults.forEach(res => Object.assign(combinedResults, res));
-      }
+      const batchResults = await Promise.all(tasks.map(t => t()));
+      batchResults.forEach(res => Object.assign(combinedResults, res));
 
       set({
         analytics: combinedResults.analytics,

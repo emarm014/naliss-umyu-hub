@@ -75,7 +75,7 @@ function createSupabaseClient(): SupabaseClient {
   const conn = client.realtime.conn;
   if (conn) {
     conn.addEventListener('open', () => console.log(`[IDLE-AUDIT] WS Open at ${Date.now()}`));
-    conn.addEventListener('close', (e) => console.log(`[IDLE-AUDIT] WS Close at ${Date.now()} code=${e.code} reason=${e.reason}`));
+    conn.addEventListener('close', (e: any) => console.log(`[IDLE-AUDIT] WS Close at ${Date.now()} code=${e.code} reason=${e.reason}`));
     conn.addEventListener('error', () => console.log(`[IDLE-AUDIT] WS Error at ${Date.now()}`));
   }
   

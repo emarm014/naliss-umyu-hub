@@ -150,7 +150,7 @@ export default function SecurityPage() {
       supabase.removeChannel(channel);
       if (flashTimer.current) clearTimeout(flashTimer.current);
     };
-  }, [profile]);
+  }, [profile?.id]);
 
   // ── Email Update Handlers ──────────────────────────────────────────────────
   const handleInitiateEmailSwap = async () => {

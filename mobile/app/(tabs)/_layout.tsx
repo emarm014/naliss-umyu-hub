@@ -23,40 +23,19 @@ export default function TabsLayout() {
 
   const TabsComponent = Tabs as any;
 
-  const renderTabLabel = (text: string) => ({ color, focused }: { color: string; focused: boolean }) => (
-    <Text
-      numberOfLines={1}
-      adjustsFontSizeToFit={true}
-      minimumFontScale={0.6}
-      allowFontScaling={false}
-      style={{
-        color,
-        fontSize: 9.5,
-        fontWeight: '700',
-        fontFamily: 'Inter-SemiBold',
-        textAlign: 'center',
-        letterSpacing: -0.2,
-        marginTop: 2,
-        width: '100%',
-      }}
-    >
-      {text}
-    </Text>
-  );
-
   const renderTabIcon = (iconName: string, outlineName: string) => ({ color, focused }: { color: string; focused: boolean }) => (
     <View
       style={{
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         backgroundColor: focused ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)') : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
       }}
     >
-      <Ionicons name={(focused ? iconName : outlineName) as any} size={22} color={color} />
+      <Ionicons name={(focused ? iconName : outlineName) as any} size={26} color={color} />
     </View>
   );
 
@@ -71,7 +50,6 @@ export default function TabsLayout() {
       }}
       sceneContainerStyle={{
         backgroundColor: colors.background,
-        paddingBottom: safeBottomOffset + 76,
       }}
       screenOptions={{
         headerShown: false,
@@ -79,47 +57,35 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: isDark ? '#64748b' : colors.textMuted,
         
         tabBarStyle: {
-          position: 'absolute',
-          bottom: safeBottomOffset,
-          left: 12,
-          right: 12,
-          height: 66,
-          borderRadius: 20,
-          backgroundColor: '#FFFFFF',
+          height: 60 + safeBottomOffset,
+          paddingBottom: safeBottomOffset,
+          paddingTop: 8,
+          backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: isDark ? '#334155' : '#E2E8F0',
           elevation: 8,
           shadowColor: '#000000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.08,
-          shadowRadius: 10,
-          borderTopWidth: 0,
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.05,
+          shadowRadius: 8,
         },
         tabBarItemStyle: {
           flex: 1,
-          paddingHorizontal: 0,
-          paddingVertical: 4,
           justifyContent: 'center',
           alignItems: 'center',
         },
-        tabBarLabelStyle: {
-          fontSize: 9.5,
-          fontFamily: 'Inter-SemiBold',
-          letterSpacing: -0.2, // Gives micro-clearance to long words
-          width: '100%',       // Guaranteed to prevent truncation like RESOUR...
-        },
-        tabBarShowLabel: true,
+        tabBarShowLabel: false,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          tabBarLabel: renderTabLabel('HOME'),
           tabBarIcon: renderTabIcon('home', 'home-outline'),
         }}
       />
       <Tabs.Screen
         name="announcements"
         options={{
-          tabBarLabel: renderTabLabel('UPDATES'),
           tabBarIcon: renderTabIcon('megaphone', 'megaphone-outline'),
         }}
       />
@@ -132,7 +98,6 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="messages"
         options={{
-          tabBarLabel: renderTabLabel('CHAT'),
           tabBarBadge: badgeValue,
           tabBarIcon: renderTabIcon('chatbubble-ellipses', 'chatbubble-ellipses-outline'),
         }}
@@ -141,13 +106,11 @@ export default function TabsLayout() {
         name="resources"
         options={{
           tabBarIcon: renderTabIcon('folder', 'folder-outline'),
-          tabBarLabel: renderTabLabel('RESOURCES'),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          tabBarLabel: renderTabLabel('PROFILE'),
           tabBarIcon: renderTabIcon('person', 'person-outline'),
         }}
       />

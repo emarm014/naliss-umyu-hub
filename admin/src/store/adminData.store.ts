@@ -162,9 +162,12 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     const lastSyncTime = get().lastSync ? new Date(get().lastSync!) : null;
     const isInitialLoad = !get().lastSync;
 
+    console.log(`[IDLE-AUDIT] syncAll called at ${now.getTime()}, force=${force}`);
+
     // Fix: Atomically check and set isSyncing to prevent race condition
     const currentState = get();
     if (currentState.isSyncing || (!force && !isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5000)) {
+      console.log(`[IDLE-AUDIT] syncAll returning early. isSyncing=${currentState.isSyncing}, timeSinceLastSync=${lastSyncTime ? now.getTime() - lastSyncTime.getTime() : 'null'}`);
       return;
     }
 

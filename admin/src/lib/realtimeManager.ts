@@ -21,7 +21,6 @@ class RealtimeManager {
   
   private connectionStatus: ConnectionStatus = 'DISCONNECTED';
   private statusCallbacks: Set<(status: ConnectionStatus) => void> = new Set();
-  private healthChannel: RealtimeChannel | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -65,17 +64,7 @@ class RealtimeManager {
   }
 
   private connectAll() {
-    if (!this.healthChannel) {
-      this.setStatus('CONNECTING');
-      this.healthChannel = supabase.channel('system_health');
-      this.healthChannel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          this.setStatus('CONNECTED');
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          this.setStatus('DISCONNECTED');
-        }
-      });
-    }
+    this.setStatus('CONNECTING');
 
     this.tables.forEach((table) => {
       if (this.channels.has(table)) return;
@@ -89,7 +78,13 @@ class RealtimeManager {
             this.handleIncomingEvent(table, payload);
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            this.setStatus('CONNECTED');
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            this.setStatus('DISCONNECTED');
+          }
+        });
 
       this.channels.set(table, channel);
     });
@@ -101,10 +96,6 @@ class RealtimeManager {
     });
     this.channels.clear();
     
-    if (this.healthChannel) {
-      supabase.removeChannel(this.healthChannel);
-      this.healthChannel = null;
-    }
     this.setStatus('DISCONNECTED');
   }
 

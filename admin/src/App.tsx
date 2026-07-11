@@ -84,7 +84,6 @@ function App() {
       });
 
     const handleFocus = () => {
-      console.log(`[IDLE-AUDIT] window.focus at ${Date.now()}, visibility=${document.visibilityState}`);
       // Quiet background check to sync changes seamlessly without showing full-page blocking loaders
       const hasUser = useAuthStore.getState().user;
       if (hasUser) {
@@ -92,28 +91,17 @@ function App() {
       }
     };
     const handleVisibility = () => {
-      console.log(`[IDLE-AUDIT] document.visibilitychange at ${Date.now()}, visibility=${document.visibilityState}`);
       if (document.visibilityState === 'visible') {
         handleFocus();
       }
     };
-    const handleBlur = () => console.log(`[IDLE-AUDIT] window.blur at ${Date.now()}`);
-    const handleOnline = () => console.log(`[IDLE-AUDIT] window.online at ${Date.now()}`);
-    const handleOffline = () => console.log(`[IDLE-AUDIT] window.offline at ${Date.now()}`);
-
     window.addEventListener('focus', handleFocus);
     window.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('blur', handleBlur);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
 
     return () => { 
       if (cleanupRef.fn) cleanupRef.fn(); 
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
     };
   }, [initialize, syncAll]);
 

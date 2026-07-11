@@ -9,8 +9,12 @@ export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 // Simple fetch wrapper that adds Sentry breadcrumbs for observability
 const sentryFetch: typeof fetch = async (url, options) => {
   const startMs = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error('Fetch Timeout (15000ms)')), 15000);
+
   try {
-    const response = await fetch(url, options);
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
     const durationMs = Date.now() - startMs;
     const urlStr = typeof url === 'string' ? url : (url as URL).toString();
     const urlPath = urlStr.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
@@ -25,6 +29,7 @@ const sentryFetch: typeof fetch = async (url, options) => {
 
     return response;
   } catch (err) {
+    clearTimeout(timeoutId);
     const durationMs = Date.now() - startMs;
     Sentry.addBreadcrumb({
       category: 'api.supabase',
@@ -72,27 +77,7 @@ function createSupabaseClient(): SupabaseClient {
     },
   });
 
-  const conn = client.realtime.conn;
-  if (conn) {
-    conn.addEventListener('open', () => console.log(`[IDLE-AUDIT] WS Open at ${Date.now()}`));
-    conn.addEventListener('close', (e: any) => console.log(`[IDLE-AUDIT] WS Close at ${Date.now()} code=${e.code} reason=${e.reason}`));
-    conn.addEventListener('error', () => console.log(`[IDLE-AUDIT] WS Error at ${Date.now()}`));
-  }
-  
   return client;
 }
 
 export const supabase: SupabaseClient = createSupabaseClient();
-
-// Coalesce concurrent getSession calls to prevent gotrue-js lock contention
-const originalGetSession = supabase.auth.getSession.bind(supabase.auth);
-let sessionPromise: Promise<any> | null = null;
-
-supabase.auth.getSession = () => {
-  if (!sessionPromise) {
-    sessionPromise = originalGetSession().finally(() => {
-      sessionPromise = null;
-    });
-  }
-  return sessionPromise;
-};

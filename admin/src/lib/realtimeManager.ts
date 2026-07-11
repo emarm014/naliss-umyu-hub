@@ -64,7 +64,6 @@ class RealtimeManager {
   }
 
   private connectAll() {
-    console.log(`[IDLE-AUDIT] RealtimeManager connectAll at ${Date.now()}`);
     this.setStatus('CONNECTING');
 
     this.tables.forEach((table) => {
@@ -92,7 +91,6 @@ class RealtimeManager {
   }
 
   private disconnectAll() {
-    console.log(`[IDLE-AUDIT] RealtimeManager disconnectAll at ${Date.now()}`);
     this.channels.forEach((channel) => {
       supabase.removeChannel(channel);
     });

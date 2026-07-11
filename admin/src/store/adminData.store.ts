@@ -162,17 +162,22 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     const lastSyncTime = get().lastSync ? new Date(get().lastSync!) : null;
     const isInitialLoad = !get().lastSync;
 
-    console.log(`[IDLE-AUDIT] syncAll called at ${now.getTime()}, force=${force}`);
-
     // Fix: Atomically check and set isSyncing to prevent race condition
     const currentState = get();
     if (currentState.isSyncing || (!force && !isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5000)) {
-      console.log(`[IDLE-AUDIT] syncAll returning early. isSyncing=${currentState.isSyncing}, timeSinceLastSync=${lastSyncTime ? now.getTime() - lastSyncTime.getTime() : 'null'}`);
       return;
     }
 
     // Set isSyncing immediately before any async operations
     set({ isSyncing: true, error: null });
+
+    // Safety fallback: if sync takes longer than 30s, force reset isSyncing to prevent infinite lock
+    const safetyTimeout = setTimeout(() => {
+      if (get().isSyncing) {
+        console.warn('[Sync Engine] Sync took longer than 30s. Force resetting isSyncing state.');
+        set({ isSyncing: false });
+      }
+    }, 30000);
 
     const failedKeys: string[] = [];
 
@@ -356,6 +361,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
       console.error('[Sync Engine] Critical unhandled sync error:', err);
       set({ error: (err as Error).message });
     } finally {
+      clearTimeout(safetyTimeout);
       set({ isSyncing: false });
     }
   },

@@ -26,6 +26,15 @@ const getVideoThumbnail = (url: string): string => {
   }
 };
 
+const getValidUrl = (url: string): string => {
+  if (!url) return '';
+  let validUrl = url;
+  if (validUrl.startsWith('res.cloudinary.com')) validUrl = `https://${validUrl}`;
+  else if (validUrl.startsWith('//')) validUrl = `https:${validUrl}`;
+  else if (validUrl.startsWith('http://res.cloudinary.com')) validUrl = validUrl.replace('http://', 'https://');
+  return validUrl;
+};
+
 interface MediaMessage {
   id: string;
   content: string;
@@ -372,11 +381,11 @@ export default function GroupMediaPage() {
                     <div key={msg.id} className="relative group cursor-pointer rounded-xl overflow-hidden border border-gray-100 aspect-square bg-gray-50 hover:shadow-lg transition-all"
                       onClick={() => setSelectedMedia(msg)}>
                       {msg.message_type === 'image' ? (
-                        <img src={msg.content} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        <img src={getValidUrl(msg.content)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : msg.message_type === 'video' ? (
                         <div className="w-full h-full relative bg-purple-50">
-                          <img src={getVideoThumbnail(msg.content)} alt="" className="w-full h-full object-cover"
+                          <img src={getVideoThumbnail(getValidUrl(msg.content))} alt="" className="w-full h-full object-cover"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                           <div className="absolute inset-0 flex items-center justify-center"><Play className="w-6 h-6 text-purple-500 drop-shadow-lg" /></div>
                         </div>
@@ -438,11 +447,11 @@ export default function GroupMediaPage() {
                   onClick={() => setSelectedMedia(msg)}>
                   <div className="relative aspect-square bg-gray-50 overflow-hidden">
                     {msg.message_type === 'image' ? (
-                      <img src={msg.content} alt="chat media" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      <img src={getValidUrl(msg.content)} alt="chat media" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     ) : msg.message_type === 'video' ? (
                       <div className="w-full h-full relative bg-purple-50">
-                        <img src={getVideoThumbnail(msg.content)} alt="" className="w-full h-full object-cover"
+                        <img src={getVideoThumbnail(getValidUrl(msg.content))} alt="" className="w-full h-full object-cover"
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center shadow-lg"><Play className="w-5 h-5 text-white ml-0.5" /></div>
@@ -488,7 +497,7 @@ export default function GroupMediaPage() {
           <div className="space-y-6">
             <div className="rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center min-h-[240px]">
               {selectedMedia.message_type === 'image' ? (
-                <img src={selectedMedia.content} alt="preview" crossOrigin="anonymous" className="max-h-80 w-full object-contain"
+                <img src={getValidUrl(selectedMedia.content)} alt="preview" className="max-h-80 w-full object-contain"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               ) : selectedMedia.message_type === 'video' ? (
                 <video
@@ -496,17 +505,16 @@ export default function GroupMediaPage() {
                   controls
                   playsInline
                   preload="metadata"
-                  crossOrigin="anonymous"
                   className="max-h-80 w-full rounded-xl"
                 >
-                  <source src={selectedMedia.content} />
+                  <source src={getValidUrl(selectedMedia.content)} />
                   Your browser does not support video playback.
                 </video>
               ) : selectedMedia.message_type === 'audio' ? (
                 <div className="flex flex-col items-center gap-4 py-8 w-full px-6">
                   <Film className="w-12 h-12 text-purple-400" />
-                  <audio controls preload="metadata" crossOrigin="anonymous" className="w-full">
-                    <source src={selectedMedia.content} />
+                  <audio controls preload="metadata" className="w-full">
+                    <source src={getValidUrl(selectedMedia.content)} />
                   </audio>
                 </div>
               ) : (

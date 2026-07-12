@@ -12,6 +12,20 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 
+/**
+ * Converts a Cloudinary video URL into a thumbnail image URL.
+ * Works by replacing /video/upload/ with /video/upload/so_0,w_400,h_400,c_fill,f_jpg/
+ * which generates a JPEG thumbnail from the first frame of the video.
+ */
+const getVideoThumbnail = (url: string): string => {
+  try {
+    // Cloudinary URL pattern: .../video/upload/v1234/folder/file.mp4
+    return url.replace(/\/video\/upload\//, '/video/upload/so_0,w_400,h_400,c_fill,f_jpg/');
+  } catch {
+    return '';
+  }
+};
+
 interface MediaMessage {
   id: string;
   content: string;
@@ -358,10 +372,14 @@ export default function GroupMediaPage() {
                     <div key={msg.id} className="relative group cursor-pointer rounded-xl overflow-hidden border border-gray-100 aspect-square bg-gray-50 hover:shadow-lg transition-all"
                       onClick={() => setSelectedMedia(msg)}>
                       {msg.message_type === 'image' ? (
-                        <img src={msg.content} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        <img src={msg.content} alt="" crossOrigin="anonymous" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center bg-gray-100"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>'; }} />
                       ) : msg.message_type === 'video' ? (
-                        <div className="w-full h-full flex items-center justify-center bg-purple-50"><Play className="w-6 h-6 text-purple-500" /></div>
+                        <div className="w-full h-full relative bg-purple-50">
+                          <img src={getVideoThumbnail(msg.content)} alt="" crossOrigin="anonymous" className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          <div className="absolute inset-0 flex items-center justify-center"><Play className="w-6 h-6 text-purple-500 drop-shadow-lg" /></div>
+                        </div>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-blue-50"><FileText className="w-6 h-6 text-blue-400" /></div>
                       )}
@@ -420,11 +438,15 @@ export default function GroupMediaPage() {
                   onClick={() => setSelectedMedia(msg)}>
                   <div className="relative aspect-square bg-gray-50 overflow-hidden">
                     {msg.message_type === 'image' ? (
-                      <img src={msg.content} alt="chat media" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      <img src={msg.content} alt="chat media" crossOrigin="anonymous" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center bg-gray-100"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>'; }} />
                     ) : msg.message_type === 'video' ? (
-                      <div className="w-full h-full flex items-center justify-center bg-purple-50">
-                        <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center shadow-lg"><Play className="w-5 h-5 text-white ml-0.5" /></div>
+                      <div className="w-full h-full relative bg-purple-50">
+                        <img src={getVideoThumbnail(msg.content)} alt="" crossOrigin="anonymous" className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center shadow-lg"><Play className="w-5 h-5 text-white ml-0.5" /></div>
+                        </div>
                       </div>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-blue-50"><FileText className="w-10 h-10 text-blue-400" /></div>
@@ -466,9 +488,27 @@ export default function GroupMediaPage() {
           <div className="space-y-6">
             <div className="rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center min-h-[240px]">
               {selectedMedia.message_type === 'image' ? (
-                <img src={selectedMedia.content} alt="preview" className="max-h-80 w-full object-contain" />
+                <img src={selectedMedia.content} alt="preview" crossOrigin="anonymous" className="max-h-80 w-full object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               ) : selectedMedia.message_type === 'video' ? (
-                <video src={selectedMedia.content} controls className="max-h-80 w-full rounded-xl" />
+                <video
+                  key={selectedMedia.id}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  crossOrigin="anonymous"
+                  className="max-h-80 w-full rounded-xl"
+                >
+                  <source src={selectedMedia.content} />
+                  Your browser does not support video playback.
+                </video>
+              ) : selectedMedia.message_type === 'audio' ? (
+                <div className="flex flex-col items-center gap-4 py-8 w-full px-6">
+                  <Film className="w-12 h-12 text-purple-400" />
+                  <audio controls preload="metadata" crossOrigin="anonymous" className="w-full">
+                    <source src={selectedMedia.content} />
+                  </audio>
+                </div>
               ) : (
                 <div className="flex flex-col items-center gap-4 py-12">
                   <FileText className="w-16 h-16 text-blue-400" />

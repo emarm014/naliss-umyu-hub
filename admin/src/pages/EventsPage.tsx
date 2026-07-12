@@ -69,17 +69,17 @@ export default function EventsPage() {
     description: '',
     cover_image_url: '',
     cover_image_size: null as number | null,
-    venue: '',
-    target_level: (profile?.role === 'moderator' ? permissions?.assigned_level : null) || 'all',
-    status: 'draft',
+    is_featured: false,
+    registration_link: '',
   });
   
   const [selectedEvent, setSelectedEvent] = useState<EventWithCreator | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
   const location = useLocation();
   const [predefinedAsset, setPredefinedAsset] = useState<any>(null);
+
+  const { profile, permissions } = useAuthStore();
 
   // Detect and consume assets shared from the Cloud Archive
   useEffect(() => {
@@ -92,7 +92,6 @@ export default function EventsPage() {
     }
   }, [location, showModal]);
 
-  const { profile, permissions } = useAuthStore();
   const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
 
   // Derived Telemetry
@@ -495,8 +494,6 @@ export default function EventsPage() {
           assignedLevel={assignedLevel}
           formData={formData}
           setFormData={setFormData}
-          showModal={showModal}
-          clearDraft={clearDraft}
           onClose={() => {
             if (showModal === 'create') {
               clearDraft();
@@ -526,8 +523,6 @@ function EventFormModal({
   assignedLevel,
   formData,
   setFormData,
-  showModal,
-  clearDraft,
   onClose,
   onSave,
 }: {
@@ -536,8 +531,6 @@ function EventFormModal({
   assignedLevel: AcademicLevel | null;
   formData: any;
   setFormData: (data: any) => void;
-  showModal: 'create' | 'edit' | 'view' | null;
-  clearDraft: () => void;
   onClose: () => void;
   onSave: (message: string) => void;
 }) {

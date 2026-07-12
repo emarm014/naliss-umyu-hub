@@ -33,6 +33,7 @@ import {
   ChevronDown,
   Globe,
   FileType,
+  CheckCircle,
 } from 'lucide-react';
 
 import FileUpload from '../lib/FileUpload';

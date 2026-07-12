@@ -54,6 +54,7 @@ export default function AnnouncementsPage() {
   const [priorityFilter] = useState<Announcement['priority'] | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryOption>('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const { profile, permissions } = useAuthStore();
   const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('announcements_draft', {
     title: '',
     content: '',
@@ -70,8 +71,6 @@ export default function AnnouncementsPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actioningId, setActioningId] = useState<string | null>(null); // tracks which card is mid-action
-
-  const { profile, permissions } = useAuthStore();
   const { announcements: allAnnouncements, isSyncing, error: storeError, syncAll, removeAnnouncement, refreshAnalytics } = useAdminDataStore(
     useShallow((state) => ({
       announcements: state.announcements,
@@ -625,8 +624,6 @@ export default function AnnouncementsPage() {
           assignedLevel={assignedLevel}
           formData={formData}
           setFormData={setFormData}
-          showModal={showModal}
-          clearDraft={clearDraft}
           onClose={() => {
             if (showModal === 'create') clearDraft();
             else setShowModal(null);
@@ -652,8 +649,6 @@ interface AnnouncementFormModalProps {
   assignedLevel: LevelOption | null;
   formData: any;
   setFormData: (data: any) => void;
-  showModal: 'create' | 'edit' | 'view' | null;
-  clearDraft: () => void;
   onClose: () => void;
   onSave: (message: string) => void;
 }
@@ -664,8 +659,6 @@ function AnnouncementFormModal({
   assignedLevel,
   formData,
   setFormData,
-  showModal,
-  clearDraft,
   onClose,
   onSave,
 }: AnnouncementFormModalProps) {
@@ -680,7 +673,6 @@ function AnnouncementFormModal({
     is_pinned: announcement?.is_pinned || false,
     cover_image_url: announcement?.cover_image_url || predefinedAsset?.url || '',
     cover_image_size: (announcement as any)?.cover_image_size || null as number | null,
-  });
   });
   
   const isEditing = !!announcement;

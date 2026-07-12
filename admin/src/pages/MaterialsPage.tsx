@@ -25,7 +25,8 @@ import {
   X, 
   Layers, 
   Calendar, 
-  ShieldAlert 
+  ShieldAlert,
+  CheckCircle
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
@@ -84,7 +85,7 @@ export default function MaterialsPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [predefinedAsset, setPredefinedAsset] = useState<any>(null);
 
-  const { showModal, setShowModal, formData, setFormData, clearDraft, resetForm } = useFormDraft('materials_draft', {
+  const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('materials_draft', {
     title: '',
     description: '',
     material_type: 'note' as Material['material_type'],

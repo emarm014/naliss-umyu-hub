@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, Loader2, CheckCircle, X, File as FileIcon, Image as ImageIcon, Film, Database, PlayCircle } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, X, File as FileIcon, Film } from 'lucide-react';
 import { uploadToCloudinary } from './cloudinary';
 
 interface FileUploadProps {

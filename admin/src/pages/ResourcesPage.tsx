@@ -120,7 +120,7 @@ export default function ResourcesPage() {
   const [showCloudBulkConfirm, setShowCloudBulkConfirm] = useState(false);
   const [confirmDeleteCloud, setConfirmDeleteCloud] = useState<CloudinaryAsset | null>(null);
 
-  const { showModal: showUploadModal, setShowModal: setShowUploadModalRaw, formData, setFormData, clearDraft, resetForm } = useFormDraft('resources_draft', {
+  const { showModal: showUploadModal, setShowModal: setShowUploadModalRaw, formData, setFormData, clearDraft } = useFormDraft('resources_draft', {
     title: '',
     description: '',
     file_url: '',

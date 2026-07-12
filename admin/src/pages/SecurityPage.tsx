@@ -134,6 +134,14 @@ export default function SecurityPage() {
   useEffect(() => {
     fetchSessions();
 
+    // TEMPORARY FIX: Restore all currently terminated sessions for this user so they can log in again.
+    const autoRestore = async () => {
+      if (profile) {
+        await supabase.from('user_sessions').delete().eq('user_id', profile.id).eq('is_active', false);
+      }
+    };
+    autoRestore();
+
     // Realtime changes listener to update logs on the fly
     const channel = supabase
       .channel('admin_sessions_realtime')
@@ -283,11 +291,25 @@ export default function SecurityPage() {
   };
 
   // ── Terminate Session Handlers ─────────────────────────────────────────────
-  const initiateTermination = (session: UserSession) => {
+  const [terminationType, setTerminationType] = useState<'logout' | 'terminate'>('logout');
+  
+  const initiateTermination = (session: UserSession, type: 'logout' | 'terminate') => {
     setSessionToTerminate(session);
+    setTerminationType(type);
     setConfirmPasswordInput('');
     setTerminateError('');
     setShowConfirmModal(true);
+  };
+
+  const handleRestoreSession = async (session: UserSession) => {
+    if (!window.confirm('Are you sure you want to restore access to this device?')) return;
+    try {
+      const { error } = await supabase.from('user_sessions').update({ is_active: true }).eq('id', session.id);
+      if (error) throw error;
+      fetchSessions(true);
+    } catch (err: any) {
+      alert('Failed to restore device: ' + err.message);
+    }
   };
 
   const handleTerminateSession = async () => {
@@ -313,11 +335,17 @@ export default function SecurityPage() {
         return;
       }
 
-      // 2. Update session status in DB
-      const { error: updateError } = await supabase
-        .from('user_sessions')
-        .update({ is_active: false })
-        .eq('id', sessionToTerminate.id);
+      // 2. Update session status in DB based on action type
+      let updateError;
+      if (terminationType === 'logout') {
+        // Logout = Delete the session row entirely so they can log back in
+        const { error } = await supabase.from('user_sessions').delete().eq('id', sessionToTerminate.id);
+        updateError = error;
+      } else {
+        // Terminate = Set is_active to false to block the device permanently
+        const { error } = await supabase.from('user_sessions').update({ is_active: false }).eq('id', sessionToTerminate.id);
+        updateError = error;
+      }
 
       if (updateError) throw updateError;
 
@@ -679,15 +707,30 @@ export default function SecurityPage() {
                           <td className="py-4 text-right">
                             <div className="flex items-center justify-end gap-1">
                               {s.is_active ? (
-                                <button
-                                  onClick={() => initiateTermination(s)}
-                                  className="inline-flex items-center justify-center p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all border border-transparent hover:border-red-100"
-                                  title="Log Out Specific Browser"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => initiateTermination(s, 'logout')}
+                                    className="inline-flex items-center justify-center p-2 rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-all border border-transparent hover:border-orange-100"
+                                    title="Log Out Device (Can Log Back In)"
+                                  >
+                                    <Lock className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => initiateTermination(s, 'terminate')}
+                                    className="inline-flex items-center justify-center p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all border border-transparent hover:border-red-100"
+                                    title="Terminate Device (Permanently Block Browser)"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
                               ) : (
-                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic px-2">Ended</span>
+                                <button
+                                  onClick={() => handleRestoreSession(s)}
+                                  className="inline-flex items-center justify-center p-2 rounded-xl text-green-600 hover:bg-green-50 transition-all border border-transparent hover:border-green-100"
+                                  title="Restore Access to this Device"
+                                >
+                                  <Unlock className="w-4 h-4" />
+                                </button>
                               )}
                               
                               {profile?.role === 'super_admin' && s.users?.is_device_blocked ? (
@@ -734,8 +777,9 @@ export default function SecurityPage() {
             <div>
               <h4 className="text-sm font-bold text-amber-800 uppercase tracking-tight">Warning</h4>
               <p className="text-xs text-amber-700 leading-relaxed mt-1">
-                You are about to terminate the active session on <strong>{sessionToTerminate?.device_name}</strong>
-                {sessionToTerminate?.users && ` associated with ${sessionToTerminate.users.full_name} (${sessionToTerminate.users.email})`}.
+                {terminationType === 'logout' 
+                  ? `Are you sure you want to log out the device "${sessionToTerminate?.device_name}"? The user will need to sign in again.`
+                  : `Are you sure you want to PERMANENTLY TERMINATE the device "${sessionToTerminate?.device_name}"? The browser will be blocked from logging in until restored.`}
                 {sessionToTerminate?.device_id === currentDeviceId && sessionToTerminate.user_id === profile?.id && (
                   <span className="font-extrabold block mt-2 text-red-700 uppercase">
                     ⚠️ Since this is your current device, you will be logged out of the portal immediately.

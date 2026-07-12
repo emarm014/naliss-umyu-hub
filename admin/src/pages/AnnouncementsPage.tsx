@@ -30,6 +30,7 @@ import {
 import FileUpload from '../lib/FileUpload';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { sendPushNotification, getUserIdsForLevel } from '../lib/notifications';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 interface AnnouncementWithAuthor extends Announcement {
   author?: { full_name: string; email: string } | null;
@@ -53,7 +54,17 @@ export default function AnnouncementsPage() {
   const [priorityFilter] = useState<Announcement['priority'] | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryOption>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
+  const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('announcements_draft', {
+    title: '',
+    content: '',
+    category: 'general',
+    priority: 'normal',
+    target_level: (profile?.role === 'moderator' ? permissions?.assigned_level : null) || 'all',
+    is_published: false,
+    is_pinned: false,
+    cover_image_url: '',
+    cover_image_size: null as number | null,
+  });
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<AnnouncementWithAuthor | null>(null);
   const [levelFilter, setLevelFilter] = useState<LevelOption>('all');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -612,13 +623,19 @@ export default function AnnouncementsPage() {
           announcement={selectedAnnouncement}
           predefinedAsset={predefinedAsset}
           assignedLevel={assignedLevel}
+          formData={formData}
+          setFormData={setFormData}
+          showModal={showModal}
+          clearDraft={clearDraft}
           onClose={() => {
-            setShowModal(null);
+            if (showModal === 'create') clearDraft();
+            else setShowModal(null);
             setSelectedAnnouncement(null);
           }}
           onSave={(msg) => {
             setSuccessMessage(msg);
-            setShowModal(null);
+            if (showModal === 'create') clearDraft();
+            else setShowModal(null);
             setSelectedAnnouncement(null);
             refreshAnalytics();
             setTimeout(() => setSuccessMessage(null), 5000);
@@ -633,6 +650,10 @@ interface AnnouncementFormModalProps {
   announcement: AnnouncementWithAuthor | null;
   predefinedAsset?: any;
   assignedLevel: LevelOption | null;
+  formData: any;
+  setFormData: (data: any) => void;
+  showModal: 'create' | 'edit' | 'view' | null;
+  clearDraft: () => void;
   onClose: () => void;
   onSave: (message: string) => void;
 }
@@ -641,11 +662,15 @@ function AnnouncementFormModal({
   announcement,
   predefinedAsset,
   assignedLevel,
+  formData,
+  setFormData,
+  showModal,
+  clearDraft,
   onClose,
   onSave,
 }: AnnouncementFormModalProps) {
   const { profile: authProfile } = useAuthStore();
-  const [formData, setFormData] = useState({
+  const [localFormData, setLocalFormData] = useState({
     title: announcement?.title || predefinedAsset?.title || '',
     content: announcement?.content || '',
     category: announcement?.category || 'general',
@@ -656,6 +681,12 @@ function AnnouncementFormModal({
     cover_image_url: announcement?.cover_image_url || predefinedAsset?.url || '',
     cover_image_size: (announcement as any)?.cover_image_size || null as number | null,
   });
+  });
+  
+  const isEditing = !!announcement;
+  const currentFormData = isEditing ? localFormData : formData;
+  const setCurrentFormData = isEditing ? setLocalFormData : setFormData;
+  
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -663,8 +694,8 @@ function AnnouncementFormModal({
     e?.preventDefault();
     setErrorMsg(null);
 
-    if (!formData.title.trim()) { setErrorMsg('Title is required.'); return; }
-    if (!formData.content.trim()) { setErrorMsg('Content is required.'); return; }
+    if (!currentFormData.title.trim()) { setErrorMsg('Title is required.'); return; }
+    if (!currentFormData.content.trim()) { setErrorMsg('Content is required.'); return; }
 
     setIsSaving(true);
 
@@ -672,10 +703,10 @@ function AnnouncementFormModal({
       if (!authProfile?.id) throw new Error('Not authenticated');
 
       const data = {
-        ...formData,
+        ...currentFormData,
         author_id: authProfile.id,
-        target_level: formData.target_level === 'all' ? null : formData.target_level,
-        published_at: formData.is_published ? new Date().toISOString() : null,
+        target_level: currentFormData.target_level === 'all' ? null : currentFormData.target_level,
+        published_at: currentFormData.is_published ? new Date().toISOString() : null,
       };
 
       let insertedId: string | null = null;
@@ -702,15 +733,15 @@ function AnnouncementFormModal({
             sendPushNotification({
               targetUserIds: targetIds,
               title: '📢 New Announcement',
-              body: formData.title,
+              body: currentFormData.title,
               data: {
                 type: 'announcement',
                 id: insertedId || announcement?.id || '',
-                title: formData.title,
-                content: formData.content,
-                category: formData.category,
-                priority: formData.priority,
-                cover_image_url: formData.cover_image_url || null,
+                title: currentFormData.title,
+                content: currentFormData.content,
+                category: currentFormData.category,
+                priority: currentFormData.priority,
+                cover_image_url: currentFormData.cover_image_url || null,
                 created_at: announcement?.created_at || new Date().toISOString(),
                 published_at: data.published_at || new Date().toISOString(),
               },
@@ -719,7 +750,7 @@ function AnnouncementFormModal({
         });
       }
 
-      onSave(`Announcement "${formData.title}" ${announcement ? 'updated' : 'created'} successfully!`);
+      onSave(`Announcement "${currentFormData.title}" ${announcement ? 'updated' : 'created'} successfully!`);
     } catch (err: unknown) {
       const msg = (err as any)?.message || (err as any)?.error_description || JSON.stringify(err);
       setErrorMsg(`Failed to save announcement: ${msg}`);
@@ -753,8 +784,8 @@ function AnnouncementFormModal({
                     <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Notice Title</label>
                     <input
                       type="text"
-                      value={formData.title}
-                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      value={currentFormData.title}
+                      onChange={(e) => setCurrentFormData({ ...currentFormData, title: e.target.value })}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-900 placeholder:text-slate-400 transition-all"
                       placeholder="Enter title..."
                     />
@@ -763,8 +794,8 @@ function AnnouncementFormModal({
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Notice Content</label>
                     <textarea
-                      value={formData.content}
-                      onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                      value={currentFormData.content}
+                      onChange={(e) => setCurrentFormData({ ...currentFormData, content: e.target.value })}
                       rows={6}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-medium text-slate-900 placeholder:text-slate-400 transition-all min-h-[160px] resize-none"
                       placeholder="Write your broadcast content here..."
@@ -777,23 +808,43 @@ function AnnouncementFormModal({
                     <div className="w-1.5 h-6 bg-emerald-600 rounded-full" />
                     <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Media</span>
                 </div>
-                <FileUpload
-                  accept="image/*"
-                  isImage={true}
-                  folder="announcements"
-                  onUploadComplete={(url: string, file: File) => setFormData(prev => ({ ...prev, cover_image_url: url, cover_image_size: file.size }))}
-                  currentFileUrl={formData.cover_image_url}
-                  label="Announcement Cover"
-                  description="Upload an image for this announcement"
-                />
+                <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                  {currentFormData.cover_image_url ? (
+                    <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <img src={currentFormData.cover_image_url} alt="Cover" className="w-10 h-10 object-cover rounded-lg shrink-0" />
+                        <div className="truncate">
+                          <p className="text-sm font-bold text-slate-900 truncate">Cover Image Attached</p>
+                          <p className="text-xs text-slate-500 font-medium truncate">{currentFormData.cover_image_url.split('/').pop()}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentFormData({ ...currentFormData, cover_image_url: '', cover_image_size: null })}
+                        className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <FileUpload
+                      accept="image/*"
+                      isImage={true}
+                      folder="announcements"
+                      onUploadComplete={(url: string, file: File) => setCurrentFormData((prev: any) => ({ ...prev, cover_image_url: url, cover_image_size: file.size }))}
+                      label="Announcement Cover"
+                      description="Upload an image for this announcement"
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Category</label>
                   <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value as Announcement['category'] })}
+                    value={currentFormData.category}
+                    onChange={(e) => setCurrentFormData({ ...currentFormData, category: e.target.value as Announcement['category'] })}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-700 transition-all appearance-none cursor-pointer"
                   >
                     <option value="general">General</option>
@@ -807,8 +858,8 @@ function AnnouncementFormModal({
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Priority Pulse</label>
                   <select
-                    value={formData.priority}
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as Announcement['priority'] })}
+                    value={currentFormData.priority}
+                    onChange={(e) => setCurrentFormData({ ...currentFormData, priority: e.target.value as Announcement['priority'] })}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-700 transition-all appearance-none cursor-pointer"
                   >
                     <option value="low">Low</option>
@@ -820,8 +871,8 @@ function AnnouncementFormModal({
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Target Tier</label>
                   <select
-                    value={formData.target_level}
-                    onChange={(e) => setFormData({ ...formData, target_level: e.target.value as LevelOption })}
+                    value={currentFormData.target_level}
+                    onChange={(e) => setCurrentFormData({ ...currentFormData, target_level: e.target.value as LevelOption })}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-700 transition-all disabled:opacity-50 appearance-none cursor-pointer"
                     disabled={!!assignedLevel}
                   >
@@ -839,12 +890,12 @@ function AnnouncementFormModal({
                   <div className="relative">
                       <input
                         type="checkbox"
-                        checked={formData.is_published}
-                        onChange={(e) => setFormData({ ...formData, is_published: e.target.checked })}
+                        checked={currentFormData.is_published}
+                        onChange={(e) => setCurrentFormData({ ...currentFormData, is_published: e.target.checked })}
                         className="peer hidden"
                       />
                       <div className="w-6 h-6 bg-white border-2 border-gray-200 rounded-lg peer-checked:bg-primary-600 peer-checked:border-primary-600 transition-all flex items-center justify-center">
-                          {formData.is_published && <CheckCircle2 className="w-4 h-4 text-white transition-opacity" />}
+                          {currentFormData.is_published && <CheckCircle2 className="w-4 h-4 text-white transition-opacity" />}
                       </div>
                   </div>
                   <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover:text-primary-600 transition-colors">Commit to Feed</span>
@@ -853,12 +904,12 @@ function AnnouncementFormModal({
                    <div className="relative">
                       <input
                         type="checkbox"
-                        checked={formData.is_pinned}
-                        onChange={(e) => setFormData({ ...formData, is_pinned: e.target.checked })}
+                        checked={currentFormData.is_pinned}
+                        onChange={(e) => setCurrentFormData({ ...currentFormData, is_pinned: e.target.checked })}
                         className="peer hidden"
                       />
                       <div className="w-6 h-6 bg-white border-2 border-gray-200 rounded-lg peer-checked:bg-primary-600 peer-checked:border-primary-600 transition-all flex items-center justify-center">
-                          {formData.is_pinned && <CheckCircle2 className="w-4 h-4 text-white transition-opacity" />}
+                          {currentFormData.is_pinned && <CheckCircle2 className="w-4 h-4 text-white transition-opacity" />}
                       </div>
                   </div>
                   <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover:text-primary-600 transition-colors">Strategic Pin</span>
@@ -879,7 +930,7 @@ function AnnouncementFormModal({
             onClick={onClose}
             className="flex-1 px-8 py-5 bg-white text-gray-400 rounded-2xl font-black text-[10px] uppercase tracking-widest border border-gray-100 hover:bg-gray-100 hover:text-gray-600 transition-all"
           >
-            Cancel
+            {isEditing ? 'Cancel' : 'Discard Draft'}
           </button>
           <button
             onClick={handleSubmit}

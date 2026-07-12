@@ -71,7 +71,7 @@ export default function ProtectedRoute() {
 
         if (!error && data && !data.is_active) {
           if (isSubscribed) {
-            alert('Session Terminated: This device has been logged out remotely.');
+            alert('Session Terminated: This device has been permanently blocked from logging in.');
             await signOut();
           }
           return;
@@ -121,13 +121,35 @@ export default function ProtectedRoute() {
             !updated.is_active
           ) {
             if (isSubscribed) {
-              alert('Session Terminated: This device has been logged out remotely.');
+              alert('Session Terminated: This device has been permanently blocked from logging in.');
               await signOut();
             }
           }
         }
       )
         .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'user_sessions',
+        },
+        async (payload) => {
+          const oldRecord = payload.old as any;
+          if (
+            oldRecord && 
+            oldRecord.device_id === deviceId && 
+            oldRecord.user_id === user.id
+          ) {
+            if (isSubscribed) {
+              alert('You have been logged out remotely. You can sign back in.');
+              localStorage.removeItem('naliss_admin_device_id');
+              await signOut();
+            }
+          }
+        }
+      )
+      .on(
         'postgres_changes',
         {
           event: 'UPDATE',

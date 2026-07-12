@@ -26,6 +26,7 @@ import {
 import FileUpload from '../lib/FileUpload';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { sendPushNotification, getUserIdsForLevel } from '../lib/notifications';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 interface EventWithCreator extends Event {
   creator?: { full_name: string; email: string } | null;
@@ -63,7 +64,16 @@ export default function EventsPage() {
   const [levelFilter, setLevelFilter] = useState<LevelOption>('all');
   const [currentPage, setCurrentPage] = useState(1);
   
-  const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
+  const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('events_draft', {
+    title: '',
+    description: '',
+    cover_image_url: '',
+    cover_image_size: null as number | null,
+    venue: '',
+    target_level: (profile?.role === 'moderator' ? permissions?.assigned_level : null) || 'all',
+    status: 'draft',
+  });
+  
   const [selectedEvent, setSelectedEvent] = useState<EventWithCreator | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -483,13 +493,22 @@ export default function EventsPage() {
           event={selectedEvent}
           predefinedAsset={predefinedAsset}
           assignedLevel={assignedLevel}
+          formData={formData}
+          setFormData={setFormData}
+          showModal={showModal}
+          clearDraft={clearDraft}
           onClose={() => {
-            setShowModal(null);
+            if (showModal === 'create') {
+              clearDraft();
+            } else {
+              setShowModal(null);
+            }
             setSelectedEvent(null);
           }}
           onSave={(msg) => {
             setSuccessMessage(msg);
-            setShowModal(null);
+            if (showModal === 'create') clearDraft();
+            else setShowModal(null);
             setSelectedEvent(null);
             refreshAnalytics();
             setTimeout(() => setSuccessMessage(null), 5000);
@@ -505,17 +524,26 @@ function EventFormModal({
   event,
   predefinedAsset,
   assignedLevel,
+  formData,
+  setFormData,
+  showModal,
+  clearDraft,
   onClose,
   onSave,
 }: {
   event: EventWithCreator | null;
   predefinedAsset?: any;
   assignedLevel: AcademicLevel | null;
+  formData: any;
+  setFormData: (data: any) => void;
+  showModal: 'create' | 'edit' | 'view' | null;
+  clearDraft: () => void;
   onClose: () => void;
   onSave: (message: string) => void;
 }) {
   const { profile: authProfile } = useAuthStore();
-  const [formData, setFormData] = useState({
+  
+  const [localFormData, setLocalFormData] = useState({
     title: event?.title || predefinedAsset?.title || '',
     description: event?.description || '',
     cover_image_url: event?.cover_image_url || predefinedAsset?.url || '',
@@ -524,6 +552,10 @@ function EventFormModal({
     target_level: (event?.target_level as LevelOption) || assignedLevel || 'all',
     status: event?.status || 'draft',
   });
+  
+  const isEditing = !!event;
+  const currentFormData = isEditing ? localFormData : formData;
+  const setCurrentFormData = isEditing ? setLocalFormData : setFormData;
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -531,7 +563,7 @@ function EventFormModal({
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!formData.title.trim()) { setErrorMsg('Event title is required.'); return; }
+    if (!currentFormData.title.trim()) { setErrorMsg('Event title is required.'); return; }
 
     setIsSaving(true);
 
@@ -539,13 +571,13 @@ function EventFormModal({
       if (!authProfile?.id) throw new Error('Not authenticated');
 
       const data = {
-        title: formData.title,
-        description: formData.description,
-        cover_image_url: formData.cover_image_url,
-        cover_image_size: formData.cover_image_size,
-        venue: formData.venue,
-        target_level: formData.target_level === 'all' ? null : formData.target_level,
-        status: formData.status,
+        title: currentFormData.title,
+        description: currentFormData.description,
+        cover_image_url: currentFormData.cover_image_url,
+        cover_image_size: currentFormData.cover_image_size,
+        venue: currentFormData.venue,
+        target_level: currentFormData.target_level === 'all' ? null : currentFormData.target_level,
+        status: currentFormData.status,
         created_by: authProfile.id,
         start_date: event ? event.start_date : new Date().toISOString().split('T')[0],
         end_date: null,
@@ -575,23 +607,23 @@ function EventFormModal({
         if (savedEvent) useAdminDataStore.getState().addEvent(savedEvent);
 
         // Push notification for new event — fire and forget
-        const targetLevel = formData.target_level === 'all' ? null : formData.target_level;
+        const targetLevel = currentFormData.target_level === 'all' ? null : currentFormData.target_level;
         getUserIdsForLevel(targetLevel).then(targetIds => {
           if (targetIds.length > 0) {
             sendPushNotification({
               targetUserIds: targetIds,
               title: '🗓️ New Event',
-              body: `${formData.title}`,
+              body: `${currentFormData.title}`,
               data: {
                 type: 'event',
                 id: savedEvent?.id || '',
-                title: formData.title,
-                description: formData.description,
-                cover_image_url: formData.cover_image_url || null,
-                status: formData.status || 'published',
+                title: currentFormData.title,
+                description: currentFormData.description,
+                cover_image_url: currentFormData.cover_image_url || null,
+                status: currentFormData.status || 'published',
                 is_virtual: false,
                 virtual_link: null,
-                venue: formData.venue || null,
+                venue: currentFormData.venue || null,
                 start_date: data.start_date,
                 end_date: null,
                 start_time: null,
@@ -606,7 +638,7 @@ function EventFormModal({
         });
       }
 
-      onSave(`Event "${formData.title}" ${event ? 'updated' : 'added'} successfully.`);
+      onSave(`Event "${currentFormData.title}" ${event ? 'updated' : 'added'} successfully.`);
     } catch (err: unknown) {
       const msg = (err as any)?.message || (err as any)?.error_description || JSON.stringify(err);
       setErrorMsg(`Failed to save event: ${msg}`);
@@ -644,8 +676,8 @@ function EventFormModal({
                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Title</label>
                <input
                  type="text"
-                 value={formData.title}
-                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                 value={currentFormData.title}
+                 onChange={(e) => setCurrentFormData({ ...currentFormData, title: e.target.value })}
                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400"
                  placeholder="Main event title..."
                />
@@ -654,8 +686,8 @@ function EventFormModal({
              <div>
                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Description</label>
                <textarea
-                 value={formData.description}
-                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                 value={currentFormData.description}
+                 onChange={(e) => setCurrentFormData({ ...currentFormData, description: e.target.value })}
                  rows={4}
                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all placeholder:text-slate-400 resize-none"
                  placeholder="Comprehensive details and instructions..."
@@ -665,23 +697,41 @@ function EventFormModal({
              {/* File Upload for Cover Art */}
              <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl border-dashed">
                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Event Poster Image</label>
-               <FileUpload
-                 accept="image/*"
-                 isImage={true}
-                 folder="events"
-                 onUploadComplete={(url: string, file: File) => setFormData(prev => ({ ...prev, cover_image_url: url, cover_image_size: file.size }))}
-                 currentFileUrl={formData.cover_image_url}
-                 label=""
-                 description="Drag and drop or select a high-fidelity image"
-               />
+               {currentFormData.cover_image_url ? (
+                 <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                   <div className="flex items-center gap-3 overflow-hidden">
+                     <img src={currentFormData.cover_image_url} alt="Cover" className="w-10 h-10 object-cover rounded-lg shrink-0" />
+                     <div className="truncate">
+                       <p className="text-sm font-bold text-slate-900 truncate">Poster Attached</p>
+                       <p className="text-xs text-slate-500 font-medium truncate">{currentFormData.cover_image_url.split('/').pop()}</p>
+                     </div>
+                   </div>
+                   <button
+                     type="button"
+                     onClick={() => setCurrentFormData({ ...currentFormData, cover_image_url: '', cover_image_size: null })}
+                     className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
+                   >
+                     <Trash2 className="w-4 h-4" />
+                   </button>
+                 </div>
+               ) : (
+                 <FileUpload
+                   accept="image/*"
+                   isImage={true}
+                   folder="events"
+                   onUploadComplete={(url: string, file: File) => setCurrentFormData((prev: any) => ({ ...prev, cover_image_url: url, cover_image_size: file.size }))}
+                   label=""
+                   description="Drag and drop or select a high-fidelity image"
+                 />
+               )}
              </div>
 
              <div>
                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Venue</label>
                <input
                  type="text"
-                 value={formData.venue}
-                 onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                 value={currentFormData.venue}
+                 onChange={(e) => setCurrentFormData({ ...currentFormData, venue: e.target.value })}
                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 placeholder:text-slate-400"
                  placeholder="E.g., University Auditorium"
                />
@@ -690,8 +740,8 @@ function EventFormModal({
              <div>
                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Target level</label>
                <select
-                 value={formData.target_level}
-                 onChange={(e) => setFormData({ ...formData, target_level: e.target.value as LevelOption })}
+                 value={currentFormData.target_level}
+                 onChange={(e) => setCurrentFormData({ ...currentFormData, target_level: e.target.value as LevelOption })}
                  disabled={!!assignedLevel}
                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 disabled:opacity-50 appearance-none"
                >
@@ -719,7 +769,7 @@ function EventFormModal({
               onClick={onClose}
               className="flex-1 py-4 border-2 border-slate-200 text-slate-700 rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-slate-50 transition-colors"
             >
-              Cancel
+              {isEditing ? 'Cancel' : 'Discard Draft'}
             </button>
             <button
               type="submit"

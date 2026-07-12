@@ -28,7 +28,7 @@ export default function ArchiveScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
-  const [downloadingIds, setDownloadingIds] = useState<Record<string, boolean>>({});
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number | null>>({});
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -132,22 +132,31 @@ export default function ArchiveScreen() {
     }
     
     try {
-      setDownloadingIds(prev => ({ ...prev, [item.id]: true }));
+      setDownloadProgress(prev => ({ ...prev, [item.id]: 1 }));
       const displayName = extractFileNameFromUrl(item.file_url, item.title);
-      const resultUri = await downloadFile(item.file_url, item.id, displayName);
+      const resultUri = await downloadFile(
+        item.file_url,
+        item.id,
+        displayName,
+        (p: number) => {
+          const pct = Math.round(p * 100);
+          setDownloadProgress(prev => ({ ...prev, [item.id]: Math.max(pct, 1) }));
+        }
+      );
       if (resultUri) {
         setDownloadedIds(prev => ({ ...prev, [item.id]: true }));
       }
     } catch (err) {
       console.error(err);
     } finally {
-      setDownloadingIds(prev => ({ ...prev, [item.id]: false }));
+      setDownloadProgress(prev => ({ ...prev, [item.id]: null }));
     }
   };
 
   const renderItem = ({ item }: { item: any }) => {
     const isDownloaded = downloadedIds[item.id];
-    const isDownloading = downloadingIds[item.id];
+    const progress = downloadProgress[item.id];
+    const isDownloading = progress !== null && progress !== undefined;
     
     const cardBg = isDark ? '#1E2638' : '#FFFFFF';
     const borderCol = isDark ? '#2D3748' : '#E2E8F0';
@@ -195,6 +204,16 @@ export default function ArchiveScreen() {
                 </View>
               )}
             </View>
+            
+            {/* Download Progress Bar */}
+            {isDownloading && (
+              <View style={{ marginTop: 6 }}>
+                <View style={{ height: 4, backgroundColor: isDark ? '#374151' : '#E2E8F0', borderRadius: 2, overflow: 'hidden' }}>
+                  <View style={{ height: '100%', width: `${progress}%`, backgroundColor: '#10B981', borderRadius: 2 }} />
+                </View>
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 10, color: '#10B981', marginTop: 2 }}>{progress}%</Text>
+              </View>
+            )}
           </View>
 
           <View style={[styles.resActions, { marginLeft: 8 }]}>
@@ -204,8 +223,8 @@ export default function ArchiveScreen() {
             
             <TouchableOpacity
               onPress={() => handleDownload(item)}
-              style={[styles.actionBtn, { backgroundColor: isDark ? '#334155' : '#F1F5F9', marginLeft: 8 }]}
               disabled={isDownloaded || isDownloading}
+              style={[styles.actionBtn, { marginLeft: 8 }, isDownloading ? { backgroundColor: '#D1FAE5' } : isDownloaded ? { backgroundColor: isDark ? '#22543D' : '#DCFCE7' } : { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
             >
               {isDownloading ? (
                 <ActivityIndicator size="small" color="#10B981" />
@@ -213,7 +232,7 @@ export default function ArchiveScreen() {
                 <Ionicons 
                   name={isDownloaded ? 'checkmark-circle' : 'cloud-download'} 
                   size={16} 
-                  color="#10B981"
+                  color={isDownloaded ? '#166534' : '#10B981'}
                 />
               )}
             </TouchableOpacity>

@@ -32,6 +32,7 @@ import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { sendPushNotification, getUserIdsForLevel } from '../lib/notifications';
 import type { Material, Course } from '../types';
 import InstitutionalDocumentViewer from '../components/InstitutionalDocumentViewer';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 interface MaterialWithDetails extends Material {
   course?: Course;
@@ -68,7 +69,7 @@ export default function MaterialsPage() {
     syncAll();
   }, [syncAll]);
 
-  const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
+  // const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialWithDetails | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export default function MaterialsPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [predefinedAsset, setPredefinedAsset] = useState<any>(null);
 
-  const [formData, setFormData] = useState({
+  const { showModal, setShowModal, formData, setFormData, clearDraft, resetForm } = useFormDraft('materials_draft', {
     title: '',
     description: '',
     material_type: 'note' as Material['material_type'],
@@ -358,7 +359,11 @@ export default function MaterialsPage() {
       }
 
       setSuccessMessage(`Material ${showModal === 'create' ? 'created' : 'updated'} successfully`);
-      setShowModal(null);
+      if (showModal === 'create') {
+        clearDraft();
+      } else {
+        setShowModal(null);
+      }
       refreshAnalytics();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: unknown) {
@@ -797,31 +802,81 @@ export default function MaterialsPage() {
                         </div>
                       </div>
                     ) : (
-                      <FileUpload
-                        accept={
-                          formData.material_type === 'pdf' ? '.pdf' :
-                          formData.material_type === 'word' ? '.doc,.docx' :
-                          formData.material_type === 'ppt' ? '.ppt,.pptx' :
-                          formData.material_type === 'video' ? 'video/*' : '*/*'
-                        }
-                        folder="materials"
-                        multiple={true}
-                        onUploadComplete={(url: string, file: File, originalFilename?: string) => setFormData({ ...formData, file_url: url, file_name: originalFilename || file.name, file_size: file.size, file_mime_type: file.type || null })}
-                        onMultiUploadComplete={(results) => {
-                          const first = results[0];
-                          const newFiles = results.map(r => ({ url: r.url, name: r.originalFilename || r.file.name, size: r.file.size, type: r.file.type }));
-                          setFormData({
+                      <div className="space-y-4">
+                        <FileUpload
+                          accept={
+                            formData.material_type === 'pdf' ? '.pdf' :
+                            formData.material_type === 'word' ? '.doc,.docx' :
+                            formData.material_type === 'ppt' ? '.ppt,.pptx' :
+                            formData.material_type === 'video' ? 'video/*' : '*/*'
+                          }
+                          folder="materials"
+                          multiple={true}
+                          onUploadComplete={(url: string, file: File, originalFilename?: string) => setFormData({ 
                             ...formData, 
-                            file_url: first.url, 
-                            file_name: first.originalFilename || first.file.name, 
-                            file_size: first.file.size, 
-                            file_mime_type: first.file.type,
-                            files: newFiles
-                          });
-                        }}
-                        currentFileUrl={formData.file_url}
-                        label="Source Attachment"
-                      />
+                            file_url: url, 
+                            file_name: originalFilename || file.name, 
+                            file_size: file.size, 
+                            file_mime_type: file.type || null,
+                            files: [{ url, name: originalFilename || file.name, size: file.size, type: file.type }]
+                          })}
+                          onMultiUploadComplete={(results) => {
+                            const first = results[0];
+                            const newFiles = results.map(r => ({ url: r.url, name: r.originalFilename || r.file.name, size: r.file.size, type: r.file.type }));
+                            const existingFiles = Array.isArray(formData.files) ? formData.files : [];
+                            const combinedFiles = [...existingFiles, ...newFiles];
+
+                            setFormData({
+                              ...formData, 
+                              file_url: combinedFiles[0]?.url || first.url, 
+                              file_name: combinedFiles[0]?.name || first.originalFilename || first.file.name, 
+                              file_size: combinedFiles[0]?.size || first.file.size, 
+                              file_mime_type: combinedFiles[0]?.type || first.file.type,
+                              files: combinedFiles
+                            });
+                          }}
+                          currentFileUrl={formData.file_url}
+                          label="Source Attachment"
+                        />
+                        
+                        {/* Display Successfully Uploaded Cloudinary Files */}
+                        {formData.files && formData.files.length > 0 && (
+                          <div className="mt-6 border-t border-slate-200 pt-6">
+                            <h5 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">
+                              Ready for Database ({formData.files.length})
+                            </h5>
+                            <div className="space-y-3">
+                              {formData.files.map((f, i) => (
+                                <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                    <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0">
+                                      <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                    </div>
+                                    <div className="truncate">
+                                      <p className="text-sm font-bold text-slate-900 truncate">{f.name}</p>
+                                      <p className="text-xs text-slate-500 font-medium">{Math.round(f.size / 1024)} KB</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedFiles = formData.files.filter((_, idx) => idx !== i);
+                                      setFormData({
+                                        ...formData,
+                                        files: updatedFiles,
+                                        file_url: updatedFiles[0]?.url || '',
+                                      });
+                                    }}
+                                    className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
@@ -861,7 +916,10 @@ export default function MaterialsPage() {
                 <div className="flex gap-4">
                   <button
                     type="button"
-                    onClick={() => setShowModal(null)}
+                    onClick={() => {
+                      if (showModal === 'create') clearDraft();
+                      else setShowModal(null);
+                    }}
                     className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
                   >
                     Discard Changes

@@ -15,6 +15,7 @@ import {
 import FileUpload from '../lib/FileUpload';
 import ErrorState from '../components/ui/ErrorState';
 import InstitutionalDocumentViewer from '../components/InstitutionalDocumentViewer';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 interface CloudResource {
   id: string;
@@ -96,7 +97,6 @@ export default function ResourcesPage() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'document' | 'image' | 'video'>('all');
   const [originFilter, setOriginFilter] = useState<string>('all');
   const [showPreview, setShowPreview] = useState<{ url: string; type: string; title: string } | null>(null);
-  const [showUploadModal, setShowUploadModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -120,7 +120,7 @@ export default function ResourcesPage() {
   const [showCloudBulkConfirm, setShowCloudBulkConfirm] = useState(false);
   const [confirmDeleteCloud, setConfirmDeleteCloud] = useState<CloudinaryAsset | null>(null);
 
-  const [formData, setFormData] = useState({
+  const { showModal: showUploadModal, setShowModal: setShowUploadModalRaw, formData, setFormData, clearDraft, resetForm } = useFormDraft('resources_draft', {
     title: '',
     description: '',
     file_url: '',
@@ -128,6 +128,8 @@ export default function ResourcesPage() {
     file_type: '',
     category: 'general',
   });
+  
+  const setShowUploadModal = (show: boolean) => setShowUploadModalRaw(show ? 'create' : null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -437,7 +439,8 @@ export default function ResourcesPage() {
       if (error) throw error;
       if (inserted) useAdminDataStore.getState().updateResource(inserted as any);
       setSuccessMessage('File archived to vault successfully.');
-      setShowUploadModal(false);
+      if (showUploadModal === 'create') clearDraft();
+      else setShowUploadModal(false);
       setFormData({ title: '', description: '', file_url: '', file_size: 0, file_type: '', category: 'general' });
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: unknown) {
@@ -1217,10 +1220,13 @@ export default function ResourcesPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowUploadModal(false)}
+                  onClick={() => {
+                    if (showUploadModal === 'create') clearDraft();
+                    else setShowUploadModal(false);
+                  }}
                   className="flex-1 py-4 bg-gray-50 text-gray-400 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-all"
                 >
-                  Cancel
+                  {showUploadModal === 'create' ? 'Discard Draft' : 'Cancel'}
                 </button>
                 <button
                   type="submit"

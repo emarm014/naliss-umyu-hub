@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { CheckCircle, Plus, Search, Edit, Trash2, Calendar, Globe, Newspaper, Tag, Clock, ShieldCheck, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 type NewsItem = {
   id: string;
@@ -21,11 +22,9 @@ export default function NewsManagementPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  
-  const [showModal, setShowModal] = useState<'create' | 'edit' | null>(null);
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
   
-  const [formData, setFormData] = useState({
+  const { showModal, setShowModal, formData, setFormData, clearDraft, resetForm } = useFormDraft('news_draft', {
     title: '',
     content: '',
     category: 'General',
@@ -72,7 +71,9 @@ export default function NewsManagementPage() {
   }, [filteredNews, currentPage]);
 
   const handleOpenCreate = () => {
-    setFormData({ title: '', content: '', category: 'General', image_url: '' });
+    if (!localStorage.getItem('news_draft')) {
+      resetForm();
+    }
     setSelectedNews(null);
     setShowModal('create');
   };
@@ -137,12 +138,13 @@ export default function NewsManagementPage() {
           image_url: formattedImageUrl
         }).eq('id', selectedNews.id);
         if (error) throw error;
-        setSuccessMessage('News updated successfully!');
+        setSuccessMessage('News item updated successfully');
       }
 
-      setShowModal(null);
+      if (showModal === 'create') clearDraft();
+      else setShowModal(null);
       fetchNews();
-      setTimeout(() => setSuccessMessage(null), 3000);
+      setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
       setFormError(err.message || 'Failed to save news.');
     } finally {
@@ -452,15 +454,33 @@ export default function NewsManagementPage() {
                     <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">
                       Cover Image Asset (Optional)
                     </label>
-                    <FileUpload
-                      onUploadComplete={(url) => setFormData({ ...formData, image_url: url })}
-                      folder="news_covers"
-                    />
-                    {formData.image_url && (
-                      <div className="mt-2 text-sm text-emerald-600 flex items-center">
-                        <CheckCircle className="w-4 h-4 mr-1" /> Image attached successfully
-                      </div>
-                    )}
+                    <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                      {formData.image_url ? (
+                        <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0">
+                              <CheckCircle className="w-5 h-5 text-emerald-500" />
+                            </div>
+                            <div className="truncate">
+                              <p className="text-sm font-bold text-slate-900 truncate">Image Attached</p>
+                              <p className="text-xs text-slate-500 font-medium truncate">{formData.image_url.split('/').pop()}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, image_url: '' })}
+                            className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <FileUpload
+                          onUploadComplete={(url) => setFormData({ ...formData, image_url: url })}
+                          folder="news_covers"
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div>
@@ -482,10 +502,13 @@ export default function NewsManagementPage() {
               <div className="p-10 bg-gray-50/50 border-t border-gray-50 flex gap-4">
                 <button
                   type="button"
-                  onClick={() => setShowModal(null)}
-                  className="flex-1 px-8 py-5 bg-white text-gray-400 rounded-2xl font-black text-[10px] uppercase tracking-widest border border-gray-100 hover:bg-gray-100 hover:text-gray-600 transition-all"
+                  onClick={() => {
+                    if (showModal === 'create') clearDraft();
+                    else setShowModal(null);
+                  }}
+                  className="flex-1 py-4 border-2 border-slate-200 text-slate-700 rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {showModal === 'create' ? 'Discard Draft' : 'Cancel'}
                 </button>
                 <button
                   type="submit"

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Plus, X, CheckCircle, Info, Search, Edit, Trash2, Calendar, FileText, Database, Layers, HardDrive, ShieldCheck, ChevronRight, ChevronLeft } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 type ArchiveItem = {
   id: string;
@@ -22,11 +23,9 @@ export default function ArchiveManagementPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
-
-  const [showModal, setShowModal] = useState<'create' | 'edit' | null>(null);
   const [selectedArchive, setSelectedArchive] = useState<ArchiveItem | null>(null);
 
-  const [formData, setFormData] = useState({
+  const { showModal, setShowModal, formData, setFormData, clearDraft, resetForm } = useFormDraft('archives_draft', {
     title: '',
     description: '',
     file_type: 'document' as 'pdf' | 'image' | 'video' | 'document',
@@ -74,13 +73,9 @@ export default function ArchiveManagementPage() {
   }, [filteredArchives, currentPage]);
 
   const handleOpenCreate = () => {
-    setFormData({
-      title: '',
-      description: '',
-      file_type: 'document',
-      file_size: '',
-      file_url: ''
-    });
+    if (!localStorage.getItem('archives_draft')) {
+      resetForm();
+    }
     setSelectedArchive(null);
     setShowModal('create');
   };
@@ -148,7 +143,8 @@ export default function ArchiveManagementPage() {
         setSuccessMessage('Archive updated successfully!');
       }
 
-      setShowModal(null);
+      if (showModal === 'create') clearDraft();
+      else setShowModal(null);
       fetchArchives();
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
@@ -492,21 +488,22 @@ export default function ArchiveManagementPage() {
                     
                     <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
                       {formData.file_url ? (
-                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200">
-                          <div className="flex items-center space-x-3 overflow-hidden">
-                            <div className="p-2 bg-primary-50 text-primary-600 rounded-xl">
-                              <CheckCircle className="h-5 w-5" />
+                        <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0">
+                              <CheckCircle className="w-5 h-5 text-emerald-500" />
                             </div>
-                            <span className="text-sm font-medium text-slate-700 truncate max-w-[200px]" title={formData.file_url}>
-                              Asset Attached
-                            </span>
+                            <div className="truncate">
+                              <p className="text-sm font-bold text-slate-900 truncate">Asset Attached</p>
+                              <p className="text-xs text-slate-500 font-medium truncate">{formData.file_url.split('/').pop()}</p>
+                            </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => setFormData({ ...formData, file_url: '' })}
-                            className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
+                            className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
                           >
-                            <X className="h-4 w-4" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       ) : (
@@ -535,10 +532,13 @@ export default function ArchiveManagementPage() {
               <div className="p-10 bg-gray-50/50 border-t border-gray-50 flex gap-4">
                 <button
                   type="button"
-                  onClick={() => setShowModal(null)}
+                  onClick={() => {
+                    if (showModal === 'create') clearDraft();
+                    else setShowModal(null);
+                  }}
                   className="flex-1 px-8 py-5 bg-white text-gray-400 rounded-2xl font-black text-[10px] uppercase tracking-widest border border-gray-100 hover:bg-gray-100 hover:text-gray-600 transition-all"
                 >
-                  Cancel
+                  {showModal === 'create' ? 'Discard Draft' : 'Cancel'}
                 </button>
                 <button
                   type="submit"

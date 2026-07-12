@@ -38,6 +38,7 @@ import {
 import FileUpload from '../lib/FileUpload';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import InstitutionalDocumentViewer from '../components/InstitutionalDocumentViewer';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 interface PastQuestionWithDetails extends Omit<PastQuestion, 'course'> {
   course?: { code: string; title: string } | null;
@@ -80,7 +81,6 @@ export default function PastQuestionsPage() {
   const [courseFilter, setCourseFilter] = useState<string>('all');
   const [semesterFilter, setSemesterFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
   const [selectedPQ, setSelectedPQ] = useState<PastQuestionWithDetails | null>(null);
   const [showPreview, setShowPreview] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState<string | null>(null);
@@ -88,11 +88,9 @@ export default function PastQuestionsPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-
   const { permissions, profile } = useAuthStore();
   const assignedLevel = permissions?.assigned_level || null;
-
-  const [formData, setFormData] = useState({
+  const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('past_questions_draft', {
     title: '',
     description: '',
     course_id: '',
@@ -205,21 +203,23 @@ export default function PastQuestionsPage() {
 
 
   const openCreateModal = () => {
-    setFormData({
-      title: '',
-      description: '',
-      course_id: '',
-      file_url: '',
-      file_name: '',
-      file_mime_type: '',
-      is_public: true,
-      is_downloadable: true,
-      is_featured: false,
-      level: assignedLevel || '',
-      semester: '',
-      file_size: 0,
-      files: [],
-    });
+    if (!localStorage.getItem('past_questions_draft')) {
+      setFormData({
+        title: '',
+        description: '',
+        course_id: '',
+        file_url: '',
+        file_name: '',
+        file_mime_type: '',
+        is_public: true,
+        is_downloadable: true,
+        is_featured: false,
+        level: assignedLevel || '',
+        semester: '',
+        file_size: 0,
+        files: [],
+      });
+    }
     setShowModal('create');
   };
 
@@ -283,7 +283,8 @@ export default function PastQuestionsPage() {
       }
 
       setSuccessMessage(`Past Question ${showModal === 'create' ? 'created' : 'updated'} successfully!`);
-      setShowModal(null);
+      if (showModal === 'create') clearDraft();
+      else setShowModal(null);
       refreshAnalytics();
       window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => setSuccessMessage(null), 5000);
@@ -820,25 +821,68 @@ export default function PastQuestionsPage() {
                               file_url: url, 
                               file_size: file.size,
                               file_name: file.name,
-                              file_mime_type: file.type
+                              file_mime_type: file.type,
+                              files: [{ url, name: file.name, size: file.size, type: file.type }]
                             });
                           }}
                           onMultiUploadComplete={(results) => {
                             const first = results[0];
                             const newFiles = results.map(r => ({ url: r.url, name: r.originalFilename || r.file.name, size: r.file.size, type: r.file.type }));
+                            // Append if files exist, else create new
+                            const existingFiles = Array.isArray(formData.files) ? formData.files : [];
+                            const combinedFiles = [...existingFiles, ...newFiles];
+                            
                             setFormData({
                               ...formData,
-                              file_url: first.url,
-                              file_size: first.file.size,
-                              file_name: first.originalFilename || first.file.name,
-                              file_mime_type: first.file.type,
-                              files: newFiles
+                              file_url: combinedFiles[0]?.url || first.url,
+                              file_size: combinedFiles[0]?.size || first.file.size,
+                              file_name: combinedFiles[0]?.name || first.originalFilename || first.file.name,
+                              file_mime_type: combinedFiles[0]?.type || first.file.type,
+                              files: combinedFiles
                             });
                           }}
                           currentFileUrl={formData.file_url} 
-                          label="Drop Past Question File Here *" 
-                          description="Supported formats: PDF, PNG, JPG (Max 50MB)"
+                          label="Select Past Question Files" 
+                          description="Supported formats: PDF, PNG, JPG (Max 100MB per file)"
                         />
+
+                        {/* Display Successfully Uploaded Cloudinary Files */}
+                        {formData.files && formData.files.length > 0 && (
+                          <div className="mt-6 border-t border-slate-200 pt-6">
+                            <h5 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">
+                              Ready for Database ({formData.files.length})
+                            </h5>
+                            <div className="space-y-3">
+                              {formData.files.map((f, i) => (
+                                <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                    <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0">
+                                      <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                    </div>
+                                    <div className="truncate">
+                                      <p className="text-sm font-bold text-slate-900 truncate">{f.name}</p>
+                                      <p className="text-xs text-slate-500 font-medium">{Math.round(f.size / 1024)} KB</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedFiles = formData.files.filter((_, idx) => idx !== i);
+                                      setFormData({
+                                        ...formData,
+                                        files: updatedFiles,
+                                        file_url: updatedFiles[0]?.url || '',
+                                      });
+                                    }}
+                                    className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -899,10 +943,13 @@ export default function PastQuestionsPage() {
                 <div className="flex items-center gap-4 w-full sm:w-auto">
                   <button
                     type="button"
-                    onClick={() => setShowModal(null)}
-                    className="flex-1 sm:flex-none px-8 py-4 font-bold text-slate-600 hover:text-slate-900 transition-colors"
+                    onClick={() => {
+                      if (showModal === 'create') clearDraft();
+                      else setShowModal(null);
+                    }}
+                    className="flex-1 sm:flex-none px-8 py-4 bg-white border-2 border-slate-200 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
                   >
-                    Cancel
+                    {showModal === 'create' ? 'Discard Draft' : 'Cancel'}
                   </button>
                   <button
                     type="submit"

@@ -53,7 +53,45 @@ export const FileService = {
     _displayName?: string,
     onProgress?: (progress: number) => void
   ): Promise<string | null> {
-    return UnifiedDownloadEngine.download(url, fileId, onProgress, 'document');
+    try {
+      const localPath = this.getLocalUri(fileId, _displayName || url);
+      const folder = localPath.substring(0, localPath.lastIndexOf('/') + 1);
+      const dirInfo = await FileSystem.getInfoAsync(folder);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
+      }
+
+      let cleanUrl = url
+        .replace('/raw/upload/fl_inline/', '/raw/upload/')
+        .replace('/fl_inline/', '/');
+      if (cleanUrl.includes('cloudinary.com') && cleanUrl.includes('/image/upload/')) {
+        const lower = cleanUrl.toLowerCase();
+        if (lower.match(/\.(pdf|doc|docx|ppt|pptx|xls|xlsx|txt|zip|rar|csv)(\?|$)/)) {
+          cleanUrl = cleanUrl.replace('/image/upload/', '/raw/upload/');
+        }
+      }
+
+      const downloadResumable = FileSystem.createDownloadResumable(
+        cleanUrl,
+        localPath,
+        { headers: { 'Accept': '*/*', 'User-Agent': 'NALISS-Hub/1.0' } },
+        (progress) => {
+          const pct = progress.totalBytesExpectedToWrite > 0
+            ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
+            : 0;
+          onProgress?.(pct);
+        }
+      );
+
+      const result = await downloadResumable.downloadAsync();
+      if (result && result.status === 200) {
+        return result.uri;
+      }
+      return null;
+    } catch (err) {
+      Logger.error('file-service', 'Download failure', err as Error);
+      return null;
+    }
   },
 
   async shareFile(localUri: string) {

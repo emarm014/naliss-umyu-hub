@@ -1637,7 +1637,7 @@ export default function ChatScreen() {
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <Image
-                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, `image_${item.id}.jpg`) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content))) }}
+                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `image_${item.id}.jpg`) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content))) }}
                                         style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
@@ -2399,7 +2399,8 @@ export default function ChatScreen() {
     const handleSaveMessageMedia = async (msg: any) => {
         try {
             let localUri = '';
-            const fileName = msg.metadata?.name || `${msg.message_type}_${msg.id}.${msg.message_type === 'video' ? 'mp4' : msg.message_type === 'audio' ? 'mp3' : 'jpg'}`;
+            const ext = msg.message_type === 'video' ? 'mp4' : msg.message_type === 'audio' ? 'mp3' : msg.message_type === 'document' ? 'pdf' : 'jpg';
+            const fileName = msg.metadata?.name || `${msg.message_type}_${msg.id}.${ext}`;
             
             const isDownloaded = downloadedIds[msg.id];
             const isMe = msg.sender_id === currentUser?.id;
@@ -2439,7 +2440,8 @@ export default function ChatScreen() {
             const isMe = m.sender_id === currentUser?.id;
             let mediaUrl = m.content;
             if (isDownloaded) {
-                mediaUrl = FileService.getLocalUri(m.id, m.metadata?.name || `${m.message_type}_${m.id}.${m.message_type === 'video' ? 'mp4' : 'jpg'}`);
+                const ext = m.message_type === 'video' ? 'mp4' : m.message_type === 'audio' ? 'mp3' : m.message_type === 'document' ? 'pdf' : 'jpg';
+                mediaUrl = FileService.getLocalUri(m.id, m.metadata?.name || `${m.message_type}_${m.id}.${ext}`);
             } else if (isMe) {
                 mediaUrl = m.content?.startsWith('http') ? m.content : (m.fileUri?.startsWith('file://') ? m.fileUri : `file://${m.fileUri}`);
             }
@@ -2448,7 +2450,7 @@ export default function ChatScreen() {
                 id: m.id,
                 media_url: mediaUrl,
                 content_type: m.message_type,
-                name: m.metadata?.name || `${m.message_type}_${m.id}.${m.message_type === 'video' ? 'mp4' : 'jpg'}`,
+                name: m.metadata?.name || `${m.message_type}_${m.id}.${m.message_type === 'video' ? 'mp4' : m.message_type === 'audio' ? 'mp3' : m.message_type === 'document' ? 'pdf' : 'jpg'}`,
             };
         });
 

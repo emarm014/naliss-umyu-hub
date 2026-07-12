@@ -16,7 +16,7 @@ import {
   Plus
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, ensureActiveSession } from '../lib/supabase';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 
@@ -75,7 +75,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchCloudStorage = async (retries = 2) => {
       // Ensure we have a valid, unexpired session token before invoking the edge function
-      await supabase.auth.getSession();
+      await ensureActiveSession();
       
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {

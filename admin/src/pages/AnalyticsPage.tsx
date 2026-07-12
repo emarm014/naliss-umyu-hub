@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, ensureActiveSession } from '../lib/supabase';
 import * as Sentry from '@sentry/react';
 import {
   Cloud, Database, HardDrive, BookOpen, AlertCircle, CheckCircle2,
@@ -56,7 +56,7 @@ export default function AnalyticsPage() {
     setCloudError(null);
     
     // Ensure we have a valid, unexpired session token before invoking the edge function
-    await supabase.auth.getSession();
+    await ensureActiveSession();
     
     for (let attempt = 0; attempt <= 2; attempt++) {
       const controller = new AbortController();

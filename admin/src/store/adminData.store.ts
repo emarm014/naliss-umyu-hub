@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase, ensureActiveSession } from '../lib/supabase';
 import { adminRealtimeManager as realtimeCoordinator } from '../lib/realtimeManager';
 import { queryClient } from '../lib/queryClient';
 
@@ -187,8 +187,10 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     try {
       // PREVENT FREEZE: Ensure session is refreshed/valid BEFORE firing 15 parallel queries.
       // If a tab wakes up and 15 queries fire simultaneously while the token is expired, 
-      // the Supabase JS client can hang indefinitely in its token refresh queue.
-      await supabase.auth.getSession();
+      // 1. Force token refresh to prevent "token expired" 401s during long-idle sync
+      // Use singleton wrapper to prevent gotrue-js lock contention when syncAll fires concurrently with page mounts
+      const { data: sessionData, error: sessionError } = await ensureActiveSession();
+      if (sessionError || !sessionData?.session) throw new Error("Unauthorized");
 
       const fetchOrUseCache = async (key: string, queryFn: () => Promise<any>, staleTime = 5 * 60 * 1000) => {
         if (force) {

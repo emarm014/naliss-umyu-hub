@@ -77,3 +77,19 @@ function createSupabaseClient(): SupabaseClient {
 }
 
 export const supabase: SupabaseClient = createSupabaseClient();
+
+let sessionRefreshPromise: Promise<any> | null = null;
+
+/**
+ * Singleton wrapper around supabase.auth.getSession() to prevent lock contention
+ * in gotrue-js (AbortError: Lock broken by another request with the 'steal' option)
+ * when multiple components try to refresh the session concurrently on mount.
+ */
+export const ensureActiveSession = async () => {
+  if (!sessionRefreshPromise) {
+    sessionRefreshPromise = supabase.auth.getSession().finally(() => {
+      sessionRefreshPromise = null;
+    });
+  }
+  return sessionRefreshPromise;
+};

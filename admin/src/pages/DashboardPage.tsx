@@ -74,6 +74,9 @@ export default function DashboardPage() {
   // Fetch Cloudinary storage on mount for accurate storage card
   useEffect(() => {
     const fetchCloudStorage = async (retries = 2) => {
+      // Ensure we have a valid, unexpired session token before invoking the edge function
+      await supabase.auth.getSession();
+      
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
           const { data, error } = await supabase.functions.invoke('cloud-data');

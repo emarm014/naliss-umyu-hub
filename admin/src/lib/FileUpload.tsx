@@ -13,6 +13,8 @@ interface FileUploadProps {
     isImage?: boolean;
     multiple?: boolean;
     onMultiUploadComplete?: (results: Array<{url: string, file: File, originalFilename?: string}>) => void;
+    currentBatchUrls?: Array<{url: string, name: string, size?: number, type?: string}>;
+    onRemoveBatchItem?: (index: number) => void;
 }
 
 export default function FileUpload({
@@ -26,6 +28,8 @@ export default function FileUpload({
     isImage = false,
     multiple = false,
     onMultiUploadComplete,
+    currentBatchUrls = [],
+    onRemoveBatchItem,
 }: FileUploadProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState<string>('');
@@ -55,15 +59,17 @@ export default function FileUpload({
         if (!filesList || filesList.length === 0) return;
 
         const incomingFiles = Array.from(filesList);
-        let newQueue = multiple ? [...queuedFiles, ...incomingFiles] : [...incomingFiles];
+        
+        // We auto-upload, so we don't need to append to queuedFiles. We just upload the incoming ones.
+        let filesToUpload = multiple ? incomingFiles : [incomingFiles[0]];
 
-        if (multiple && newQueue.length > 5) {
-            setUploadError('⚠️ Maximum limit of 5 files exceeded. Truncating to 5.');
-            newQueue = newQueue.slice(0, 5);
+        if (multiple && filesToUpload.length > 5) {
+            setUploadError('⚠️ Maximum limit of 5 files per selection exceeded. Truncating to 5.');
+            filesToUpload = filesToUpload.slice(0, 5);
         }
 
         // Validate sizes
-        const validQueue = newQueue.filter(file => {
+        const validFiles = filesToUpload.filter(file => {
             const isImageFile = file.type.startsWith('image/');
             const MAX_FILE_SIZE = isImageFile ? 10 * 1024 * 1024 : 100 * 1024 * 1024;
             if (file.size > MAX_FILE_SIZE) {
@@ -73,11 +79,12 @@ export default function FileUpload({
             return true;
         });
 
-        setQueuedFiles(validQueue);
-        setUploadError('');
-        
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
+        }
+
+        if (validFiles.length > 0) {
+            await executeUpload(validFiles);
         }
     };
 
@@ -94,16 +101,14 @@ export default function FileUpload({
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     };
 
-    const handleUpload = async () => {
-        if (queuedFiles.length === 0) return;
-
+    const executeUpload = async (filesToUpload: File[]) => {
         setIsUploading(true);
-        setUploadProgress(multiple ? `Uploading ${queuedFiles.length} files...` : 'Uploading to cloud storage...');
+        setUploadProgress(multiple ? `Uploading ${filesToUpload.length} files...` : 'Uploading to cloud storage...');
         setUploadError('');
 
         try {
             if (multiple && onMultiUploadComplete) {
-                const uploadPromises = queuedFiles.map(file => uploadToCloudinary(file, folder).then(result => ({
+                const uploadPromises = filesToUpload.map(file => uploadToCloudinary(file, folder).then(result => ({
                     url: result.secure_url,
                     file,
                     originalFilename: result.original_filename || file.name
@@ -118,7 +123,6 @@ export default function FileUpload({
 
                 if (successful.length > 0) {
                     setUploadProgress(failedCount > 0 ? `Upload complete! (${failedCount} failed)` : 'Upload complete!');
-                    setQueuedFiles([]); // Clear queue on success
                     onMultiUploadComplete(successful);
                 }
                 
@@ -134,11 +138,10 @@ export default function FileUpload({
                     }
                 }
             } else {
-                const file = queuedFiles[0];
+                const file = filesToUpload[0];
                 const result = await uploadToCloudinary(file, folder);
 
                 setUploadProgress('Upload complete!');
-                setQueuedFiles([]); // Clear queue
                 onUploadComplete(result.secure_url, file, result.original_filename);
             }
 
@@ -151,6 +154,21 @@ export default function FileUpload({
             setIsUploading(false);
         }
     };
+
+    const removeFileFromQueue = (indexToRemove: number) => {
+        setQueuedFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+        setUploadError('');
+    };
+
+    const formatFileSize = (bytes: number) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+
 
     return (
         <div className="w-full space-y-4">
@@ -229,12 +247,12 @@ export default function FileUpload({
                 </div>
             )}
 
-            {/* File Queue List */}
-            {queuedFiles.length > 0 && !isUploading && !uploadProgress && (
+            {/* File Queue & Uploaded List */}
+            {((queuedFiles.length > 0 && !isUploading && !uploadProgress) || currentBatchUrls.length > 0) && (
                 <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm mt-4">
                     <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
                         <span className="text-xs font-black text-gray-500 uppercase tracking-widest">
-                            Upload Queue ({queuedFiles.length})
+                            Upload Queue ({queuedFiles.length}) {currentBatchUrls.length > 0 && `| Uploaded (${currentBatchUrls.length})`}
                         </span>
                         <button
                             type="button"
@@ -248,8 +266,34 @@ export default function FileUpload({
                         </button>
                     </div>
                     <ul className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                        {currentBatchUrls.map((file, idx) => (
+                            <li key={`batch-${idx}`} className="flex items-center justify-between p-3 hover:bg-emerald-50 transition-colors group bg-emerald-50/30">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0 overflow-hidden border border-emerald-200/50">
+                                        <CheckCircle className="w-5 h-5 text-emerald-600" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-bold text-emerald-900 truncate">{file.name}</p>
+                                        <p className="text-xs font-semibold text-emerald-600">{file.size ? formatFileSize(file.size) : 'Uploaded'}</p>
+                                    </div>
+                                </div>
+                                {onRemoveBatchItem && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onRemoveBatchItem(idx);
+                                        }}
+                                        className="p-2 text-emerald-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                        title="Remove uploaded file"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </li>
+                        ))}
                         {queuedFiles.map((file, idx) => (
-                            <li key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 transition-colors group">
+                            <li key={`queue-${idx}`} className="flex items-center justify-between p-3 hover:bg-gray-50 transition-colors group">
                                 <div className="flex items-center gap-3 min-w-0">
                                     {/* Thumbnail / Icon */}
                                     <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden border border-gray-200/50">
@@ -300,20 +344,6 @@ export default function FileUpload({
                         </div>
                     )}
                     
-                    {/* Upload Action */}
-                    <div className="p-3 bg-gray-50/50 border-t border-gray-100">
-                        <button
-                            type="button"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleUpload();
-                            }}
-                            className="w-full py-3 bg-primary-950 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-primary-800 transition-all shadow-lg flex items-center justify-center gap-2"
-                        >
-                            <Upload className="w-4 h-4" />
-                            Upload {queuedFiles.length} {queuedFiles.length === 1 ? 'File' : 'Files'} to Cloud
-                        </button>
-                    </div>
                 </div>
             )}
         </div>

@@ -876,45 +876,16 @@ export default function PastQuestionsPage() {
                           currentFileUrl={formData.file_url} 
                           label="Select Past Question Files" 
                           description="Supported formats: PDF, PNG, JPG (Max 100MB per file)"
+                          currentBatchUrls={formData.files}
+                          onRemoveBatchItem={(idx) => {
+                              const updatedFiles = formData.files.filter((_, i) => i !== idx);
+                              setFormData({
+                                ...formData,
+                                files: updatedFiles,
+                                file_url: updatedFiles[0]?.url || '',
+                              });
+                          }}
                         />
-
-                        {/* Display Successfully Uploaded Cloudinary Files */}
-                        {formData.files && formData.files.length > 0 && (
-                          <div className="mt-6 border-t border-slate-200 pt-6">
-                            <h5 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">
-                              Ready for Database ({formData.files.length})
-                            </h5>
-                            <div className="space-y-3">
-                              {formData.files.map((f, i) => (
-                                <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
-                                  <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0">
-                                      <CheckCircle className="w-5 h-5 text-emerald-500" />
-                                    </div>
-                                    <div className="truncate">
-                                      <p className="text-sm font-bold text-slate-900 truncate">{f.name}</p>
-                                      <p className="text-xs text-slate-500 font-medium">{Math.round(f.size / 1024)} KB</p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updatedFiles = formData.files.filter((_, idx) => idx !== i);
-                                      setFormData({
-                                        ...formData,
-                                        files: updatedFiles,
-                                        file_url: updatedFiles[0]?.url || '',
-                                      });
-                                    }}
-                                    className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
 

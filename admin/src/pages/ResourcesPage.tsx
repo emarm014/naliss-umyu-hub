@@ -1237,25 +1237,30 @@ export default function ResourcesPage() {
                         name: r.originalFilename || r.file.name,
                         type: r.file.type || ''
                     }));
+                    const existingFiles = formData.batch_files || [];
+                    const combinedFiles = [...existingFiles, ...batchFiles];
+
                     setFormData(prev => ({
                         ...prev,
-                        file_url: batchFiles[0]?.url || prev.file_url,
-                        file_size: batchFiles[0]?.size || prev.file_size,
-                        file_type: batchFiles[0]?.type || prev.file_type,
-                        title: prev.title || batchFiles[0]?.name.replace(/\.[^/.]+$/, ''),
-                        batch_files: batchFiles
+                        file_url: combinedFiles[0]?.url || prev.file_url,
+                        file_size: combinedFiles[0]?.size || prev.file_size,
+                        file_type: combinedFiles[0]?.type || prev.file_type,
+                        title: prev.title || combinedFiles[0]?.name.replace(/\.[^/.]+$/, ''),
+                        batch_files: combinedFiles
                     }));
                   }}
                   currentFileUrl={formData.file_url}
+                  currentBatchUrls={formData.batch_files}
+                  onRemoveBatchItem={(idx) => {
+                      const updatedFiles = (formData.batch_files || []).filter((_, i) => i !== idx);
+                      setFormData(prev => ({
+                        ...prev,
+                        batch_files: updatedFiles,
+                        file_url: updatedFiles[0]?.url || '',
+                      }));
+                  }}
                 />
               </div>
-
-              {formData.file_url && (
-                <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-700 text-xs font-bold">
-                  <CheckCircle className="w-4 h-4 shrink-0" />
-                  File uploaded to Cloudinary — ready to archive
-                </div>
-              )}
 
               <div className="flex gap-3 pt-2">
                 <button

@@ -471,26 +471,6 @@ export default function NewsManagementPage() {
                       Cover Image Asset (Optional)
                     </label>
                     <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
-                      {formData.image_url ? (
-                        <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
-                          <div className="flex items-center gap-3 overflow-hidden">
-                            <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0">
-                              <CheckCircle className="w-5 h-5 text-emerald-500" />
-                            </div>
-                            <div className="truncate">
-                              <p className="text-sm font-bold text-slate-900 truncate">Image Attached</p>
-                              <p className="text-xs text-slate-500 font-medium truncate">{formData.image_url.split('/').pop()}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setFormData({ ...formData, image_url: '' })}
-                            className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
                         <FileUpload
                           multiple={true}
                           onUploadComplete={(url) => setFormData({ ...formData, image_url: url })}
@@ -500,15 +480,27 @@ export default function NewsManagementPage() {
                                 size: r.file.size,
                                 name: r.originalFilename || r.file.name
                             }));
+                            const existingFiles = formData.batch_files || [];
+                            const combinedFiles = [...existingFiles, ...batchFiles];
+
                             setFormData({
                                 ...formData,
-                                image_url: batchFiles[0]?.url || '',
-                                batch_files: batchFiles
+                                image_url: combinedFiles[0]?.url || '',
+                                batch_files: combinedFiles
                             });
+                          }}
+                          currentFileUrl={formData.image_url}
+                          currentBatchUrls={formData.batch_files}
+                          onRemoveBatchItem={(idx) => {
+                              const updatedFiles = (formData.batch_files || []).filter((_, i) => i !== idx);
+                              setFormData({
+                                ...formData,
+                                batch_files: updatedFiles,
+                                image_url: updatedFiles[0]?.url || '',
+                              });
                           }}
                           folder="news_covers"
                         />
-                      )}
                     </div>
                   </div>
 

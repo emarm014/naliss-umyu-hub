@@ -10,7 +10,7 @@ export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 const sentryFetch: typeof fetch = async (url, options) => {
   const startMs = Date.now();
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error('Fetch Timeout (15000ms)')), 15000);
+  const timeoutId = setTimeout(() => controller.abort(new Error('Fetch Timeout (30000ms)')), 30000);
 
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });

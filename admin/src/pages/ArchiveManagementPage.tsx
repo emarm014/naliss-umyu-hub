@@ -126,41 +126,29 @@ export default function ArchiveManagementPage() {
 
     try {
       if (showModal === 'create') {
-        if (hasBatch) {
-          // Batch Create
-          const inserts = formData.batch_files.map((fileInfo: any, index: number) => ({
-            title: formData.batch_files.length > 1 && !formData.title.includes(fileInfo.name) 
-              ? `${formData.title} (${index + 1})` 
-              : formData.title || fileInfo.name,
-            description: formData.description,
-            file_type: formData.file_type,
-            file_size: fileInfo.size,
-            file_url: fileInfo.url
-          }));
-          const { error } = await supabase.from('archives').insert(inserts);
-          if (error) throw error;
-        } else {
-          // Single Create
-          const { error } = await supabase.from('archives').insert([{
+        const hasBatch = formData.batch_files && formData.batch_files.length > 0;
+        const { error } = await supabase.from('archives').insert([{
             title: formData.title,
             description: formData.description,
             file_type: formData.file_type,
-            file_size: formData.file_size,
-            file_url: formData.file_url
-          }]);
-          if (error) throw error;
-        }
-        setSuccessMessage(`Archive item(s) successfully created!`);
+            file_url: formData.file_url || (hasBatch ? formData.batch_files[0].url : null),
+            file_size: formData.file_size || (hasBatch ? formData.batch_files[0].size : null),
+            files: hasBatch ? formData.batch_files : []
+        }]);
+        if (error) throw error;
+        setSuccessMessage('Archive added successfully');
       } else if (showModal === 'edit' && selectedArchive) {
+        const hasBatch = formData.batch_files && formData.batch_files.length > 0;
         const { error } = await supabase.from('archives').update({
           title: formData.title,
           description: formData.description,
           file_type: formData.file_type,
-          file_size: formData.file_size,
-          file_url: formData.file_url
+          file_url: formData.file_url || (hasBatch ? formData.batch_files[0].url : null),
+          file_size: formData.file_size || (hasBatch ? formData.batch_files[0].size : null),
+          files: hasBatch ? formData.batch_files : []
         }).eq('id', selectedArchive.id);
         if (error) throw error;
-        setSuccessMessage('Archive updated successfully!');
+        setSuccessMessage('Archive updated successfully');
       }
 
       if (showModal === 'create') clearDraft();
@@ -351,7 +339,11 @@ export default function ArchiveManagementPage() {
                     <span className="text-[10px] font-bold text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest border border-primary-100">
                       {item.file_type}
                     </span>
-                    {item.file_size && (
+                    {(item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 1 ? (
+                      <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full uppercase tracking-widest border border-gray-100">
+                        {(item as any).files.length} files attached
+                      </span>
+                    ) : item.file_size && (
                       <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full uppercase tracking-widest border border-gray-100">
                         {item.file_size}
                       </span>

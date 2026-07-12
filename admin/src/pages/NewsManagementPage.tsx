@@ -125,33 +125,23 @@ export default function NewsManagementPage() {
 
       if (showModal === 'create') {
         const hasBatch = formData.batch_files && formData.batch_files.length > 0;
-        if (hasBatch) {
-            const inserts = formData.batch_files.map((f: any, i: number) => ({
-                title: formData.batch_files.length > 1 && !formData.title.includes(f.name)
-                    ? `${formData.title} (${i + 1})`
-                    : formData.title || f.name,
-                content: formData.content,
-                category: formattedCategory,
-                image_url: f.url
-            }));
-            const { error } = await supabase.from('news').insert(inserts);
-            if (error) throw error;
-        } else {
-            const { error } = await supabase.from('news').insert([{
-              title: formData.title,
-              content: formData.content,
-              category: formattedCategory,
-              image_url: formattedImageUrl
-            }]);
-            if (error) throw error;
-        }
+        const { error } = await supabase.from('news').insert([{
+            title: formData.title,
+            content: formData.content,
+            category: formattedCategory,
+            image_url: formData.image_url || (hasBatch ? formData.batch_files[0].url : null),
+            files: hasBatch ? formData.batch_files : []
+        }]);
+        if (error) throw error;
         setSuccessMessage('News added successfully!');
       } else if (showModal === 'edit' && selectedNews) {
+        const hasBatch = formData.batch_files && formData.batch_files.length > 0;
         const { error } = await supabase.from('news').update({
           title: formData.title,
           content: formData.content,
           category: formattedCategory,
-          image_url: formattedImageUrl
+          image_url: formData.image_url || (hasBatch ? formData.batch_files[0].url : null),
+          files: hasBatch ? formData.batch_files : []
         }).eq('id', selectedNews.id);
         if (error) throw error;
         setSuccessMessage('News item updated successfully');
@@ -341,7 +331,7 @@ export default function NewsManagementPage() {
                   )}
                   <div>
                     <h3 className="text-xl font-black text-gray-950">{item.title}</h3>
-                    <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
                       <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                         <Calendar className="h-3.5 w-3.5" />
                         {new Date(item.created_at).toLocaleDateString()}
@@ -349,6 +339,11 @@ export default function NewsManagementPage() {
                       <span className="text-[10px] font-bold text-primary-600 bg-primary-50 px-2.5 py-0.5 rounded-full uppercase tracking-widest border border-primary-100">
                         {item.category}
                       </span>
+                      {(item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 1 && (
+                        <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-2.5 py-0.5 rounded-full uppercase tracking-widest border border-gray-100">
+                          {(item as any).files.length} images
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

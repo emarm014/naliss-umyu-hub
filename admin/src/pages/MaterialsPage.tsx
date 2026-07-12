@@ -315,39 +315,19 @@ export default function MaterialsPage() {
         const hasBatch = formData.files && formData.files.length > 0;
         let lastInsertedId = '';
 
-        if (hasBatch) {
-            const inserts = formData.files.map((f: any, i: number) => ({
-                ...materialData,
-                title: formData.files.length > 1 && !formData.title.includes(f.name)
-                    ? `${formData.title} (${i + 1})`
-                    : formData.title || f.name,
-                file_url: f.url,
-                file_name: f.name,
-                file_size: f.size,
-                file_mime_type: f.type,
-                files: []
-            }));
-            const { data: insertedList, error } = await supabase.from('materials').insert(inserts).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)');
-            if (error) throw error;
-            if (insertedList && insertedList.length > 0) {
-                insertedList.forEach((item: any) => useAdminDataStore.getState().addMaterial(item as any));
-                lastInsertedId = insertedList[0].id;
-            }
-        } else {
-            const singleData = {
-                ...materialData,
-                file_url: formData.file_url,
-                file_name: formData.file_name || null,
-                file_size: formData.file_size,
-                file_mime_type: formData.file_mime_type || null,
-                files: []
-            };
-            const { data: inserted, error } = await supabase.from('materials').insert(singleData).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)').single();
-            if (error) throw error;
-            if (inserted) {
-                useAdminDataStore.getState().addMaterial(inserted as any);
-                lastInsertedId = inserted.id;
-            }
+        const singleData = {
+            ...materialData,
+            file_url: formData.file_url || (hasBatch ? formData.files[0].url : null),
+            file_name: formData.file_name || (hasBatch ? formData.files[0].name : null),
+            file_size: formData.file_size || (hasBatch ? formData.files[0].size : 0),
+            file_mime_type: formData.file_mime_type || (hasBatch ? formData.files[0].type : null),
+            files: hasBatch ? formData.files : []
+        };
+        const { data: inserted, error } = await supabase.from('materials').insert(singleData).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)').single();
+        if (error) throw error;
+        if (inserted) {
+            useAdminDataStore.getState().addMaterial(inserted as any);
+            lastInsertedId = inserted.id;
         }
 
         // Push notification to students of the target level — fire and forget
@@ -379,13 +359,14 @@ export default function MaterialsPage() {
             });
         }
       } else if (showModal === 'edit' && selectedMaterial) {
+        const hasBatch = formData.files && formData.files.length > 0;
         const singleData = {
             ...materialData,
-            file_url: formData.file_url,
-            file_name: formData.file_name || null,
-            file_size: formData.file_size,
-            file_mime_type: formData.file_mime_type || null,
-            files: []
+            file_url: formData.file_url || (hasBatch ? formData.files[0].url : null),
+            file_name: formData.file_name || (hasBatch ? formData.files[0].name : null),
+            file_size: formData.file_size || (hasBatch ? formData.files[0].size : 0),
+            file_mime_type: formData.file_mime_type || (hasBatch ? formData.files[0].type : null),
+            files: hasBatch ? formData.files : []
         };
         const { data: updated, error } = await supabase
           .from('materials')
@@ -636,12 +617,17 @@ export default function MaterialsPage() {
                           <Eye className="w-4 h-4 text-emerald-400" />
                           {material.view_count} accesses
                         </span>
-                        {material.file_size && material.file_size > 0 && (
+                        {(material as any).files && Array.isArray((material as any).files) && (material as any).files.length > 1 ? (
+                          <span className="flex items-center gap-1.5 grayscale opacity-50 font-bold">
+                            <File className="w-4 h-4" />
+                            {(material as any).files.length} files attached
+                          </span>
+                        ) : material.file_size && material.file_size > 0 ? (
                           <span className="flex items-center gap-1.5 grayscale opacity-50">
                             <File className="w-4 h-4" />
                             {formatFileSize(material.file_size)}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       
                       <div className="flex items-center gap-2">
@@ -985,7 +971,7 @@ export default function MaterialsPage() {
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Resource Type</p>
                     <p className="text-sm font-black text-slate-900 uppercase tracking-wide">{materialTypeConfig[selectedMaterial.material_type as keyof typeof materialTypeConfig]?.label || 'Study Material'}</p>
                   </div>
-                   <div className="p-6 bg-white border-2 border-slate-50 rounded-2xl shadow-sm">
+                  <div className="p-6 bg-white border-2 border-slate-50 rounded-2xl shadow-sm">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Institutional Source</p>
                     <p className="text-sm font-black text-slate-900 line-clamp-1">{selectedMaterial.uploader?.full_name || 'NALISS Library'}</p>
                   </div>
@@ -998,9 +984,42 @@ export default function MaterialsPage() {
                   </div>
                   <div className="flex-1 p-6 bg-slate-900 border border-white/10 rounded-2xl text-center">
                     <p className="text-[10px] text-white/40 font-black uppercase tracking-widest mb-2">Document Volume</p>
-                    <p className="text-2xl font-black text-emerald-400">{formatFileSize(selectedMaterial.file_size)}</p>
+                    <p className="text-2xl font-black text-white">
+                      {(selectedMaterial as any).files && Array.isArray((selectedMaterial as any).files) && (selectedMaterial as any).files.length > 0 
+                        ? `${(selectedMaterial as any).files.length} files` 
+                        : formatFileSize(selectedMaterial.file_size)}
+                    </p>
                   </div>
                 </div>
+
+                {/* Attached Files List */}
+                {(selectedMaterial as any).files && Array.isArray((selectedMaterial as any).files) && (selectedMaterial as any).files.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Attached Files</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      {(selectedMaterial as any).files.map((file: any, index: number) => (
+                        <div key={index} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group">
+                          <div className="flex items-center gap-4 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center flex-shrink-0 text-slate-400 group-hover:text-primary-500 group-hover:bg-primary-50 transition-colors">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0 pr-4">
+                              <p className="text-sm font-bold text-slate-900 truncate">{file.name}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{formatFileSize(file.size)}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => window.open(file.url, '_blank')}
+                            className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-colors flex-shrink-0"
+                            title="Preview file"
+                          >
+                            <ExternalLink className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {selectedMaterial.file_url && (
                   <div className="flex flex-col gap-4 pt-4">

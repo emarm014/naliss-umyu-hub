@@ -372,11 +372,11 @@ export default function GroupMediaPage() {
                     <div key={msg.id} className="relative group cursor-pointer rounded-xl overflow-hidden border border-gray-100 aspect-square bg-gray-50 hover:shadow-lg transition-all"
                       onClick={() => setSelectedMedia(msg)}>
                       {msg.message_type === 'image' ? (
-                        <img src={msg.content} alt="" crossOrigin="anonymous" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        <img src={msg.content} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : msg.message_type === 'video' ? (
                         <div className="w-full h-full relative bg-purple-50">
-                          <img src={getVideoThumbnail(msg.content)} alt="" crossOrigin="anonymous" className="w-full h-full object-cover"
+                          <img src={getVideoThumbnail(msg.content)} alt="" className="w-full h-full object-cover"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                           <div className="absolute inset-0 flex items-center justify-center"><Play className="w-6 h-6 text-purple-500 drop-shadow-lg" /></div>
                         </div>
@@ -438,11 +438,11 @@ export default function GroupMediaPage() {
                   onClick={() => setSelectedMedia(msg)}>
                   <div className="relative aspect-square bg-gray-50 overflow-hidden">
                     {msg.message_type === 'image' ? (
-                      <img src={msg.content} alt="chat media" crossOrigin="anonymous" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      <img src={msg.content} alt="chat media" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     ) : msg.message_type === 'video' ? (
                       <div className="w-full h-full relative bg-purple-50">
-                        <img src={getVideoThumbnail(msg.content)} alt="" crossOrigin="anonymous" className="w-full h-full object-cover"
+                        <img src={getVideoThumbnail(msg.content)} alt="" className="w-full h-full object-cover"
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center shadow-lg"><Play className="w-5 h-5 text-white ml-0.5" /></div>

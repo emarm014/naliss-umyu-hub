@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, Loader2, CheckCircle, X, File as FileIcon, Film } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, X, File as FileIcon, Film, Plus } from 'lucide-react';
 import { uploadToCloudinary } from './cloudinary';
 
 interface FileUploadProps {
@@ -282,6 +282,23 @@ export default function FileUpload({
                             </li>
                         ))}
                     </ul>
+                    
+                    {/* Add More Files Button (Serial Selection) */}
+                    {multiple && queuedFiles.length < 5 && (
+                        <div className="p-2 bg-white border-t border-gray-100 flex justify-center">
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    fileInputRef.current?.click();
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 hover:text-primary-700 transition-colors"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Add Another File
+                            </button>
+                        </div>
+                    )}
                     
                     {/* Upload Action */}
                     <div className="p-3 bg-gray-50/50 border-t border-gray-100">

@@ -30,7 +30,8 @@ export default function ArchiveManagementPage() {
     description: '',
     file_type: 'document' as 'pdf' | 'image' | 'video' | 'document',
     file_size: '',
-    file_url: ''
+    file_url: '',
+    batch_files: [] as Array<{ url: string; size: string; name: string }>
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -87,7 +88,8 @@ export default function ArchiveManagementPage() {
       description: item.description || '',
       file_type: item.file_type as any,
       file_size: item.file_size || '',
-      file_url: item.file_url
+      file_url: item.file_url,
+      batch_files: []
     });
     setShowModal('edit');
   };
@@ -112,7 +114,9 @@ export default function ArchiveManagementPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title || !formData.file_url) {
+    
+    const hasBatch = formData.batch_files && formData.batch_files.length > 0;
+    if (!formData.title || (!formData.file_url && !hasBatch)) {
       setFormError('Title and file attachment are required.');
       return;
     }
@@ -122,15 +126,31 @@ export default function ArchiveManagementPage() {
 
     try {
       if (showModal === 'create') {
-        const { error } = await supabase.from('archives').insert([{
-          title: formData.title,
-          description: formData.description,
-          file_type: formData.file_type,
-          file_size: formData.file_size,
-          file_url: formData.file_url
-        }]);
-        if (error) throw error;
-        setSuccessMessage('Archive item successfully created!');
+        if (hasBatch) {
+          // Batch Create
+          const inserts = formData.batch_files.map((fileInfo: any, index: number) => ({
+            title: formData.batch_files.length > 1 && !formData.title.includes(fileInfo.name) 
+              ? `${formData.title} (${index + 1})` 
+              : formData.title || fileInfo.name,
+            description: formData.description,
+            file_type: formData.file_type,
+            file_size: fileInfo.size,
+            file_url: fileInfo.url
+          }));
+          const { error } = await supabase.from('archives').insert(inserts);
+          if (error) throw error;
+        } else {
+          // Single Create
+          const { error } = await supabase.from('archives').insert([{
+            title: formData.title,
+            description: formData.description,
+            file_type: formData.file_type,
+            file_size: formData.file_size,
+            file_url: formData.file_url
+          }]);
+          if (error) throw error;
+        }
+        setSuccessMessage(`Archive item(s) successfully created!`);
       } else if (showModal === 'edit' && selectedArchive) {
         const { error } = await supabase.from('archives').update({
           title: formData.title,
@@ -500,7 +520,7 @@ export default function ArchiveManagementPage() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => setFormData({ ...formData, file_url: '' })}
+                            onClick={() => setFormData({ ...formData, file_url: '', batch_files: [] })}
                             className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -508,12 +528,27 @@ export default function ArchiveManagementPage() {
                         </div>
                       ) : (
                         <FileUpload
+                          multiple={true}
                           onUploadComplete={(url, _name, size) => {
                             const sizeMB = size ? (Number(size) / (1024 * 1024)).toFixed(1) : '0.0';
                             setFormData({ 
                               ...formData, 
                               file_url: url,
                               file_size: formData.file_size || `${sizeMB} MB`
+                            });
+                          }}
+                          onMultiUploadComplete={(results) => {
+                            const batchFiles = results.map(r => ({
+                                url: r.url,
+                                size: r.file.size ? (Number(r.file.size) / (1024 * 1024)).toFixed(1) + ' MB' : '0.0 MB',
+                                name: r.originalFilename || r.file.name
+                            }));
+                            setFormData({
+                                ...formData,
+                                // we set the first one to file_url just in case edit assumes it
+                                file_url: batchFiles[0]?.url || '',
+                                file_size: batchFiles[0]?.size || '',
+                                batch_files: batchFiles
                             });
                           }}
                         />

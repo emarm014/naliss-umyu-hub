@@ -10,15 +10,24 @@ type RealtimeCallback = (payload: {
 
 export type ConnectionStatus = 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
 
+/**
+ * Manages a SINGLE multiplexed Supabase Realtime channel that listens to
+ * all registered tables. This avoids the previous architecture of 20
+ * separate channels (one per table) which caused reconnect floods when
+ * the WebSocket dropped.
+ */
 class RealtimeManager {
-  private channels: Map<string, RealtimeChannel> = new Map();
+  private channel: RealtimeChannel | null = null;
   private callbacks: Set<RealtimeCallback> = new Set();
   private isVisible: boolean = true;
   private isSubscribed: boolean = false;
   private pendingEvents: any[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private tables: string[] = [];
-  
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts: number = 0;
+  private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+
   private connectionStatus: ConnectionStatus = 'DISCONNECTED';
   private statusCallbacks: Set<(status: ConnectionStatus) => void> = new Set();
 
@@ -36,7 +45,7 @@ class RealtimeManager {
     this.callbacks.add(callback);
     if (!this.isSubscribed) {
       this.isSubscribed = true;
-      this.connectAll();
+      this.connect();
     }
   }
 
@@ -44,10 +53,10 @@ class RealtimeManager {
     this.callbacks.delete(callback);
     if (this.callbacks.size === 0 && this.isSubscribed) {
       this.isSubscribed = false;
-      this.disconnectAll();
+      this.disconnect();
     }
   }
-  
+
   public onStatusChange(callback: (status: ConnectionStatus) => void) {
     this.statusCallbacks.add(callback);
     callback(this.connectionStatus);
@@ -55,7 +64,7 @@ class RealtimeManager {
       this.statusCallbacks.delete(callback);
     };
   }
-  
+
   private setStatus(status: ConnectionStatus) {
     if (this.connectionStatus !== status) {
       this.connectionStatus = status;
@@ -63,40 +72,107 @@ class RealtimeManager {
     }
   }
 
-  private connectAll() {
+  /**
+   * Creates ONE channel and registers postgres_changes listeners for ALL
+   * tables on it. Supabase multiplexes them over the same WebSocket.
+   */
+  private connect() {
+    // Tear down any existing channel first
+    this.disconnect();
+
+    if (this.tables.length === 0) return;
+
     this.setStatus('CONNECTING');
 
+    // Build a single channel with all table listeners chained via .on()
+    let builder = supabase.channel('admin_rt_multiplexed');
+
     this.tables.forEach((table) => {
-      if (this.channels.has(table)) return;
+      builder = builder.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table },
+        (payload) => {
+          this.handleIncomingEvent(table, payload);
+        }
+      );
+    });
 
-      const channel = supabase
-        .channel(`admin_rt_mgr_${table}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table },
-          (payload) => {
-            this.handleIncomingEvent(table, payload);
-          }
-        )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            this.setStatus('CONNECTED');
-          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            this.setStatus('DISCONNECTED');
-          }
-        });
-
-      this.channels.set(table, channel);
+    this.channel = builder.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        this.setStatus('CONNECTED');
+        this.reconnectAttempts = 0;
+        this.startHealthCheck();
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        this.setStatus('DISCONNECTED');
+        this.stopHealthCheck();
+        this.scheduleReconnect();
+      }
     });
   }
 
-  private disconnectAll() {
-    this.channels.forEach((channel) => {
-      supabase.removeChannel(channel);
-    });
-    this.channels.clear();
-    
+  private disconnect() {
+    this.stopHealthCheck();
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.channel) {
+      supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+
     this.setStatus('DISCONNECTED');
+  }
+
+  /**
+   * Exponential backoff reconnect: 1s, 2s, 4s, 8s, ... max 30s
+   */
+  private scheduleReconnect() {
+    if (!this.isSubscribed) return;
+    if (this.reconnectTimer) return; // already scheduled
+
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    this.reconnectAttempts++;
+
+    console.log(`[RealtimeManager] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.isSubscribed) {
+        this.connect();
+      }
+    }, delay);
+  }
+
+  /**
+   * Periodic health check: every 45s, verify the channel is still SUBSCRIBED.
+   * If not, force a reconnect. This catches silent socket deaths that the
+   * heartbeat mechanism misses.
+   */
+  private startHealthCheck() {
+    this.stopHealthCheck();
+    this.healthCheckTimer = setInterval(() => {
+      if (!this.channel) {
+        this.scheduleReconnect();
+        return;
+      }
+
+      // The Supabase channel exposes its state — check it
+      const state = (this.channel as any).state;
+      if (state !== 'joined' && state !== 'joining') {
+        console.warn('[RealtimeManager] Health check: channel in bad state:', state);
+        this.connect();
+      }
+    }, 45000);
+  }
+
+  private stopHealthCheck() {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
   }
 
   private handleIncomingEvent(table: string, payload: any) {
@@ -135,10 +211,13 @@ class RealtimeManager {
     if (visible === this.isVisible) return;
     this.isVisible = visible;
 
-    // Fix 1: We no longer disconnect channels on hidden!
-    // Disconnecting causes reconnect storms and orphans other channels.
-    // Instead, we just pause processing in handleIncomingEvent and let 
-    // App.tsx's focus handler trigger a syncAll(true) when we return.
+    // When becoming visible again, check if the channel is healthy
+    if (visible && this.isSubscribed) {
+      if (!this.channel || this.connectionStatus === 'DISCONNECTED') {
+        this.reconnectAttempts = 0; // reset backoff on user return
+        this.connect();
+      }
+    }
   };
 }
 

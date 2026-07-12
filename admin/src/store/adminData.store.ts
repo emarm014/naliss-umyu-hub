@@ -162,22 +162,25 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     const lastSyncTime = get().lastSync ? new Date(get().lastSync!) : null;
     const isInitialLoad = !get().lastSync;
 
-    // Fix: Atomically check and set isSyncing to prevent race condition
-    const currentState = get();
-    if (currentState.isSyncing || (!force && !isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5000)) {
-      return;
+    // When force=true (window focus recovery), always allow sync even if one is running.
+    // This prevents the user from being permanently stuck after a connection drop.
+    if (!force) {
+      const currentState = get();
+      if (currentState.isSyncing || (!isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5000)) {
+        return;
+      }
     }
 
     // Set isSyncing immediately before any async operations
     set({ isSyncing: true, error: null });
 
-    // Safety fallback: if sync takes longer than 60s, force reset isSyncing
+    // Safety fallback: if sync takes longer than 30s, force reset isSyncing
     const safetyTimeout = setTimeout(() => {
       if (get().isSyncing) {
-        console.warn('[Sync Engine] Sync took longer than 60s. Force resetting isSyncing state.');
+        console.warn('[Sync Engine] Sync took longer than 30s. Force resetting isSyncing state.');
         set({ isSyncing: false });
       }
-    }, 60000);
+    }, 30000);
 
     const failedKeys: string[] = [];
 

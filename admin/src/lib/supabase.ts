@@ -9,12 +9,9 @@ export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 // Simple fetch wrapper that adds Sentry breadcrumbs for observability
 const sentryFetch: typeof fetch = async (url, options) => {
   const startMs = Date.now();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error('Fetch Timeout (30000ms)')), 30000);
 
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetch(url, options);
     const durationMs = Date.now() - startMs;
     const urlStr = typeof url === 'string' ? url : (url as URL).toString();
     const urlPath = urlStr.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
@@ -29,7 +26,6 @@ const sentryFetch: typeof fetch = async (url, options) => {
 
     return response;
   } catch (err) {
-    clearTimeout(timeoutId);
     const durationMs = Date.now() - startMs;
     Sentry.addBreadcrumb({
       category: 'api.supabase',
@@ -68,9 +64,9 @@ function createSupabaseClient(): SupabaseClient {
     realtime: {
       params: {
         eventsPerSecond: 10,
-        heartbeatIntervalMs: 15000,
+        heartbeatIntervalMs: 30000,
       },
-      timeout: 20000,
+      timeout: 60000,
     },
     db: {
       schema: 'public',

@@ -28,8 +28,8 @@ BEGIN
     -- Update the identity in auth.users
     UPDATE auth.users
     SET email = p_new_email,
-        email_change = NULL,
-        email_change_token_new = NULL,
+        email_change = '',
+        email_change_token_new = '',
         email_change_confirm_status = 0,
         updated_at = now()
     WHERE id = v_user_id;

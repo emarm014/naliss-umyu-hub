@@ -28,7 +28,8 @@ export default function NewsManagementPage() {
     title: '',
     content: '',
     category: 'General',
-    image_url: ''
+    image_url: '',
+    batch_files: [] as Array<{ url: string; size: number; name: string }>
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -84,7 +85,8 @@ export default function NewsManagementPage() {
       title: item.title,
       content: item.content,
       category: item.category,
-      image_url: item.image_url || ''
+      image_url: item.image_url || '',
+      batch_files: []
     });
     setShowModal('edit');
   };
@@ -122,13 +124,27 @@ export default function NewsManagementPage() {
       const formattedImageUrl = formData.image_url.trim() === '' ? null : formData.image_url;
 
       if (showModal === 'create') {
-        const { error } = await supabase.from('news').insert([{
-          title: formData.title,
-          content: formData.content,
-          category: formattedCategory,
-          image_url: formattedImageUrl
-        }]);
-        if (error) throw error;
+        const hasBatch = formData.batch_files && formData.batch_files.length > 0;
+        if (hasBatch) {
+            const inserts = formData.batch_files.map((f: any, i: number) => ({
+                title: formData.batch_files.length > 1 && !formData.title.includes(f.name)
+                    ? `${formData.title} (${i + 1})`
+                    : formData.title || f.name,
+                content: formData.content,
+                category: formattedCategory,
+                image_url: f.url
+            }));
+            const { error } = await supabase.from('news').insert(inserts);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase.from('news').insert([{
+              title: formData.title,
+              content: formData.content,
+              category: formattedCategory,
+              image_url: formattedImageUrl
+            }]);
+            if (error) throw error;
+        }
         setSuccessMessage('News added successfully!');
       } else if (showModal === 'edit' && selectedNews) {
         const { error } = await supabase.from('news').update({
@@ -476,7 +492,20 @@ export default function NewsManagementPage() {
                         </div>
                       ) : (
                         <FileUpload
+                          multiple={true}
                           onUploadComplete={(url) => setFormData({ ...formData, image_url: url })}
+                          onMultiUploadComplete={(results) => {
+                            const batchFiles = results.map(r => ({
+                                url: r.url,
+                                size: r.file.size,
+                                name: r.originalFilename || r.file.name
+                            }));
+                            setFormData({
+                                ...formData,
+                                image_url: batchFiles[0]?.url || '',
+                                batch_files: batchFiles
+                            });
+                          }}
                           folder="news_covers"
                         />
                       )}

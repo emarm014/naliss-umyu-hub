@@ -127,6 +127,7 @@ export default function ResourcesPage() {
     file_size: 0,
     file_type: '',
     category: 'general',
+    batch_files: [] as Array<{ url: string; size: number; name: string; type: string }>
   });
   
   const setShowUploadModal = (show: boolean) => setShowUploadModalRaw(show ? 'create' : null);
@@ -424,24 +425,46 @@ export default function ResourcesPage() {
 
   const handleArchive = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.file_url || !formData.title) return;
+    
+    const hasBatch = formData.batch_files && formData.batch_files.length > 0;
+    if ((!formData.file_url && !hasBatch) || !formData.title) return;
+    
     setIsSubmitting(true);
     setArchiveError(null);
     try {
-      const { data: inserted, error } = await supabase.from('resources').insert({
-        title: formData.title,
-        file_url: formData.file_url,
-        file_size: formData.file_size,
-        file_type: formData.file_type || getFileType(formData.file_url),
-        category: formData.category,
-        uploaded_by: profile?.id,
-      }).select('*').single();
-      if (error) throw error;
-      if (inserted) useAdminDataStore.getState().updateResource(inserted as any);
-      setSuccessMessage('File archived to vault successfully.');
+      if (hasBatch) {
+          const inserts = formData.batch_files.map((f: any, i: number) => ({
+              title: formData.batch_files.length > 1 && !formData.title.includes(f.name)
+                  ? `${formData.title} (${i + 1})`
+                  : formData.title || f.name,
+              file_url: f.url,
+              file_size: f.size,
+              file_type: formData.file_type || f.type || getFileType(f.url),
+              category: formData.category,
+              uploaded_by: profile?.id,
+          }));
+          const { data: insertedList, error } = await supabase.from('resources').insert(inserts).select('*');
+          if (error) throw error;
+          if (insertedList) {
+              insertedList.forEach(item => useAdminDataStore.getState().updateResource(item as any));
+          }
+      } else {
+          const { data: inserted, error } = await supabase.from('resources').insert({
+            title: formData.title,
+            file_url: formData.file_url,
+            file_size: formData.file_size,
+            file_type: formData.file_type || getFileType(formData.file_url),
+            category: formData.category,
+            uploaded_by: profile?.id,
+          }).select('*').single();
+          if (error) throw error;
+          if (inserted) useAdminDataStore.getState().updateResource(inserted as any);
+      }
+      
+      setSuccessMessage('File(s) archived to vault successfully.');
       if (showUploadModal === 'create') clearDraft();
       else setShowUploadModal(false);
-      setFormData({ title: '', description: '', file_url: '', file_size: 0, file_type: '', category: 'general' });
+      setFormData({ title: '', description: '', file_url: '', file_size: 0, file_type: '', category: 'general', batch_files: [] });
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: unknown) {
       setArchiveError((err as any)?.message || 'Archive failed. Please try again.');
@@ -1195,6 +1218,7 @@ export default function ResourcesPage() {
                 <FileUpload
                   accept="*"
                   folder="resources"
+                  multiple={true}
                   label="Drop file here or click to browse"
                   description="Any file type — PDF, Word, images, videos, etc."
                   onUploadComplete={(url, file) => {
@@ -1204,6 +1228,22 @@ export default function ResourcesPage() {
                       file_size: file.size,
                       file_type: getFileType(file.name),
                       title: prev.title || file.name.replace(/\.[^/.]+$/, ''),
+                    }));
+                  }}
+                  onMultiUploadComplete={(results) => {
+                    const batchFiles = results.map(r => ({
+                        url: r.url,
+                        size: r.file.size,
+                        name: r.originalFilename || r.file.name,
+                        type: r.file.type || ''
+                    }));
+                    setFormData(prev => ({
+                        ...prev,
+                        file_url: batchFiles[0]?.url || prev.file_url,
+                        file_size: batchFiles[0]?.size || prev.file_size,
+                        file_type: batchFiles[0]?.type || prev.file_type,
+                        title: prev.title || batchFiles[0]?.name.replace(/\.[^/.]+$/, ''),
+                        batch_files: batchFiles
                     }));
                   }}
                   currentFileUrl={formData.file_url}

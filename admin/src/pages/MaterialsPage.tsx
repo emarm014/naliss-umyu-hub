@@ -303,11 +303,6 @@ export default function MaterialsPage() {
         description: formData.description,
         course_id: formData.course_id === 'general' ? null : formData.course_id,
         material_type: formData.material_type,
-        file_url: formData.file_url,
-        file_name: formData.file_name || null,
-        file_size: formData.file_size,
-        file_mime_type: formData.file_mime_type || null,
-        files: formData.files,
         level: formData.level,
         semester: formData.semester,
         is_public: true,        // Always public — students must always be able to access materials
@@ -318,42 +313,86 @@ export default function MaterialsPage() {
       };
 
       if (showModal === 'create') {
-        const { data: inserted, error } = await supabase.from('materials').insert(materialData).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').single();
-        if (error) throw error;
-        if (inserted) useAdminDataStore.getState().addMaterial(inserted as any);
+        const hasBatch = formData.files && formData.files.length > 0;
+        let lastInsertedId = '';
+
+        if (hasBatch) {
+            const inserts = formData.files.map((f: any, i: number) => ({
+                ...materialData,
+                title: formData.files.length > 1 && !formData.title.includes(f.name)
+                    ? `${formData.title} (${i + 1})`
+                    : formData.title || f.name,
+                file_url: f.url,
+                file_name: f.name,
+                file_size: f.size,
+                file_mime_type: f.type,
+                files: []
+            }));
+            const { data: insertedList, error } = await supabase.from('materials').insert(inserts).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)');
+            if (error) throw error;
+            if (insertedList && insertedList.length > 0) {
+                insertedList.forEach((item: any) => useAdminDataStore.getState().addMaterial(item as any));
+                lastInsertedId = insertedList[0].id;
+            }
+        } else {
+            const singleData = {
+                ...materialData,
+                file_url: formData.file_url,
+                file_name: formData.file_name || null,
+                file_size: formData.file_size,
+                file_mime_type: formData.file_mime_type || null,
+                files: []
+            };
+            const { data: inserted, error } = await supabase.from('materials').insert(singleData).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)').single();
+            if (error) throw error;
+            if (inserted) {
+                useAdminDataStore.getState().addMaterial(inserted as any);
+                lastInsertedId = inserted.id;
+            }
+        }
 
         // Push notification to students of the target level — fire and forget
-        const targetLevel = formData.level || null;
-        getUserIdsForLevel(targetLevel).then(targetIds => {
-          if (targetIds.length > 0) {
-            sendPushNotification({
-              targetUserIds: targetIds,
-              title: '📚 New Study Material',
-              body: `"${formData.title}" has been uploaded`,
-              data: {
-                type: 'material',
-                id: inserted?.id || '',
-                title: formData.title,
-                description: formData.description,
-                file_url: formData.file_url,
-                file_name: formData.file_name,
-                file_size: formData.file_size,
-                file_mime_type: formData.file_mime_type,
-                level: formData.level,
-                semester: formData.semester,
-                course_id: formData.course_id === 'general' ? null : formData.course_id,
-                download_count: 0,
-                created_at: inserted?.created_at || new Date().toISOString(),
-              },
+        if (lastInsertedId) {
+            const targetLevel = formData.level || null;
+            getUserIdsForLevel(targetLevel).then(targetIds => {
+              if (targetIds.length > 0) {
+                sendPushNotification({
+                  targetUserIds: targetIds,
+                  title: '📚 New Study Material',
+                  body: `"${formData.title}" has been uploaded`,
+                  data: {
+                    type: 'material',
+                    id: lastInsertedId,
+                    title: formData.title,
+                    description: formData.description,
+                    file_url: formData.file_url,
+                    file_name: formData.file_name,
+                    file_size: formData.file_size,
+                    file_mime_type: formData.file_mime_type,
+                    level: formData.level,
+                    semester: formData.semester,
+                    course_id: formData.course_id === 'general' ? null : formData.course_id,
+                    download_count: 0,
+                    created_at: new Date().toISOString(),
+                  },
+                });
+              }
             });
-          }
-        });
-      } else {
+        }
+      } else if (showModal === 'edit' && selectedMaterial) {
+        const singleData = {
+            ...materialData,
+            file_url: formData.file_url,
+            file_name: formData.file_name || null,
+            file_size: formData.file_size,
+            file_mime_type: formData.file_mime_type || null,
+            files: []
+        };
         const { data: updated, error } = await supabase
           .from('materials')
-          .update(materialData)
-          .eq('id', selectedMaterial?.id)
-          .select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)')
+          .update(singleData)
+          .eq('id', selectedMaterial.id)
+          .select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)')
           .single();
         if (error) throw error;
         if (updated) useAdminDataStore.getState().updateMaterial(updated as any);

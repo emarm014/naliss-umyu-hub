@@ -260,25 +260,56 @@ export default function PastQuestionsPage() {
         title: formData.title,
         description: formData.description || null,
         course_id: (!formData.course_id || formData.course_id === 'general') ? null : formData.course_id,
-        file_url: formData.file_url || null,
-        file_name: formData.file_name || null,
-        file_size: formData.file_size || 0,
-        file_mime_type: formData.file_mime_type || null,
         is_public: true,        // Always public — students must always be able to access past questions
         is_downloadable: formData.is_downloadable,
         is_featured: formData.is_featured,
         level: formData.level || null,
         semester: formData.semester || null,
-        files: formData.files,
         uploaded_by: profile?.id,
       };
 
       if (showModal === 'create') {
-        const { data: inserted, error } = await supabase.from('past_questions').insert(pqData).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
-        if (error) throw error;
-        if (inserted) useAdminDataStore.getState().addPastQuestion(inserted as any);
+        const hasBatch = formData.files && formData.files.length > 0;
+        if (hasBatch) {
+            const inserts = formData.files.map((f: any, i: number) => ({
+                ...pqData,
+                title: formData.files.length > 1 && !formData.title.includes(f.name)
+                    ? `${formData.title} (${i + 1})`
+                    : formData.title || f.name,
+                file_url: f.url,
+                file_name: f.name,
+                file_size: f.size,
+                file_mime_type: f.type,
+                files: []
+            }));
+            const { data: insertedList, error } = await supabase.from('past_questions').insert(inserts).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)');
+            if (error) throw error;
+            if (insertedList) {
+                insertedList.forEach((item: any) => useAdminDataStore.getState().addPastQuestion(item as any));
+            }
+        } else {
+            const singleData = {
+                ...pqData,
+                file_url: formData.file_url || null,
+                file_name: formData.file_name || null,
+                file_size: formData.file_size || 0,
+                file_mime_type: formData.file_mime_type || null,
+                files: []
+            };
+            const { data: inserted, error } = await supabase.from('past_questions').insert(singleData).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
+            if (error) throw error;
+            if (inserted) useAdminDataStore.getState().addPastQuestion(inserted as any);
+        }
       } else if (showModal === 'edit' && selectedPQ) {
-        const { data: updated, error } = await supabase.from('past_questions').update(pqData).eq('id', selectedPQ.id).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
+        const singleData = {
+            ...pqData,
+            file_url: formData.file_url || null,
+            file_name: formData.file_name || null,
+            file_size: formData.file_size || 0,
+            file_mime_type: formData.file_mime_type || null,
+            files: []
+        };
+        const { data: updated, error } = await supabase.from('past_questions').update(singleData).eq('id', selectedPQ.id).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
         if (error) throw error;
         if (updated) useAdminDataStore.getState().updatePastQuestion(updated as any);
       }

@@ -185,6 +185,11 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     const failedKeys: string[] = [];
 
     try {
+      // PREVENT FREEZE: Ensure session is refreshed/valid BEFORE firing 15 parallel queries.
+      // If a tab wakes up and 15 queries fire simultaneously while the token is expired, 
+      // the Supabase JS client can hang indefinitely in its token refresh queue.
+      await supabase.auth.getSession();
+
       const fetchOrUseCache = async (key: string, queryFn: () => Promise<any>, staleTime = 5 * 60 * 1000) => {
         if (force) {
           await queryClient.invalidateQueries({ queryKey: [key] });

@@ -114,7 +114,6 @@ serve(async (req: Request) => {
       const subjectMap: Record<string, string> = {
         signup: 'Your NALISS UMYU Hub Verification Code',
         magiclink: 'Your NALISS UMYU Hub Sign-In Code',
-        email_change: 'Confirm Your Email Change â€” NALISS UMYU Hub',
         reauthentication: 'Your NALISS UMYU Hub Re-Authentication Code',
       }
       subject = subjectMap[actionType] || 'Your NALISS UMYU Hub Verification Code'

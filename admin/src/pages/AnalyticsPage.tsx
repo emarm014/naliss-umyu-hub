@@ -54,6 +54,10 @@ export default function AnalyticsPage() {
   const fetchCloudStats = useCallback(async () => {
     setCloudLoading(true);
     setCloudError(null);
+    
+    // Ensure we have a valid, unexpired session token before invoking the edge function
+    await supabase.auth.getSession();
+    
     for (let attempt = 0; attempt <= 2; attempt++) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);

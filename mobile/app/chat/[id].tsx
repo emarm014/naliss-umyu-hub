@@ -1637,7 +1637,7 @@ export default function ChatScreen() {
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <Image
-                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `image_${item.id}.jpg`) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content))) }}
+                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content))) }}
                                         style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
@@ -1710,7 +1710,7 @@ export default function ChatScreen() {
                                         {/* Cloudinary video thumbnail — generated automatically */}
                                         {item.content?.startsWith('http') || downloadedIds[item.id] || item.fileUri ? (
                                             <Image
-                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.metadata?.name || `video_${item.id}.mp4`) : (item.local_media_path || (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content))) }}
+                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content))) }}
                                                 style={styles.videoThumb}
                                                 resizeMode="cover"
                                             />
@@ -1784,7 +1784,7 @@ export default function ChatScreen() {
                                                 item.message_type === 'audio' ? `audio_${item.id}.mp3` : `document_${item.id}.pdf`
                                             );
                                             if (downloadedIds[item.id]) {
-                                                handleOpenMedia(item.id, fileName, item.message_type);
+                                                handleOpenMedia(item.id, item.content, item.message_type);
                                             } else if (downloadingIds[item.id] === undefined) {
                                                 handleDownloadAndOpen(item.id, item.content, fileName, item.message_type);
                                             }
@@ -2296,20 +2296,8 @@ export default function ChatScreen() {
         );
         const results: Record<string, boolean> = {};
         await Promise.all(mediaMessages.map(async (m) => {
-            // Filename must match exactly what handleDownloadAndOpen uses
-            let fileName: string;
-            if (m.message_type === 'image') {
-                fileName = `image_${m.id}.jpg`;
-            } else if (m.metadata?.name) {
-                fileName = m.metadata.name;
-            } else if (m.message_type === 'video') {
-                fileName = `video_${m.id}.mp4`;
-            } else if (m.message_type === 'audio') {
-                fileName = `audio_${m.id}.mp3`;
-            } else {
-                fileName = `document_${m.id}.pdf`;
-            }
-            const isLocal = await FileService.isDownloaded(m.id, fileName);
+            // Pass the original URL so FileService extracts the real filename matching UnifiedDownloadEngine
+            const isLocal = await FileService.isDownloaded(m.id, m.content);
             if (isLocal) results[m.id] = true;
         }));
         if (Object.keys(results).length > 0) {
@@ -2383,11 +2371,10 @@ export default function ChatScreen() {
     };
 
     // Open media — only from local vault, never from remote URL
-    const handleOpenMedia = async (messageId: string, name: string, type: any) => {
-        const fileName = name || `${type}_${messageId}`;
-        const isLocal = await FileService.isDownloaded(messageId, fileName);
+    const handleOpenMedia = async (messageId: string, url: string, type: any) => {
+        const isLocal = await FileService.isDownloaded(messageId, url);
         if (!isLocal) return;
-        const localUri = FileService.getLocalUri(messageId, fileName);
+        const localUri = FileService.getLocalUri(messageId, url);
         const viewerType = type === 'document' ? 'document'
             : type === 'video' ? 'video'
             : type === 'audio' ? 'audio'
@@ -2406,7 +2393,7 @@ export default function ChatScreen() {
             const isMe = msg.sender_id === currentUser?.id;
             
             if (isDownloaded) {
-                localUri = FileService.getLocalUri(msg.id, fileName);
+                localUri = FileService.getLocalUri(msg.id, msg.content);
             } else if (isMe && msg.fileUri) {
                 localUri = msg.fileUri;
             } else {
@@ -2441,7 +2428,7 @@ export default function ChatScreen() {
             let mediaUrl = m.content;
             if (isDownloaded) {
                 const ext = m.message_type === 'video' ? 'mp4' : m.message_type === 'audio' ? 'mp3' : m.message_type === 'document' ? 'pdf' : 'jpg';
-                mediaUrl = FileService.getLocalUri(m.id, m.metadata?.name || `${m.message_type}_${m.id}.${ext}`);
+                mediaUrl = FileService.getLocalUri(m.id, m.content);
             } else if (isMe) {
                 mediaUrl = m.content?.startsWith('http') ? m.content : (m.fileUri?.startsWith('file://') ? m.fileUri : `file://${m.fileUri}`);
             }

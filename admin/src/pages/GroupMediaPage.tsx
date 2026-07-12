@@ -373,7 +373,7 @@ export default function GroupMediaPage() {
                       onClick={() => setSelectedMedia(msg)}>
                       {msg.message_type === 'image' ? (
                         <img src={msg.content} alt="" crossOrigin="anonymous" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center bg-gray-100"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>'; }} />
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : msg.message_type === 'video' ? (
                         <div className="w-full h-full relative bg-purple-50">
                           <img src={getVideoThumbnail(msg.content)} alt="" crossOrigin="anonymous" className="w-full h-full object-cover"
@@ -439,7 +439,7 @@ export default function GroupMediaPage() {
                   <div className="relative aspect-square bg-gray-50 overflow-hidden">
                     {msg.message_type === 'image' ? (
                       <img src={msg.content} alt="chat media" crossOrigin="anonymous" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center bg-gray-100"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>'; }} />
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     ) : msg.message_type === 'video' ? (
                       <div className="w-full h-full relative bg-purple-50">
                         <img src={getVideoThumbnail(msg.content)} alt="" crossOrigin="anonymous" className="w-full h-full object-cover"

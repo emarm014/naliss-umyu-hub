@@ -32,7 +32,8 @@ Deno.serve(async (req: Request) => {
     { global: { headers: { Authorization: authHeader } } }
   );
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const token = authHeader.replace('Bearer ', '');
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
   console.log('auth.getUser result:', !!user, 'error:', authError);
   if (authError || !user) {
     console.error('User verification failed:', authError);

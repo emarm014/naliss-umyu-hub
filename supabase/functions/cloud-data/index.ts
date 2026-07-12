@@ -83,10 +83,9 @@ Deno.serve(async (req: Request) => {
     const basicAuth = btoa(`${API_KEY}:${API_SECRET}`);
     const headers = { 'Authorization': `Basic ${basicAuth}`, 'Content-Type': 'application/json' };
 
-    // Fetch usage stats, resource counts, and report data in parallel
     const [usageRes, imageResourcesRes, reportRes] = await Promise.all([
       fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/usage`, { headers }),
-      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/image?max_results=500`, { headers }),
+      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/image/upload?max_results=500`, { headers }),
       // Usage report for last 30 days — gives impressions, bandwidth breakdown, errors
       fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/usage?date=${getDateDaysAgo(30)}`, { headers }),
     ]);
@@ -104,8 +103,8 @@ Deno.serve(async (req: Request) => {
 
     // Also fetch raw (documents) and video resources
     const [rawRes, videoRes] = await Promise.all([
-      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/raw?max_results=500`, { headers }),
-      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/video?max_results=500`, { headers }),
+      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/raw/upload?max_results=500`, { headers }),
+      fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/video/upload?max_results=500`, { headers }),
     ]);
 
     const [rawResources, videoResources] = await Promise.all([
@@ -156,11 +155,11 @@ Deno.serve(async (req: Request) => {
 
       // â”€â”€ Core quota meters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       storage: {
-        used_bytes: usage.storage?.usage ?? totalBytesFromResources,
-        limit_bytes: usage.storage?.limit ?? (25 * 1024 * 1024 * 1024),
-        used_human: formatBytes(usage.storage?.usage ?? totalBytesFromResources),
-        limit_human: formatBytes(usage.storage?.limit ?? (25 * 1024 * 1024 * 1024)),
-        percent: Math.min(100, ((usage.storage?.usage ?? totalBytesFromResources) / (usage.storage?.limit ?? (25 * 1024 * 1024 * 1024))) * 100),
+        used_bytes: usage.storage?.usage || totalBytesFromResources,
+        limit_bytes: usage.storage?.limit || (25 * 1024 * 1024 * 1024),
+        used_human: formatBytes(usage.storage?.usage || totalBytesFromResources),
+        limit_human: formatBytes(usage.storage?.limit || (25 * 1024 * 1024 * 1024)),
+        percent: Math.min(100, ((usage.storage?.usage || totalBytesFromResources) / (usage.storage?.limit || (25 * 1024 * 1024 * 1024))) * 100),
       },
       bandwidth: {
         used_bytes: usage.bandwidth?.usage ?? 0,
@@ -201,7 +200,7 @@ Deno.serve(async (req: Request) => {
       // â”€â”€ Error summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       errors: errorSummary,
 
-      // â”€â”€ Resource breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ——— Resource breakdown —————————————————————————————————————————————
       resources: {
         total: totalFiles,
         images: totalImages,
@@ -212,6 +211,14 @@ Deno.serve(async (req: Request) => {
         .map(([name, data]) => ({ name, ...data }))
         .sort((a, b) => b.bytes - a.bytes),
       requests: usage.requests ?? 0,
+      
+      // DEBUG: Send raw responses to figure out why storage/resources is 0
+      debug: {
+        usageRaw: usage,
+        imageResourcesRaw: imageResources,
+        rawResourcesRaw: rawResources,
+        videoResourcesRaw: videoResources
+      }
     };
 
     // 2. Save newly fetched usage stats to DB cache asynchronously

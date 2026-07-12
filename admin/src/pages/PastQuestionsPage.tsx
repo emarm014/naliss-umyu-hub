@@ -32,8 +32,7 @@ import {
   ExternalLink,
   ChevronDown,
   Globe,
-  FileType,
-  CheckCircle,
+  FileType
 } from 'lucide-react';
 
 import FileUpload from '../lib/FileUpload';

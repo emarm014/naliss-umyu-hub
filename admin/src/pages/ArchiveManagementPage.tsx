@@ -31,7 +31,7 @@ export default function ArchiveManagementPage() {
     file_type: 'document' as 'pdf' | 'image' | 'video' | 'document',
     file_size: '',
     file_url: '',
-    batch_files: [] as Array<{ url: string; size: string; name: string }>
+    batch_files: [] as Array<{ url: string; size?: number; name: string; type?: string }>
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -520,8 +520,9 @@ export default function ArchiveManagementPage() {
                           onMultiUploadComplete={(results) => {
                             const batchFiles = results.map(r => ({
                                 url: r.url,
-                                size: r.file.size ? (Number(r.file.size) / (1024 * 1024)).toFixed(1) + ' MB' : '0.0 MB',
-                                name: r.originalFilename || r.file.name
+                                size: r.file.size,
+                                name: r.originalFilename || r.file.name,
+                                type: r.file.type
                             }));
                             const existingFiles = formData.batch_files || [];
                             const combinedFiles = [...existingFiles, ...batchFiles];
@@ -530,7 +531,7 @@ export default function ArchiveManagementPage() {
                                 ...formData,
                                 // we set the first one to file_url just in case edit assumes it
                                 file_url: combinedFiles[0]?.url || '',
-                                file_size: combinedFiles[0]?.size || '',
+                                file_size: combinedFiles[0]?.size ? (Number(combinedFiles[0].size) / (1024 * 1024)).toFixed(1) + ' MB' : '',
                                 batch_files: combinedFiles
                             });
                           }}

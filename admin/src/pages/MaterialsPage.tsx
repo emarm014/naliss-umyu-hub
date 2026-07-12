@@ -25,8 +25,7 @@ import {
   X, 
   Layers, 
   Calendar, 
-  ShieldAlert,
-  CheckCircle
+  ShieldAlert
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';

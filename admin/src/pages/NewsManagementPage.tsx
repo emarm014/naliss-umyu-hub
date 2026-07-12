@@ -129,7 +129,7 @@ export default function NewsManagementPage() {
             title: formData.title,
             content: formData.content,
             category: formattedCategory,
-            image_url: formData.image_url || (hasBatch ? formData.batch_files[0].url : null),
+            image_url: formattedImageUrl || (hasBatch ? formData.batch_files[0].url : null),
             files: hasBatch ? formData.batch_files : []
         }]);
         if (error) throw error;
@@ -140,7 +140,7 @@ export default function NewsManagementPage() {
           title: formData.title,
           content: formData.content,
           category: formattedCategory,
-          image_url: formData.image_url || (hasBatch ? formData.batch_files[0].url : null),
+          image_url: formattedImageUrl || (hasBatch ? formData.batch_files[0].url : null),
           files: hasBatch ? formData.batch_files : []
         }).eq('id', selectedNews.id);
         if (error) throw error;

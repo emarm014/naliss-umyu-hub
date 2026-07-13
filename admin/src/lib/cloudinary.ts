@@ -117,33 +117,57 @@ export async function uploadToCloudinary(
   });
 
   const startTime = Date.now();
-  try {
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      body: formData,
-    });
+  let attempt = 0;
+  const maxAttempts = 3;
+  let lastErr: Error | null = null;
 
+  while (attempt < maxAttempts) {
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        body: formData,
+      });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || 'Upload failed. Please try again.');
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Upload failed. Please try again.');
+      }
+
+      const result = await response.json();
+      trackCloudinary('upload', result.public_id || file.name, Date.now() - startTime);
+      return {
+        secure_url: result.secure_url,
+        original_filename: file.name,
+      };
+    } catch (err: unknown) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      
+      // If it's a network error (Failed to fetch), retry up to maxAttempts
+      if (lastErr.name === 'TypeError' && lastErr.message === 'Failed to fetch' && attempt < maxAttempts - 1) {
+        attempt++;
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      
+      // If it's not a network error or we've exhausted retries, break out of the loop
+      break;
     }
-
-    const result = await response.json();
-    trackCloudinary('upload', result.public_id || file.name, Date.now() - startTime);
-    return {
-      secure_url: result.secure_url,
-      original_filename: file.name,
-    };
-  } catch (err: unknown) {
-    const duration = Date.now() - startTime;
-    const errObj = err instanceof Error ? err : new Error(String(err));
-    trackCloudinary('upload', file.name, duration, errObj);
-    Sentry.captureException(errObj, { 
-      tags: { service: 'Cloudinary', operation: 'upload', location: 'cloudinary.upload' },
-      extra: { fileName: file.name, fileSize: file.size, folder, resourceType }
-    });
-    const msg = errObj.message;
-    throw new Error(msg);
   }
+
+  // If we get here, all attempts failed or it was a non-retryable error
+  if (lastErr) {
+    const duration = Date.now() - startTime;
+    trackCloudinary('upload', file.name, duration, lastErr);
+    Sentry.captureException(lastErr, { 
+      tags: { service: 'Cloudinary', operation: 'upload', location: 'cloudinary.upload' },
+      extra: { fileName: file.name, fileSize: file.size, folder, resourceType, attempts: attempt + 1 }
+    });
+    
+    if (lastErr.name === 'TypeError' && lastErr.message === 'Failed to fetch') {
+      throw new Error('Network error: The upload timed out or the connection was lost. Please check your internet connection and try again.');
+    }
+    throw lastErr;
+  }
+  
+  throw new Error('Unknown upload failure');
 }

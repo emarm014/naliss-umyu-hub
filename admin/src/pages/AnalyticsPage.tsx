@@ -629,7 +629,7 @@ function CloudinaryDashboard({ cloudStats, fmtBytes, fmt }: { cloudStats: any; f
         ))}
       </div>
 
-      {cloudStats.errors && (
+      {cloudStats.errors && Object.values(cloudStats.errors).some((v: any) => Number(v) > 0) && (
         <div className="bg-slate-900 rounded-2xl p-6 space-y-4">
           <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><AlertCircle className="w-3.5 h-3.5 text-red-400" />Error Summary (Last 30 Days)</h4>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">

@@ -115,10 +115,26 @@ Deno.serve(async (req: Request) => {
     // Compute per-folder breakdown from resources
     const folderMap: Record<string, { count: number; bytes: number; type: string }> = {};
 
-    const processResources = (resources: any[], type: string) => {
+    let totalImages = 0;
+    let totalRaw = 0;
+    let totalVideos = 0;
+
+    const processResources = (resources: any[], apiType: string) => {
       (resources || []).forEach((r: any) => {
         const folder = r.public_id?.split('/')[0] || 'root';
-        if (!folderMap[folder]) folderMap[folder] = { count: 0, bytes: 0, type };
+        
+        let actualType = apiType;
+        // If Cloudinary lists a PDF or Document under the 'image' API, we should categorize it as a document ('raw')
+        const format = r.format?.toLowerCase();
+        if (apiType === 'image' && ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt'].includes(format)) {
+           actualType = 'raw';
+        }
+        
+        if (actualType === 'image') totalImages++;
+        else if (actualType === 'raw') totalRaw++;
+        else if (actualType === 'video') totalVideos++;
+
+        if (!folderMap[folder]) folderMap[folder] = { count: 0, bytes: 0, type: actualType };
         folderMap[folder].count++;
         folderMap[folder].bytes += r.bytes || 0;
       });
@@ -128,9 +144,6 @@ Deno.serve(async (req: Request) => {
     processResources(rawResources.resources || [], 'raw');
     processResources(videoResources.resources || [], 'video');
 
-    const totalImages = (imageResources.resources || []).length;
-    const totalRaw = (rawResources.resources || []).length;
-    const totalVideos = (videoResources.resources || []).length;
     const totalFiles = totalImages + totalRaw + totalVideos;
 
     const totalBytesFromResources = [

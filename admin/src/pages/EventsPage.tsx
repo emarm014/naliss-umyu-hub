@@ -337,7 +337,8 @@ export default function EventsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {paginatedEvents.map((event) => {
-            const StatusIcon = statusConfig[event.status].icon;
+            const eventStatusConfig = statusConfig[event.status as keyof typeof statusConfig] || statusConfig.draft;
+            const StatusIcon = eventStatusConfig.icon;
             
             return (
             <div
@@ -364,9 +365,9 @@ export default function EventsPage() {
                 
                 {/* Badges */}
                 <div className="absolute top-4 left-4 flex flex-col gap-2">
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border backdrop-blur-md ${statusConfig[event.status].color.replace('bg-', 'bg-white/90 border-').replace('text-', 'text-')}`}>
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border backdrop-blur-md ${eventStatusConfig.color.replace('bg-', 'bg-white/90 border-').replace('text-', 'text-')}`}>
                     <StatusIcon className="w-3.5 h-3.5" />
-                    {statusConfig[event.status].label}
+                    {eventStatusConfig.label}
                   </span>
                 </div>
               </div>

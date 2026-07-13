@@ -87,7 +87,24 @@ let sessionRefreshPromise: Promise<any> | null = null;
  */
 export const ensureActiveSession = async () => {
   if (!sessionRefreshPromise) {
-    sessionRefreshPromise = supabase.auth.getSession().finally(() => {
+    sessionRefreshPromise = (async () => {
+      try {
+        return await supabase.auth.getSession();
+      } catch (err: any) {
+        // If it's a lock error from GoTrue, it means GoTrue forcefully stole the lock to recover.
+        // We can retry once after a short delay to let the lock settle.
+        if (err?.name === 'AbortError' || err?.message?.includes('Lock broken')) {
+          console.warn('[Supabase] Caught GoTrue lock error, retrying getSession()...', err);
+          await new Promise(resolve => setTimeout(resolve, 150));
+          try {
+            return await supabase.auth.getSession();
+          } catch (retryErr) {
+             return { data: { session: null }, error: retryErr };
+          }
+        }
+        return { data: { session: null }, error: err };
+      }
+    })().finally(() => {
       sessionRefreshPromise = null;
     });
   }

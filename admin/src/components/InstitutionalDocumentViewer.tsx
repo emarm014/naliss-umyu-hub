@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import * as Sentry from '@sentry/react';
 import {
   ExternalLink, FileText, RefreshCw, AlertTriangle,
   Film, Image as ImageIcon, Music,
@@ -102,6 +103,7 @@ function CanvasPdfViewer({ url, onFallback }: { url: string; onFallback: () => v
       const pdfjsLib = await import('pdfjs-dist');
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
+      let lastError: any = null;
       for (const tryUrl of urlsToTry) {
         try {
           const pdf = await pdfjsLib.getDocument({
@@ -116,9 +118,12 @@ function CanvasPdfViewer({ url, onFallback }: { url: string; onFallback: () => v
           setNumPages(pdf.numPages);
           setStatus('ready');
           return;
-        } catch { /* try next */ }
+        } catch (err) { lastError = err; }
       }
       if (!cancelled) {
+        Sentry.captureException(new Error(`PDF Canvas Engine Failed: ${lastError?.message || 'Unknown error'}`), {
+          extra: { url, urlsTried: urlsToTry, lastError }
+        });
         setErrorMsg('Could not load PDF. Switching to Visual Scan...');
         setStatus('error');
         setTimeout(() => { if (!cancelled) onFallback(); }, 1500);
@@ -248,7 +253,16 @@ function VisualScanEngine({ url }: { url: string }) {
   };
 
   const handleImageError = (page: number) => {
-    setFailedPages(prev => new Set([...prev, page]));
+    setFailedPages(prev => {
+      const next = new Set([...prev, page]);
+      if (page === 1) {
+        Sentry.captureMessage('Visual Scan Engine Failed to load first page', {
+          level: 'warning',
+          extra: { url, imgUrl: getCloudinaryPageUrl(url, 1) }
+        });
+      }
+      return next;
+    });
   };
 
   if (!url.includes('res.cloudinary.com')) {

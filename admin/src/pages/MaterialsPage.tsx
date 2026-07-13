@@ -206,6 +206,45 @@ export default function MaterialsPage() {
     }
   };
 
+  const handleDeleteIndividualFile = async (material: MaterialWithDetails, fileIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!window.confirm('Are you sure you want to delete this specific file?')) return;
+    
+    const existingFiles = (material as any).files || [];
+    const updatedFiles = existingFiles.filter((_: any, idx: number) => idx !== fileIndex);
+    
+    const singleData = {
+        file_url: updatedFiles.length > 0 ? updatedFiles[0].url : null,
+        file_name: updatedFiles.length > 0 ? updatedFiles[0].name : null,
+        file_size: updatedFiles.length > 0 ? updatedFiles[0].size : 0,
+        file_mime_type: updatedFiles.length > 0 ? updatedFiles[0].type : null,
+        files: updatedFiles
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('materials')
+        .update(singleData)
+        .eq('id', material.id)
+        .select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)')
+        .single();
+        
+      if (error) throw error;
+      if (data) useAdminDataStore.getState().updateMaterial(data as any);
+      
+      // Delete from cloudinary (fire and forget)
+      if (existingFiles[fileIndex]?.url) {
+        deleteFromCloudinary([existingFiles[fileIndex].url]);
+      }
+      setSuccessMessage('File deleted successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setFormError('Failed to delete file: ' + (err.message || 'Unknown error'));
+    }
+  };
+
   const openCreateModal = () => {
     setFormData({
       title: '',
@@ -611,34 +650,45 @@ export default function MaterialsPage() {
                       )}
                     </div>
 
-                    <div className="mt-6 pt-4 border-t border-gray-50 flex items-center justify-between">
+                    {/* Embedded Files List */}
+                    {(((material as any).files && Array.isArray((material as any).files) && (material as any).files.length > 0) || material.file_url) && (
+                      <div className="mt-4 space-y-2 border-t border-gray-50 pt-4">
+                        {((material as any).files && Array.isArray((material as any).files) && (material as any).files.length > 0) ? (
+                          (material as any).files.map((file: any, idx: number) => (
+                             <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                               <div className="flex items-center gap-2 overflow-hidden">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <span className="text-xs font-medium text-slate-700 truncate">{file.name || 'Attached File'}</span>
+                               </div>
+                               <div className="flex items-center gap-1 shrink-0">
+                                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handlePreview(file.url, e); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                                 <button onClick={(e) => handleDeleteIndividualFile(material, idx, e)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                               </div>
+                             </div>
+                          ))
+                        ) : material.file_url ? (
+                             <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                               <div className="flex items-center gap-2 overflow-hidden">
+                                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                  <span className="text-xs font-medium text-slate-700 truncate">{material.file_name || 'Attached File'}</span>
+                               </div>
+                               <div className="flex items-center gap-1 shrink-0">
+                                 <button onClick={(e) => handlePreview(material.file_url!, e)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                               </div>
+                             </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
                       <div className="flex items-center gap-4 text-xs font-bold text-slate-400">
                         <span className="flex items-center gap-1.5">
                           <Eye className="w-4 h-4 text-emerald-400" />
                           {material.view_count} accesses
                         </span>
-                        {(material as any).files && Array.isArray((material as any).files) && (material as any).files.length > 1 ? (
-                          <span className="flex items-center gap-1.5 grayscale opacity-50 font-bold">
-                            <File className="w-4 h-4" />
-                            {(material as any).files.length} files attached
-                          </span>
-                        ) : material.file_size && material.file_size > 0 ? (
-                          <span className="flex items-center gap-1.5 grayscale opacity-50">
-                            <File className="w-4 h-4" />
-                            {formatFileSize(material.file_size)}
-                          </span>
-                        ) : null}
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        {material.file_url && (
-                          <button
-                            onClick={(e) => handlePreview(material.file_url!, e)}
-                            className="p-2.5 bg-primary-950 text-white rounded-xl shadow-lg shadow-primary-950/10 hover:scale-110 active:scale-95 transition-all group/btn"
-                          >
-                            <Eye className="w-5 h-5 text-emerald-400 group-hover/btn:text-white transition-colors" />
-                          </button>
-                        )}
                         <button
                           onClick={() => handleView(material)}
                           className="px-4 py-2 text-xs font-black uppercase tracking-widest text-slate-600 hover:text-primary-950 transition-colors"

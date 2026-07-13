@@ -1,6 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  FileText,
+  Calendar,
+  Plus,
+  Edit,
+  Trash2,
+  X,
+  ShieldCheck,
+  CheckCircle,
+  Database,
+  Layers,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Info,
+  Search,
+  HardDrive
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Plus, X, CheckCircle, Info, Search, Edit, Trash2, Calendar, FileText, Database, Layers, HardDrive, ShieldCheck, ChevronRight, ChevronLeft } from 'lucide-react';
+import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import FileUpload from '../lib/FileUpload';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useFormDraft } from '../hooks/useFormDraft';
@@ -109,6 +127,40 @@ export default function ArchiveManagementPage() {
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (e: any) {
       alert('Failed to delete: ' + e.message);
+    }
+  };
+
+  const handleDeleteIndividualFile = async (item: any, fileIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!window.confirm('Are you sure you want to delete this specific file?')) return;
+    
+    const existingFiles = (item as any).files || [];
+    const updatedFiles = existingFiles.filter((_: any, idx: number) => idx !== fileIndex);
+    
+    const singleData = {
+        file_url: updatedFiles.length > 0 ? updatedFiles[0].url : '',
+        file_size: updatedFiles.length > 0 ? String(updatedFiles[0].size) : '0',
+        files: updatedFiles
+    };
+
+    try {
+      const { error } = await supabase
+        .from('cloud_archives')
+        .update(singleData)
+        .eq('id', item.id);
+        
+      if (error) throw error;
+      fetchArchives();
+      
+      if (existingFiles[fileIndex]?.url) {
+        deleteFromCloudinary([existingFiles[fileIndex].url]);
+      }
+      setSuccessMessage('File deleted successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setFormError('Failed to delete file: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -339,16 +391,36 @@ export default function ArchiveManagementPage() {
                     <span className="text-[10px] font-bold text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest border border-primary-100">
                       {item.file_type}
                     </span>
-                    {(item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 1 ? (
-                      <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full uppercase tracking-widest border border-gray-100">
-                        {(item as any).files.length} files attached
-                      </span>
-                    ) : item.file_size && (
-                      <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full uppercase tracking-widest border border-gray-100">
-                        {item.file_size}
-                      </span>
-                    )}
                   </div>
+                  {/* Embedded Files List */}
+                  {(((item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 0) || item.file_url) && (
+                    <div className="mt-4 space-y-2 border-t border-gray-50 pt-4 w-full">
+                      {((item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 0) ? (
+                        (item as any).files.map((file: any, idx: number) => (
+                           <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                             <div className="flex items-center gap-2 overflow-hidden">
+                                <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                <span className="text-xs font-medium text-slate-700 truncate">{file.name || 'Attached File'}</span>
+                             </div>
+                             <div className="flex items-center gap-1 shrink-0">
+                               <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(file.url, '_blank'); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                               <button onClick={(e) => handleDeleteIndividualFile(item, idx, e)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                             </div>
+                           </div>
+                        ))
+                      ) : item.file_url ? (
+                           <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                             <div className="flex items-center gap-2 overflow-hidden">
+                                <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                                <span className="text-xs font-medium text-slate-700 truncate">Attached File</span>
+                             </div>
+                             <div className="flex items-center gap-1 shrink-0">
+                               <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(item.file_url, '_blank'); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                             </div>
+                           </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">

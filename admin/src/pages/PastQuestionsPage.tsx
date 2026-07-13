@@ -16,23 +16,23 @@ import {
   Star,
   MoreVertical,
   X,
+  Database,
+  Layers,
   ChevronLeft,
   ChevronRight,
-  Layers,
+  Info,
+  Workflow,
+  Activity,
+  Archive,
+  FileType,
+  ChevronDown,
   Calendar,
+  FileText,
+  FileSearch,
   BookOpen,
   Shield,
-  Workflow,
-  Database,
-  Activity,
-  FileSearch,
-  Info,
-  Archive,
-  AlertCircle,
-  ExternalLink,
-  ChevronDown,
   Globe,
-  FileType
+  AlertCircle
 } from 'lucide-react';
 
 import FileUpload from '../lib/FileUpload';
@@ -171,6 +171,44 @@ export default function PastQuestionsPage() {
     } catch (err: unknown) {
       useAdminDataStore.getState().updatePastQuestion(pq as any); // revert
       setFormError('Failed to update: ' + ((err as any)?.message || 'Unknown error'));
+    }
+  };
+
+  const handleDeleteIndividualFile = async (pq: PastQuestionWithDetails, fileIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!window.confirm('Are you sure you want to delete this specific file?')) return;
+    
+    const existingFiles = (pq as any).files || [];
+    const updatedFiles = existingFiles.filter((_: any, idx: number) => idx !== fileIndex);
+    
+    const singleData = {
+        file_url: updatedFiles.length > 0 ? updatedFiles[0].url : null,
+        file_name: updatedFiles.length > 0 ? updatedFiles[0].name : null,
+        file_size: updatedFiles.length > 0 ? updatedFiles[0].size : 0,
+        file_mime_type: updatedFiles.length > 0 ? updatedFiles[0].type : null,
+        files: updatedFiles
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('past_questions')
+        .update(singleData)
+        .eq('id', pq.id)
+        .select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester), uploader:profiles!past_questions_uploaded_by_fkey(full_name)')
+        .single();
+        
+      if (error) throw error;
+      if (data) useAdminDataStore.getState().updatePastQuestion(data as any);
+      
+      if (existingFiles[fileIndex]?.url) {
+        deleteFromCloudinary([existingFiles[fileIndex].url]);
+      }
+      setSuccessMessage('File deleted successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setFormError('Failed to delete file: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -644,29 +682,35 @@ export default function PastQuestionsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                      {pq.file_url && (
-                        <div className="flex gap-2">
-                           <button
-                            onClick={(e) => handlePreview(pq.file_url!, e)}
-                            className="inline-flex items-center gap-3 px-6 py-3 bg-primary-950 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all hover:scale-105 active:scale-95 shadow-xl shadow-primary-950/20"
-                          >
-                            <Eye className="w-4 h-4 text-emerald-400" />
-                            View Stream
-                          </button>
-
-                          <a
-                            href={pq.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all hover:scale-110 active:scale-95 shadow-sm border border-slate-100"
-                            title="Open in New Tab"
-                          >
-                            <ExternalLink className="w-5 h-5" />
-                          </a>
-                        </div>
-                      )}
-                </div>
+                {/* Embedded Files List */}
+                {(((pq as any).files && Array.isArray((pq as any).files) && (pq as any).files.length > 0) || pq.file_url) && (
+                  <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                    {((pq as any).files && Array.isArray((pq as any).files) && (pq as any).files.length > 0) ? (
+                      (pq as any).files.map((file: any, idx: number) => (
+                         <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                           <div className="flex items-center gap-2 overflow-hidden">
+                              <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                              <span className="text-xs font-medium text-slate-700 truncate">{file.name || 'Attached File'}</span>
+                           </div>
+                           <div className="flex items-center gap-1 shrink-0">
+                             <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handlePreview(file.url, e); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                             <button onClick={(e) => handleDeleteIndividualFile(pq, idx, e)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                           </div>
+                         </div>
+                      ))
+                    ) : pq.file_url ? (
+                         <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                           <div className="flex items-center gap-2 overflow-hidden">
+                              <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                              <span className="text-xs font-medium text-slate-700 truncate">{pq.file_name || 'Attached File'}</span>
+                           </div>
+                           <div className="flex items-center gap-1 shrink-0">
+                             <button onClick={(e) => handlePreview(pq.file_url!, e)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                           </div>
+                         </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
           ))}

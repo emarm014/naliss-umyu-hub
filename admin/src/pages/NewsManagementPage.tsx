@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, Plus, Search, Edit, Trash2, Calendar, Globe, Newspaper, Tag, Clock, ShieldCheck, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle, Plus, Search, Edit, Trash2, Calendar, Globe, Newspaper, Tag, Clock, ShieldCheck, X, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import FileUpload from '../lib/FileUpload';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useFormDraft } from '../hooks/useFormDraft';
@@ -106,6 +107,39 @@ export default function NewsManagementPage() {
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (e: any) {
       alert('Failed to delete: ' + e.message);
+    }
+  };
+
+  const handleDeleteIndividualFile = async (item: any, fileIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!window.confirm('Are you sure you want to delete this specific image?')) return;
+    
+    const existingFiles = (item as any).files || [];
+    const updatedFiles = existingFiles.filter((_: any, idx: number) => idx !== fileIndex);
+    
+    const singleData = {
+        image_url: updatedFiles.length > 0 ? updatedFiles[0].url : '',
+        files: updatedFiles
+    };
+
+    try {
+      const { error } = await supabase
+        .from('news')
+        .update(singleData)
+        .eq('id', item.id);
+        
+      if (error) throw error;
+      fetchNews();
+      
+      if (existingFiles[fileIndex]?.url) {
+        deleteFromCloudinary([existingFiles[fileIndex].url]);
+      }
+      setSuccessMessage('Image deleted successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setFormError('Failed to delete image: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -339,11 +373,6 @@ export default function NewsManagementPage() {
                       <span className="text-[10px] font-bold text-primary-600 bg-primary-50 px-2.5 py-0.5 rounded-full uppercase tracking-widest border border-primary-100">
                         {item.category}
                       </span>
-                      {(item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 1 && (
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-2.5 py-0.5 rounded-full uppercase tracking-widest border border-gray-100">
-                          {(item as any).files.length} images
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -362,6 +391,35 @@ export default function NewsManagementPage() {
                   </button>
                 </div>
               </div>
+              {/* Embedded Files List */}
+              {(((item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 0) || item.image_url) && (
+                <div className="mt-4 space-y-2 border-t border-gray-50 pt-4 w-full">
+                  {((item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 0) ? (
+                    (item as any).files.map((file: any, idx: number) => (
+                       <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                         <div className="flex items-center gap-2 overflow-hidden">
+                            <img src={file.url} alt="thumbnail" className="w-8 h-8 rounded-lg object-cover" />
+                            <span className="text-xs font-medium text-slate-700 truncate">{file.name || 'Attached Image'}</span>
+                         </div>
+                         <div className="flex items-center gap-1 shrink-0">
+                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(file.url, '_blank'); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                           <button onClick={(e) => handleDeleteIndividualFile(item, idx, e)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                         </div>
+                       </div>
+                    ))
+                  ) : item.image_url ? (
+                       <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
+                         <div className="flex items-center gap-2 overflow-hidden">
+                            <img src={item.image_url} alt="thumbnail" className="w-8 h-8 rounded-lg object-cover" />
+                            <span className="text-xs font-medium text-slate-700 truncate">Attached Image</span>
+                         </div>
+                         <div className="flex items-center gap-1 shrink-0">
+                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(item.image_url || '', '_blank'); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
+                         </div>
+                       </div>
+                  ) : null}
+                </div>
+              )}
             </div>
           ))}
         </div>

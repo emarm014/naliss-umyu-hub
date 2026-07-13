@@ -196,7 +196,7 @@ export default function PastQuestionsPage() {
         .from('past_questions')
         .update(singleData)
         .eq('id', pq.id)
-        .select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester), uploader:profiles!past_questions_uploaded_by_fkey(full_name)')
+        .select('*, course:courses(id, code, title, level, semester), uploader:profiles(full_name)')
         .single();
         
       if (error) throw error;
@@ -317,7 +317,7 @@ export default function PastQuestionsPage() {
                 file_mime_type: fileObj.type || null,
                 files: []
             }));
-            const { data: insertedList, error } = await supabase.from('past_questions').insert(batchData).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').returns<PastQuestionWithDetails[]>();
+            const { data: insertedList, error } = await supabase.from('past_questions').insert(batchData).select('*, course:courses(id, code, title, level, semester)').returns<PastQuestionWithDetails[]>();
             if (error) throw error;
             if (insertedList && insertedList.length > 0) {
                 insertedList.forEach(inserted => useAdminDataStore.getState().addPastQuestion(inserted as any));
@@ -332,7 +332,7 @@ export default function PastQuestionsPage() {
                 file_mime_type: formData.file_mime_type || (hasSingleBatch ? formData.files[0].type : null),
                 files: []
             };
-            const { data: inserted, error } = await supabase.from('past_questions').insert(singleData).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
+            const { data: inserted, error } = await supabase.from('past_questions').insert(singleData).select('*, course:courses(id, code, title, level, semester)').single();
             if (error) throw error;
             if (inserted) useAdminDataStore.getState().addPastQuestion(inserted as any);
         }
@@ -346,7 +346,7 @@ export default function PastQuestionsPage() {
             file_mime_type: formData.file_mime_type || (hasBatch ? formData.files[0].type : null),
             files: hasBatch ? formData.files : []
         };
-        const { data: updated, error } = await supabase.from('past_questions').update(singleData).eq('id', selectedPQ.id).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
+        const { data: updated, error } = await supabase.from('past_questions').update(singleData).eq('id', selectedPQ.id).select('*, course:courses(id, code, title, level, semester)').single();
         if (error) throw error;
         if (updated) useAdminDataStore.getState().updatePastQuestion(updated as any);
       }

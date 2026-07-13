@@ -306,18 +306,36 @@ export default function PastQuestionsPage() {
       };
 
       if (showModal === 'create') {
-        const hasBatch = formData.files && formData.files.length > 0;
-        const singleData = {
-            ...pqData,
-            file_url: formData.file_url || (hasBatch ? formData.files[0].url : null),
-            file_name: formData.file_name || (hasBatch ? formData.files[0].name : null),
-            file_size: formData.file_size || (hasBatch ? formData.files[0].size : 0),
-            file_mime_type: formData.file_mime_type || (hasBatch ? formData.files[0].type : null),
-            files: hasBatch ? formData.files : []
-        };
-        const { data: inserted, error } = await supabase.from('past_questions').insert(singleData).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
-        if (error) throw error;
-        if (inserted) useAdminDataStore.getState().addPastQuestion(inserted as any);
+        const hasBatch = formData.files && formData.files.length > 1;
+
+        if (hasBatch) {
+            const batchData = formData.files.map(fileObj => ({
+                ...pqData,
+                file_url: fileObj.url,
+                file_name: fileObj.name,
+                file_size: fileObj.size || 0,
+                file_mime_type: fileObj.type || null,
+                files: []
+            }));
+            const { data: insertedList, error } = await supabase.from('past_questions').insert(batchData).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').returns<PastQuestionWithDetails[]>();
+            if (error) throw error;
+            if (insertedList && insertedList.length > 0) {
+                insertedList.forEach(inserted => useAdminDataStore.getState().addPastQuestion(inserted as any));
+            }
+        } else {
+            const hasSingleBatch = formData.files && formData.files.length === 1;
+            const singleData = {
+                ...pqData,
+                file_url: formData.file_url || (hasSingleBatch ? formData.files[0].url : null),
+                file_name: formData.file_name || (hasSingleBatch ? formData.files[0].name : null),
+                file_size: formData.file_size || (hasSingleBatch ? formData.files[0].size : 0),
+                file_mime_type: formData.file_mime_type || (hasSingleBatch ? formData.files[0].type : null),
+                files: []
+            };
+            const { data: inserted, error } = await supabase.from('past_questions').insert(singleData).select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').single();
+            if (error) throw error;
+            if (inserted) useAdminDataStore.getState().addPastQuestion(inserted as any);
+        }
       } else if (showModal === 'edit' && selectedPQ) {
         const hasBatch = formData.files && formData.files.length > 0;
         const singleData = {

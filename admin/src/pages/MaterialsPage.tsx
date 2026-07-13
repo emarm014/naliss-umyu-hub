@@ -351,22 +351,40 @@ export default function MaterialsPage() {
       };
 
       if (showModal === 'create') {
-        const hasBatch = formData.files && formData.files.length > 0;
+        const hasBatch = formData.files && formData.files.length > 1;
         let lastInsertedId = '';
 
-        const singleData = {
-            ...materialData,
-            file_url: formData.file_url || (hasBatch ? formData.files[0].url : null),
-            file_name: formData.file_name || (hasBatch ? formData.files[0].name : null),
-            file_size: formData.file_size || (hasBatch ? formData.files[0].size : 0),
-            file_mime_type: formData.file_mime_type || (hasBatch ? formData.files[0].type : null),
-            files: hasBatch ? formData.files : []
-        };
-        const { data: inserted, error } = await supabase.from('materials').insert(singleData).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)').single();
-        if (error) throw error;
-        if (inserted) {
-            useAdminDataStore.getState().addMaterial(inserted as any);
-            lastInsertedId = inserted.id;
+        if (hasBatch) {
+            const batchData = formData.files.map(fileObj => ({
+                ...materialData,
+                file_url: fileObj.url,
+                file_name: fileObj.name,
+                file_size: fileObj.size || 0,
+                file_mime_type: fileObj.type || null,
+                files: []
+            }));
+            const { data: insertedList, error } = await supabase.from('materials').insert(batchData).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)');
+            if (error) throw error;
+            if (insertedList && insertedList.length > 0) {
+                insertedList.forEach(inserted => useAdminDataStore.getState().addMaterial(inserted as any));
+                lastInsertedId = insertedList[0].id;
+            }
+        } else {
+            const hasSingleBatch = formData.files && formData.files.length === 1;
+            const singleData = {
+                ...materialData,
+                file_url: formData.file_url || (hasSingleBatch ? formData.files[0].url : null),
+                file_name: formData.file_name || (hasSingleBatch ? formData.files[0].name : null),
+                file_size: formData.file_size || (hasSingleBatch ? formData.files[0].size : 0),
+                file_mime_type: formData.file_mime_type || (hasSingleBatch ? formData.files[0].type : null),
+                files: []
+            };
+            const { data: inserted, error } = await supabase.from('materials').insert(singleData).select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester), uploader:profiles!materials_uploaded_by_fkey(full_name)').single();
+            if (error) throw error;
+            if (inserted) {
+                useAdminDataStore.getState().addMaterial(inserted as any);
+                lastInsertedId = inserted.id;
+            }
         }
 
         // Push notification to students of the target level — fire and forget

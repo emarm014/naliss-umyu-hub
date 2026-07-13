@@ -108,18 +108,25 @@ export default function FileUpload({
 
         try {
             if (multiple && onMultiUploadComplete) {
-                const uploadPromises = filesToUpload.map(file => uploadToCloudinary(file, folder).then(result => ({
-                    url: result.secure_url,
-                    file,
-                    originalFilename: result.original_filename || file.name
-                })));
+                const successful: Array<{url: string, file: File, originalFilename: string}> = [];
+                const errors: string[] = [];
+
+                for (let i = 0; i < filesToUpload.length; i++) {
+                    const file = filesToUpload[i];
+                    setUploadProgress(`Uploading file ${i + 1} of ${filesToUpload.length}...`);
+                    try {
+                        const result = await uploadToCloudinary(file, folder);
+                        successful.push({
+                            url: result.secure_url,
+                            file,
+                            originalFilename: result.original_filename || file.name
+                        });
+                    } catch (err: any) {
+                        errors.push(err?.message || 'Unknown error');
+                    }
+                }
                 
-                const settledResults = await Promise.allSettled(uploadPromises);
-                const successful = settledResults
-                    .filter((r): r is PromiseFulfilledResult<{url: string, file: File, originalFilename: string}> => r.status === 'fulfilled')
-                    .map(r => r.value);
-                
-                const failedCount = settledResults.filter(r => r.status === 'rejected').length;
+                const failedCount = errors.length;
 
                 if (successful.length > 0) {
                     setUploadProgress(failedCount > 0 ? `Upload complete! (${failedCount} failed)` : 'Upload complete!');
@@ -127,10 +134,6 @@ export default function FileUpload({
                 }
                 
                 if (failedCount > 0) {
-                    const errors = settledResults
-                        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-                        .map(r => r.reason?.message || 'Unknown error');
-                    
                     setUploadError(`⚠️ ${failedCount} file(s) failed to upload.`);
                     if (onUploadError) onUploadError(new Error(errors.join(', ')));
                     if (successful.length === 0) {

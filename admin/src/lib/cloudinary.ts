@@ -83,45 +83,33 @@ export async function uploadToCloudinary(
     console.warn('Failed to fetch Cloudinary signed upload token, falling back to unsigned upload preset:', err);
   }
 
-  const formData = new FormData();
-  formData.append('file', file);
-
-  if (signatureData) {
-    formData.append('api_key', signatureData.api_key);
-    formData.append('timestamp', signatureData.timestamp);
-    formData.append('signature', signatureData.signature);
-    formData.append('upload_preset', CLOUDINARY_SIGNED_PRESET);
-    if (folder) {
-      formData.append('folder', folder);
-    }
-  } else {
-    // Fallback to unsigned preset
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    if (folder) {
-      formData.append('folder', folder);
-    }
-  }
-
-  Sentry.addBreadcrumb({
-    category: 'upload.dispatch',
-    message: `Dispatching payload to Cloudinary API (${resourceType})`,
-    level: 'info',
-    data: {
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type,
-      folder,
-      resourceType,
-      isSigned: !!signatureData
-    }
-  });
-
   const startTime = Date.now();
   let attempt = 0;
   const maxAttempts = 3;
   let lastErr: Error | null = null;
 
   while (attempt < maxAttempts) {
+    // Recreate FormData for every attempt because fetch consumes the body stream.
+    // Reusing the same FormData can cause the request to hang indefinitely.
+    const formData = new FormData();
+    formData.append('file', file);
+
+    if (signatureData) {
+      formData.append('api_key', signatureData.api_key);
+      formData.append('timestamp', signatureData.timestamp);
+      formData.append('signature', signatureData.signature);
+      formData.append('upload_preset', CLOUDINARY_SIGNED_PRESET);
+      if (folder) {
+        formData.append('folder', folder);
+      }
+    } else {
+      // Fallback to unsigned preset
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      if (folder) {
+        formData.append('folder', folder);
+      }
+    }
+
     try {
       const response = await fetch(uploadUrl, {
         method: 'POST',

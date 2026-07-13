@@ -19,7 +19,7 @@
       "policy": "sdkVersion"
     },
     "splash": {
-      "image": "./assets/splash-icon.jpg",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },

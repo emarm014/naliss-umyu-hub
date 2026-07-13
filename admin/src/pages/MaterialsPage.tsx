@@ -228,7 +228,7 @@ export default function MaterialsPage() {
         .from('materials')
         .update(singleData)
         .eq('id', material.id)
-        .select('*, course:courses(id, code, title, level, semester), uploader:profiles(full_name)')
+        .select('*, course:courses(id, code, title, level, semester), uploader:users(full_name)')
         .single();
         
       if (error) throw error;
@@ -363,7 +363,7 @@ export default function MaterialsPage() {
                 file_mime_type: fileObj.type || null,
                 files: []
             }));
-            const { data: insertedList, error } = await supabase.from('materials').insert(batchData).select('*, course:courses(id, code, title, level, semester), uploader:profiles(full_name)');
+            const { data: insertedList, error } = await supabase.from('materials').insert(batchData).select('*, course:courses(id, code, title, level, semester), uploader:users(full_name)');
             if (error) throw error;
             if (insertedList && insertedList.length > 0) {
                 insertedList.forEach(inserted => useAdminDataStore.getState().addMaterial(inserted as any));
@@ -379,7 +379,7 @@ export default function MaterialsPage() {
                 file_mime_type: formData.file_mime_type || (hasSingleBatch ? formData.files[0].type : null),
                 files: []
             };
-            const { data: inserted, error } = await supabase.from('materials').insert(singleData).select('*, course:courses(id, code, title, level, semester), uploader:profiles(full_name)').single();
+            const { data: inserted, error } = await supabase.from('materials').insert(singleData).select('*, course:courses(id, code, title, level, semester), uploader:users(full_name)').single();
             if (error) throw error;
             if (inserted) {
                 useAdminDataStore.getState().addMaterial(inserted as any);
@@ -429,7 +429,7 @@ export default function MaterialsPage() {
           .from('materials')
           .update(singleData)
           .eq('id', selectedMaterial.id)
-          .select('*, course:courses(id, code, title, level, semester), uploader:profiles(full_name)')
+          .select('*, course:courses(id, code, title, level, semester), uploader:users(full_name)')
           .single();
         if (error) throw error;
         if (updated) useAdminDataStore.getState().updateMaterial(updated as any);

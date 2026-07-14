@@ -1769,7 +1769,7 @@ export default function ChatScreen() {
                                     // ── DOC / AUDIO — tap to download then open ──────────────
                                     <>
                                         <TouchableOpacity
-                                        style={styles.documentActionArea}
+                                        style={[styles.documentActionArea, { width: 260 }]}
                                         activeOpacity={0.8}
                                         delayLongPress={400}
                                         onLongPress={() => setLongPressedMessage(item)}
@@ -1796,47 +1796,47 @@ export default function ChatScreen() {
                                                 <Text style={styles.mediaCircleProgressText}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
                                             ) : downloadingIds[item.id] !== undefined ? (
                                                 <Text style={styles.mediaCircleProgressText}>{Math.min(downloadingIds[item.id], 100)}%</Text>
-                                            ) : downloadedIds[item.id] ? (
+                                            ) : (
                                                 <Ionicons
                                                     name={item.message_type === 'audio' ? 'musical-notes' : 'document-text'}
-                                                    size={22} color={COLORS.primary}
+                                                    size={24} color={isDark ? '#e2e8f0' : '#475569'}
                                                 />
-                                            ) : (
-                                                <Ionicons name="cloud-download-outline" size={22} color="#64748b" />
                                             )}
                                         </View>
 
                                         {/* File info */}
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.documentName} numberOfLines={1}>
+                                        <View style={{ flex: 1, paddingRight: 4, justifyContent: 'center' }}>
+                                            <Text style={[styles.documentName, { color: isDark ? '#f8fafc' : '#0f172a' }]} numberOfLines={1}>
                                                 {item.metadata?.name || (item.message_type === 'audio' ? 'Audio' : 'Document')}
                                             </Text>
-                                            <Text style={styles.documentSize}>
+                                            <Text style={[styles.documentSize, { color: isDark ? '#94a3b8' : '#64748b' }]}>
                                                 {item.metadata?.size
                                                     ? formatFileSize(item.metadata.size)
-                                                    : downloadedIds[item.id] ? 'Saved' : 'Tap to download'}
+                                                    : downloadedIds[item.id] ? 'Saved' : 'PDF Document'}
                                             </Text>
                                         </View>
 
                                         {/* Status indicator */}
-                                        {isMe && uploadingIds[item.id] !== undefined ? (
-                                            <View style={styles.mediaCircleProgress}>
-                                                <Text style={styles.mediaCircleProgressText}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
-                                            </View>
-                                        ) : downloadingIds[item.id] !== undefined ? (
-                                            <View style={styles.mediaCircleProgress}>
-                                                <Text style={styles.mediaCircleProgressText}>{Math.min(downloadingIds[item.id], 100)}%</Text>
-                                            </View>
-                                        ) : downloadedIds[item.id] ? (
-                                            <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />
-                                        ) : !isMe ? (
-                                            <Ionicons name="arrow-down-circle-outline" size={24} color="#64748b" />
-                                        ) : null}
+                                        <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                                            {isMe && uploadingIds[item.id] !== undefined ? (
+                                                <View style={styles.mediaCircleProgress}>
+                                                    <Text style={styles.mediaCircleProgressText}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
+                                                </View>
+                                            ) : downloadingIds[item.id] !== undefined ? (
+                                                <View style={styles.mediaCircleProgress}>
+                                                    <Text style={styles.mediaCircleProgressText}>{Math.min(downloadingIds[item.id], 100)}%</Text>
+                                                </View>
+                                            ) : downloadedIds[item.id] ? (
+                                                <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                                            ) : !isMe ? (
+                                                <Ionicons name="cloud-download-outline" size={24} color="#64748b" />
+                                            ) : null}
+                                        </View>
                                     </TouchableOpacity>
                                     {(item.caption || item.metadata?.caption) ? (
                                         <Text style={[
                                             styles.mediaCaptionText, 
-                                            { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') },
+                                            { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A'), marginTop: 4 },
                                             item.reply_to_id && { color: isDark ? '#cbd5e1' : '#374151', opacity: 0.9 }
                                         ]}>
                                             {item.caption || item.metadata?.caption}

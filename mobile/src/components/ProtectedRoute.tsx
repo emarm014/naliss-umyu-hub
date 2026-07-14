@@ -85,6 +85,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             return;
           }
 
+          if (!isSubscribed) return;
+
           // 3. Register/Update current device session
           const { error: upsertErr } = await (supabase as any)
             .from('user_sessions')
@@ -104,7 +106,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             setSessionError(null);
             setDeviceSessionChecked(true);
           }
-        } catch (err) {
+        } catch (err: any) {
+          // Ignore RLS/Auth errors caused by expired sessions during component unmount
+          if (err?.code === '42501' || err?.status === 401 || !isSubscribed) return;
           console.error('Device session verification failed:', err);
           // robust offline-first fallback: let them proceed if offline or query fails
           if (isSubscribed) {

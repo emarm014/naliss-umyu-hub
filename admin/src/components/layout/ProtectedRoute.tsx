@@ -82,6 +82,8 @@ export default function ProtectedRoute() {
         const ip = await fetchIpAddress();
         const deviceName = `${browser} on ${os}`;
 
+        if (!isSubscribed) return;
+        
         const { error: upsertError } = await supabase
           .from('user_sessions')
           .upsert({
@@ -95,7 +97,9 @@ export default function ProtectedRoute() {
           }, { onConflict: 'user_id,device_id' });
 
         if (upsertError) throw upsertError;
-      } catch (err) {
+      } catch (err: any) {
+        // Ignore RLS/Auth errors caused by expired sessions during component unmount
+        if (err?.code === '42501' || err?.status === 401 || !isSubscribed) return;
         console.error('Failed to verify/register session:', err);
       }
     };

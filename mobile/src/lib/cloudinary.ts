@@ -41,10 +41,17 @@ function getUploadUrl(mimeType: string): string {
 // Default URL for blob uploads (images only)
 const CLOUDINARY_IMAGE_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
+let cachedSignature: { data: any; expiry: number; folder?: string } | null = null;
+
 /**
  * Fetch signed configuration from the Supabase Edge Function
  */
 async function fetchUploadSignature(folder?: string): Promise<any> {
+  // Use cache if it's less than 45 minutes old (tokens typically expire after 60 min)
+  if (cachedSignature && cachedSignature.folder === folder && Date.now() < cachedSignature.expiry) {
+    return cachedSignature.data;
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
     throw new Error('User is not authenticated');
@@ -61,6 +68,12 @@ async function fetchUploadSignature(folder?: string): Promise<any> {
   if (error || !data) {
     throw new Error(error?.message || 'Failed to fetch signature');
   }
+
+  cachedSignature = {
+    data,
+    expiry: Date.now() + 45 * 60 * 1000,
+    folder
+  };
 
   return data;
 }

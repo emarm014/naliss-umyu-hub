@@ -668,7 +668,10 @@ export default function StudentsPage() {
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-4">
                         <div className="relative">
-                           <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm group-hover:scale-105 transition-transform">
+                           <div 
+                              className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm group-hover:scale-105 transition-transform cursor-pointer"
+                              onClick={() => user.avatar_url && window.open(user.avatar_url, '_blank')}
+                           >
                              {user.avatar_url ? (
                                <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
                              ) : (

@@ -1406,19 +1406,63 @@ export default function ChatScreen() {
         }
     };
 
-    const displayedMessages = isSearching ? messages.filter(m => {
-        const matchUser = !searchParams.username || (m.user?.username || '').toLowerCase().includes(searchParams.username.toLowerCase().replace('@', ''));
-        const matchBody = !searchParams.body || (m.content || '').toLowerCase().includes(searchParams.body.toLowerCase());
-        const matchDate = !searchParams.date || (m.created_at || '').startsWith(searchParams.date);
-        return matchUser && matchBody && matchDate;
-    }) : messages;
+    const groupedMessages = React.useMemo(() => {
+        const source = isSearching ? messages.filter(m => {
+            const matchUser = !searchParams.username || (m.user?.username || '').toLowerCase().includes(searchParams.username.toLowerCase().replace('@', ''));
+            const matchBody = !searchParams.body || (m.content || '').toLowerCase().includes(searchParams.body.toLowerCase());
+            const matchDate = !searchParams.date || (m.created_at || '').startsWith(searchParams.date);
+            return matchUser && matchBody && matchDate;
+        }) : messages;
+
+        // Group consecutive media (images/videos) into Albums
+        const result: any[] = [];
+        let currentAlbum: any = null;
+        
+        // Inverted list: index 0 is newest, source[N] is oldest.
+        for (let i = 0; i < source.length; i++) {
+            const msg = source[i];
+            const isMedia = msg.message_type === 'image' || msg.message_type === 'video';
+            const isDeleted = msg.is_deleted || msg.content === 'This message was deleted';
+            
+            if (!isMedia || isDeleted) {
+                if (currentAlbum) {
+                    result.push(currentAlbum.albumItems.length > 1 ? currentAlbum : currentAlbum.albumItems[0]);
+                    currentAlbum = null;
+                }
+                result.push(msg);
+                continue;
+            }
+            
+            if (!currentAlbum) {
+                currentAlbum = { ...msg, isAlbum: true, albumItems: [msg] };
+            } else {
+                const sameSender = msg.sender_id === currentAlbum.sender_id;
+                const sameBatch = msg.metadata?.batchId && currentAlbum.metadata?.batchId && msg.metadata.batchId === currentAlbum.metadata.batchId;
+                const timeDiff = Math.abs(new Date(msg.created_at).getTime() - new Date(currentAlbum.albumItems[currentAlbum.albumItems.length - 1].created_at).getTime());
+                const closeTime = timeDiff < 2000;
+                
+                if (sameSender && (sameBatch || closeTime) && currentAlbum.albumItems.length < 10) {
+                    // Append msg so album displays oldest (first sent) at top-left
+                    currentAlbum.albumItems.push(msg);
+
+                } else {
+                    result.push(currentAlbum.albumItems.length > 1 ? currentAlbum : currentAlbum.albumItems[0]);
+                    currentAlbum = { ...msg, isAlbum: true, albumItems: [msg] };
+                }
+            }
+        }
+        if (currentAlbum) {
+            result.push(currentAlbum.albumItems.length > 1 ? currentAlbum : currentAlbum.albumItems[0]);
+        }
+        return result;
+    }, [messages, isSearching, searchParams]);
 
     const renderMessage = ({ item, index }: { item: any; index: number }) => {
         const isMe = item.sender_id === currentUser?.id;
         const isSystem = item.sender_id === 'system';
         const isHighlighted = item.id === highlightedMessageId;
 
-        const prevMsg = index > 0 ? displayedMessages[index - 1] : null;
+        const prevMsg = index > 0 ? groupedMessages[index - 1] : null;
         const isConsecutive = !!(prevMsg && prevMsg.sender_id === item.sender_id && item.sender_id !== 'system');
         const isWithinTimeThreshold = !!(
             prevMsg?.created_at &&
@@ -1624,8 +1668,107 @@ export default function ChatScreen() {
                                     {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} messageId={item.id} />}
                                 </View>
                             </View>
+                        ) : item.isAlbum ? (
+                            <View style={[
+                                styles.messageBubble,
+                                isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }]
+                                     : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }],
+                                isSystem && styles.messageBubbleSystem,
+                                { padding: 4 } // Override padding for album grid
+                            ]}>
+                                <View style={styles.albumContainer}>
+                                    <View style={styles.albumGrid}>
+                                        {item.albumItems.slice(0, 4).map((child: any, childIndex: number) => {
+                                            const isVideo = child.message_type === 'video';
+                                            const isDownloading = downloadingIds[child.id] !== undefined;
+                                            const isUploading = uploadingIds[child.id] !== undefined;
+                                            const isDownloaded = downloadedIds[child.id];
+                                            const totalItems = item.albumItems.length;
+                                            
+                                            // Determine grid item style
+                                            let itemStyle: any = styles.albumGridItemHalf; // default 2 columns
+                                            if (totalItems === 3 && childIndex === 0) itemStyle = styles.albumGridItemFull;
+                                            
+                                            let mediaUrl = child.content;
+                                            if (isDownloaded && !isMe) {
+                                                mediaUrl = FileService.getLocalUri(child.id, child.content);
+                                            } else if (isMe && child.fileUri) {
+                                                mediaUrl = child.fileUri;
+                                            }
+                                            return (
+                                                <TouchableOpacity 
+                                                    key={child.id}
+                                                    style={[itemStyle, { position: 'relative' }]}
+                                                    activeOpacity={0.8}
+                                                    onPress={() => handleOpenSwipeableMedia(child.id)}
+                                                >
+                                                    <Image 
+                                                        source={{ uri: mediaUrl }}
+                                                        style={styles.albumGridImage}
+                                                        resizeMode="cover"
+                                                        blurRadius={(!isDownloaded && !isMe) ? 3 : 0}
+                                                    />
+                                                    
+                                                    {isVideo && (
+                                                        <View style={styles.albumVideoIcon}>
+                                                            <Ionicons name="videocam" size={16} color="#fff" />
+                                                        </View>
+                                                    )}
+                                                    
+                                                    {/* Upload/Download overlay */}
+                                                    {((isMe && isUploading) || (!isMe && !isDownloaded)) ? (
+                                                        <View style={styles.imageUploadOverlay}>
+                                                            {isUploading ? (
+                                                                <View style={styles.mediaOverlayProgress}>
+                                                                    <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(uploadingIds[child.id]), 100)}%</Text>
+                                                                </View>
+                                                            ) : isDownloading ? (
+                                                                <View style={styles.mediaOverlayProgress}>
+                                                                    <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(downloadingIds[child.id]), 100)}%</Text>
+                                                                </View>
+                                                            ) : (
+                                                                <View style={styles.mediaOverlayProgress}>
+                                                                    <Ionicons name="cloud-download-outline" size={24} color="#fff" />
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    ) : null}
+
+                                                    {/* +N Overlay for 4th item if there are more than 4 items */}
+                                                    {childIndex === 3 && totalItems > 4 && (
+                                                        <View style={styles.albumMoreOverlay}>
+                                                            <Text style={styles.albumMoreText}>+{totalItems - 4}</Text>
+                                                        </View>
+                                                    )}
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+                                    
+                                    {/* Album Caption (First available) */}
+                                    {(() => {
+                                        const captionItem = item.albumItems.find((m: any) => m.caption);
+                                        if (captionItem) {
+                                            return (
+                                                <Text style={[
+                                                    styles.mediaCaptionText, 
+                                                    { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A'), marginTop: 4, paddingHorizontal: 4 },
+                                                ]}>
+                                                    {captionItem.caption}
+                                                </Text>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
+                                    
+                                    <View style={styles.timeEditRow}>
+                                        <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
+                                            {item.created_at ? format(new Date(item.created_at), 'p') : ''}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
                         ) : item.message_type === 'image' ? (
-                            // ── IMAGE MESSAGE — WhatsApp style ────────────────────────────
                             <TouchableOpacity
                                 activeOpacity={0.92}
                                 delayLongPress={400}
@@ -1643,31 +1786,24 @@ export default function ChatScreen() {
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
                                     />
 
-                                    {/* Upload progress — sender while uploading */}
-                                    {isMe && uploadingIds[item.id] !== undefined && (
+                                    {/* Upload/Download Overlay */}
+                                    {(isMe && uploadingIds[item.id] !== undefined) || (!isMe && !downloadedIds[item.id]) ? (
                                         <View style={styles.imageUploadOverlay}>
-                                            <View style={styles.imageUploadCircle}>
-                                                <Text style={styles.imageUploadPercent}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
-                                            </View>
-                                        </View>
-                                    )}
-
-                                    {/* Download overlay — other people's images not yet downloaded */}
-                                    {!isMe && !downloadedIds[item.id] && uploadingIds[item.id] === undefined && (
-                                        <View style={styles.imageDownloadOverlay}>
-                                            {downloadingIds[item.id] !== undefined ? (
-                                                // Downloading — circular progress
-                                                <View style={styles.mediaCircleProgress}>
-                                                    <Text style={styles.mediaCircleProgressText}>{downloadingIds[item.id]}%</Text>
+                                            {(isMe && uploadingIds[item.id] !== undefined) ? (
+                                                <View style={styles.mediaOverlayProgress}>
+                                                    <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
+                                                </View>
+                                            ) : downloadingIds[item.id] !== undefined ? (
+                                                <View style={styles.mediaOverlayProgress}>
+                                                    <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(downloadingIds[item.id]), 100)}%</Text>
                                                 </View>
                                             ) : (
-                                                // Not started — download icon
-                                                <View style={styles.mediaDownloadBtn}>
-                                                    <Ionicons name="cloud-download-outline" size={22} color="#fff" />
+                                                <View style={styles.mediaOverlayProgress}>
+                                                    <Ionicons name="cloud-download-outline" size={24} color="#fff" />
                                                 </View>
                                             )}
                                         </View>
-                                    )}
+                                    ) : null}
 
                                     {/* File size label */}
                                     {item.metadata?.size && (
@@ -1723,20 +1859,16 @@ export default function ChatScreen() {
                                         {/* Dark overlay */}
                                         <View style={styles.videoThumbOverlay} />
 
-                                        {/* Play button */}
-                                        {downloadingIds[item.id] !== undefined ? (
-                                            <View style={styles.videoPlayBtn}>
-                                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>{Math.min(downloadingIds[item.id], 100)}%</Text>
-                                            </View>
-                                        ) : uploadingIds[item.id] !== undefined ? (
-                                            <View style={styles.videoPlayBtn}>
-                                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
-                                            </View>
-                                        ) : (
-                                            <View style={styles.videoPlayBtn}>
-                                                <Ionicons name="play" size={22} color="#fff" />
-                                            </View>
-                                        )}
+                                        {/* Play / Progress button */}
+                                        <View style={styles.videoPlayBtn}>
+                                            {downloadingIds[item.id] !== undefined ? (
+                                                <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(downloadingIds[item.id]), 100)}%</Text>
+                                            ) : uploadingIds[item.id] !== undefined ? (
+                                                <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
+                                            ) : (
+                                                <Ionicons name="play" size={26} color="#fff" style={{ marginLeft: 3 }} />
+                                            )}
+                                        </View>
 
                                         {/* Duration / size label */}
                                         {item.metadata?.size && (
@@ -2162,6 +2294,8 @@ export default function ChatScreen() {
         const filesToSend = [...selectedFiles];
         setSelectedFiles([]);
 
+        const batchId = Date.now().toString();
+
         for (const file of filesToSend) {
             const tempId = `temp-upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             let msgType = file.type;
@@ -2201,7 +2335,7 @@ export default function ChatScreen() {
                 message_type: msgType,
                 content_type: msgType,
                 status: 'sending' as any,
-                metadata: { name: originalName, size: file.size, tempId },
+                metadata: { name: originalName, size: file.size, tempId, batchId },
                 caption: fileCaption || null
             };
 
@@ -2225,7 +2359,7 @@ export default function ChatScreen() {
                         group_id: id,
                         message_type: msgType,
                         content_type: msgType,
-                        metadata: { name: originalName, size: file.size, tempId, caption: fileCaption || null }
+                        metadata: { name: originalName, size: file.size, tempId, batchId, caption: fileCaption || null }
                     }])
                     .select()
                     .single();
@@ -2379,7 +2513,7 @@ export default function ChatScreen() {
             : type === 'video' ? 'video'
             : type === 'audio' ? 'audio'
             : 'image';
-        setViewerFile({ uri: localUri, type: viewerType, name: fileName });
+        setViewerFile({ uri: localUri, type: viewerType, name: url.split('/').pop() || 'media' });
         setViewerVisible(true);
     };
 
@@ -2566,7 +2700,7 @@ export default function ChatScreen() {
             {/* Messages List */}
             <FlatList
                 ref={flatListRef}
-                data={displayedMessages}
+                data={groupedMessages}
                 keyExtractor={(item) => item.id}
                 renderItem={renderMessage}
                 contentContainerStyle={styles.messagesList}
@@ -3437,7 +3571,6 @@ const styles = StyleSheet.create({
     // Image upload overlay (WhatsApp style — dark circle over image)
     imageUploadOverlay: {
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', borderRadius: 12,
     },
     imageUploadCircle: {
         width: 52, height: 52, borderRadius: 26,
@@ -4175,4 +4308,48 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    // Album Grid Styles
+    albumContainer: {
+        width: 260,
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    albumGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 2,
+    },
+    albumGridItemHalf: {
+        width: '49%',
+        aspectRatio: 1,
+    },
+    albumGridItemFull: {
+        width: '100%',
+        aspectRatio: 1.5,
+    },
+    albumGridImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 2,
+    },
+    albumMoreOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 2,
+    },
+    albumMoreText: {
+        color: '#FFF',
+        fontSize: 24,
+        fontFamily: 'Inter-Bold',
+    },
+    albumVideoIcon: {
+        position: 'absolute',
+        bottom: 8,
+        left: 8,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 12,
+        padding: 4,
+    }
 });

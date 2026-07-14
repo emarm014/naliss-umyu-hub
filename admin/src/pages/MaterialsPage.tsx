@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabase';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
@@ -445,6 +446,12 @@ export default function MaterialsPage() {
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: unknown) {
       const msg = (err as any)?.message || (err as any)?.error_description || JSON.stringify(err);
+      
+      Sentry.captureException(err, {
+        tags: { action: 'save_material', modal_type: showModal },
+        extra: { material_data: formData, error_message: msg }
+      });
+      
       setFormError(`Failed to save material: ${msg}`);
     } finally {
       setIsSubmitting(false);

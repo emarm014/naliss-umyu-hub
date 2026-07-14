@@ -196,7 +196,7 @@ export default function PastQuestionsPage() {
         .from('past_questions')
         .update(singleData)
         .eq('id', pq.id)
-        .select('*, course:courses(id, code, title, level, semester), uploader:users(full_name)')
+        .select('*, course:courses(id, code, title, level, semester)')
         .single();
         
       if (error) throw error;

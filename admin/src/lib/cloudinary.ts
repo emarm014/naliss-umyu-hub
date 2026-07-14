@@ -23,23 +23,26 @@ function getResourceType(file: File): 'image' | 'video' | 'raw' {
   return 'raw';
 }
 
+const signatureCache = new Map<string, { data: any; expiry: number }>();
+
 /**
- * Fetch signed configuration from the Supabase Edge Function
+ * Fetch signed configuration from the Supabase Edge Function (Cached for 50 mins per folder)
  */
-async function fetchUploadSignature(folder?: string): Promise<any> {
-  if (!supabase) {
-    throw new Error('Supabase client is not initialized');
+async function fetchUploadSignature(folder: string = ''): Promise<any> {
+  const cached = signatureCache.get(folder);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.data;
   }
+
+  if (!supabase) throw new Error('Supabase client is not initialized');
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    throw new Error('User is not authenticated');
-  }
+  if (!session) throw new Error('User is not authenticated');
 
   const { data, error } = await supabase.functions.invoke('cloudinary-sign', {
     method: 'POST',
     body: {
       upload_preset: CLOUDINARY_SIGNED_PRESET,
-      folder
+      folder: folder || undefined
     }
   });
 
@@ -47,6 +50,8 @@ async function fetchUploadSignature(folder?: string): Promise<any> {
     throw new Error(error?.message || 'Failed to fetch signature');
   }
 
+  // Cache signature for 50 minutes (valid for 1 hour usually)
+  signatureCache.set(folder, { data, expiry: Date.now() + 50 * 60 * 1000 });
   return data;
 }
 
@@ -56,7 +61,8 @@ async function fetchUploadSignature(folder?: string): Promise<any> {
  */
 export async function uploadToCloudinary(
   file: File,
-  folder: string = 'admin_uploads'
+  folder: string = 'admin_uploads',
+  onProgress?: (percent: number) => void
 ): Promise<{ secure_url: string; original_filename: string }> {
   const resourceType = getResourceType(file);
   const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`;
@@ -111,17 +117,36 @@ export async function uploadToCloudinary(
     }
 
     try {
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
+      const result = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', uploadUrl);
+
+        if (onProgress && xhr.upload) {
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              onProgress(percent);
+            }
+          };
+        }
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            try {
+              const err = JSON.parse(xhr.responseText);
+              reject(new Error(err.error?.message || 'Upload failed'));
+            } catch {
+              reject(new Error('Upload failed with status ' + xhr.status));
+            }
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Failed to fetch'));
+        xhr.send(formData);
       });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error?.message || 'Upload failed. Please try again.');
-      }
-
-      const result = await response.json();
       trackCloudinary('upload', result.public_id || file.name, Date.now() - startTime);
       return {
         secure_url: result.secure_url,
@@ -131,7 +156,7 @@ export async function uploadToCloudinary(
       lastErr = err instanceof Error ? err : new Error(String(err));
       
       // If it's a network error (Failed to fetch), retry up to maxAttempts
-      if (lastErr.name === 'TypeError' && lastErr.message === 'Failed to fetch' && attempt < maxAttempts - 1) {
+      if (lastErr.message === 'Failed to fetch' && attempt < maxAttempts - 1) {
         attempt++;
         await new Promise(r => setTimeout(r, 2000 * attempt));
         continue;
@@ -151,7 +176,7 @@ export async function uploadToCloudinary(
       extra: { fileName: file.name, fileSize: file.size, folder, resourceType, attempts: attempt + 1 }
     });
     
-    if (lastErr.name === 'TypeError' && lastErr.message === 'Failed to fetch') {
+    if (lastErr.message === 'Failed to fetch') {
       throw new Error('Network error: The upload timed out or the connection was lost. Please check your internet connection and try again.');
     }
     throw lastErr;

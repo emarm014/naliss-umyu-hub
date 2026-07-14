@@ -103,19 +103,22 @@ export default function FileUpload({
 
     const executeUpload = async (filesToUpload: File[]) => {
         setIsUploading(true);
-        setUploadProgress(multiple ? `Uploading ${filesToUpload.length} files...` : 'Uploading to cloud storage...');
+        setUploadProgress(multiple ? `Starting upload of ${filesToUpload.length} files...` : 'Starting upload...');
         setUploadError('');
 
         try {
             if (multiple && onMultiUploadComplete) {
                 const successful: Array<{url: string, file: File, originalFilename: string}> = [];
                 const errors: string[] = [];
+                const progresses: number[] = new Array(filesToUpload.length).fill(0);
 
-                for (let i = 0; i < filesToUpload.length; i++) {
-                    const file = filesToUpload[i];
-                    setUploadProgress(`Uploading file ${i + 1} of ${filesToUpload.length}...`);
+                const uploadPromises = filesToUpload.map(async (file, i) => {
                     try {
-                        const result = await uploadToCloudinary(file, folder);
+                        const result = await uploadToCloudinary(file, folder, (percent) => {
+                            progresses[i] = percent;
+                            const totalPercent = Math.round(progresses.reduce((a, b) => a + b, 0) / filesToUpload.length);
+                            setUploadProgress(`Uploading ${filesToUpload.length} files... ${totalPercent}%`);
+                        });
                         successful.push({
                             url: result.secure_url,
                             file,
@@ -124,7 +127,9 @@ export default function FileUpload({
                     } catch (err: any) {
                         errors.push(err?.message || 'Unknown error');
                     }
-                }
+                });
+
+                await Promise.all(uploadPromises);
                 
                 const failedCount = errors.length;
 
@@ -142,7 +147,9 @@ export default function FileUpload({
                 }
             } else {
                 const file = filesToUpload[0];
-                const result = await uploadToCloudinary(file, folder);
+                const result = await uploadToCloudinary(file, folder, (percent) => {
+                    setUploadProgress(`Uploading... ${percent}%`);
+                });
 
                 setUploadProgress('Upload complete!');
                 onUploadComplete(result.secure_url, file, result.original_filename);

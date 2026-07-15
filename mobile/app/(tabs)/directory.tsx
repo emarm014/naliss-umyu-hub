@@ -204,7 +204,7 @@ function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cachedUri ? onPressAvatar(cachedUri, staff.full_name) : null}
+                    onPress={() => cleanAvatar ? onPressAvatar(cleanAvatar, staff.full_name) : null}
                     activeOpacity={0.8}
                 >
                     {cachedUri ? (
@@ -265,7 +265,7 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cachedUri ? onPressAvatar(cachedUri, fullName) : null}
+                    onPress={() => cleanAvatar ? onPressAvatar(cleanAvatar, fullName) : null}
                     activeOpacity={0.8}
                 >
                     {cachedUri ? (

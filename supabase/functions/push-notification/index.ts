@@ -217,9 +217,10 @@ Deno.serve(async (req) => {
       if (mutableContent) {
         message.mutableContent = mutableContent;
       }
-      if (isSilent) {
-        message.contentAvailable = true;
-      }
+      
+      // ALWAYS force background wake-up and foreground display
+      message.contentAvailable = true;
+      message._displayInForeground = true;
 
       return message;
     });

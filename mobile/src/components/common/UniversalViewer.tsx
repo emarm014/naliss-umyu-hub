@@ -23,7 +23,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
 import * as Sentry from '@sentry/react-native';
 import { SafeOverlayContainer, showToast } from './overlays';
-import {  saveMediaToDevice } from '../../utils/mediaSaver';
+import {  saveMediaToDevice, shareMedia } from '../../utils/mediaSaver';
 import Pdf from 'react-native-pdf';
 
 const { width, height } = Dimensions.get('window');
@@ -461,15 +461,14 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   const shareFile = async () => {
     try {
-      if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('Unavailable', 'Sharing is not supported on this device.');
-        return;
-      }
-      // Prefer local file for sharing — works offline and is faster
       const uriToShare = localUri
         ? (localUri.startsWith('file://') ? localUri : `file://${localUri}`)
         : fileUri;
-      await Sharing.shareAsync(uriToShare);
+      const mimeType = mimeMap[fileType] || 'application/octet-stream';
+      const result = await shareMedia(uriToShare, mimeType, fileName);
+      if (!result.success) {
+        Alert.alert('Unavailable', result.error || 'Could not share this file.');
+      }
     } catch (err: any) {
       Sentry.captureException(err, { tags: { location: 'UniversalViewer.shareFile' }, extra: { fileType, fileName } });
       Alert.alert('Error', 'Could not share this file.');

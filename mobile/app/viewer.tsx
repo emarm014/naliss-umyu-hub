@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Video, ResizeMode } from 'expo-av';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {  saveMediaToDevice } from '../src/utils/mediaSaver';
+import {  saveMediaToDevice, shareMedia } from '../src/utils/mediaSaver';
 import { showToast } from '../src/components/common/overlays';
 import { BlurView } from 'expo-blur';
 import { UniversalViewer } from '../src/components/common/UniversalViewer';
@@ -47,7 +47,7 @@ export default function ViewerScreen() {
     if (!activeItem) return;
     try {
       const result = await saveMediaToDevice(
-        activeItem.media_url,
+        activeItem.local_path || activeItem.media_url,
         activeItem.content_type || 'image',
         activeItem.name
       );
@@ -66,12 +66,14 @@ export default function ViewerScreen() {
   const shareFile = async () => {
     if (!activeItem) return;
     try {
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (!isAvailable) {
-        Alert.alert('Unavailable', 'Sharing is not supported on this device.');
-        return;
+      const result = await shareMedia(
+        activeItem.local_path || activeItem.media_url,
+        activeItem.content_type || 'image',
+        activeItem.name
+      );
+      if (!result.success) {
+        Alert.alert('Unavailable', result.error || 'Sharing failed.');
       }
-      await Sharing.shareAsync(activeItem.media_url);
     } catch (error) {
       Alert.alert('Error', 'Could not share this file.');
     }

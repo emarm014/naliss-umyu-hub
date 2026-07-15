@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Alert, useColorScheme, KeyboardAvoidingView, Platform, Dimensions, FlatList } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNoteStore } from '../../src/stores/note.store';
 import { useAuthStore } from '../../src/stores/auth.store';
@@ -23,22 +24,28 @@ export default function CreateNoteScreen() {
 
     const [subject, setSubject] = useState(existingNote?.subject || '');
     const [courseCode, setCourseCode] = useState(existingNote?.courseCode || '');
-    const [courseLevel, setCourseLevel] = useState(existingNote?.courseLevel || profile?.level || '100L');
+    const [courseLevel] = useState(existingNote?.courseLevel || profile?.level || '100L');
     const [content, setContent] = useState(existingNote?.content || '');
     const [mediaPaths, setMediaPaths] = useState<string[]>(existingNote?.mediaPaths || []);
-    const [showCamera, setShowCamera] = useState(false);
 
     const { courses, materials } = useResourceStore();
     const [isManualCourse, setIsManualCourse] = useState(false);
     const [showCourseDropdown, setShowCourseDropdown] = useState(false);
     const [linkedMaterials, setLinkedMaterials] = useState<string[]>(existingNote?.linkedMaterials || []);
 
-    // Image Slider Modal State
+    // Camera Custom UI State
+    const [showCamera, setShowCamera] = useState(false);
+    const [queuedImages, setQueuedImages] = useState<string[]>([]);
+    const [isQueuePreviewVisible, setIsQueuePreviewVisible] = useState(false);
+    const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+    const cameraRef = useRef<CameraView>(null);
+    const [queuePreviewIndex, setQueuePreviewIndex] = useState(0);
+
+    // General Image Slider Modal State (for saved images)
     const [selectedImageIndex, setSelectedImageIndex] = useState(0);
     const [isImageModalVisible, setIsImageModalVisible] = useState(false);
     const { width: windowWidth } = Dimensions.get('window');
 
-    const levels = ['100L', '200L', '300L', '400L'];
     const activeLevel = courseLevel.replace('L', '');
     const filteredCourses = courses.filter(c => c.level === activeLevel);
     
@@ -68,23 +75,61 @@ export default function CreateNoteScreen() {
         }
     };
 
-    const handleTakeCameraPhoto = async () => {
-        const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-        if (!permissionResult.granted) {
-            Alert.alert("Permission Required", "You need to allow camera access to take pictures.");
-            return;
+    // Custom Camera Methods
+    const openCamera = async () => {
+        if (!cameraPermission?.granted) {
+            const result = await requestCameraPermission();
+            if (!result.granted) {
+                Alert.alert("Permission Required", "You need to allow camera access to take pictures.");
+                return;
+            }
         }
+        setQueuedImages([]);
+        setShowCamera(true);
+    };
 
-        const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true, // Triggers system crop tool immediately
-            quality: 1,
-        });
-
-        if (!result.canceled && result.assets) {
-            setMediaPaths(prev => [...prev, result.assets[0].uri]);
+    const takePicture = async () => {
+        if (cameraRef.current) {
+            try {
+                const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+                if (photo?.uri) {
+                    setQueuedImages(prev => [...prev, photo.uri]);
+                }
+            } catch (err) {
+                console.error("Failed to take picture:", err);
+            }
         }
     };
+
+    const finishCameraSession = () => {
+        setMediaPaths(prev => [...prev, ...queuedImages]);
+        setShowCamera(false);
+        setQueuedImages([]);
+        setIsQueuePreviewVisible(false);
+    };
+
+    const cancelCameraSession = () => {
+        setShowCamera(false);
+        setQueuedImages([]);
+        setIsQueuePreviewVisible(false);
+    };
+
+    const removeQueuedImage = (index: number) => {
+        setQueuedImages(prev => {
+            const updated = prev.filter((_, i) => i !== index);
+            if (updated.length === 0) {
+                setIsQueuePreviewVisible(false);
+            }
+            return updated;
+        });
+    };
+
+    const handleViewableQueueItemsChanged = useCallback(({ viewableItems }: any) => {
+        if (viewableItems && viewableItems.length > 0) {
+            setQueuePreviewIndex(viewableItems[0].index);
+        }
+    }, []);
+    const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
 
     const removeMedia = (index: number) => {
         setMediaPaths(prev => prev.filter((_, i) => i !== index));
@@ -197,30 +242,6 @@ export default function CreateNoteScreen() {
             height: 250,
             textAlignVertical: 'top',
         },
-        levelSelectorRow: {
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            gap: 8,
-        },
-        levelPill: {
-            paddingHorizontal: 16,
-            paddingVertical: 8,
-            borderRadius: 20,
-            backgroundColor: isDark ? '#1E1E1E' : '#E2E8F0',
-            borderWidth: 1,
-            borderColor: isDark ? '#2D2D2D' : 'transparent',
-        },
-        levelPillActive: {
-            backgroundColor: '#005A36',
-            borderColor: '#005A36',
-        },
-        levelPillText: {
-            color: isDark ? '#A0AEC0' : '#475569',
-            fontWeight: '600',
-        },
-        levelPillTextActive: {
-            color: '#FFFFFF',
-        },
         mediaScroll: {
             marginTop: 8,
             marginBottom: 24,
@@ -260,23 +281,6 @@ export default function CreateNoteScreen() {
             padding: 8,
             marginRight: 16,
         },
-        pastQLinkBtn: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderWidth: 1,
-            borderColor: '#005A36',
-            borderRadius: 20,
-            paddingVertical: 10,
-            paddingHorizontal: 16,
-            marginTop: 10,
-            backgroundColor: isDark ? 'rgba(0, 90, 54, 0.1)' : '#F0FDF4',
-        },
-        pastQLinkText: {
-            color: '#005A36',
-            fontWeight: '600',
-            fontSize: 14,
-        },
         materialCard: {
             width: 140,
             padding: 12,
@@ -305,8 +309,178 @@ export default function CreateNoteScreen() {
             padding: 8,
             backgroundColor: 'rgba(0,0,0,0.5)',
             borderRadius: 24,
+        },
+        modalDeleteBtn: {
+            position: 'absolute',
+            top: top > 0 ? top + 16 : 40,
+            left: 20,
+            zIndex: 10,
+            padding: 8,
+            backgroundColor: 'rgba(239, 68, 68, 0.8)',
+            borderRadius: 24,
+        },
+        cameraOverlayTop: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            paddingTop: top > 0 ? top + 10 : 40,
+            paddingHorizontal: 20,
+        },
+        cameraBtn: {
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: 'rgba(0,0,0,0.4)',
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        cameraOverlayBottom: {
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 140,
+            backgroundColor: 'rgba(0,0,0,0.4)',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-around',
+            paddingBottom: 20,
+        },
+        captureBtnOuter: {
+            width: 72,
+            height: 72,
+            borderRadius: 36,
+            borderWidth: 4,
+            borderColor: '#FFF',
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        captureBtnInner: {
+            width: 58,
+            height: 58,
+            borderRadius: 29,
+            backgroundColor: '#FFF',
+        },
+        queueBadgeContainer: {
+            position: 'relative',
+            width: 60,
+            height: 60,
+        },
+        queueBadgeThumb: {
+            width: 60,
+            height: 60,
+            borderRadius: 8,
+            borderWidth: 2,
+            borderColor: '#FFF',
+        },
+        queueBadgeCount: {
+            position: 'absolute',
+            top: -8,
+            right: -8,
+            backgroundColor: '#005A36',
+            width: 24,
+            height: 24,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 2,
+            borderColor: '#FFF',
+        },
+        queueBadgeCountText: {
+            color: '#FFF',
+            fontSize: 12,
+            fontWeight: 'bold',
+        },
+        cameraDoneBtn: {
+            backgroundColor: '#005A36',
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            borderRadius: 20,
+        },
+        cameraDoneText: {
+            color: '#FFF',
+            fontWeight: 'bold',
+            fontSize: 16,
         }
     });
+
+    if (showCamera) {
+        return (
+            <View style={{ flex: 1, backgroundColor: '#000' }}>
+                <CameraView 
+                    style={{ flex: 1 }} 
+                    facing="back"
+                    ref={cameraRef}
+                >
+                    <View style={styles.cameraOverlayTop}>
+                        <TouchableOpacity style={styles.cameraBtn} onPress={cancelCameraSession}>
+                            <Ionicons name="close" size={28} color="#FFF" />
+                        </TouchableOpacity>
+                    </View>
+                    
+                    <View style={styles.cameraOverlayBottom}>
+                        {/* Queue Badge */}
+                        {queuedImages.length > 0 ? (
+                            <TouchableOpacity 
+                                style={styles.queueBadgeContainer}
+                                onPress={() => setIsQueuePreviewVisible(true)}
+                            >
+                                <Image source={{ uri: queuedImages[queuedImages.length - 1] }} style={styles.queueBadgeThumb} />
+                                <View style={styles.queueBadgeCount}>
+                                    <Text style={styles.queueBadgeCountText}>{queuedImages.length}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        ) : <View style={{ width: 60 }} />}
+                        
+                        {/* Shutter Button */}
+                        <TouchableOpacity style={styles.captureBtnOuter} onPress={takePicture}>
+                            <View style={styles.captureBtnInner} />
+                        </TouchableOpacity>
+                        
+                        {/* Done Button */}
+                        {queuedImages.length > 0 ? (
+                            <TouchableOpacity style={styles.cameraDoneBtn} onPress={finishCameraSession}>
+                                <Text style={styles.cameraDoneText}>Done</Text>
+                            </TouchableOpacity>
+                        ) : <View style={{ width: 60 }} />}
+                    </View>
+                </CameraView>
+
+                {/* Queue Preview Modal (Inside Camera) */}
+                <SafeOverlayContainer
+                    visible={isQueuePreviewVisible}
+                    onClose={() => setIsQueuePreviewVisible(false)}
+                    animationType="fade"
+                    overlayStyle={styles.modalBackground}
+                >
+                    <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsQueuePreviewVisible(false)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                        <Ionicons name="close" size={32} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.modalDeleteBtn} onPress={() => removeQueuedImage(queuePreviewIndex)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                        <Ionicons name="trash" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    
+                    {queuedImages.length > 0 && (
+                        <FlatList
+                            data={queuedImages}
+                            keyExtractor={(_, index) => index.toString()}
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            onViewableItemsChanged={handleViewableQueueItemsChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            getItemLayout={(_, index) => ({ length: windowWidth, offset: windowWidth * index, index })}
+                            renderItem={({ item }) => (
+                                <View style={{ width: windowWidth, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                                    <Image source={{ uri: item }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
+                                </View>
+                            )}
+                        />
+                    )}
+                </SafeOverlayContainer>
+            </View>
+        );
+    }
 
     return (
         <KeyboardAvoidingView 
@@ -335,22 +509,7 @@ export default function CreateNoteScreen() {
                     />
                 </View>
 
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Course Level</Text>
-                    <View style={styles.levelSelectorRow}>
-                        {levels.map(level => (
-                            <TouchableOpacity 
-                                key={level}
-                                style={[styles.levelPill, courseLevel === level && styles.levelPillActive]}
-                                onPress={() => setCourseLevel(level)}
-                            >
-                                <Text style={[styles.levelPillText, courseLevel === level && styles.levelPillTextActive]}>
-                                    {level}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </View>
+                {/* Level Selector Removed - Automatically maps to profile?.level */}
 
                 <View style={[styles.inputGroup, { zIndex: 50 }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -475,7 +634,7 @@ export default function CreateNoteScreen() {
             </ScrollView>
 
             <View style={styles.toolbar}>
-                <TouchableOpacity style={styles.toolbarBtn} onPress={handleTakeCameraPhoto}>
+                <TouchableOpacity style={styles.toolbarBtn} onPress={openCamera}>
                     <Ionicons name="camera-outline" size={24} color="#005A36" />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.toolbarBtn} onPress={handlePickImage}>
@@ -489,6 +648,7 @@ export default function CreateNoteScreen() {
                 )}
             </View>
 
+            {/* General Media Viewer Modal (for fully saved/attached media) */}
             <SafeOverlayContainer
                 visible={isImageModalVisible}
                 onClose={() => setIsImageModalVisible(false)}
@@ -498,20 +658,22 @@ export default function CreateNoteScreen() {
                 <TouchableOpacity style={[styles.modalCloseBtn, { top: Math.max(top + 10, 40) }]} onPress={() => setIsImageModalVisible(false)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
                     <Ionicons name="close" size={32} color="#FFFFFF" />
                 </TouchableOpacity>
-                <FlatList
-                    data={mediaPaths}
-                    keyExtractor={(_, index) => index.toString()}
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    initialScrollIndex={selectedImageIndex}
-                    getItemLayout={(_, index) => ({ length: windowWidth, offset: windowWidth * index, index })}
-                    renderItem={({ item }) => (
-                        <View style={{ width: windowWidth, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                            <Image source={{ uri: item }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
-                        </View>
-                    )}
-                />
+                {mediaPaths.length > 0 && (
+                    <FlatList
+                        data={mediaPaths}
+                        keyExtractor={(_, index) => index.toString()}
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        initialScrollIndex={selectedImageIndex}
+                        getItemLayout={(_, index) => ({ length: windowWidth, offset: windowWidth * index, index })}
+                        renderItem={({ item }) => (
+                            <View style={{ width: windowWidth, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                                <Image source={{ uri: item }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
+                            </View>
+                        )}
+                    />
+                )}
             </SafeOverlayContainer>
         </KeyboardAvoidingView>
     );

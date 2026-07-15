@@ -37,7 +37,7 @@ import { useGroupStore } from '../../src/stores/group.store';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { Message } from '../../src/types';
 import { FileService } from '../../src/services/file.service';
-import { saveMediaToDevice } from '../../src/utils/mediaSaver';
+import { saveMediaToDevice, shareMedia } from '../../src/utils/mediaSaver';
 import { showToast } from '../../src/components/common/overlays';
 import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
 import { sendChatMessageNotification } from '../../src/utils/notifications';
@@ -394,7 +394,16 @@ export default function ChatScreen() {
     };
 
     const fetchMessages = async (params = searchParams, loadMore = false, silent = false) => {
+        const { useNetworkStore } = require('../../src/stores/network.store');
+        const isOnline = useNetworkStore.getState().isOnline;
+
         if (!silent) setIsLoading(true);
+        if (!isOnline && messages.length === 0) {
+            // If completely offline and no messages, just stop loading to show empty state
+            setIsLoading(false);
+            return;
+        }
+
         try {
             let query = (supabase as any).from('messages')
                 .select(`
@@ -725,10 +734,18 @@ export default function ChatScreen() {
                     } else if (payload.eventType === 'UPDATE') {
                         if (!payload.new?.id) return;
                         if (payload.new.is_deleted) {
-                            setMessages(prev => prev.filter(m => m.id !== payload.new.id));
-                            messageStore.removeMessage(id, payload.new.id);
+                            const updates = { is_deleted: true, content: '' };
+                            setMessages(prev => prev.map(m =>
+                                m.id === payload.new.id ? { ...m, ...updates } : m
+                            ));
+                            messageStore.updateMessage(id, payload.new.id, updates);
                         } else {
-                            const updates = { content: payload.new.content, is_edited: payload.new.is_edited, isEdited: payload.new.is_edited };
+                            const updates = { 
+                                content: payload.new.content, 
+                                is_edited: payload.new.is_edited, 
+                                isEdited: payload.new.is_edited,
+                                edited_at: payload.new.edited_at
+                            };
                             setMessages(prev => prev.map(m =>
                                 m.id === payload.new.id ? { ...m, ...updates } : m
                             ));
@@ -858,7 +875,7 @@ export default function ChatScreen() {
                     // Optimistic update — show edit immediately
                     setMessages(prev => prev.map(m =>
                         m.id === editingMessage.id
-                            ? { ...m, content, edited_at: editedAt }
+                            ? { ...m, content, edited_at: editedAt, is_edited: true, isEdited: true }
                             : m
                     ));
                     
@@ -2554,6 +2571,41 @@ export default function ChatScreen() {
         }
     };
 
+    const handleShareMessageMedia = async (msg: any) => {
+        try {
+            let localUri = '';
+            const ext = msg.message_type === 'video' ? 'mp4' : msg.message_type === 'audio' ? 'mp3' : msg.message_type === 'document' ? 'pdf' : 'jpg';
+            const fileName = msg.metadata?.name || `${msg.message_type}_${msg.id}.${ext}`;
+            
+            const isDownloaded = downloadedIds[msg.id];
+            const isMe = msg.sender_id === currentUser?.id;
+            
+            if (isDownloaded) {
+                localUri = FileService.getLocalUri(msg.id, msg.content);
+            } else if (isMe && msg.fileUri) {
+                localUri = msg.fileUri;
+            } else {
+                localUri = FileService.getLocalUri(msg.id, fileName);
+                const downloaded = await FileService.downloadFile(msg.content, msg.id, fileName);
+                if (!downloaded) {
+                    Alert.alert('Share Failed', 'Could not retrieve file to share.');
+                    return;
+                }
+                localUri = downloaded;
+                setDownloadedIds(prev => ({ ...prev, [msg.id]: true }));
+            }
+            
+            const normalizedUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
+            const result = await shareMedia(normalizedUri, msg.message_type, fileName);
+            
+            if (!result.success && result.error !== 'Sharing was dismissed') {
+                Alert.alert('Share Failed', result.error || 'Could not share the attachment.');
+            }
+        } catch (error) {
+            Alert.alert('Share Failed', 'Could not share the attachment.');
+        }
+    };
+
     const handleOpenSwipeableMedia = (targetMessageId: string) => {
         const mediaMessages = messages.filter(m => !m.is_deleted && (m.message_type === 'image' || m.message_type === 'video'));
         const mediaArray = mediaMessages.map(m => {
@@ -2704,6 +2756,25 @@ export default function ChatScreen() {
                 keyExtractor={(item) => item.id}
                 renderItem={renderMessage}
                 contentContainerStyle={styles.messagesList}
+                ListEmptyComponent={
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 150 }}>
+                        {isLoading ? (
+                            <>
+                                <ActivityIndicator size="large" color={COLORS.primary} />
+                                <Text style={{ color: colors.textMuted, marginTop: 12, fontFamily: 'Inter-Medium' }}>
+                                    Loading messages...
+                                </Text>
+                            </>
+                        ) : (
+                            <>
+                                <Ionicons name="chatbubbles-outline" size={64} color={colors.textMuted} style={{ opacity: 0.5 }} />
+                                <Text style={{ color: colors.textMuted, marginTop: 12, fontFamily: 'Inter-Medium' }}>
+                                    {isSearching ? 'No messages found.' : 'No messages here yet. Be the first to say hi!'}
+                                </Text>
+                            </>
+                        )}
+                    </View>
+                }
                 onScrollToIndexFailed={(info) => {
                     flatListRef.current?.scrollToOffset({
                         offset: info.averageItemLength * info.index,
@@ -2739,16 +2810,28 @@ export default function ChatScreen() {
                             <Text style={styles.contextItemText}>Reply</Text>
                         </TouchableOpacity>
                         {['image', 'video', 'audio', 'document'].includes(longPressedMessage.message_type) && (
-                            <TouchableOpacity 
-                                style={styles.contextItem} 
-                                onPress={() => {
-                                    handleSaveMessageMedia(longPressedMessage);
-                                    setLongPressedMessage(null);
-                                }}
-                            >
-                                <Ionicons name="cloud-download-outline" size={20} color={COLORS.text} />
-                                <Text style={styles.contextItemText}>Save to Device</Text>
-                            </TouchableOpacity>
+                            <>
+                                <TouchableOpacity 
+                                    style={styles.contextItem} 
+                                    onPress={() => {
+                                        handleSaveMessageMedia(longPressedMessage);
+                                        setLongPressedMessage(null);
+                                    }}
+                                >
+                                    <Ionicons name="cloud-download-outline" size={20} color={COLORS.text} />
+                                    <Text style={styles.contextItemText}>Save to Device</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={styles.contextItem} 
+                                    onPress={() => {
+                                        handleShareMessageMedia(longPressedMessage);
+                                        setLongPressedMessage(null);
+                                    }}
+                                >
+                                    <Ionicons name="share-social-outline" size={20} color={COLORS.text} />
+                                    <Text style={styles.contextItemText}>Share</Text>
+                                </TouchableOpacity>
+                            </>
                         )}
                         {/* Edit — only for text, only within 1 hour */}
                         {longPressedMessage.sender_id === currentUser?.id && (
@@ -3165,7 +3248,10 @@ export default function ChatScreen() {
                                     {(() => {
                                         const cleanUrl = getCleanAvatarUrl(viewingProfile.avatar_url);
                                         return cleanUrl ? (
-                                            <TouchableOpacity onPress={() => setExpandedAvatarUrl(cleanUrl)}>
+                                            <TouchableOpacity onPress={() => {
+                                                setViewerFile({ uri: cleanUrl, name: viewingProfile.full_name || viewingProfile.username || 'Profile', type: 'image' });
+                                                setViewerVisible(true);
+                                            }}>
                                                 <Image source={{ uri: cleanUrl }} style={styles.profileAvatar} />
                                             </TouchableOpacity>
                                         ) : (
@@ -3263,27 +3349,6 @@ export default function ChatScreen() {
                         )}
             </SafeBottomSheet>
 
-            {/* ========== EXPANDED AVATAR VIEW MODAL (Half-Screen) ========== */}
-            <SafeModal
-                visible={!!expandedAvatarUrl}
-                onClose={() => setExpandedAvatarUrl(null)}
-                contentStyle={[styles.expandedAvatarCard, { backgroundColor: colors.card }]}
-                animationType="fade"
-            >
-                                <View style={styles.expandedAvatarHeader}>
-                                    <Text style={[styles.expandedAvatarTitle, { color: colors.text }]}>Profile Photo</Text>
-                                    <TouchableOpacity onPress={() => setExpandedAvatarUrl(null)}>
-                                        <Ionicons name="close" size={24} color={colors.text} />
-                                    </TouchableOpacity>
-                                </View>
-                                {expandedAvatarUrl && (
-                                    <Image 
-                                        source={{ uri: expandedAvatarUrl }} 
-                                        style={styles.expandedAvatarImage} 
-                                        resizeMode="contain"
-                                    />
-                                )}
-            </SafeModal>
 
             {/* ========== GROUP MENU MODAL ========== */}
             <SafeOverlayContainer
@@ -4351,5 +4416,18 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.5)',
         borderRadius: 12,
         padding: 4,
+    },
+    mediaOverlayProgress: {
+        position: 'absolute',
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        borderRadius: 20,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        zIndex: 10,
+    },
+    mediaOverlayProgressText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontFamily: 'Inter-Medium',
     }
 });

@@ -212,12 +212,12 @@ export const useMessageStore = create<MessageState>()(
                 const prevEditedAt = originalMsg?.edited_at;
 
                 const editedAt = new Date().toISOString();
-                get().updateMessage(groupId, messageId, { content: newContent, edited_at: editedAt });
+                get().updateMessage(groupId, messageId, { content: newContent, edited_at: editedAt, is_edited: true, isEdited: true });
 
                 try {
                     const { error } = await (supabase as any)
                         .from('messages')
-                        .update({ content: newContent, edited_at: editedAt })
+                        .update({ content: newContent, edited_at: editedAt, is_edited: true })
                         .eq('id', messageId);
 
                     if (error) throw error;
@@ -225,7 +225,7 @@ export const useMessageStore = create<MessageState>()(
                     Logger.error('message.store', 'Failed to edit message, rolling back optimistic state', err);
                     // Fix: Only rollback if we have the original values
                     if (prevContent !== undefined) {
-                        get().updateMessage(groupId, messageId, { content: prevContent, edited_at: prevEditedAt });
+                        get().updateMessage(groupId, messageId, { content: prevContent, edited_at: prevEditedAt, is_edited: originalMsg?.is_edited, isEdited: originalMsg?.isEdited });
                     }
                 }
             },

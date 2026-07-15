@@ -262,6 +262,20 @@ export default function HomeScreen() {
   );
   const rank = getUserRank(userPoints);
 
+  const combinedItems = React.useMemo(() => {
+    const ann = announcements.map(a => ({
+      ...a,
+      _type: 'announcement' as const,
+      _sortDate: new Date(a.published_at || a.created_at).getTime()
+    }));
+    const ev = events.map(e => ({
+      ...e,
+      _type: 'event' as const,
+      _sortDate: new Date(e.created_at || e.start_date || 0).getTime()
+    }));
+    return [...ann, ...ev].sort((a, b) => b._sortDate - a._sortDate);
+  }, [announcements, events]);
+
   const loadData = useCallback(async () => {
     const level = user?.level || undefined;
     await Promise.all([
@@ -441,7 +455,7 @@ export default function HomeScreen() {
             ))}
           </View>
 
-          {/* Announcements */}
+          {/* Combined Announcements & Events */}
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Announcements</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/announcements')}>
@@ -449,106 +463,92 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {announcements.length === 0 ? (
+          {combinedItems.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-              {loadingAnnouncements
+              {(loadingAnnouncements || loadingEvents)
                 ? <ActivityIndicator size="small" color={COLORS.primary} />
-                : <Text style={[styles.emptyText, { color: colors.textMuted }]}>No institutional updates</Text>}
+                : <Text style={[styles.emptyText, { color: colors.textMuted }]}>No updates available</Text>}
             </View>
           ) : (
             <View style={styles.posterGrid}>
-              {announcements.map((item) => {
-                const isRead = readIds.includes(item.id);
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={styles.posterCard}
-                    onPress={() => {
-                      markAsRead(item.id).catch(() => {});
-                      router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any);
-                    }}
-                  >
-                    <PosterImage
-                      uri={item.cover_image_url ? getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400) : undefined}
-                      fallbackUri={item.cover_image_url || undefined}
-                      style={styles.posterImage}
-                      gradientColors={['#0c4a6e', '#1e3a5f']}
-                    />
-                    <LinearGradient colors={['transparent', 'rgba(12,74,110,0.95)']} style={styles.posterGradient} />
-                    <View style={styles.posterContent}>
-                      <View style={styles.posterTagRow}>
-                        <View style={[styles.posterTag, !isRead && { backgroundColor: theme.gradient[2] }]}>
-                          <Text style={styles.posterTagText}>{item.category?.toUpperCase() || 'INFO'}</Text>
+              {combinedItems.map((item) => {
+                if (item._type === 'announcement') {
+                  const isRead = readIds.includes(item.id);
+                  return (
+                    <TouchableOpacity
+                      key={`ann-${item.id}`}
+                      style={styles.posterCard}
+                      onPress={() => {
+                        markAsRead(item.id).catch(() => {});
+                        router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any);
+                      }}
+                    >
+                      <PosterImage
+                        uri={item.cover_image_url ? getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400) : undefined}
+                        fallbackUri={item.cover_image_url || undefined}
+                        style={styles.posterImage}
+                        gradientColors={['#0c4a6e', '#1e3a5f']}
+                      />
+                      <LinearGradient colors={['transparent', 'rgba(12,74,110,0.95)']} style={styles.posterGradient} />
+                      <View style={styles.posterContent}>
+                        <View style={styles.posterTagRow}>
+                          <View style={[styles.posterTag, !isRead && { backgroundColor: theme.gradient[2] }]}>
+                            <Text style={styles.posterTagText}>{item.category?.toUpperCase() || 'INFO'}</Text>
+                          </View>
+                          {!isRead && <View style={[styles.unreadDot, { backgroundColor: theme.accentColor }]} />}
                         </View>
-                        {!isRead && <View style={[styles.unreadDot, { backgroundColor: theme.accentColor }]} />}
+                        <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
+                        <View style={styles.posterFooter}>
+                          <Text style={styles.posterDate}>{item.created_at ? (() => { try { return format(new Date(item.created_at), 'MMMM d, yyyy'); } catch { return ''; } })() : ''}</Text>
+                          <Text style={styles.posterSeeMore}>See more →</Text>
+                        </View>
                       </View>
-                      <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
-                      <View style={styles.posterFooter}>
-                        <Text style={styles.posterDate}>{item.created_at ? (() => { try { return format(new Date(item.created_at), 'MMMM d, yyyy'); } catch { return ''; } })() : ''}</Text>
-                        <Text style={styles.posterSeeMore}>See more →</Text>
+                      <View
+                        pointerEvents="none"
+                        style={[
+                          StyleSheet.absoluteFillObject,
+                          {
+                            borderWidth: 2,
+                            borderColor: isRead ? 'transparent' : theme.accentColor,
+                            borderRadius: 24,
+                            zIndex: 10,
+                          }
+                        ]}
+                      />
+                    </TouchableOpacity>
+                  );
+                } else {
+                  return (
+                    <TouchableOpacity
+                      key={`evt-${item.id}`}
+                      style={styles.posterCard}
+                      onPress={() => router.push({ pathname: '/event/[id]', params: { id: item.id } } as any)}
+                    >
+                      <PosterImage
+                        uri={item.cover_image_url ? getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400) : undefined}
+                        fallbackUri={item.cover_image_url || undefined}
+                        style={styles.posterImage}
+                        gradientColors={['#052e16', '#14532d']}
+                      />
+                      <LinearGradient colors={['transparent', 'rgba(5,46,22,0.95)']} style={styles.posterGradient} />
+                      <View style={styles.posterContent}>
+                        <View style={styles.posterTagRow}>
+                          <View style={styles.posterTag}>
+                            <Text style={styles.posterTagText}>{item.status?.toUpperCase() || 'EVENT'}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
+                        <View style={styles.posterFooter}>
+                          <Text style={styles.posterDate}>
+                            {item.start_date ? (() => { try { return format(new Date(item.start_date), 'MMMM d, yyyy'); } catch { return ''; } })() : ''}{item.venue ? ` · ${item.venue}` : ''}
+                          </Text>
+                          <Text style={styles.posterSeeMore}>See more →</Text>
+                        </View>
                       </View>
-                    </View>
-                    {/* Unread Border Overlay */}
-                    <View
-                      pointerEvents="none"
-                      style={[
-                        StyleSheet.absoluteFillObject,
-                        {
-                          borderWidth: 2,
-                          borderColor: isRead ? 'transparent' : theme.accentColor,
-                          borderRadius: 24,
-                          zIndex: 10,
-                        }
-                      ]}
-                    />
-                  </TouchableOpacity>
-                );
+                    </TouchableOpacity>
+                  );
+                }
               })}
-            </View>
-          )}
-
-          {/* Events */}
-          <View style={[styles.sectionHeader, { marginTop: 24 }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Events</Text>
-          </View>
-
-          {events.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-              {loadingEvents
-                ? <ActivityIndicator size="small" color={COLORS.primary} />
-                : <Text style={[styles.emptyText, { color: colors.textMuted }]}>No upcoming events</Text>}
-            </View>
-          ) : (
-            <View style={styles.posterGrid}>
-              {events.map((event) => (
-                <TouchableOpacity
-                  key={event.id}
-                  style={styles.posterCard}
-                  onPress={() => router.push({ pathname: '/event/[id]', params: { id: event.id } } as any)}
-                >
-                  <PosterImage
-                    uri={event.cover_image_url ? getOptimizedCloudinaryUrl(event.cover_image_url, 600, 400) : undefined}
-                    fallbackUri={event.cover_image_url || undefined}
-                    style={styles.posterImage}
-                    gradientColors={['#052e16', '#14532d']}
-                  />
-                  <LinearGradient colors={['transparent', 'rgba(5,46,22,0.95)']} style={styles.posterGradient} />
-                  <View style={styles.posterContent}>
-                    <View style={styles.posterTagRow}>
-                      <View style={styles.posterTag}>
-                        <Text style={styles.posterTagText}>{event.status?.toUpperCase() || 'EVENT'}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.posterTitle} numberOfLines={2}>{event.title}</Text>
-                    <View style={styles.posterFooter}>
-                      <Text style={styles.posterDate}>
-                        {event.start_date ? (() => { try { return format(new Date(event.start_date), 'MMMM d, yyyy'); } catch { return ''; } })() : ''}{event.venue ? ` · ${event.venue}` : ''}
-                      </Text>
-                      <Text style={styles.posterSeeMore}>See more →</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
             </View>
           )}
         </View>

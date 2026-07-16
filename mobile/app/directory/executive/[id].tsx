@@ -216,6 +216,8 @@ export default function ExecutiveDetailScreen() {
         fileType="image"
         fileName={name}
         showDownload={false}
+        showShare={false}
+        isHalfScreen={true}
       />
     </View>
   );

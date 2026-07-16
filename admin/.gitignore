@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+*-win32-*
+*-darwin-*
+*-linux-*
 
 # Environment secrets
 .env

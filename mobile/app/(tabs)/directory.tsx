@@ -188,6 +188,8 @@ export default function DirectoryScreen() {
                 fileType="image"
                 fileName={viewerFile.name}
                 showDownload={false} // Requirement: Institutional profiles are restricted
+                showShare={false}
+                isHalfScreen={true}
             />
         </View>
     );

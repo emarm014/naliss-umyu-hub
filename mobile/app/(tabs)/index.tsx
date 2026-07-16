@@ -267,18 +267,12 @@ export default function HomeScreen() {
   const rank = getUserRank(userPoints);
 
   const combinedItems = React.useMemo(() => {
-    const ann = announcements.map(a => ({
+    return announcements.map(a => ({
       ...a,
       _type: 'announcement' as const,
       _sortDate: new Date(a.published_at || a.created_at).getTime()
-    }));
-    const ev = events.map(e => ({
-      ...e,
-      _type: 'event' as const,
-      _sortDate: new Date(e.created_at || e.start_date || 0).getTime()
-    }));
-    return [...ann, ...ev].sort((a, b) => b._sortDate - a._sortDate);
-  }, [announcements, events]);
+    })).sort((a, b) => b._sortDate - a._sortDate);
+  }, [announcements]);
 
   const loadData = useCallback(async () => {
     const level = user?.level || undefined;

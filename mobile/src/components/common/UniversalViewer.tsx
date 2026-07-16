@@ -89,6 +89,8 @@ interface UniversalViewerProps {
   fileId?: string;           // material/past_question id — used to find vault file
   showDownload?: boolean;
   showShare?: boolean;
+  isHalfScreen?: boolean;
+  onViewProfile?: () => void;
 }
 
 interface ViewerContentProps {
@@ -104,14 +106,17 @@ interface ViewerContentProps {
   pdfEngine: 'local' | 'local_hd' | 'google' | 'microsoft';
   isOffline: boolean;
   onSingleTap?: () => void;
+  isHalfScreen?: boolean;
 }
 
 interface ZoomableImageProps {
   uri: string;
   onImageError: () => void;
+  isHalfScreen?: boolean;
 }
 
-const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError }) => {
+const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalfScreen }) => {
+  const { height } = useWindowDimensions();
   return (
     <ScrollView
       maximumZoomScale={5}
@@ -122,7 +127,7 @@ const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError }) => {
     >
       <Image
         source={{ uri }}
-        style={styles.image}
+        style={[styles.image, isHalfScreen && { height: height * 0.45 }]}
         resizeMode="contain"
         onError={onImageError}
       />
@@ -185,7 +190,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
 
   switch (fileType) {
     case 'image':
-      return <ZoomableImage uri={localUri} onImageError={onImageError} />;
+      return <ZoomableImage uri={localUri} onImageError={onImageError} isHalfScreen={isHalfScreen} />;
 
     case 'video':
       return <VideoPlayer localUri={localUri} remoteUrl={fileUri} />;
@@ -246,6 +251,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   fileId,
   showDownload = true,
   showShare = true,
+  isHalfScreen = false,
+  onViewProfile,
 }) => {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -484,7 +491,11 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       overlayStyle={StyleSheet.absoluteFill}
     >
       <BlurView intensity={80} style={StyleSheet.absoluteFill}>
-        <View style={[styles.container, isLandscape && { marginTop: 0, borderRadius: 0 }]}>
+        <View style={[
+          styles.container, 
+          isLandscape && { marginTop: 0, borderRadius: 0 },
+          isHalfScreen && { marginTop: height * 0.45, borderTopLeftRadius: 32, borderTopRightRadius: 32 }
+        ]}>
           {/* Header */}
           {shouldShowControls && (
             <View style={[styles.header, isLandscape && styles.landscapeOverlayHeader]}>
@@ -584,13 +595,15 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 pdfEngine={pdfEngine}
                 isOffline={isOffline}
                 onSingleTap={() => setShowControls(!showControls)}
+                isHalfScreen={isHalfScreen}
               />
             </View>
           </TouchableWithoutFeedback>
 
-          {/* Footer — only shown when download/share is enabled */}
-          {shouldShowControls && showDownload && (
-            <View style={[styles.footer, !showShare && { justifyContent: 'center' }, isLandscape && styles.landscapeOverlayFooter]}>
+          {/* Footer — shown when download/share is enabled OR onViewProfile exists */}
+          {shouldShowControls && (showDownload || showShare || onViewProfile) && (
+            <View style={[styles.footer, !showShare && !showDownload && { justifyContent: 'center' }, isLandscape && styles.landscapeOverlayFooter]}>
+              {showDownload && (
               <TouchableOpacity
                 style={[styles.footerAction, ((!localUri && isDownloading) || isSaving) && { opacity: 0.5 }]}
                 onPress={saveToDevice}
@@ -609,10 +622,17 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   {isSaving ? 'Saving…' : isSaved ? 'Saved!' : 'Save to Device'}
                 </Text>
               </TouchableOpacity>
+              )}
               {showShare && (
                 <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
                   <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
                   <Text style={styles.footerActionText}>Share</Text>
+                </TouchableOpacity>
+              )}
+              {onViewProfile && (
+                <TouchableOpacity style={styles.footerAction} onPress={onViewProfile}>
+                  <Ionicons name="person-circle-outline" size={20} color={COLORS.primary} />
+                  <Text style={styles.footerActionText}>View Full Profile</Text>
                 </TouchableOpacity>
               )}
             </View>

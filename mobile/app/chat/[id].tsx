@@ -163,7 +163,7 @@ export default function ChatScreen() {
     const [longPressedMessage, setLongPressedMessage] = useState<any>(null);
     const [viewerVisible, setViewerVisible] = useState(false);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-    const [viewerFile, setViewerFile] = useState<{ uri: string, type: any, name: string }>({ uri: '', type: 'document', name: '' });
+    const [viewerFile, setViewerFile] = useState<{ uri: string, type: any, name: string, isProfile?: boolean, profileData?: any }>({ uri: '', type: 'document', name: '' });
     const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
     const [uploadingIds, setUploadingIds] = useState<Record<string, number>>({});
     const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
@@ -1307,14 +1307,20 @@ export default function ChatScreen() {
     const openProfile = async (userId: string) => {
         // Show immediately from cached members while fresh data loads
         const cached = members.find(m => m.id === userId);
-        if (cached) setViewingProfile(cached);
+        if (cached) {
+            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url), type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
+            setViewerVisible(true);
+        }
 
         try {
             const { data } = await (supabase as any).from('users')
                 .select('*, department:departments(name)')
                 .eq('id', userId)
                 .single();
-            if (data) setViewingProfile(data as any);
+            if (data) {
+                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url), name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
+                if (!cached) setViewerVisible(true);
+            }
         } catch {
             // Keep cached version if fetch fails
         }
@@ -1324,14 +1330,20 @@ export default function ChatScreen() {
     const openProfileByUsername = async (username: string) => {
         const clean = username.startsWith('@') ? username.slice(1) : username;
         const cached = members.find(m => m.username === clean);
-        if (cached) setViewingProfile(cached);
+        if (cached) {
+            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url), type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
+            setViewerVisible(true);
+        }
 
         try {
             const { data } = await (supabase as any).from('users')
                 .select('*, department:departments(name)')
                 .eq('username', clean)
                 .single();
-            if (data) setViewingProfile(data as any);
+            if (data) {
+                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url), name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
+                if (!cached) setViewerVisible(true);
+            }
         } catch {
             // Keep cached version if fetch fails
         }
@@ -1479,6 +1491,11 @@ export default function ChatScreen() {
         const isSystem = item.sender_id === 'system';
         const isHighlighted = item.id === highlightedMessageId;
 
+        // Dynamically fetch the latest user profile from the members array
+        // This ensures profile updates (like username/avatar) reflect immediately even on cached messages
+        const liveMember = members.find(m => m.id === item.sender_id);
+        const displayUser = liveMember || item.user || {};
+
         const prevMsg = index > 0 ? groupedMessages[index - 1] : null;
         const isConsecutive = !!(prevMsg && prevMsg.sender_id === item.sender_id && item.sender_id !== 'system');
         const isWithinTimeThreshold = !!(
@@ -1509,19 +1526,19 @@ export default function ChatScreen() {
                         ) : (
                             <TouchableOpacity style={styles.messageAvatarContainer} onPress={() => openProfile(item.sender_id)}>
                                 {(() => {
-                                    const cleanUrl = getCleanAvatarUrl(item.user?.avatar_url);
+                                    const cleanUrl = getCleanAvatarUrl(displayUser?.avatar_url);
                                     return cleanUrl ? (
                                         <Image source={{ uri: cleanUrl }} style={styles.messageAvatarImage} />
                                     ) : (
                                         <View style={styles.messageAvatarPlaceholder}>
                                             <Text style={styles.messageAvatarText}>
-                                                {item.user?.username?.charAt(0)?.toUpperCase() || 'U'}
+                                                {displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}
                                             </Text>
                                         </View>
                                     );
                                 })()}
                                 {/* Crown badge for moderators */}
-                                {(item.user?.role === 'moderator' || item.user?.role === 'super_admin') && (
+                                {(displayUser?.role === 'moderator' || displayUser?.role === 'super_admin') && (
                                     <View style={[
                                         styles.modBadge,
                                         {
@@ -1540,13 +1557,13 @@ export default function ChatScreen() {
                             <View style={styles.senderInfoCol}>
                                 <View style={styles.senderInfoRow}>
                                     <TouchableOpacity onPress={() => openProfile(item.sender_id)}>
-                                        <Text style={styles.senderName}>{item.user?.username}</Text>
+                                        <Text style={styles.senderName}>{displayUser?.username}</Text>
                                     </TouchableOpacity>
                                     {/* Level badge — shown in General Hub next to every sender name */}
-                                    {isGeneralGroup && item.user?.level && (
+                                    {isGeneralGroup && displayUser?.level && (
                                         <View style={styles.levelBadgeInline}>
                                             <Text style={styles.levelBadgeInlineText}>
-                                                L{String(item.user.level).replace(/\D/g, '')}
+                                                L{String(displayUser.level).replace(/\D/g, '')}
                                             </Text>
                                         </View>
                                     )}
@@ -3249,7 +3266,7 @@ export default function ChatScreen() {
                                         const cleanUrl = getCleanAvatarUrl(viewingProfile.avatar_url);
                                         return cleanUrl ? (
                                             <TouchableOpacity onPress={() => {
-                                                setViewerFile({ uri: cleanUrl, name: viewingProfile.full_name || viewingProfile.username || 'Profile', type: 'image' });
+                                                setViewerFile({ uri: cleanUrl, name: viewingProfile.full_name || viewingProfile.username || 'Profile', type: 'image', isProfile: true, profileData: viewingProfile });
                                                 setViewerVisible(true);
                                             }}>
                                                 <Image source={{ uri: cleanUrl }} style={styles.profileAvatar} />
@@ -3503,6 +3520,15 @@ export default function ChatScreen() {
                 fileUri={viewerFile.uri}
                 fileType={viewerFile.type}
                 fileName={viewerFile.name}
+                showDownload={!viewerFile.isProfile}
+                showShare={!viewerFile.isProfile}
+                isHalfScreen={viewerFile.isProfile}
+                onViewProfile={viewerFile.isProfile && viewerFile.profileData ? () => {
+                    setViewerVisible(false);
+                    setTimeout(() => {
+                        setViewingProfile(viewerFile.profileData);
+                    }, 400); // Wait for modal slide down
+                } : undefined}
             />
                 </KeyboardAvoidingView>
             </SafeAreaView>

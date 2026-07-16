@@ -218,6 +218,8 @@ export default function LecturerDetailScreen() {
         fileType="image"
         fileName={lecturer.full_name}
         showDownload={false}
+        showShare={false}
+        isHalfScreen={true}
       />
     </View>
   );

@@ -104,6 +104,8 @@ const getUserRank = (points: number) => {
   return { label: 'Novice', icon: 'leaf' };
 };
 
+import { useNewsStore } from '../../src/stores/news.store';
+
 const quickActions = [
   { id: 'notepad', name: 'Notepad', icon: 'document-text', color: '#005A36', bg: '#e6f4ea', route: '/notepad' },
   { id: 'news', name: 'News', icon: 'newspaper', color: '#005A36', bg: '#e6f4ea', route: '/news' },
@@ -131,6 +133,8 @@ export default function HomeScreen() {
   const fetchMaterials = useResourceStore(s => s.fetchMaterials);
   const fetchCourses = useResourceStore(s => s.fetchCourses);
   const markAsRead = useAnnouncementStore(s => s.markAsRead);
+  const fetchNewsUnreadCount = useNewsStore(s => s.fetchUnreadCount);
+  const newsUnreadCount = useNewsStore(s => s.unreadCount);
   const [refreshing, setRefreshing] = React.useState(false);
   const notifications = useNotificationStore(s => s.notifications);
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -283,8 +287,9 @@ export default function HomeScreen() {
       fetchUpcomingEvents(level),
       fetchMaterials({ level }),
       fetchCourses(level),
+      fetchNewsUnreadCount(),
     ]);
-  }, [user?.level, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses]);
+  }, [user?.level, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses, fetchNewsUnreadCount]);
 
   useEffect(() => {
     fetchProfile();
@@ -449,6 +454,11 @@ export default function HomeScreen() {
               >
                 <View style={[styles.actionIconBg, { backgroundColor: isDark ? colors.surfaceVariant : action.bg }]}>
                   <Ionicons name={action.icon as any} size={24} color={action.color} />
+                  {action.id === 'news' && newsUnreadCount > 0 && (
+                    <View style={styles.newsBadge}>
+                      <Text style={styles.newsBadgeText}>{newsUnreadCount > 99 ? '99+' : newsUnreadCount}</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>{action.name}</Text>
               </TouchableOpacity>
@@ -748,6 +758,12 @@ const styles = StyleSheet.create({
   actionItem: { width: '30%', alignItems: 'center', marginBottom: 20 },
   actionIconBg: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   actionLabel: { fontFamily: 'Inter-Medium', fontSize: 12, color: '#1E293B', textAlign: 'center' },
+  newsBadge: {
+    position: 'absolute', top: -6, right: -6, backgroundColor: '#EF4444',
+    borderRadius: 12, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#FFF', paddingHorizontal: 4, zIndex: 10,
+  },
+  newsBadgeText: { color: '#FFF', fontSize: 9, fontFamily: 'Inter-Bold', lineHeight: 11 },
   emptyCard: {
     padding: 32, alignItems: 'center', backgroundColor: '#FFF',
     borderRadius: 16, borderWidth: 1, borderColor: '#F1F5F9', borderStyle: 'dashed',

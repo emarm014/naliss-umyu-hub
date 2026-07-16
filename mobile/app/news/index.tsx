@@ -18,6 +18,7 @@ import { useTheme } from '../../src/stores/theme.store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { format } from 'date-fns';
+import { useNewsStore } from '../../src/stores/news.store';
 
 const { width } = Dimensions.get('window');
 
@@ -168,9 +169,12 @@ export default function NewsScreen() {
     }
   }, []);
 
+  const markAsRead = useNewsStore(s => s.markAsRead);
+
   useEffect(() => {
+    markAsRead();
     fetchNews(0);
-  }, [fetchNews]);
+  }, [fetchNews, markAsRead]);
 
   const onRefresh = async () => {
     setIsRefreshing(true);

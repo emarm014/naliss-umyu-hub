@@ -1,0 +1,22 @@
+# Ignore the admin app and desktop builds
+admin/
+*.zip
+*-win32-*
+*-darwin-*
+*-linux-*
+
+# Ignore backend
+supabase/
+docs/
+
+# Ignore node_modules everywhere
+node_modules/
+mobile/node_modules/
+
+# Standard ignores
+.git/
+.expo/
+dist/
+npm-debug.log
+.idea/
+.vscode/

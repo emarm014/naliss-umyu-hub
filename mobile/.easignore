@@ -1,0 +1,8 @@
+node_modules/
+.expo/
+.git/
+dist/
+npm-debug.log
+.idea/
+.vscode/
+*-win32-*

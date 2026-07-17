@@ -1,13 +1,13 @@
 # Ignore the admin app and desktop builds
-admin/
+/admin/
 *.zip
 *-win32-*
 *-darwin-*
 *-linux-*
 
 # Ignore backend
-supabase/
-docs/
+/supabase/
+/docs/
 
 # Ignore node_modules everywhere
 node_modules/

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import Modal from '../components/ui/Modal';
@@ -62,6 +62,9 @@ export default function EventPoolManagementPage() {
  const [scoreInput, setScoreInput] = useState('');
  const [feedbackInput, setFeedbackInput] = useState('');
  const [podiumInput, setPodiumInput] = useState('');
+ 
+ // Participation Rule State
+ const [activeParticipationRule, setActiveParticipationRule] = useState('open');
 
  const [showCreateModal, setShowCreateModal] = useState<'create' | 'edit' | false>(false);
  const [editingPoolId, setEditingPoolId] = useState<string | null>(null);
@@ -145,6 +148,7 @@ export default function EventPoolManagementPage() {
 
  const loadPoolDetails = async (pool: EventPool) => {
  setSelectedPool(pool);
+ setActiveParticipationRule(pool.participation_rule);
  setActiveView('config');
  try {
  // Fetch metrics
@@ -201,6 +205,8 @@ export default function EventPoolManagementPage() {
  const total_time_limit_sec = total_time_limit_sec_raw ? parseInt(total_time_limit_sec_raw as string, 10) : null;
  const strict_once_off_selection = fd.get('strict_once_off_selection') === 'on';
  const instant_feedback = fd.get('instant_feedback') === 'on';
+ 
+ const allowed_levels = fd.getAll('allowed_levels') as string[];
 
  try {
  const updates = {
@@ -218,7 +224,8 @@ export default function EventPoolManagementPage() {
  ...(time_limit_per_question_sec !== null && { time_limit_per_question_sec }),
  ...(total_time_limit_sec !== null && { total_time_limit_sec }),
  strict_once_off_selection,
- instant_feedback
+ instant_feedback,
+ allowed_levels: allowed_levels.length > 0 ? allowed_levels : selectedPool.target_constraints?.allowed_levels
  }
  };
  const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
@@ -239,7 +246,7 @@ export default function EventPoolManagementPage() {
  }
  };
 
- const handleSaveEvaluation = async (subId: string, _userId: string) => {
+ const handleSaveEvaluation = async (subId: string, userId: string) => {
  if (!selectedPool) return;
  try {
  const updates = {
@@ -255,8 +262,18 @@ export default function EventPoolManagementPage() {
  // Update local state
  setSubmissions(submissions.map(s => s.id === subId ? { ...s, ...updates } : s));
 
- // If a podium status was assigned, generate announcement & update pool
+ // If a podium status was assigned, also write winner_position to pool_participants
  if (podiumInput) {
+ const positionMap: Record<string, number> = { 'Winner': 1, '1st Runner-Up': 2, '2nd Runner-Up': 3 };
+ const winnerPosition = positionMap[podiumInput] || null;
+
+ if (winnerPosition) {
+   await supabase.from('pool_participants')
+     .update({ winner_position: winnerPosition })
+     .eq('pool_id', selectedPool.id)
+     .eq('user_id', userId);
+ }
+
  await supabase.from('event_pools').update({ status: 'completed' }).eq('id', selectedPool.id);
  
  supabase.functions.invoke('event-pool-broadcaster', {
@@ -264,7 +281,7 @@ export default function EventPoolManagementPage() {
  }).catch(e => console.error('Broadcast failed:', e));
 
  alert(`Winner successfully recorded and Pool marked as completed! Automated announcement triggered.`);
- fetchPools(); // refresh list
+ fetchPools();
  } else {
  alert('Grade saved successfully.');
  }
@@ -272,6 +289,28 @@ export default function EventPoolManagementPage() {
  setEditingSubId(null);
  } catch (e: any) {
  alert('Error evaluating: ' + e.message);
+ }
+ };
+
+ const handleDeclareAndFeatureWinner = async () => {
+ if (!selectedPool) return;
+ const winnerSub = submissions.find(s => s.podium_status === 'Winner');
+ if (!winnerSub) { alert('No Winner has been assigned yet. Use the Evaluate tab to assign a podium status first.'); return; }
+ if (!window.confirm(`Feature "${winnerSub.users?.full_name}" as Event Winner for "${selectedPool.title}"?`)) return;
+ try {
+   const { error } = await supabase.from('featured_students').insert([{
+     user_id: winnerSub.user_id,
+     type: 'event_winner',
+     scope: 'department',
+     title: `Event Pool Winner — ${selectedPool.title}`,
+     subtitle: `Winner of ${selectedPool.title}`,
+     pool_id: selectedPool.id,
+     is_active: true,
+   }]);
+   if (error) throw error;
+   alert('🎉 Winner has been featured! Students will see the announcement in their app.');
+ } catch (e: any) {
+   alert('Failed to feature winner: ' + e.message);
  }
  };
 
@@ -552,7 +591,7 @@ export default function EventPoolManagementPage() {
  </div>
  <div>
  <label className="block text-sm font-semibold text-gray-700 mb-1">Participation Rule</label>
- <select name="participation_rule" defaultValue={selectedPool.participation_rule} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 ">
+ <select name="participation_rule" value={activeParticipationRule} onChange={(e) => setActiveParticipationRule(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 ">
  <option value="open">Open (All)</option>
  <option value="level_based">Level Based</option>
  <option value="department_based">Department Based</option>
@@ -573,12 +612,35 @@ export default function EventPoolManagementPage() {
  <label className="block text-xs font-semibold text-slate-500 mb-1">Max Participants</label>
  <input type="number" name="max_participants" defaultValue={selectedPool.target_constraints?.max_participants || ''} placeholder="e.g. 50" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
  </div>
- <div>
- <label className="block text-xs font-semibold text-slate-500 mb-1">Application Deadline</label>
- <input type="datetime-local" name="application_deadline" defaultValue={selectedPool.target_constraints?.application_deadline ? new Date(selectedPool.target_constraints.application_deadline).toISOString().slice(0, 16) : ''} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
- </div>
- </div>
- </div>
+  <div>
+  <label className="block text-xs font-semibold text-slate-500 mb-1">Application Deadline</label>
+  <input type="datetime-local" name="application_deadline" defaultValue={selectedPool.target_constraints?.application_deadline ? new Date(selectedPool.target_constraints.application_deadline).toISOString().slice(0, 16) : ''} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 " />
+  </div>
+  </div>
+
+  {activeParticipationRule === 'level_based' && (
+      <div className="mt-4 p-3 bg-white border rounded-lg border-slate-200">
+          <label className="block text-xs font-semibold text-slate-500 mb-2">Allowed Levels</label>
+          <div className="flex flex-wrap gap-3">
+              {['100', '200', '300', '400', '500', '600'].map(level => {
+                  const isChecked = selectedPool.target_constraints?.allowed_levels?.includes(level);
+                  return (
+                      <label key={level} className="flex items-center gap-1.5 text-sm text-gray-700">
+                          <input type="checkbox" name="allowed_levels" value={level} defaultChecked={isChecked} className="rounded text-primary-600 focus:ring-primary-500" />
+                          Level {level}
+                      </label>
+                  );
+              })}
+          </div>
+      </div>
+  )}
+  {activeParticipationRule === 'individual_selection' && (
+      <div className="mt-4 p-3 bg-amber-50 border rounded-lg border-amber-200">
+          <label className="block text-xs font-semibold text-amber-800 mb-1">Invite-Only Warning</label>
+          <p className="text-sm text-amber-700">This feature requires manual additions to the selected_users database constraint. A dedicated invite UI will be built out shortly.</p>
+      </div>
+  )}
+  </div>
 
  <div className="bg-slate-50 p-4 rounded-xl space-y-4 border border-slate-100 ">
  <h3 className="font-semibold text-sm text-slate-700">Scheduling Properties</h3>
@@ -922,6 +984,22 @@ export default function EventPoolManagementPage() {
  <CheckCircle className="h-4 w-4" /> Save Result
  </button>
  </div>
+ </div>
+ )}
+
+ {/* Declare & Feature Winner Button */}
+ {submissions.some(s => s.podium_status === 'Winner') && (
+ <div className="mt-6 p-5 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between shadow-sm">
+  <div className="flex items-center gap-3">
+   <div className="bg-amber-100 p-3 rounded-lg"><Crown className="h-5 w-5 text-amber-600" /></div>
+   <div>
+    <p className="font-bold text-amber-900">Winner Assigned</p>
+    <p className="text-sm text-amber-600">{submissions.find(s => s.podium_status === 'Winner')?.users?.full_name} — Tap to feature them in the app.</p>
+   </div>
+  </div>
+  <button onClick={handleDeclareAndFeatureWinner} className="px-5 py-2.5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-all shadow-lg shadow-amber-600/20 flex items-center gap-2 text-sm">
+   <Crown className="h-4 w-4" /> Feature Winner
+  </button>
  </div>
  )}
  </div>

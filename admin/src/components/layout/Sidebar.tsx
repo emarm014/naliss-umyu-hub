@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Newspaper,
   Trophy,
+  Crown,
 } from 'lucide-react';
 import { NalissLogo } from '../NalissLogo';
 
@@ -37,6 +38,7 @@ const navigation = [
   { name: 'Announcements', href: '/announcements', icon: FileText, minRole: 'moderator' as const, permission: 'can_manage_announcements' as const },
   { name: 'Events', href: '/events', icon: Calendar, minRole: 'super_admin' as const },
   { name: 'Event Pools', href: '/event-pools', icon: Trophy, minRole: 'super_admin' as const },
+  { name: 'Featured Students', href: '/featured-students', icon: Crown, minRole: 'super_admin' as const },
   { name: 'News', href: '/news', icon: Newspaper, minRole: 'moderator' as const, permission: 'can_manage_news' as const },
   { name: 'Archive', href: '/archive', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_archives' as const },
   { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_materials' as const },
@@ -96,6 +98,7 @@ export default function Sidebar() {
       case '/announcements': import('../../pages/AnnouncementsPage'); break;
       case '/events': import('../../pages/EventsPage'); break;
       case '/event-pools': import('../../pages/EventPoolManagementPage'); break;
+      case '/featured-students': import('../../pages/FeaturedStudentsPage'); break;
       case '/news': import('../../pages/NewsManagementPage'); break;
       case '/archive': import('../../pages/ArchiveManagementPage'); break;
       case '/materials': import('../../pages/MaterialsPage'); break;

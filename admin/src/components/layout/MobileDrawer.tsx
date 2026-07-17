@@ -6,7 +6,7 @@ import {
   GraduationCap, Briefcase, FolderOpen, BarChart3,
   History, Archive, UsersRound, BookOpen, Cloud,
   Wrench, HelpCircle, LogOut, Calendar, Images,
-  HardDrive, X, ShieldCheck, Newspaper, Trophy,
+  HardDrive, X, ShieldCheck, Newspaper, Trophy, Crown,
 } from 'lucide-react';
 import { NalissLogo } from '../NalissLogo';
 
@@ -18,6 +18,7 @@ const allNav = [
   { name: 'Announcements', href: '/announcements', icon: FileText, minRole: 'moderator' as const, permission: 'can_manage_announcements' as const },
   { name: 'Events', href: '/events', icon: Calendar, minRole: 'super_admin' as const },
   { name: 'Event Pools', href: '/event-pools', icon: Trophy, minRole: 'super_admin' as const },
+  { name: 'Featured Students', href: '/featured-students', icon: Crown, minRole: 'super_admin' as const },
   { name: 'News', href: '/news', icon: Newspaper, minRole: 'moderator' as const, permission: 'can_manage_news' as const },
   { name: 'Archive', href: '/archive', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_archives' as const },
   { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_materials' as const },

@@ -12,6 +12,8 @@ import { format } from 'date-fns';
 import { supabase } from '../../src/api/supabase/client';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { useAuthStore } from '../../src/stores';
+import { RegistrationOverlay } from './../(tabs)/announcements';
 
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 
@@ -72,6 +74,8 @@ function EventDetailsContent() {
     const { events } = useEventStore();
     const event = events.find(e => e.id === id);
     const [viewerVisible, setViewerVisible] = useState(false);
+    const user = useAuthStore(s => s.profile);
+    const [activeApplyPoolId, setActiveApplyPoolId] = useState<string | null>(null);
 
     useEffect(() => {
         if (!event) return;
@@ -180,6 +184,17 @@ function EventDetailsContent() {
                     </TouchableOpacity>
                 )}
 
+                {/* Participate in Pool Button */}
+                {event.pool_id && (
+                    <TouchableOpacity style={[styles.joinBtn, { marginTop: event.is_virtual && event.virtual_link ? 8 : 0 }]} onPress={() => setActiveApplyPoolId(event.pool_id || null)} activeOpacity={0.85}>
+                        <LinearGradient colors={['#059669', '#10b981']} style={styles.joinBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                            <Ionicons name='clipboard-outline' size={20} color='#fff' />
+                            <Text style={styles.joinBtnText}>Participate in Pool</Text>
+                            <Ionicons name='arrow-forward' size={18} color='rgba(255,255,255,0.7)' />
+                        </LinearGradient>
+                    </TouchableOpacity>
+                )}
+
                 {/*  About Section  */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
@@ -201,6 +216,14 @@ function EventDetailsContent() {
                     fileName={event.title}
                     showDownload={true}
                     showShare={false}
+                />
+            )}
+
+            {activeApplyPoolId && (
+                <RegistrationOverlay 
+                    poolId={activeApplyPoolId} 
+                    user={user} 
+                    onClose={() => setActiveApplyPoolId(null)} 
                 />
             )}
         </View>

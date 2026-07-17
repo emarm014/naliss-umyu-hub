@@ -144,6 +144,18 @@ export default function EventPoolRoom() {
         };
 
         initRoom();
+
+        const channel = supabase.channel(`pool_updates_${id}`)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` }, (payload) => {
+                if (payload.new) {
+                    setPool(prev => prev ? { ...prev, ...payload.new } as EventPoolDetail : null);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [id]);
 
     const handleFinalSubmit = async (autoSubmitted: boolean = false, customPayload?: any) => {
@@ -310,11 +322,11 @@ export default function EventPoolRoom() {
         return () => clearInterval(interval);
     }, [currentIndex, pool, isTimeUp, isSubmitting, questions.length]);
 
-    const cardBg = isDark ? '#1E2638' : '#FFFFFF';
-    const textColor = isDark ? '#FFFFFF' : '#0f172a';
-    const subtextColor = isDark ? '#94a3b8' : '#64748b';
-    const borderColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-    const brandColor = '#059669'; // Replaced official primary green theme (#059669)
+    const cardBg = colors.card;
+    const textColor = colors.text;
+    const subtextColor = colors.textMuted;
+    const borderColor = colors.border;
+    const brandColor = COLORS.primary;
 
     const renderTabs = () => {
         const tabs: { id: TabId; label: string }[] = [
@@ -485,7 +497,7 @@ export default function EventPoolRoom() {
                         let bdrColor = borderColor;
 
                         if (isSelected) {
-                            bgColor = isDark ? 'rgba(5, 150, 105, 0.1)' : '#ecfdf5';
+                            bgColor = isDark ? `${brandColor}15` : `${brandColor}10`;
                             bdrColor = brandColor;
                         }
 

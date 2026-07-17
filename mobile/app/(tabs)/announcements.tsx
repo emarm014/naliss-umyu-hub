@@ -203,7 +203,7 @@ export default function AnnouncementsScreen() {
     );
 }
 
-function RegistrationOverlay({ poolId, user, onClose }: { poolId: string, user: any, onClose: () => void }) {
+export function RegistrationOverlay({ poolId, user, onClose }: { poolId: string, user: any, onClose: () => void }) {
     const { colors } = useTheme();
     const [poolData, setPoolData] = useState<any>(null);
     const [appCount, setAppCount] = useState(0);
@@ -310,11 +310,39 @@ function RegistrationOverlay({ poolId, user, onClose }: { poolId: string, user: 
                             )}
                         </View>
 
-                        {existingApp ? (
-                            <View style={overlayStyles.alertBox}>
-                                <Ionicons name="checkmark-circle" size={24} color="#059669" />
-                                <Text style={overlayStyles.alertText}>You have already applied! Status: <Text style={{fontWeight: 'bold', textTransform: 'capitalize'}}>{existingApp.status}</Text></Text>
+                        {existingApp && existingApp.status === 'approved' ? (
+                            <View style={{ gap: 16 }}>
+                                <View style={overlayStyles.alertBox}>
+                                    <Ionicons name="checkmark-circle" size={24} color="#059669" />
+                                    <Text style={overlayStyles.alertText}>Your application is <Text style={{fontWeight: 'bold', textTransform: 'capitalize'}}>approved</Text>!</Text>
+                                </View>
+                                <TouchableOpacity 
+                                    style={overlayStyles.submitBtn} 
+                                    onPress={() => {
+                                        onClose();
+                                        router.push(`/event-pool/${poolId}` as any);
+                                    }}
+                                >
+                                    <Text style={overlayStyles.submitBtnText}>Enter Live Room</Text>
+                                    <Ionicons name="arrow-forward" size={18} color="#fff" style={{ position: 'absolute', right: 20 }} />
+                                </TouchableOpacity>
                             </View>
+                        ) : existingApp && existingApp.status === 'pending' ? (
+                            <View style={[overlayStyles.alertBox, { backgroundColor: '#fef3c7' }]}>
+                                <Ionicons name="time" size={24} color="#d97706" />
+                                <Text style={[overlayStyles.alertText, { color: '#d97706' }]}>Your application is pending approval.</Text>
+                            </View>
+                        ) : poolData.participation_rule === 'open' ? (
+                            <TouchableOpacity 
+                                style={overlayStyles.submitBtn} 
+                                onPress={() => {
+                                    onClose();
+                                    router.push(`/event-pool/${poolId}` as any);
+                                }}
+                            >
+                                <Text style={overlayStyles.submitBtnText}>Enter Live Room</Text>
+                                <Ionicons name="arrow-forward" size={18} color="#fff" style={{ position: 'absolute', right: 20 }} />
+                            </TouchableOpacity>
                         ) : isClosedByTime ? (
                             <View style={[overlayStyles.alertBox, { backgroundColor: '#fee2e2' }]}>
                                 <Ionicons name="time" size={24} color="#dc2626" />

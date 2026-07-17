@@ -58,6 +58,7 @@ const SecurityPage = safeLazy(() => import('./pages/SecurityPage'));
 const ArchiveManagementPage = safeLazy(() => import('./pages/ArchiveManagementPage'));
 const NewsManagementPage = safeLazy(() => import('./pages/NewsManagementPage'));
 const EventPoolManagementPage = safeLazy(() => import('./pages/EventPoolManagementPage'));
+const FeaturedStudentsPage = safeLazy(() => import('./pages/FeaturedStudentsPage'));
 
 // Skeleton loader for Suspense fallback
 function PageLoaderSkeleton() {
@@ -135,6 +136,7 @@ function App() {
                   <Route path="/logs" element={<ActivityLogsPage />} />
                   <Route path="/events" element={<EventsPage />} />
                   <Route path="/event-pools" element={<EventPoolManagementPage />} />
+                  <Route path="/featured-students" element={<FeaturedStudentsPage />} />
                 </Route>
 
                 {/* Students — gated by can_manage_students */}

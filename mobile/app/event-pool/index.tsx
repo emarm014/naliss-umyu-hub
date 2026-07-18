@@ -103,6 +103,16 @@ export default function EventPoolDashboard() {
         staleTime: 5 * 60 * 1000, // 5 minutes
     });
 
+    const { data: myApplications = [] } = useQuery({
+        queryKey: ['my_pool_applications', profile?.id],
+        queryFn: async () => {
+            if (!profile?.id) return [];
+            const { data } = await supabase.from('pool_applications').select('pool_id, status').eq('user_id', profile.id);
+            return data || [];
+        },
+        enabled: !!profile?.id
+    });
+
     useEffect(() => {
         const interval = setInterval(() => setTick(t => t + 1), 1000);
         return () => clearInterval(interval);
@@ -143,7 +153,8 @@ export default function EventPoolDashboard() {
             if (error) {
                 alert(error.message);
             } else {
-                alert('Ticket Secured Successfully! 🎉');
+                alert('Application Submitted! 🎉 Waiting for admin approval.');
+                queryClient.invalidateQueries({ queryKey: ['my_pool_applications'] });
                 refetch();
             }
         } catch (e: any) {
@@ -158,6 +169,8 @@ export default function EventPoolDashboard() {
         const maxParticipants = item.target_constraints?.max_participants;
         const currentParticipants = item.target_constraints?.selected_users?.length || 0;
         const isRegistered = item.target_constraints?.selected_users?.includes(profile?.id);
+        const myApp = myApplications.find((app: any) => app.pool_id === item.id);
+        const appStatus = myApp?.status || (isRegistered ? 'approved' : null);
         const isFull = maxParticipants && currentParticipants >= maxParticipants;
         
         let eligibilityMsg = null;
@@ -231,10 +244,20 @@ export default function EventPoolDashboard() {
                             </TouchableOpacity>
                         ) : (
                             <View>
-                                {isRegistered ? (
+                                {isRegistered || appStatus === 'approved' ? (
                                     <View style={[styles.joinBtn, { backgroundColor: '#22c55e' }]}>
                                         <Ionicons name="ticket" size={18} color="#fff" />
                                         <Text style={styles.joinBtnText}>Ticket Secured</Text>
+                                    </View>
+                                ) : appStatus === 'pending' ? (
+                                    <View style={[styles.joinBtn, { backgroundColor: '#eab308' }]}>
+                                        <Ionicons name="time" size={18} color="#fff" />
+                                        <Text style={styles.joinBtnText}>Pending Approval</Text>
+                                    </View>
+                                ) : appStatus === 'rejected' ? (
+                                    <View style={[styles.joinBtn, { backgroundColor: '#ef4444' }]}>
+                                        <Ionicons name="close-circle" size={18} color="#fff" />
+                                        <Text style={styles.joinBtnText}>Application Denied</Text>
                                     </View>
                                 ) : eligibilityMsg ? (
                                     <View style={[styles.joinBtn, { backgroundColor: '#f3f4f6' }]}>
@@ -242,24 +265,17 @@ export default function EventPoolDashboard() {
                                         <Text style={[styles.joinBtnText, { color: '#9ca3af' }]}>{eligibilityMsg}</Text>
                                     </View>
                                 ) : isFull ? (
-                                    <View style={[styles.joinBtn, { backgroundColor: '#ef4444' }]}>
-                                        <Ionicons name="close-circle" size={18} color="#fff" />
-                                        <Text style={styles.joinBtnText}>Event Full</Text>
-                                    </View>
+                                    null
                                 ) : isRegistrationEnabled ? (
                                     <TouchableOpacity 
-                                        style={[styles.joinBtn, { backgroundColor: '#3b82f6' }]}
+                                        style={[styles.joinBtn, { opacity: securingTicketId === item.id ? 0.7 : 1 }]}
                                         onPress={() => handleSecureTicket(item.id)}
                                         disabled={securingTicketId === item.id}
                                     >
-                                        {securingTicketId === item.id ? (
-                                            <Text style={styles.joinBtnText}>Securing...</Text>
-                                        ) : (
-                                            <>
-                                                <Ionicons name="add-circle-outline" size={18} color="#fff" />
-                                                <Text style={styles.joinBtnText}>Secure Ticket</Text>
-                                            </>
-                                        )}
+                                        <Ionicons name="add-circle-outline" size={18} color="#fff" />
+                                        <Text style={styles.joinBtnText}>
+                                            {securingTicketId === item.id ? 'Securing...' : 'Apply for Ticket'}
+                                        </Text>
                                     </TouchableOpacity>
                                 ) : (
                                     <View style={[styles.joinBtn, { backgroundColor: '#f3f4f6' }]}>

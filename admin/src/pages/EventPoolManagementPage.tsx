@@ -331,6 +331,37 @@ export default function EventPoolManagementPage() {
  }
  };
 
+ const handleUnapproveApplication = async (appId: string) => {
+ if (!window.confirm("Are you sure you want to cancel this user's ticket?")) return;
+ try {
+ const { error } = await supabase.rpc('unapprove_pool_application', { p_application_id: appId });
+ if (error) throw error;
+ 
+ setApplications(applications.map(a => a.id === appId ? { ...a, status: 'rejected' } : a));
+ setParticipantsCount(prev => Math.max(0, prev - 1));
+ alert('Ticket cancelled successfully.');
+ } catch (e: any) {
+ alert('Failed to cancel ticket: ' + e.message);
+ }
+ };
+
+ const handleApproveAllPending = async () => {
+ if (!selectedPool) return;
+ if (!window.confirm("Approve all pending applications up to the max capacity?")) return;
+ try {
+ const { data, error } = await supabase.rpc('approve_all_pool_applications', { p_pool_id: selectedPool.id });
+ if (error) throw error;
+ 
+ const approvedCount = data?.approved_count || 0;
+ alert(`Successfully approved ${approvedCount} application(s).`);
+ 
+ // Refresh applications and participant count
+ loadPoolDetails(selectedPool);
+ } catch (e: any) {
+ alert('Failed to bulk approve: ' + e.message);
+ }
+ };
+
  const handleSaveInstructions = async (e: React.FormEvent<HTMLFormElement>) => {
  e.preventDefault();
  if (!selectedPool) return;
@@ -1008,6 +1039,11 @@ export default function EventPoolManagementPage() {
  {/* 4. Registrations Table */}
  {activeView === 'applications' && (
  <div className="space-y-4">
+ <div className="flex justify-end">
+    <button onClick={handleApproveAllPending} disabled={!applications.some(a => a.status === 'pending')} className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        Approve All Pending
+    </button>
+ </div>
  {applications.length === 0 ? (
  <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
  No registrations received yet.
@@ -1034,14 +1070,24 @@ export default function EventPoolManagementPage() {
  {new Date(app.created_at).toLocaleDateString()}
  </td>
  <td className="px-4 py-3">
- <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${app.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+ <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${app.status === 'approved' ? 'bg-green-100 text-green-700' : app.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
  {app.status}
  </span>
  </td>
  <td className="px-4 py-3 text-right">
  {app.status === 'pending' && (
+ <div className="flex justify-end gap-2">
  <button onClick={() => handleApproveApplication(app.id)} className="px-3 py-1.5 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors">
  Approve
+ </button>
+ <button onClick={() => handleUnapproveApplication(app.id)} className="px-3 py-1.5 bg-red-100 text-red-700 font-medium rounded-lg hover:bg-red-200 transition-colors">
+ Reject
+ </button>
+ </div>
+ )}
+ {app.status === 'approved' && (
+ <button onClick={() => handleUnapproveApplication(app.id)} className="px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 font-medium rounded-lg hover:bg-red-100 transition-colors text-xs">
+ Cancel Ticket
  </button>
  )}
  </td>

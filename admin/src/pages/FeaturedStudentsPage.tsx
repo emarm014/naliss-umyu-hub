@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Crown, Star, Trophy, Plus, Search, Edit, Trash2, Eye, EyeOff,
-  CheckCircle, X, Users, Calendar, Award, Sparkles, Heart, Image,
-  ChevronLeft, ChevronRight, Clock, ShieldCheck, Send
+  CheckCircle, X, Users, Calendar, Sparkles, Heart,
+  ChevronLeft, ChevronRight, Clock, Send
 } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Modal from '../components/ui/Modal';

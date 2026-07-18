@@ -73,9 +73,6 @@ export default function EventPoolManagementPage() {
  const [invitedUsers, setInvitedUsers] = useState<any[]>([]);
  const [isInviteSearching, setIsInviteSearching] = useState(false);
 
- // Department list
- const [departments, setDepartments] = useState<any[]>([]);
-
  const [showCreateModal, setShowCreateModal] = useState<'create' | 'edit' | false>(false);
  const [editingPoolId, setEditingPoolId] = useState<string | null>(null);
  const [newPoolTitle, setNewPoolTitle] = useState('');
@@ -86,13 +83,7 @@ export default function EventPoolManagementPage() {
  useEffect(() => {
  fetchPools();
  fetchEvents();
- fetchDepartments();
  }, []);
-
- const fetchDepartments = async () => {
- const { data } = await supabase.from('departments').select('id, name').order('name');
- if (data) setDepartments(data);
- };
 
  const fetchInviteUsers = async (query: string, level: string) => {
  setIsInviteSearching(true);
@@ -279,7 +270,6 @@ export default function EventPoolManagementPage() {
  const instant_feedback = fd.get('instant_feedback') === 'on';
  
  const allowed_levels = fd.getAll('allowed_levels') as string[];
- const allowed_departments = fd.getAll('allowed_departments') as string[];
 
  try {
  const updates = {
@@ -299,7 +289,6 @@ export default function EventPoolManagementPage() {
  strict_once_off_selection,
  instant_feedback,
  allowed_levels: allowed_levels.length > 0 ? allowed_levels : selectedPool.target_constraints?.allowed_levels,
- allowed_departments: allowed_departments.length > 0 ? allowed_departments : selectedPool.target_constraints?.allowed_departments,
  ...(participation_rule === 'individual_selection' && { selected_users: invitedUsers.map(u => u.id) })
  }
  };
@@ -700,7 +689,6 @@ export default function EventPoolManagementPage() {
  <select name="participation_rule" value={activeParticipationRule} onChange={(e) => setActiveParticipationRule(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 ">
  <option value="open">Open (All)</option>
  <option value="level_based">Level Based</option>
- <option value="department_based">Department Based</option>
  <option value="individual_selection">Select Participants (Invite-Only)</option>
  </select>
  </div>
@@ -728,7 +716,7 @@ export default function EventPoolManagementPage() {
       <div className="mt-4 p-3 bg-white border rounded-lg border-slate-200">
           <label className="block text-xs font-semibold text-slate-500 mb-2">Allowed Levels</label>
           <div className="flex flex-wrap gap-3">
-              {['100', '200', '300', '400', '500', '600'].map(level => {
+              {['100', '200', '300', '400'].map(level => {
                   const isChecked = selectedPool.target_constraints?.allowed_levels?.includes(level);
                   return (
                       <label key={level} className="flex items-center gap-1.5 text-sm text-gray-700">
@@ -738,26 +726,6 @@ export default function EventPoolManagementPage() {
                   );
               })}
           </div>
-      </div>
-  )}
-  {activeParticipationRule === 'department_based' && (
-      <div className="mt-4 p-3 bg-white border rounded-lg border-slate-200">
-          <label className="block text-xs font-semibold text-slate-500 mb-2">Allowed Departments</label>
-          {departments.length === 0 ? (
-              <p className="text-sm text-gray-400">No departments found in the database.</p>
-          ) : (
-              <div className="flex flex-wrap gap-3">
-                  {departments.map(dept => {
-                      const isChecked = selectedPool.target_constraints?.allowed_departments?.includes(dept.id);
-                      return (
-                          <label key={dept.id} className="flex items-center gap-1.5 text-sm text-gray-700">
-                              <input type="checkbox" name="allowed_departments" value={dept.id} defaultChecked={isChecked} className="rounded text-primary-600 focus:ring-primary-500" />
-                              {dept.name}
-                          </label>
-                      );
-                  })}
-              </div>
-          )}
       </div>
   )}
   {activeParticipationRule === 'individual_selection' && (
@@ -791,8 +759,6 @@ export default function EventPoolManagementPage() {
                           <option value="200">Level 200</option>
                           <option value="300">Level 300</option>
                           <option value="400">Level 400</option>
-                          <option value="500">Level 500</option>
-                          <option value="600">Level 600</option>
                       </select>
                   </div>
 

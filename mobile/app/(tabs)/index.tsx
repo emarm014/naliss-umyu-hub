@@ -105,12 +105,15 @@ const getUserRank = (points: number) => {
 };
 
 import { useNewsStore } from '../../src/stores/news.store';
+import { useQuery } from '@tanstack/react-query';
+import { mmkvStorage } from '../../src/stores/mmkv.storage';
+import { supabase } from '../../src/api/supabase/client';
 
 const quickActions = [
   { id: 'notepad', name: 'Notepad', icon: 'document-text', color: '#005A36', bg: '#e6f4ea', route: '/notepad' },
   { id: 'news', name: 'News', icon: 'newspaper', color: '#005A36', bg: '#e6f4ea', route: '/news' },
   { id: 'archive', name: 'ARCHIVE', icon: 'library', color: '#059669', bg: '#ecfdf5', route: '/archive' },
-  { id: 'courses', name: 'Courses', icon: 'library', color: '#ea580c', bg: '#fff7ed', route: '/(tabs)/resources?tab=courses' },
+  { id: 'fyb', name: 'FYB', icon: 'star', color: '#d97706', bg: '#fef3c7', route: '/fyb' },
   { id: 'event_pool', name: 'Event Pool', icon: 'trophy', color: '#d97706', bg: '#fef3c7', route: '/event-pool' },
   { id: 'directory', name: 'Directory', icon: 'people', color: '#0891b2', bg: '#ecfeff', route: '/(tabs)/resources?tab=directory' },
 ];
@@ -138,6 +141,40 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
   const notifications = useNotificationStore(s => s.notifications);
   const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  // ─── Pinned Featured Students (FYB) ───────────────────────
+  const FYB_CACHE_KEY = 'home_pinned_fyb_cache';
+  const { data: pinnedFeatured = [] } = useQuery({
+    queryKey: ['home_pinned_fyb'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('featured_students')
+        .select(`
+          id, title, subtitle, custom_image_url, published_at, expires_at,
+          users ( full_name, username, avatar_url )
+        `)
+        .eq('is_active', true)
+        .neq('type', 'event_winner')
+        .order('published_at', { ascending: false });
+      if (error) throw error;
+      const result = data || [];
+      mmkvStorage.setItem(FYB_CACHE_KEY, JSON.stringify(result)).catch(() => {});
+      return result;
+    },
+    initialData: () => {
+      try {
+        const cached = mmkvStorage.getStringSync?.(FYB_CACHE_KEY);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+      return undefined;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activePinnedFeatured = React.useMemo(() => {
+    const now = new Date();
+    return (pinnedFeatured as any[]).filter((f: any) => !f.expires_at || new Date(f.expires_at) > now);
+  }, [pinnedFeatured]);
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -458,6 +495,48 @@ export default function HomeScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* ─── Pinned Featured Students (FYB) ─────────────── */}
+          {activePinnedFeatured.length > 0 && (
+            <View style={{ marginBottom: 20 }}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Featured Students</Text>
+                <TouchableOpacity onPress={() => router.push('/fyb' as any)}>
+                  <Text style={[styles.seeAllText, { color: theme.gradient[2] }]}>See All</Text>
+                </TouchableOpacity>
+              </View>
+              {activePinnedFeatured.map((item: any) => (
+                <TouchableOpacity
+                  key={`fyb-${item.id}`}
+                  style={[styles.posterCard, { marginBottom: 12 }]}
+                  onPress={() => router.push('/fyb' as any)}
+                  activeOpacity={0.85}
+                >
+                  <PosterImage
+                    uri={item.custom_image_url ? getOptimizedCloudinaryUrl(item.custom_image_url, 600, 400) : undefined}
+                    fallbackUri={item.custom_image_url || undefined}
+                    style={styles.posterImage}
+                    gradientColors={['#d97706', '#ea580c']}
+                  />
+                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.posterGradient} />
+                  <View style={styles.posterContent}>
+                    <View style={styles.posterTagRow}>
+                      <View style={[styles.posterTag, { backgroundColor: '#d97706' }]}>
+                        <Text style={styles.posterTagText}>FEATURED</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      {item.users?.avatar_url ? (
+                        <Image source={{ uri: item.users.avatar_url }} style={{ width: 20, height: 20, borderRadius: 10 }} />
+                      ) : null}
+                      <Text style={styles.posterMeta} numberOfLines={1}>{item.users?.full_name || 'Student'}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Combined Announcements & Events */}
           <View style={styles.sectionHeader}>

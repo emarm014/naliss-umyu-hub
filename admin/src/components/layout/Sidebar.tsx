@@ -5,7 +5,7 @@ import {
   LayoutDashboard,
   Users,
   FileText,
-  MessageSquare,
+  Image as ImageIcon,
   GraduationCap,
   Briefcase,
   FolderOpen,
@@ -43,7 +43,7 @@ const navigation = [
   { name: 'Archive', href: '/archive', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_archives' as const },
   { name: 'Materials', href: '/materials', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_materials' as const },
   { name: 'Past Questions', href: '/past-questions', icon: HelpCircle, minRole: 'moderator' as const, permission: 'can_manage_past_questions' as const },
-  { name: 'Messaging', href: '/messaging', icon: MessageSquare, minRole: 'moderator' as const, permission: 'can_manage_messaging' as const },
+  { name: 'Gallery', href: '/gallery', icon: ImageIcon, minRole: 'moderator' as const, permission: 'can_manage_messaging' as const },
   { name: 'Group Media', href: '/group-media', icon: Images, minRole: 'moderator' as const, permission: 'can_manage_group_media' as const },
   { name: 'Storage', href: '/storage', icon: HardDrive, minRole: 'moderator' as const, permission: 'can_manage_storage' as const },
   { name: 'Courses', href: '/courses', icon: BookOpen, minRole: 'super_admin' as const },
@@ -103,7 +103,7 @@ export default function Sidebar() {
       case '/archive': import('../../pages/ArchiveManagementPage'); break;
       case '/materials': import('../../pages/MaterialsPage'); break;
       case '/past-questions': import('../../pages/PastQuestionsPage'); break;
-      case '/messaging': import('../../pages/MessagingPage'); break;
+      case '/gallery': import('../../pages/GalleryPage'); break;
       case '/group-media': import('../../pages/GroupMediaPage'); break;
       case '/storage': import('../../pages/ModeratorStoragePage'); break;
       case '/courses': import('../../pages/CoursesPage'); break;

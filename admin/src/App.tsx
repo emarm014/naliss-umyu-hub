@@ -40,7 +40,7 @@ const StudentsPage = safeLazy(() => import('./pages/StudentsPage'));
 const AnnouncementsPage = safeLazy(() => import('./pages/AnnouncementsPage'));
 const EventsPage = safeLazy(() => import('./pages/EventsPage'));
 const MaterialsPage = safeLazy(() => import('./pages/MaterialsPage'));
-const MessagingPage = safeLazy(() => import('./pages/MessagingPage'));
+const GalleryPage = safeLazy(() => import('./pages/GalleryPage'));
 const LecturersPage = safeLazy(() => import('./pages/LecturersPage'));
 const ModeratorsPage = safeLazy(() => import('./pages/ModeratorsPage'));
 const ExecutivesPage = safeLazy(() => import('./pages/ExecutivesPage'));
@@ -182,7 +182,7 @@ function App() {
                   <Route path="/storage" element={<ModeratorStoragePage />} />
                 </Route>
                 <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_messaging" />}>
-                  <Route path="/messaging" element={<MessagingPage />} />
+                  <Route path="/gallery" element={<GalleryPage />} />
                 </Route>
                 <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_security" />}>
                   <Route path="/security" element={<SecurityPage />} />

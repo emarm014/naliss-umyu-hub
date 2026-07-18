@@ -115,7 +115,7 @@ const quickActions = [
   { id: 'archive', name: 'ARCHIVE', icon: 'library', color: '#059669', bg: '#ecfdf5', route: '/archive' },
   { id: 'fyb', name: 'FYB', icon: 'star', color: '#d97706', bg: '#fef3c7', route: '/fyb' },
   { id: 'event_pool', name: 'Event Pool', icon: 'trophy', color: '#d97706', bg: '#fef3c7', route: '/event-pool' },
-  { id: 'directory', name: 'Directory', icon: 'people', color: '#0891b2', bg: '#ecfeff', route: '/(tabs)/resources?tab=directory' },
+  { id: 'gallery', name: 'Gallery', icon: 'images', color: '#8b5cf6', bg: '#f3e8ff', route: '/gallery' },
 ];
 
 export default function HomeScreen() {

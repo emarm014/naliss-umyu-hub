@@ -68,6 +68,7 @@ export default function EventPoolManagementPage() {
 
  // Invite-Only State
  const [inviteSearchQuery, setInviteSearchQuery] = useState('');
+ const [inviteFilterLevel, setInviteFilterLevel] = useState('all');
  const [inviteSearchResults, setInviteSearchResults] = useState<any[]>([]);
  const [invitedUsers, setInvitedUsers] = useState<any[]>([]);
  const [isInviteSearching, setIsInviteSearching] = useState(false);
@@ -93,12 +94,19 @@ export default function EventPoolManagementPage() {
  if (data) setDepartments(data);
  };
 
- const handleInviteSearch = async (query: string) => {
- setInviteSearchQuery(query);
- if (query.length < 2) { setInviteSearchResults([]); return; }
+ const fetchInviteUsers = async (query: string, level: string) => {
  setIsInviteSearching(true);
  try {
-   const { data } = await supabase.from('users').select('id, full_name, username, avatar_url, level').or(`full_name.ilike.%${query}%,username.ilike.%${query}%`).limit(8);
+   let req = supabase.from('users').select('id, full_name, username, avatar_url, level');
+   
+   if (query.trim().length >= 2) {
+       req = req.or(`full_name.ilike.%${query}%,username.ilike.%${query}%`);
+   }
+   if (level !== 'all') {
+       req = req.eq('level', level);
+   }
+   
+   const { data } = await req.limit(50);
    // Filter out already invited users
    const invitedIds = invitedUsers.map(u => u.id);
    setInviteSearchResults((data || []).filter(u => !invitedIds.includes(u.id)));
@@ -106,14 +114,31 @@ export default function EventPoolManagementPage() {
  finally { setIsInviteSearching(false); }
  };
 
+ const handleInviteSearch = (query: string) => {
+ setInviteSearchQuery(query);
+ fetchInviteUsers(query, inviteFilterLevel);
+ };
+
+ const handleInviteFilterChange = (level: string) => {
+ setInviteFilterLevel(level);
+ fetchInviteUsers(inviteSearchQuery, level);
+ };
+
+ useEffect(() => {
+ if (activeParticipationRule === 'individual_selection') {
+     fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
+ }
+ }, [activeParticipationRule]);
+
  const addInvitedUser = (user: any) => {
  setInvitedUsers(prev => [...prev, user]);
  setInviteSearchResults(prev => prev.filter(u => u.id !== user.id));
- setInviteSearchQuery('');
  };
 
  const removeInvitedUser = (userId: string) => {
  setInvitedUsers(prev => prev.filter(u => u.id !== userId));
+ // optionally refresh the list to re-add the user to the browser
+ fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
  };
 
  const fetchEvents = async () => {
@@ -736,54 +761,114 @@ export default function EventPoolManagementPage() {
       </div>
   )}
   {activeParticipationRule === 'individual_selection' && (
-      <div className="mt-4 p-3 bg-white border rounded-lg border-slate-200">
-          <label className="block text-xs font-semibold text-slate-500 mb-2">Invite Participants</label>
-          {/* Search Input */}
-          <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                  type="text"
-                  value={inviteSearchQuery}
-                  onChange={(e) => handleInviteSearch(e.target.value)}
-                  placeholder="Search by name or username..."
-                  className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
-              />
-          </div>
-          {/* Search Results Dropdown */}
-          {inviteSearchResults.length > 0 && (
-              <div className="border rounded-lg mb-3 max-h-48 overflow-y-auto divide-y">
-                  {inviteSearchResults.map(user => (
-                      <button key={user.id} onClick={() => addInvitedUser(user)} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-primary-50 transition-colors text-left">
-                          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-xs">
-                              {user.full_name?.[0] || '?'}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">{user.full_name}</p>
-                              <p className="text-xs text-gray-500">@{user.username} · Level {user.level || '?'}</p>
-                          </div>
-                          <UserPlus className="h-4 w-4 text-primary-500 flex-shrink-0" />
-                      </button>
-                  ))}
-              </div>
-          )}
-          {isInviteSearching && <p className="text-xs text-gray-400 mb-2">Searching...</p>}
-          {/* Invited Users List */}
-          <div className="space-y-2">
-              <p className="text-xs text-gray-500 font-semibold">{invitedUsers.length} Invited Participant{invitedUsers.length !== 1 ? 's' : ''}</p>
-              {invitedUsers.map(user => (
-                  <div key={user.id} className="flex items-center gap-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
-                      <div className="w-7 h-7 rounded-full bg-green-200 flex items-center justify-center text-green-800 font-bold text-xs">
-                          {user.full_name?.[0] || '?'}
+      <div className="mt-4 p-4 bg-white border rounded-xl border-slate-200">
+          <label className="block text-sm font-bold text-slate-700 mb-4">Invite Participants</label>
+          
+          <div className="flex flex-col md:flex-row gap-6">
+              {/* Left Column: Student Browser */}
+              <div className="flex-1 space-y-3">
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Browse Students</h4>
+                  
+                  {/* Filters Row */}
+                  <div className="flex gap-2">
+                      <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <input
+                              type="text"
+                              value={inviteSearchQuery}
+                              onChange={(e) => handleInviteSearch(e.target.value)}
+                              placeholder="Search by name or username..."
+                              className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                          />
                       </div>
-                      <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{user.full_name}</p>
-                          <p className="text-xs text-gray-500">@{user.username}</p>
-                      </div>
-                      <button onClick={() => removeInvitedUser(user.id)} className="p-1 hover:bg-red-100 rounded transition-colors" title="Remove">
-                          <UserMinus className="h-4 w-4 text-red-500" />
-                      </button>
+                      <select 
+                          value={inviteFilterLevel}
+                          onChange={(e) => handleInviteFilterChange(e.target.value)}
+                          className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 bg-white min-w-[100px]"
+                      >
+                          <option value="all">All Levels</option>
+                          <option value="100">Level 100</option>
+                          <option value="200">Level 200</option>
+                          <option value="300">Level 300</option>
+                          <option value="400">Level 400</option>
+                          <option value="500">Level 500</option>
+                          <option value="600">Level 600</option>
+                      </select>
                   </div>
-              ))}
+
+                  {/* Browser List */}
+                  <div className="border rounded-lg h-[300px] overflow-y-auto divide-y bg-slate-50 relative">
+                      {isInviteSearching && (
+                          <div className="absolute inset-0 bg-white/50 flex items-center justify-center backdrop-blur-sm z-10">
+                              <LoadingSpinner size="sm" />
+                          </div>
+                      )}
+                      
+                      {inviteSearchResults.length === 0 && !isInviteSearching ? (
+                          <div className="p-8 text-center text-gray-500 text-sm">
+                              No students found matching your criteria.
+                          </div>
+                      ) : (
+                          inviteSearchResults.map(user => (
+                              <div key={user.id} className="w-full flex items-center gap-3 px-3 py-3 hover:bg-white transition-colors">
+                                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-bold text-xs shrink-0">
+                                      {user.full_name?.[0] || '?'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-900 truncate">{user.full_name}</p>
+                                      <p className="text-xs text-gray-500">@{user.username} • Level {user.level || '?'}</p>
+                                  </div>
+                                  <button 
+                                      type="button"
+                                      onClick={() => addInvitedUser(user)} 
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-50 text-primary-700 hover:bg-primary-100 rounded-md text-xs font-medium transition-colors shrink-0"
+                                  >
+                                      <UserPlus className="h-3 w-3" /> Add
+                                  </button>
+                              </div>
+                          ))
+                      )}
+                  </div>
+              </div>
+
+              {/* Right Column: Selected Participants */}
+              <div className="w-full md:w-72 flex flex-col">
+                  <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Selected</h4>
+                      <span className="bg-primary-100 text-primary-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                          {invitedUsers.length}
+                      </span>
+                  </div>
+                  
+                  <div className="border rounded-lg flex-1 h-[300px] overflow-y-auto bg-white p-2 space-y-2">
+                      {invitedUsers.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-4">
+                              <Users className="h-8 w-8 text-slate-300 mb-2" />
+                              <p className="text-sm text-slate-500">No participants selected yet.</p>
+                          </div>
+                      ) : (
+                          invitedUsers.map(user => (
+                              <div key={user.id} className="flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg group hover:border-red-200 transition-colors">
+                                  <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center text-primary-800 font-bold text-xs shrink-0">
+                                      {user.full_name?.[0] || '?'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-slate-900 truncate">{user.full_name}</p>
+                                      <p className="text-[10px] text-slate-500 truncate">@{user.username}</p>
+                                  </div>
+                                  <button 
+                                      type="button"
+                                      onClick={() => removeInvitedUser(user.id)} 
+                                      className="p-1.5 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded-md transition-colors opacity-0 group-hover:opacity-100 shrink-0" 
+                                      title="Remove from list"
+                                  >
+                                      <Trash2 className="h-4 w-4" />
+                                  </button>
+                              </div>
+                          ))
+                      )}
+                  </div>
+              </div>
           </div>
       </div>
   )}

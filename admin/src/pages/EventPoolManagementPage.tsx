@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, UserMinus } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import Modal from '../components/ui/Modal';
@@ -66,6 +66,15 @@ export default function EventPoolManagementPage() {
  // Participation Rule State
  const [activeParticipationRule, setActiveParticipationRule] = useState('open');
 
+ // Invite-Only State
+ const [inviteSearchQuery, setInviteSearchQuery] = useState('');
+ const [inviteSearchResults, setInviteSearchResults] = useState<any[]>([]);
+ const [invitedUsers, setInvitedUsers] = useState<any[]>([]);
+ const [isInviteSearching, setIsInviteSearching] = useState(false);
+
+ // Department list
+ const [departments, setDepartments] = useState<any[]>([]);
+
  const [showCreateModal, setShowCreateModal] = useState<'create' | 'edit' | false>(false);
  const [editingPoolId, setEditingPoolId] = useState<string | null>(null);
  const [newPoolTitle, setNewPoolTitle] = useState('');
@@ -76,7 +85,36 @@ export default function EventPoolManagementPage() {
  useEffect(() => {
  fetchPools();
  fetchEvents();
+ fetchDepartments();
  }, []);
+
+ const fetchDepartments = async () => {
+ const { data } = await supabase.from('departments').select('id, name').order('name');
+ if (data) setDepartments(data);
+ };
+
+ const handleInviteSearch = async (query: string) => {
+ setInviteSearchQuery(query);
+ if (query.length < 2) { setInviteSearchResults([]); return; }
+ setIsInviteSearching(true);
+ try {
+   const { data } = await supabase.from('users').select('id, full_name, username, avatar_url, level').or(`full_name.ilike.%${query}%,username.ilike.%${query}%`).limit(8);
+   // Filter out already invited users
+   const invitedIds = invitedUsers.map(u => u.id);
+   setInviteSearchResults((data || []).filter(u => !invitedIds.includes(u.id)));
+ } catch { setInviteSearchResults([]); }
+ finally { setIsInviteSearching(false); }
+ };
+
+ const addInvitedUser = (user: any) => {
+ setInvitedUsers(prev => [...prev, user]);
+ setInviteSearchResults(prev => prev.filter(u => u.id !== user.id));
+ setInviteSearchQuery('');
+ };
+
+ const removeInvitedUser = (userId: string) => {
+ setInvitedUsers(prev => prev.filter(u => u.id !== userId));
+ };
 
  const fetchEvents = async () => {
  const { data } = await supabase.from('events').select('id, title').in('status', ['published', 'ongoing']);
@@ -146,7 +184,7 @@ export default function EventPoolManagementPage() {
  setShowCreateModal('edit');
  };
 
- const loadPoolDetails = async (pool: EventPool) => {
+  const loadPoolDetails = async (pool: EventPool) => {
  setSelectedPool(pool);
  setActiveParticipationRule(pool.participation_rule);
  setActiveView('config');
@@ -162,6 +200,15 @@ export default function EventPoolManagementPage() {
  // Fetch applications
  const { data: apps } = await supabase.from('pool_applications').select('id, user_id, status, created_at, users:user_id(full_name, username)').eq('pool_id', pool.id).order('created_at', { ascending: false });
  setApplications(apps ? apps.map((a: any) => ({ ...a, users: Array.isArray(a.users) ? a.users[0] : a.users })) : []);
+
+ // Load invited users for invite-only pools
+ const selectedUserIds: string[] = pool.target_constraints?.selected_users || [];
+ if (selectedUserIds.length > 0) {
+   const { data: invUsers } = await supabase.from('users').select('id, full_name, username, avatar_url, level').in('id', selectedUserIds);
+   setInvitedUsers(invUsers || []);
+ } else {
+   setInvitedUsers([]);
+ }
 
  // Fetch quiz questions if pool type is quiz
  if (pool.type === 'quiz') {
@@ -207,6 +254,7 @@ export default function EventPoolManagementPage() {
  const instant_feedback = fd.get('instant_feedback') === 'on';
  
  const allowed_levels = fd.getAll('allowed_levels') as string[];
+ const allowed_departments = fd.getAll('allowed_departments') as string[];
 
  try {
  const updates = {
@@ -225,7 +273,9 @@ export default function EventPoolManagementPage() {
  ...(total_time_limit_sec !== null && { total_time_limit_sec }),
  strict_once_off_selection,
  instant_feedback,
- allowed_levels: allowed_levels.length > 0 ? allowed_levels : selectedPool.target_constraints?.allowed_levels
+ allowed_levels: allowed_levels.length > 0 ? allowed_levels : selectedPool.target_constraints?.allowed_levels,
+ allowed_departments: allowed_departments.length > 0 ? allowed_departments : selectedPool.target_constraints?.allowed_departments,
+ ...(participation_rule === 'individual_selection' && { selected_users: invitedUsers.map(u => u.id) })
  }
  };
  const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
@@ -665,10 +715,76 @@ export default function EventPoolManagementPage() {
           </div>
       </div>
   )}
+  {activeParticipationRule === 'department_based' && (
+      <div className="mt-4 p-3 bg-white border rounded-lg border-slate-200">
+          <label className="block text-xs font-semibold text-slate-500 mb-2">Allowed Departments</label>
+          {departments.length === 0 ? (
+              <p className="text-sm text-gray-400">No departments found in the database.</p>
+          ) : (
+              <div className="flex flex-wrap gap-3">
+                  {departments.map(dept => {
+                      const isChecked = selectedPool.target_constraints?.allowed_departments?.includes(dept.id);
+                      return (
+                          <label key={dept.id} className="flex items-center gap-1.5 text-sm text-gray-700">
+                              <input type="checkbox" name="allowed_departments" value={dept.id} defaultChecked={isChecked} className="rounded text-primary-600 focus:ring-primary-500" />
+                              {dept.name}
+                          </label>
+                      );
+                  })}
+              </div>
+          )}
+      </div>
+  )}
   {activeParticipationRule === 'individual_selection' && (
-      <div className="mt-4 p-3 bg-amber-50 border rounded-lg border-amber-200">
-          <label className="block text-xs font-semibold text-amber-800 mb-1">Invite-Only Warning</label>
-          <p className="text-sm text-amber-700">This feature requires manual additions to the selected_users database constraint. A dedicated invite UI will be built out shortly.</p>
+      <div className="mt-4 p-3 bg-white border rounded-lg border-slate-200">
+          <label className="block text-xs font-semibold text-slate-500 mb-2">Invite Participants</label>
+          {/* Search Input */}
+          <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                  type="text"
+                  value={inviteSearchQuery}
+                  onChange={(e) => handleInviteSearch(e.target.value)}
+                  placeholder="Search by name or username..."
+                  className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+              />
+          </div>
+          {/* Search Results Dropdown */}
+          {inviteSearchResults.length > 0 && (
+              <div className="border rounded-lg mb-3 max-h-48 overflow-y-auto divide-y">
+                  {inviteSearchResults.map(user => (
+                      <button key={user.id} onClick={() => addInvitedUser(user)} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-primary-50 transition-colors text-left">
+                          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-xs">
+                              {user.full_name?.[0] || '?'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{user.full_name}</p>
+                              <p className="text-xs text-gray-500">@{user.username} · Level {user.level || '?'}</p>
+                          </div>
+                          <UserPlus className="h-4 w-4 text-primary-500 flex-shrink-0" />
+                      </button>
+                  ))}
+              </div>
+          )}
+          {isInviteSearching && <p className="text-xs text-gray-400 mb-2">Searching...</p>}
+          {/* Invited Users List */}
+          <div className="space-y-2">
+              <p className="text-xs text-gray-500 font-semibold">{invitedUsers.length} Invited Participant{invitedUsers.length !== 1 ? 's' : ''}</p>
+              {invitedUsers.map(user => (
+                  <div key={user.id} className="flex items-center gap-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="w-7 h-7 rounded-full bg-green-200 flex items-center justify-center text-green-800 font-bold text-xs">
+                          {user.full_name?.[0] || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{user.full_name}</p>
+                          <p className="text-xs text-gray-500">@{user.username}</p>
+                      </div>
+                      <button onClick={() => removeInvitedUser(user.id)} className="p-1 hover:bg-red-100 rounded transition-colors" title="Remove">
+                          <UserMinus className="h-4 w-4 text-red-500" />
+                      </button>
+                  </div>
+              ))}
+          </div>
       </div>
   )}
   </div>

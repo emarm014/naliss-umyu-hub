@@ -313,33 +313,26 @@ export default function EventPoolManagementPage() {
   const handleConfirmInviteOnly = async () => {
     if (!selectedPool || invitedUsers.length === 0) return;
     try {
-        const apps = invitedUsers.map(u => ({
-            pool_id: selectedPool.id,
-            user_id: u.id,
-            status: 'approved'
-        }));
+        const userIds = invitedUsers.map(u => u.id);
         
-        // Upsert into pool_applications
-        const { error: upsertErr } = await supabase
-            .from('pool_applications')
-            .upsert(apps, { onConflict: 'pool_id,user_id' });
-            
-        if (upsertErr) throw upsertErr;
+        // Use RPC to confirm participants safely, bypassing RLS
+        const { error: rpcErr } = await supabase.rpc('confirm_invite_only_participants', {
+            p_pool_id: selectedPool.id,
+            p_user_ids: userIds
+        });
 
-        // Ensure they are also saved to the pool's selected_users
-        const updates = {
-            target_constraints: {
-                ...selectedPool.target_constraints,
-                selected_users: invitedUsers.map(u => u.id)
-            }
-        };
-        const { error: poolErr } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
-        if (poolErr) throw poolErr;
+        if (rpcErr) throw rpcErr;
 
         alert('Participants confirmed and approved. They will now appear in the Registrations tab.');
         
+        // Fetch updated pool state
+        const { data: updatedPool } = await supabase.from('event_pools').select('*').eq('id', selectedPool.id).single();
+        
         // Update local state and UI
-        loadPoolDetails({ ...selectedPool, ...updates });
+        if (updatedPool) {
+            loadPoolDetails(updatedPool);
+        }
+        setInvitedUsers([]); // Clear selection after confirmation
     } catch (e: any) {
         alert('Failed to confirm participants: ' + e.message);
     }

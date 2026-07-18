@@ -310,6 +310,41 @@ export default function EventPoolManagementPage() {
  }
  };
 
+  const handleConfirmInviteOnly = async () => {
+    if (!selectedPool || invitedUsers.length === 0) return;
+    try {
+        const apps = invitedUsers.map(u => ({
+            pool_id: selectedPool.id,
+            user_id: u.id,
+            status: 'approved'
+        }));
+        
+        // Upsert into pool_applications
+        const { error: upsertErr } = await supabase
+            .from('pool_applications')
+            .upsert(apps, { onConflict: 'pool_id,user_id' });
+            
+        if (upsertErr) throw upsertErr;
+
+        // Ensure they are also saved to the pool's selected_users
+        const updates = {
+            target_constraints: {
+                ...selectedPool.target_constraints,
+                selected_users: invitedUsers.map(u => u.id)
+            }
+        };
+        const { error: poolErr } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+        if (poolErr) throw poolErr;
+
+        alert('Participants confirmed and approved. They will now appear in the Registrations tab.');
+        
+        // Update local state and UI
+        loadPoolDetails({ ...selectedPool, ...updates });
+    } catch (e: any) {
+        alert('Failed to confirm participants: ' + e.message);
+    }
+  };
+
  const handleSaveEvaluation = async (subId: string, userId: string) => {
  if (!selectedPool) return;
  try {
@@ -834,6 +869,15 @@ export default function EventPoolManagementPage() {
                           ))
                       )}
                   </div>
+                  <button
+                      type="button"
+                      onClick={handleConfirmInviteOnly}
+                      disabled={invitedUsers.length === 0}
+                      className="w-full py-2.5 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 transition-colors mt-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                      <CheckCircle className="h-4 w-4" />
+                      Confirm & Approve
+                  </button>
               </div>
           </div>
       </div>

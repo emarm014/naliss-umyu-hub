@@ -147,7 +147,7 @@ export default function GalleryPage() {
         
         // If there are new files uploaded during edit, insert them too
         if (formData.files && formData.files.length > 0) {
-            const mediaEntries = formData.files.map((file, idx) => ({
+            const mediaEntries = formData.files.map((file) => ({
               topic_id: editingTopicId,
               media_url: file.url,
               media_type: file.type?.startsWith('video') ? 'video' : 'image',
@@ -363,6 +363,8 @@ export default function GalleryPage() {
                       placeholder="Brief context for the album..."
                     />
                   </div>
+
+                </div>
 
                   <div className="space-y-4 mt-6">
                       <label className="flex items-center gap-2 text-sm font-black text-slate-800 uppercase tracking-widest">

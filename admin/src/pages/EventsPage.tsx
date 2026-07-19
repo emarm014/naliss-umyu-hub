@@ -24,7 +24,6 @@ import {
   Filter
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
-import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { sendPushNotification, getUserIdsForLevel } from '../lib/notifications';
 import { useFormDraft } from '../hooks/useFormDraft';
 
@@ -44,13 +43,12 @@ const statusConfig = {
 };
 
 export default function EventsPage() {
-  const { events: allEvents, isSyncing, error: storeError, syncAll, removeEvent, refreshAnalytics } = useAdminDataStore(
+  const { events: allEvents, isSyncing, error: storeError, syncAll, refreshAnalytics } = useAdminDataStore(
     useShallow((state) => ({
       events: state.events,
       isSyncing: state.isSyncing,
       error: state.error,
       syncAll: state.syncAll,
-      removeEvent: state.removeEvent,
       refreshAnalytics: state.refreshAnalytics,
     }))
   );

@@ -84,7 +84,7 @@ export interface User {
     can_manage_storage: boolean;
     can_manage_security: boolean;
     can_manage_cloud_archive: boolean;
-    can_manage_gallery: boolean;
+    can_manage_messaging: boolean;
     can_manage_event_pools: boolean;
     can_manage_featured_students: boolean;
     assigned_level: AcademicLevel | null;

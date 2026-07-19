@@ -69,12 +69,9 @@ function SuspensionCountdown({ until }: { until: Date }) {
 
 export default function ModeratorsPage() {
 
-  const studentModerators = useAdminDataStore((s) => s.students);
-  const externalModerators = useAdminDataStore((s) => s.externalModerators);
+  const allStudents = useAdminDataStore((s) => s.students);
   const { isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore();
   const { profile, permissions } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'student' | 'external'>('student');
-  const allStudents = activeTab === 'external' ? externalModerators : studentModerators;
 
   useEffect(() => {
     syncAll();
@@ -1372,6 +1369,7 @@ export default function ModeratorsPage() {
 
 // Edit User Modal Component
 function EditUserModal({ user, onClose, onSave }: { user: UserWithDepartment; onClose: () => void; onSave: () => void }) {
+  const { profile } = useAuthStore();
   const [formData, setFormData] = useState({
     full_name: user.full_name,
     username: user.username || '',
@@ -1457,7 +1455,7 @@ function EditUserModal({ user, onClose, onSave }: { user: UserWithDepartment; on
           target_user: {
             id: user.id,
             full_name: formData.full_name,
-            email: formData.email,
+            email: user.email,
             registration_number: formData.registration_number,
             role: user.role,
             level: formData.level

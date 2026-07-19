@@ -326,7 +326,7 @@ export default function EventPoolRoom() {
     const textColor = colors.text;
     const subtextColor = colors.textMuted;
     const borderColor = colors.border;
-    const brandColor = COLORS.primary;
+    const brandColor = colors.primary;
 
     const renderTabs = () => {
         const tabs: { id: TabId; label: string }[] = [

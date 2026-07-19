@@ -49,11 +49,15 @@ export default function EventPoolDashboard() {
 
     // Load initial data from MMKV cache on mount
     useEffect(() => {
-        mmkvStorage.getItem(CACHE_KEY).then(cached => {
-            if (cached) {
-                try { setInitialData(JSON.parse(cached)); } catch {}
-            }
-        });
+        const loadCache = async () => {
+            try {
+                const cached = await mmkvStorage.getItem(CACHE_KEY);
+                if (cached) {
+                    setInitialData(JSON.parse(cached));
+                }
+            } catch {}
+        };
+        loadCache();
     }, []);
 
     const fetchServerTimeOffset = async () => {
@@ -69,7 +73,7 @@ export default function EventPoolDashboard() {
 
     const fetchPools = async (): Promise<EventPool[]> => {
         await fetchServerTimeOffset();
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
             .from('event_pools')
             .select(`
                 *,
@@ -92,7 +96,9 @@ export default function EventPoolDashboard() {
         }));
 
         // Async write to cache
-        mmkvStorage.setItem(CACHE_KEY, JSON.stringify(typedData)).catch(() => {});
+        try {
+            await mmkvStorage.setItem(CACHE_KEY, JSON.stringify(typedData));
+        } catch {}
         return typedData;
     };
 
@@ -107,8 +113,8 @@ export default function EventPoolDashboard() {
         queryKey: ['my_pool_applications', profile?.id],
         queryFn: async () => {
             if (!profile?.id) return [];
-            const { data } = await supabase.from('pool_applications').select('pool_id, status').eq('user_id', profile.id);
-            return data || [];
+            const { data } = await (supabase as any).from('pool_applications').select('pool_id, status').eq('user_id', profile.id);
+            return (data || []) as any[];
         },
         enabled: !!profile?.id
     });

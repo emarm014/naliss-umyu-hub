@@ -1308,7 +1308,7 @@ export default function ChatScreen() {
         // Show immediately from cached members while fresh data loads
         const cached = members.find(m => m.id === userId);
         if (cached) {
-            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url), type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
+            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url) || '', type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
             setViewerVisible(true);
         }
 
@@ -1318,7 +1318,7 @@ export default function ChatScreen() {
                 .eq('id', userId)
                 .single();
             if (data) {
-                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url), name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
+                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url) || '', name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
                 if (!cached) setViewerVisible(true);
             }
         } catch {
@@ -1331,7 +1331,7 @@ export default function ChatScreen() {
         const clean = username.startsWith('@') ? username.slice(1) : username;
         const cached = members.find(m => m.username === clean);
         if (cached) {
-            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url), type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
+            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url) || '', type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
             setViewerVisible(true);
         }
 
@@ -1341,7 +1341,7 @@ export default function ChatScreen() {
                 .eq('username', clean)
                 .single();
             if (data) {
-                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url), name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
+                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url) || '', name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
                 if (!cached) setViewerVisible(true);
             }
         } catch {

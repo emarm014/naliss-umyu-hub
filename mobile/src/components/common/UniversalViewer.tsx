@@ -148,6 +148,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
   pdfEngine,
   isOffline,
   onSingleTap,
+  isHalfScreen,
 }) => {
   if (isDownloading) {
     return (

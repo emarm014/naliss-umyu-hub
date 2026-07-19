@@ -687,9 +687,9 @@ function EventFormModal({
           }
         });
       }
-
-      onSave(`Event "${currentFormData.title}" ${event ? 'updated' : 'added'} successfully.`);
-    } catch (err: unknown) {
+    }
+    onSave(`Event "${currentFormData.title}" ${event ? 'updated' : 'added'} successfully.`);
+  } catch (err: unknown) {
       const msg = (err as any)?.message || (err as any)?.error_description || JSON.stringify(err);
       setErrorMsg(`Failed to save event: ${msg}`);
     } finally {

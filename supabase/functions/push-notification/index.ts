@@ -1,6 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// @ts-ignore
 import * as Sentry from "https://esm.sh/@sentry/deno";
+
+declare const Deno: any;
 
 const SENTRY_DSN = Deno.env.get("SENTRY_DSN") || Deno.env.get("VITE_SENTRY_DSN") || "";
 if (SENTRY_DSN) {
@@ -29,7 +33,7 @@ async function generateHash(token: string, type: string, entityId: string): Prom
   return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -92,7 +96,7 @@ Deno.serve(async (req) => {
     // Filter by each user's individual notification preferences
     // null/undefined = default ON (user hasn't changed it)
     const notifType = data?.type ?? "";
-    const filteredTokens = userTokens.filter(ut => {
+    const filteredTokens = userTokens.filter((ut: any) => {
       const u = ut.users;
       if (!u) return false;
       if (notifType === "message") {

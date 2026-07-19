@@ -147,7 +147,7 @@ export default function HomeScreen() {
   const { data: pinnedFeatured = [] } = useQuery({
     queryKey: ['home_pinned_fyb'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('featured_students')
         .select(`
           id, title, subtitle, custom_image_url, published_at, expires_at,
@@ -158,12 +158,14 @@ export default function HomeScreen() {
         .order('published_at', { ascending: false });
       if (error) throw error;
       const result = data || [];
-      mmkvStorage.setItem(FYB_CACHE_KEY, JSON.stringify(result)).catch(() => {});
+      try {
+        await mmkvStorage.setItem(FYB_CACHE_KEY, JSON.stringify(result));
+      } catch {}
       return result;
     },
     initialData: () => {
       try {
-        const cached = mmkvStorage.getStringSync?.(FYB_CACHE_KEY);
+        const cached = (mmkvStorage as any).getStringSync?.(FYB_CACHE_KEY);
         if (cached) return JSON.parse(cached);
       } catch {}
       return undefined;
@@ -304,12 +306,18 @@ export default function HomeScreen() {
   const rank = getUserRank(userPoints);
 
   const combinedItems = React.useMemo(() => {
-    return announcements.map(a => ({
+    const ann = announcements.map(a => ({
       ...a,
       _type: 'announcement' as const,
       _sortDate: new Date(a.published_at || a.created_at).getTime()
-    })).sort((a, b) => b._sortDate - a._sortDate);
-  }, [announcements]);
+    }));
+    const evt = events.map(e => ({
+      ...e,
+      _type: 'event' as const,
+      _sortDate: new Date(e.start_date || e.created_at).getTime()
+    }));
+    return [...ann, ...evt].sort((a, b) => b._sortDate - a._sortDate);
+  }, [announcements, events]);
 
   const loadData = useCallback(async () => {
     const level = user?.level || undefined;
@@ -872,6 +880,7 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
   posterDate: { fontFamily: 'Inter-Medium', fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  posterMeta: { fontFamily: 'Inter-Medium', fontSize: 12, color: 'rgba(255,255,255,0.8)' },
   posterFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
   posterSeeMore: { fontFamily: 'Inter-Bold', fontSize: 12, color: 'rgba(255,255,255,0.9)' },
   eventCard: {

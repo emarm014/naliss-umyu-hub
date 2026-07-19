@@ -27,6 +27,9 @@ class RealtimeManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts: number = 0;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private connectInProgress: boolean = false;
+
+  private static readonly MAX_RECONNECT_ATTEMPTS = 20;
 
   private connectionStatus: ConnectionStatus = 'DISCONNECTED';
   private statusCallbacks: Set<(status: ConnectionStatus) => void> = new Set();
@@ -77,10 +80,18 @@ class RealtimeManager {
    * tables on it. Supabase multiplexes them over the same WebSocket.
    */
   private connect() {
+    // Guard: if a connect is already in progress (e.g. StrictMode double-mount
+    // calling subscribe→connect twice rapidly), skip the second call.
+    if (this.connectInProgress) return;
+    this.connectInProgress = true;
+
     // Tear down any existing channel first
     this.disconnect();
 
-    if (this.tables.length === 0) return;
+    if (this.tables.length === 0) {
+      this.connectInProgress = false;
+      return;
+    }
 
     this.setStatus('CONNECTING');
 
@@ -98,6 +109,7 @@ class RealtimeManager {
     });
 
     this.channel = builder.subscribe((status) => {
+      this.connectInProgress = false;
       if (status === 'SUBSCRIBED') {
         this.setStatus('CONNECTED');
         this.reconnectAttempts = 0;
@@ -133,10 +145,17 @@ class RealtimeManager {
     if (!this.isSubscribed) return;
     if (this.reconnectTimer) return; // already scheduled
 
+    // Cap reconnect attempts to prevent infinite spiral
+    if (this.reconnectAttempts >= RealtimeManager.MAX_RECONNECT_ATTEMPTS) {
+      console.error(`[RealtimeManager] Max reconnect attempts (${RealtimeManager.MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+      this.setStatus('DISCONNECTED');
+      return;
+    }
+
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
 
-    console.log(`[RealtimeManager] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    console.log(`[RealtimeManager] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${RealtimeManager.MAX_RECONNECT_ATTEMPTS})`);
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

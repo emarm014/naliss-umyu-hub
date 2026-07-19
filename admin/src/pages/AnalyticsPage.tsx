@@ -119,16 +119,11 @@ export default function AnalyticsPage() {
     };
   }, []); // eslint-disable-line
 
-  useEffect(() => {
-    const ch = supabase.channel('analytics-watch')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'materials' }, () => { syncAll(true); fetchCloudStats(); })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'materials' }, () => { syncAll(true); fetchCloudStats(); })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'past_questions' }, () => { syncAll(true); fetchCloudStats(); })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'past_questions' }, () => { syncAll(true); fetchCloudStats(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => syncAll(true))
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: Removed redundant 'analytics-watch' realtime channel.
+  // The global admin_rt_multiplexed channel (via RealtimeManager) already
+  // watches materials, past_questions, and messages. The auto-refresh
+  // intervals above handle periodic re-fetching of cloud stats.
+
 
   const runForensicScan = async () => {
     setIsScanning(true); setScanError(null);
@@ -657,7 +652,7 @@ function CloudinaryDashboard({ cloudStats, fmtBytes, fmt }: { cloudStats: any; f
           <div className="space-y-2">
             {cloudStats.folders.slice(0, 12).map((folder: any) => {
               const pct = cloudStats.storage?.used_bytes > 0 ? Math.min(100, (folder.bytes / cloudStats.storage.used_bytes) * 100) : 0;
-              const labels: Record<string, string> = { materials: 'Materials', past_questions: 'Past Questions', 'past-questions': 'Past Questions', announcements: 'Announcements', events: 'Events', avatars: 'Profile Photos', 'chat-docs': 'Chat Documents', 'chat-images': 'Chat Images', 'chat-videos': 'Chat Videos', mobile_uploads: 'Mobile Uploads', admin_uploads: 'Admin Uploads', groups: 'Group Media', resources: 'Vault Resources' };
+              const labels: Record<string, string> = { materials: 'Materials', past_questions: 'Past Questions', 'past-questions': 'Past Questions', announcements: 'Announcements', events: 'Events', avatars: 'Profile Photos', 'chat-docs': 'Chat Documents', 'chat-images': 'Chat Images', 'chat-videos': 'Chat Videos', mobile_uploads: 'Mobile Uploads', admin_uploads: 'Admin Uploads', groups: 'Group Media', resources: 'Vault Resources', news_covers: 'News Covers', gallery: 'Gallery', 'featured-students': 'Featured Students', archives: 'Archives', uploads: 'Other Uploads' };
               return (
                 <div key={folder.name} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <div className="w-36 shrink-0">

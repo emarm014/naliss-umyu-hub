@@ -105,7 +105,10 @@ export const ensureActiveSession = async () => {
         return { data: { session: null }, error: err };
       }
     })().finally(() => {
-      sessionRefreshPromise = null;
+      // Keep the resolved promise cached for 2s to deduplicate rapid-fire
+      // callers (e.g. syncAll + page mount + realtime reconnect all firing
+      // within the same frame). This prevents GoTrue lock contention.
+      setTimeout(() => { sessionRefreshPromise = null; }, 2000);
     });
   }
   return sessionRefreshPromise;

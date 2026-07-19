@@ -17,6 +17,11 @@ interface AuthState {
   updateProfile: (updates: Partial<User>) => void;
 }
 
+// Singleton guard: prevents React StrictMode double-mount from calling
+// initialize() concurrently, which causes GoTrue lock contention
+// ("lock:naliss-admin-session" not released within 5000ms).
+let _initPromise: Promise<(() => void) | void> | null = null;
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -30,47 +35,54 @@ export const useAuthStore = create<AuthState>()(
       isAdminOrModerator: false,
 
       initialize: async () => {
-        // If we already have a cached profile, show the app immediately
-        // and verify the session silently in the background.
-        const hasCachedProfile = !!get().profile;
-        if (hasCachedProfile) {
-          set({ isLoading: false });
-        }
+        // If already initializing (e.g. StrictMode double-mount), share the existing promise
+        if (_initPromise) return _initPromise;
 
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const user = session?.user ?? null;
-          set({ user });
-
-          if (user) {
-            await fetchFullProfile(user.id, set);
-          } else {
-            set({ profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
+        _initPromise = (async () => {
+          // If we already have a cached profile, show the app immediately
+          // and verify the session silently in the background.
+          const hasCachedProfile = !!get().profile;
+          if (hasCachedProfile) {
+            set({ isLoading: false });
           }
-        } catch {
-          // Network failure on init — keep cached state, just stop loading
-          set({ isLoading: false });
-        }
 
-        // Listen for auth changes (token refresh, sign-out from another tab, etc.)
-        // Store the subscription so it can be cleaned up if needed
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-          const newUser = session?.user ?? null;
-          set({ user: newUser });
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const user = session?.user ?? null;
+            set({ user });
 
-          if (newUser) {
-            try {
-              await fetchFullProfile(newUser.id, set);
-            } catch (err) {
-              console.error('Failed to fetch full profile:', err);
+            if (user) {
+              await fetchFullProfile(user.id, set);
+            } else {
+              set({ profile: null, permissions: null, isAdminOrModerator: false, isLoading: false });
             }
-          } else {
-            set({ profile: null, permissions: null, isAdminOrModerator: false });
+          } catch {
+            // Network failure on init — keep cached state, just stop loading
+            set({ isLoading: false });
           }
-        });
 
-        // Return cleanup function (used by React StrictMode)
-        return () => subscription.unsubscribe();
+          // Listen for auth changes (token refresh, sign-out from another tab, etc.)
+          // Store the subscription so it can be cleaned up if needed
+          const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            const newUser = session?.user ?? null;
+            set({ user: newUser });
+
+            if (newUser) {
+              try {
+                await fetchFullProfile(newUser.id, set);
+              } catch (err) {
+                console.error('Failed to fetch full profile:', err);
+              }
+            } else {
+              set({ profile: null, permissions: null, isAdminOrModerator: false });
+            }
+          });
+
+          // Return cleanup function (used by React StrictMode)
+          return () => subscription.unsubscribe();
+        })();
+
+        return _initPromise;
       },
 
       signOut: async () => {

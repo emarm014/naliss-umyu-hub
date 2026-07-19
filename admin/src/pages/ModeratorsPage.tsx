@@ -69,8 +69,12 @@ function SuspensionCountdown({ until }: { until: Date }) {
 
 export default function ModeratorsPage() {
 
-  const { students: allStudents, isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore();
+  const studentModerators = useAdminDataStore((s) => s.students);
+  const externalModerators = useAdminDataStore((s) => s.externalModerators);
+  const { isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore();
   const { profile, permissions } = useAuthStore();
+  const [activeTab, setActiveTab] = useState<'student' | 'external'>('student');
+  const allStudents = activeTab === 'external' ? externalModerators : studentModerators;
 
   useEffect(() => {
     syncAll();
@@ -207,7 +211,23 @@ export default function ModeratorsPage() {
         entity_id: selectedUser.id,
         entity_type: 'user',
         description: `${confirmAction === 'activate' ? 'Restored' : confirmAction === 'ban' ? 'Banned' : 'Suspended'} moderator: ${selectedUser.full_name}`,
-        metadata: { reason: actionReason, duration: confirmAction === 'suspend' ? suspendDuration : undefined }
+        metadata: { 
+          reason: actionReason, 
+          duration: confirmAction === 'suspend' ? suspendDuration : undefined,
+          target_user: {
+            id: selectedUser.id,
+            full_name: selectedUser.full_name,
+            email: selectedUser.email,
+            registration_number: selectedUser.registration_number,
+            role: selectedUser.role,
+            level: selectedUser.level
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        }
       });
 
       showSuccess(`User ${confirmAction === 'activate' ? 'restored' : confirmAction === 'ban' ? 'banned' : 'suspended'} successfully. Mobile app will respond immediately.`);
@@ -265,6 +285,21 @@ export default function ModeratorsPage() {
         entity_id: user.id,
         entity_type: 'user',
         description: `Deleted moderator account: ${user.full_name} (${user.email})`,
+        metadata: {
+          target_user: {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            registration_number: user.registration_number,
+            role: user.role,
+            level: user.level
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        }
       });
       showSuccess(`${user.full_name}'s account permanently deleted.`);
       setShowModal(null);
@@ -307,6 +342,21 @@ export default function ModeratorsPage() {
         entity_id: userId,
         entity_type: 'user',
         description: `Verified and activated moderator account`,
+        metadata: {
+          target_user: {
+            id: existingUser?.id || userId,
+            full_name: existingUser?.full_name || 'Unknown',
+            email: existingUser?.email,
+            registration_number: existingUser?.registration_number,
+            role: existingUser?.role,
+            level: existingUser?.level
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        }
       });
 
       showSuccess('User verified and activated successfully.');
@@ -428,7 +478,23 @@ export default function ModeratorsPage() {
         entity_id: user.id,
         entity_type: 'user',
         description: `Changed ${user.full_name}'s role from ${user.role} to ${newRole}`,
-        metadata: { assigned_level: user.level, new_role: newRole },
+        metadata: { 
+          assigned_level: user.level, 
+          new_role: newRole,
+          target_user: {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            registration_number: user.registration_number,
+            role: user.role,
+            level: user.level
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        },
       });
 
       showSuccess(
@@ -480,6 +546,21 @@ export default function ModeratorsPage() {
         entity_id: user.id,
         entity_type: 'user',
         description: `${restrict ? 'Restricted' : 'Unrestricted'} moderator access for: ${user.full_name}`,
+        metadata: {
+          target_user: {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            registration_number: user.registration_number,
+            role: user.role,
+            level: user.level
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        }
       });
 
       showSuccess(`${user.full_name}'s access has been ${restrict ? 'restricted' : 'restored'}.`);
@@ -1372,6 +1453,21 @@ function EditUserModal({ user, onClose, onSave }: { user: UserWithDepartment; on
         entity_id: user.id,
         entity_type: 'user',
         description: `Updated moderator profile: ${formData.full_name}`,
+        metadata: {
+          target_user: {
+            id: user.id,
+            full_name: formData.full_name,
+            email: formData.email,
+            registration_number: formData.registration_number,
+            role: user.role,
+            level: formData.level
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        }
       });
 
       onSave();

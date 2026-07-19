@@ -130,6 +130,9 @@ interface AdminDataState {
   _channels: RealtimeChannel[];
 }
 
+// Sync mutex: prevents concurrent syncAll() from spawning duplicate query storms.
+let _syncPromise: Promise<void> | null = null;
+
 export const useAdminDataStore = create<AdminDataState>((set, get) => ({
   analytics: null,
   cloudinaryStorageBytes: null,
@@ -158,12 +161,17 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
 
   // ── Full sync — ALL queries backed by TanStack Query Client ────────────────
   syncAll: async (force = false) => {
+    // If a sync is already running, piggyback on it instead of spawning a
+    // duplicate set of 17 parallel queries. This prevents the "Sync took
+    // longer than 30s" cascade when syncAll(true) fires concurrently.
+    if (_syncPromise) {
+      return _syncPromise;
+    }
+
     const now = new Date();
     const lastSyncTime = get().lastSync ? new Date(get().lastSync!) : null;
     const isInitialLoad = !get().lastSync;
 
-    // When force=true (window focus recovery), always allow sync even if one is running.
-    // This prevents the user from being permanently stuck after a connection drop.
     if (!force) {
       const currentState = get();
       if (currentState.isSyncing || (!isInitialLoad && lastSyncTime && now.getTime() - lastSyncTime.getTime() < 5000)) {
@@ -171,206 +179,213 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
       }
     }
 
-    // Set isSyncing immediately before any async operations
-    set({ isSyncing: true, error: null });
+    // Wrap the entire sync body in a shared promise so concurrent callers
+    // piggyback on the same operation instead of spawning duplicate queries.
+    _syncPromise = (async () => {
+      // Set isSyncing immediately before any async operations
+      set({ isSyncing: true, error: null });
 
-    // Safety fallback: if sync takes longer than 30s, force reset isSyncing
-    const safetyTimeout = setTimeout(() => {
-      if (get().isSyncing) {
-        console.warn('[Sync Engine] Sync took longer than 30s. Force resetting isSyncing state.');
-        set({ isSyncing: false });
-      }
-    }, 30000);
-
-    const failedKeys: string[] = [];
-
-    try {
-      // PREVENT FREEZE: Ensure session is refreshed/valid BEFORE firing 15 parallel queries.
-      // If a tab wakes up and 15 queries fire simultaneously while the token is expired, 
-      // 1. Force token refresh to prevent "token expired" 401s during long-idle sync
-      // Use singleton wrapper to prevent gotrue-js lock contention when syncAll fires concurrently with page mounts
-      const { data: sessionData, error: sessionError } = await ensureActiveSession();
-      if (sessionError || !sessionData?.session) throw new Error("Unauthorized");
-
-      const fetchOrUseCache = async (key: string, queryFn: () => Promise<any>, staleTime = 5 * 60 * 1000) => {
-        if (force) {
-          await queryClient.invalidateQueries({ queryKey: [key] });
+      // Safety fallback: if sync takes longer than 30s, force reset isSyncing
+      const safetyTimeout = setTimeout(() => {
+        if (get().isSyncing) {
+          console.warn('[Sync Engine] Sync took longer than 30s. Force resetting isSyncing state.');
+          set({ isSyncing: false });
         }
-        return await queryClient.fetchQuery({
-          queryKey: [key],
-          queryFn,
-          staleTime: force ? 0 : staleTime,
+      }, 30000);
+
+      const failedKeys: string[] = [];
+
+      try {
+        // PREVENT FREEZE: Ensure session is refreshed/valid BEFORE firing 15 parallel queries.
+        // If a tab wakes up and 15 queries fire simultaneously while the token is expired, 
+        // 1. Force token refresh to prevent "token expired" 401s during long-idle sync
+        // Use singleton wrapper to prevent gotrue-js lock contention when syncAll fires concurrently with page mounts
+        const { data: sessionData, error: sessionError } = await ensureActiveSession();
+        if (sessionError || !sessionData?.session) throw new Error("Unauthorized");
+
+        const fetchOrUseCache = async (key: string, queryFn: () => Promise<any>, staleTime = 5 * 60 * 1000) => {
+          if (force) {
+            await queryClient.invalidateQueries({ queryKey: [key] });
+          }
+          return await queryClient.fetchQuery({
+            queryKey: [key],
+            queryFn,
+            staleTime: force ? 0 : staleTime,
+          });
+        };
+
+        const safeFetch = async (key: string, queryFn: () => Promise<any>, currentValue: any, staleTime?: number) => {
+          try {
+            return await fetchOrUseCache(key, queryFn, staleTime);
+          } catch (err: any) {
+            console.error(`[Sync Engine] Failed to sync slice "${key}":`, err);
+            failedKeys.push(key);
+            return currentValue || [];
+          }
+        };
+
+        // Define thunks that execute the queries
+        const tasks = [
+          async () => ({
+            analytics: await safeFetch('analytics', async () => {
+              const { data, error } = await supabase.rpc('fetch_admin_analytics');
+              if (error) throw error;
+              return data;
+            }, get().analytics, 60000)
+          }),
+          async () => ({
+            students: await safeFetch('students', () => fetchAllUsers(), get().students, 5 * 60 * 1000)
+          }),
+          async () => ({
+            departments: await safeFetch('departments', async () => {
+              const { data, error } = await supabase.from('departments').select('*').order('name', { ascending: true });
+              if (error) throw error;
+              return data || [];
+            }, get().departments, 60 * 60 * 1000)
+          }),
+          async () => ({
+            groups: await safeFetch('groups', async () => {
+              const { data, error } = await supabase.rpc('get_groups_with_counts');
+              if (error) throw error;
+              return (data || []).map((g: any) => ({
+                ...g,
+                member_count: Number(g.member_count) || 0,
+                moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
+              }));
+            }, get().groups, 5 * 60 * 1000)
+          }),
+          async () => ({
+            courses: await safeFetch('courses', async () => {
+              const { data, error } = await supabase.from('courses').select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)').order('code', { ascending: true });
+              if (error) throw error;
+              return data || [];
+            }, get().courses, 30 * 60 * 1000)
+          }),
+          async () => ({
+            materials: await safeFetch('materials', async () => {
+              const { data, error } = await supabase.from('materials').select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
+              if (error) throw error;
+              return data || [];
+            }, get().materials, 5 * 60 * 1000)
+          }),
+          async () => ({
+            pastQuestions: await safeFetch('pastQuestions', async () => {
+              const { data, error } = await supabase.from('past_questions').select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
+              if (error) throw error;
+              return data || [];
+            }, get().pastQuestions, 5 * 60 * 1000)
+          }),
+          async () => ({
+            resources: await safeFetch('resources', async () => {
+              const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(300);
+              if (error) throw error;
+              return (data || []).map((r: any) => ({ ...r, file_size: r.file_size || 0, file_type: r.file_type || null }));
+            }, get().resources, 5 * 60 * 1000)
+          }),
+          async () => ({
+            lecturers: await safeFetch('lecturers', async () => {
+              const { data, error } = await supabase.from('lecturers').select('*').order('display_order', { ascending: true });
+              if (error) throw error;
+              return data || [];
+            }, get().lecturers, 30 * 60 * 1000)
+          }),
+          async () => ({
+            executives: await safeFetch('executives', async () => {
+              const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
+              if (error) throw error;
+              return data || [];
+            }, get().executives, 30 * 60 * 1000)
+          }),
+          async () => ({
+            announcements: await safeFetch('announcements', async () => {
+              const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(50);
+              if (error) throw error;
+              return data || [];
+            }, get().announcements, 2 * 60 * 1000)
+          }),
+          async () => ({
+            events: await safeFetch('events', async () => {
+              const { data, error } = await supabase.from('events').select('*').order('start_date', { ascending: true });
+              if (error) throw error;
+              return data || [];
+            }, get().events, 5 * 60 * 1000)
+          }),
+          async () => ({
+            graduates: await safeFetch('graduates', async () => {
+              const { data, error } = await supabase.from('graduates').select('*').order('graduation_year', { ascending: false });
+              if (error) throw error;
+              return data || [];
+            }, get().graduates, 10 * 60 * 1000)
+          }),
+          async () => ({
+            activityLogs: await safeFetch('activityLogs', async () => {
+              const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
+              if (error) throw error;
+              return data || [];
+            }, get().activityLogs, 30000)
+          }),
+          async () => ({
+            flaggedMessages: await safeFetch('flaggedMessages', async () => {
+              const { data, error } = await supabase.from('messages').select('*, sender:users!messages_sender_id_fkey(id, full_name, email, role)').eq('is_flagged', true).eq('is_deleted', false).order('created_at', { ascending: false }).limit(50);
+              if (error) throw error;
+              return data || [];
+            }, get().flaggedMessages, 30000)
+          }),
+          async () => ({
+            messageReports: await safeFetch('messageReports', async () => {
+              const { data, error } = await supabase.from('message_reports').select('*, reporter:users!message_reports_reported_by_fkey(id, full_name, email), message:messages(id, content, sender_id, sender:users!messages_sender_id_fkey(full_name, email, role))').order('created_at', { ascending: false }).limit(50);
+              if (error) throw error;
+              return data || [];
+            }, get().messageReports, 30000)
+          }),
+          async () => ({
+            mutedUsers: await safeFetch('mutedUsers', async () => {
+              const { data, error } = await supabase.from('muted_users').select('*, user:users!muted_users_user_id_fkey(id, full_name, email), mutedBy:users!muted_users_muted_by_fkey(id, full_name, email)').order('created_at', { ascending: false }).limit(50);
+              if (error) throw error;
+              return data || [];
+            }, get().mutedUsers, 30000)
+          }),
+        ];
+
+        // Run all queries concurrently. Modern browsers (HTTP/2) handle 20+ multiplexed requests instantly.
+        // TanStack Query will also deduplicate any identical in-flight queries.
+        const combinedResults: Record<string, any> = {};
+        const batchResults = await Promise.all(tasks.map(t => t()));
+        batchResults.forEach(res => Object.assign(combinedResults, res));
+
+        set({
+          analytics: combinedResults.analytics,
+          students: combinedResults.students,
+          departments: combinedResults.departments,
+          groups: combinedResults.groups,
+          courses: combinedResults.courses,
+          materials: combinedResults.materials,
+          pastQuestions: combinedResults.pastQuestions,
+          resources: combinedResults.resources,
+          lecturers: combinedResults.lecturers,
+          executives: combinedResults.executives,
+          announcements: combinedResults.announcements,
+          events: combinedResults.events,
+          graduates: combinedResults.graduates,
+          activityLogs: combinedResults.activityLogs,
+          flaggedMessages: combinedResults.flaggedMessages,
+          messageReports: combinedResults.messageReports,
+          mutedUsers: combinedResults.mutedUsers,
+          lastSync: new Date().toISOString(),
+          syncWarnings: failedKeys,
+          error: null,
         });
-      };
+      } catch (err: unknown) {
+        console.error('[Sync Engine] Critical unhandled sync error:', err);
+        set({ error: (err as Error).message });
+      } finally {
+        clearTimeout(safetyTimeout);
+        set({ isSyncing: false });
+        _syncPromise = null;
+      }
+    })();
 
-      const safeFetch = async (key: string, queryFn: () => Promise<any>, currentValue: any, staleTime?: number) => {
-        try {
-          return await fetchOrUseCache(key, queryFn, staleTime);
-        } catch (err: any) {
-          console.error(`[Sync Engine] Failed to sync slice "${key}":`, err);
-          failedKeys.push(key);
-          return currentValue || [];
-        }
-      };
-
-      // Define thunks that execute the queries
-      const tasks = [
-        async () => ({
-          analytics: await safeFetch('analytics', async () => {
-            const { data, error } = await supabase.rpc('fetch_admin_analytics');
-            if (error) throw error;
-            return data;
-          }, get().analytics, 60000)
-        }),
-        async () => ({
-          students: await safeFetch('students', () => fetchAllUsers(), get().students, 5 * 60 * 1000)
-        }),
-        async () => ({
-          departments: await safeFetch('departments', async () => {
-            const { data, error } = await supabase.from('departments').select('*').order('name', { ascending: true });
-            if (error) throw error;
-            return data || [];
-          }, get().departments, 60 * 60 * 1000)
-        }),
-        async () => ({
-          groups: await safeFetch('groups', async () => {
-            const { data, error } = await supabase.rpc('get_groups_with_counts');
-            if (error) throw error;
-            return (data || []).map((g: any) => ({
-              ...g,
-              member_count: Number(g.member_count) || 0,
-              moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
-            }));
-          }, get().groups, 5 * 60 * 1000)
-        }),
-        async () => ({
-          courses: await safeFetch('courses', async () => {
-            const { data, error } = await supabase.from('courses').select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)').order('code', { ascending: true });
-            if (error) throw error;
-            return data || [];
-          }, get().courses, 30 * 60 * 1000)
-        }),
-        async () => ({
-          materials: await safeFetch('materials', async () => {
-            const { data, error } = await supabase.from('materials').select('*, course:courses!materials_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
-            if (error) throw error;
-            return data || [];
-          }, get().materials, 5 * 60 * 1000)
-        }),
-        async () => ({
-          pastQuestions: await safeFetch('pastQuestions', async () => {
-            const { data, error } = await supabase.from('past_questions').select('*, course:courses!past_questions_course_id_fkey(id, code, title, level, semester)').order('created_at', { ascending: false }).limit(100);
-            if (error) throw error;
-            return data || [];
-          }, get().pastQuestions, 5 * 60 * 1000)
-        }),
-        async () => ({
-          resources: await safeFetch('resources', async () => {
-            const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(300);
-            if (error) throw error;
-            return (data || []).map((r: any) => ({ ...r, file_size: r.file_size || 0, file_type: r.file_type || null }));
-          }, get().resources, 5 * 60 * 1000)
-        }),
-        async () => ({
-          lecturers: await safeFetch('lecturers', async () => {
-            const { data, error } = await supabase.from('lecturers').select('*').order('display_order', { ascending: true });
-            if (error) throw error;
-            return data || [];
-          }, get().lecturers, 30 * 60 * 1000)
-        }),
-        async () => ({
-          executives: await safeFetch('executives', async () => {
-            const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
-            if (error) throw error;
-            return data || [];
-          }, get().executives, 30 * 60 * 1000)
-        }),
-        async () => ({
-          announcements: await safeFetch('announcements', async () => {
-            const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(50);
-            if (error) throw error;
-            return data || [];
-          }, get().announcements, 2 * 60 * 1000)
-        }),
-        async () => ({
-          events: await safeFetch('events', async () => {
-            const { data, error } = await supabase.from('events').select('*').order('start_date', { ascending: true });
-            if (error) throw error;
-            return data || [];
-          }, get().events, 5 * 60 * 1000)
-        }),
-        async () => ({
-          graduates: await safeFetch('graduates', async () => {
-            const { data, error } = await supabase.from('graduates').select('*').order('graduation_year', { ascending: false });
-            if (error) throw error;
-            return data || [];
-          }, get().graduates, 10 * 60 * 1000)
-        }),
-        async () => ({
-          activityLogs: await safeFetch('activityLogs', async () => {
-            const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
-            if (error) throw error;
-            return data || [];
-          }, get().activityLogs, 30000)
-        }),
-        async () => ({
-          flaggedMessages: await safeFetch('flaggedMessages', async () => {
-            const { data, error } = await supabase.from('messages').select('*, sender:users!messages_sender_id_fkey(id, full_name, email, role)').eq('is_flagged', true).eq('is_deleted', false).order('created_at', { ascending: false }).limit(50);
-            if (error) throw error;
-            return data || [];
-          }, get().flaggedMessages, 30000)
-        }),
-        async () => ({
-          messageReports: await safeFetch('messageReports', async () => {
-            const { data, error } = await supabase.from('message_reports').select('*, reporter:users!message_reports_reported_by_fkey(id, full_name, email), message:messages(id, content, sender_id, sender:users!messages_sender_id_fkey(full_name, email, role))').order('created_at', { ascending: false }).limit(50);
-            if (error) throw error;
-            return data || [];
-          }, get().messageReports, 30000)
-        }),
-        async () => ({
-          mutedUsers: await safeFetch('mutedUsers', async () => {
-            const { data, error } = await supabase.from('muted_users').select('*, user:users!muted_users_user_id_fkey(id, full_name, email), mutedBy:users!muted_users_muted_by_fkey(id, full_name, email)').order('created_at', { ascending: false }).limit(50);
-            if (error) throw error;
-            return data || [];
-          }, get().mutedUsers, 30000)
-        }),
-      ];
-
-      // Run all queries concurrently. Modern browsers (HTTP/2) handle 20+ multiplexed requests instantly.
-      // TanStack Query will also deduplicate any identical in-flight queries.
-      const combinedResults: Record<string, any> = {};
-      const batchResults = await Promise.all(tasks.map(t => t()));
-      batchResults.forEach(res => Object.assign(combinedResults, res));
-
-      set({
-        analytics: combinedResults.analytics,
-        students: combinedResults.students,
-        departments: combinedResults.departments,
-        groups: combinedResults.groups,
-        courses: combinedResults.courses,
-        materials: combinedResults.materials,
-        pastQuestions: combinedResults.pastQuestions,
-        resources: combinedResults.resources,
-        lecturers: combinedResults.lecturers,
-        executives: combinedResults.executives,
-        announcements: combinedResults.announcements,
-        events: combinedResults.events,
-        graduates: combinedResults.graduates,
-        activityLogs: combinedResults.activityLogs,
-        flaggedMessages: combinedResults.flaggedMessages,
-        messageReports: combinedResults.messageReports,
-        mutedUsers: combinedResults.mutedUsers,
-        lastSync: new Date().toISOString(),
-        syncWarnings: failedKeys,
-        error: null,
-      });
-    } catch (err: unknown) {
-      console.error('[Sync Engine] Critical unhandled sync error:', err);
-      set({ error: (err as Error).message });
-    } finally {
-      clearTimeout(safetyTimeout);
-      set({ isSyncing: false });
-    }
+    return _syncPromise;
   },
 
   syncMaterialsOnly: async () => {

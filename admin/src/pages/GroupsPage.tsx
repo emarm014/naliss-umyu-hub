@@ -198,7 +198,21 @@ export default function GroupsPage() {
         entity_id: selectedGroup.id,
         entity_type: 'group',
         description: `Assigned moderator to group "${selectedGroup.name}"`,
-        metadata: { group_id: selectedGroup.id, assigned_user_id: userId },
+        metadata: { 
+          group_id: selectedGroup.id, 
+          assigned_user_id: userId,
+          target_group: {
+            id: selectedGroup.id,
+            name: selectedGroup.name,
+            level: selectedGroup.level,
+            group_type: selectedGroup.group_type
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        },
       });
 
       // Update local state immediately — don't wait for full sync
@@ -254,7 +268,21 @@ export default function GroupsPage() {
         entity_id: selectedGroup.id,
         entity_type: 'group',
         description: `Removed moderator from group "${selectedGroup.name}"`,
-        metadata: { group_id: selectedGroup.id, removed_user_id: removedUserId },
+        metadata: { 
+          group_id: selectedGroup.id, 
+          removed_user_id: removedUserId,
+          target_group: {
+            id: selectedGroup.id,
+            name: selectedGroup.name,
+            level: selectedGroup.level,
+            group_type: selectedGroup.group_type
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        },
       });
 
       // Update local state immediately
@@ -290,6 +318,29 @@ export default function GroupsPage() {
 
       // Add to store immediately
       if (data) useAdminDataStore.getState().fetchGroups();
+
+      if (data) {
+        await supabase.from('activity_logs').insert({
+          user_id: profile?.id,
+          action: 'group.create',
+          entity_id: data.id,
+          entity_type: 'group',
+          description: `Created group "${data.name}"`,
+          metadata: {
+            target_group: {
+              id: data.id,
+              name: data.name,
+              level: data.level,
+              group_type: data.group_type
+            },
+            actor: {
+              id: profile?.id,
+              full_name: profile?.full_name,
+              role: profile?.role
+            }
+          }
+        });
+      }
 
       if (createForm.group_type === 'level' && createForm.level && data) {
         const targets = storeStudents.filter(
@@ -330,7 +381,29 @@ export default function GroupsPage() {
       };
       const { data: updated, error } = await supabase.from('groups').update(updateData).eq('id', editForm.id).select().single();
       if (error) throw error;
-      if (updated) useAdminDataStore.getState().updateGroup(updated as any);
+      if (updated) {
+        useAdminDataStore.getState().updateGroup(updated as any);
+        await supabase.from('activity_logs').insert({
+          user_id: profile?.id,
+          action: 'group.update',
+          entity_id: updated.id,
+          entity_type: 'group',
+          description: `Updated group "${updated.name}"`,
+          metadata: {
+            target_group: {
+              id: updated.id,
+              name: updated.name,
+              level: updated.level,
+              group_type: updated.group_type
+            },
+            actor: {
+              id: profile?.id,
+              full_name: profile?.full_name,
+              role: profile?.role
+            }
+          }
+        });
+      }
       closeModal();
       setEditForm(null);
       showSuccess('Group updated successfully.');
@@ -349,6 +422,28 @@ export default function GroupsPage() {
     try {
       const { error } = await supabase.from('groups').delete().eq('id', groupToDelete.id);
       if (error) throw error;
+
+      await supabase.from('activity_logs').insert({
+        user_id: profile?.id,
+        action: 'group.delete',
+        entity_id: groupToDelete.id,
+        entity_type: 'group',
+        description: `Deleted group "${groupToDelete.name}"`,
+        metadata: {
+          target_group: {
+            id: groupToDelete.id,
+            name: groupToDelete.name,
+            level: groupToDelete.level,
+            group_type: groupToDelete.group_type
+          },
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        }
+      });
+
       setGroupToDelete(null);
       setActiveModal(null);
       refreshAnalytics();
@@ -460,12 +555,20 @@ export default function GroupsPage() {
       }
 
       // Step 5: Audit log
+      // Step 5: Audit log
       await supabase.from('activity_logs').insert({
         user_id: currentAdmin?.id,
         action: 'level_progression',
         entity_type: 'system',
         description: `Academic level progression run. ${level400Students.length} Level 400 student(s) graduated. All other students promoted one level.`,
-        metadata: { graduated_count: level400Students.length },
+        metadata: { 
+          graduated_count: level400Students.length,
+          actor: {
+            id: profile?.id,
+            full_name: profile?.full_name,
+            role: profile?.role
+          }
+        },
       });
 
       // Step 6: Delete the current Level 400 official group

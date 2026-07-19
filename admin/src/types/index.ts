@@ -76,7 +76,6 @@ export interface User {
     can_manage_group_media: boolean;
     can_manage_news: boolean;
     can_manage_archives: boolean;
-    can_manage_messaging: boolean;
     can_manage_courses: boolean;
     can_manage_graduates: boolean;
     can_manage_analytics: boolean;
@@ -85,6 +84,9 @@ export interface User {
     can_manage_storage: boolean;
     can_manage_security: boolean;
     can_manage_cloud_archive: boolean;
+    can_manage_gallery: boolean;
+    can_manage_event_pools: boolean;
+    can_manage_featured_students: boolean;
     assigned_level: AcademicLevel | null;
     is_restricted?: boolean;
   } | null;

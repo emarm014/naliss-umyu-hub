@@ -149,30 +149,44 @@ export default function EventsPage() {
     }
   };
 
-  const handleDelete = async (id: string, title: string) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${title}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    // Capture cover image URL BEFORE optimistic remove
-    const ev = allEvents.find(e => e.id === id);
-    const coverUrl = ev?.cover_image_url;
-
-    // Optimistic: remove instantly
-    removeEvent(id);
-    setSuccessMessage(`Event "${title}" has been deleted successfully.`);
-    setTimeout(() => setSuccessMessage(null), 5000);
-
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!window.confirm('Delete this event? This cannot be undone.')) return;
     try {
-      const { error } = await supabase.from('events').delete().eq('id', id);
-      if (error) {
-        syncAll(true);
-        setSuccessMessage(null);
-      } else {
-        deleteFromCloudinary([coverUrl]);
+      const targetEvent = useAdminDataStore.getState().events.find((e: any) => e.id === eventId);
+      const { error } = await supabase.from('events').delete().eq('id', eventId);
+      if (error) throw error;
+      
+      useAdminDataStore.getState().removeEvent(eventId);
+      refreshAnalytics();
+      
+      if (targetEvent) {
+        await supabase.from('activity_logs').insert({
+          user_id: profile?.id,
+          action: 'event.delete',
+          entity_id: eventId,
+          entity_type: 'event',
+          description: `Deleted event: "${targetEvent.title}"`,
+          metadata: {
+            target: {
+              id: targetEvent.id,
+              title: targetEvent.title,
+              level: targetEvent.target_level
+            },
+            actor: {
+              id: profile?.id,
+              full_name: profile?.full_name,
+              role: profile?.role
+            }
+          }
+        });
       }
-    } catch {
-      syncAll(true);
+      
+      setSuccessMessage('Event deleted successfully');
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      setErrorMessage('Failed to delete event');
+      setTimeout(() => setErrorMessage(null), 5000);
     }
   };
 
@@ -448,7 +462,7 @@ export default function EventsPage() {
                        <Edit className="w-3.5 h-3.5" /> Edit
                      </button>
                      <button
-                       onClick={() => handleDelete(event.id, event.title)}
+                       onClick={() => handleDeleteEvent(event.id)}
                        className="btn-institutional-sm !py-2 !text-slate-600 hover:!bg-red-50 hover:!text-red-700 hover:!border-red-200 w-auto fl-0 !px-3"
                        title="Delete Event"
                      >
@@ -593,14 +607,56 @@ function EventFormModal({
           .single();
         if (error) throw error;
         savedEvent = updated;
-        if (savedEvent) useAdminDataStore.getState().updateEvent(savedEvent);
+        if (data) {
+          useAdminDataStore.getState().updateEvent(data as any);
+          await supabase.from('activity_logs').insert({
+            user_id: authProfile?.id,
+            action: 'event.update',
+            entity_id: event.id,
+            entity_type: 'event',
+            description: `Updated event: "${data.title}"`,
+            metadata: {
+              target: {
+                id: event.id,
+                title: data.title,
+                level: data.target_level
+              },
+              actor: {
+                id: authProfile?.id,
+                full_name: authProfile?.full_name,
+                role: authProfile?.role
+              }
+            }
+          });
+        }
       } else {
         const { data: inserted, error } = await supabase.from('events').insert([data]).select('*').single();
         if (error) throw error;
         savedEvent = inserted;
-        if (savedEvent) useAdminDataStore.getState().addEvent(savedEvent);
-
-        // Push notification for new event — fire and forget
+        if (savedEvent) {
+          useAdminDataStore.getState().addEvent(savedEvent as any);
+          
+          await supabase.from('activity_logs').insert({
+            user_id: authProfile?.id,
+            action: 'event.create',
+            entity_id: savedEvent.id,
+            entity_type: 'event',
+            description: `Created event: "${data.title}"`,
+            metadata: {
+              target: {
+                id: savedEvent.id,
+                title: data.title,
+                level: data.target_level
+              },
+              actor: {
+                id: authProfile?.id,
+                full_name: authProfile?.full_name,
+                role: authProfile?.role
+              }
+            }
+          });
+          
+          // Only send push notification if target_level is not 'all'— fire and forget
         const targetLevel = currentFormData.target_level === 'all' ? null : currentFormData.target_level;
         getUserIdsForLevel(targetLevel).then(targetIds => {
           if (targetIds.length > 0) {

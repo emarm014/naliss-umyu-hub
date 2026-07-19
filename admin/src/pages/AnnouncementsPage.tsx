@@ -705,7 +705,20 @@ function AnnouncementFormModal({
       if (announcement) {
         const { data: updated, error } = await supabase.from('announcements').update(data).eq('id', announcement.id).select('*').single();
         if (error) throw error;
-        if (updated) useAdminDataStore.getState().updateAnnouncement(updated as any);
+        if (updated) {
+          useAdminDataStore.getState().updateAnnouncement(updated as any);
+          await supabase.from('activity_logs').insert({
+            user_id: authProfile?.id,
+            action: 'announcement.update',
+            entity_id: updated.id,
+            entity_type: 'announcement',
+            description: `Updated announcement: "${updated.title}"`,
+            metadata: {
+              target: { id: updated.id, title: updated.title, level: updated.target_level },
+              actor: { id: authProfile?.id, full_name: authProfile?.full_name, role: authProfile?.role }
+            }
+          });
+        }
       } else {
         const { data: inserted, error: insertError } = await supabase
           .from('announcements')
@@ -714,7 +727,20 @@ function AnnouncementFormModal({
           .single();
         if (insertError) throw insertError;
         insertedId = inserted?.id || null;
-        if (inserted) useAdminDataStore.getState().addAnnouncement(inserted as any);
+        if (inserted) {
+          useAdminDataStore.getState().addAnnouncement(inserted as any);
+          await supabase.from('activity_logs').insert({
+            user_id: authProfile?.id,
+            action: 'announcement.create',
+            entity_id: inserted.id,
+            entity_type: 'announcement',
+            description: `Created announcement: "${inserted.title}"`,
+            metadata: {
+              target: { id: inserted.id, title: inserted.title, level: inserted.target_level },
+              actor: { id: authProfile?.id, full_name: authProfile?.full_name, role: authProfile?.role }
+            }
+          });
+        }
       }
 
       // Push notification when publishing (new or updated to published)

@@ -213,21 +213,45 @@ export default function PastQuestionsPage() {
   };
 
   const handleDelete = async (pq: PastQuestionWithDetails) => {
-    if (!window.confirm(`Are you sure you want to delete "${pq.title}"? This action cannot be undone.`)) {
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to delete "${pq.title}"?`)) return;
 
+    // Optimistic: remove instantly from UI
     removePastQuestion(pq.id);
-    setSuccessMessage('Past question deleted successfully');
+    setSuccessMessage('Past question removed successfully');
     setTimeout(() => setSuccessMessage(null), 5000);
 
     try {
       const { error } = await supabase.from('past_questions').delete().eq('id', pq.id);
       if (error) {
-        syncAll(true);
+        useAdminDataStore.getState().addPastQuestion(pq as any);
         setSuccessMessage(null);
+        setFormError('Failed to delete: ' + error.message);
       } else {
+        // Fire-and-forget: clean up Cloudinary storage
         deleteFromCloudinary([pq.file_url]);
+
+        await supabase.from('activity_logs').insert({
+          user_id: profile?.id,
+          action: 'past_question.delete',
+          entity_id: pq.id,
+          entity_type: 'past_question',
+          description: `Deleted past question: "${pq.title}"`,
+          metadata: {
+            target: {
+              id: pq.id,
+              title: pq.title,
+              level: pq.level,
+              semester: pq.semester,
+              course: pq.course?.code || 'General'
+            },
+            actor: {
+              id: profile?.id,
+              full_name: profile?.full_name,
+              role: profile?.role,
+              assigned_level: permissions?.assigned_level
+            }
+          }
+        });
       }
     } catch {
       syncAll(true);
@@ -321,6 +345,30 @@ export default function PastQuestionsPage() {
             if (error) throw error;
             if (insertedList && insertedList.length > 0) {
                 insertedList.forEach(inserted => useAdminDataStore.getState().addPastQuestion(inserted as any));
+                
+                const logRows = insertedList.map(inserted => ({
+                  user_id: profile?.id,
+                  action: 'past_question.create',
+                  entity_id: inserted.id,
+                  entity_type: 'past_question',
+                  description: `Uploaded past question: "${inserted.title}"`,
+                  metadata: {
+                    target: {
+                      id: inserted.id,
+                      title: inserted.title,
+                      level: inserted.level,
+                      semester: inserted.semester,
+                      course: inserted.course?.code || 'General'
+                    },
+                    actor: {
+                      id: profile?.id,
+                      full_name: profile?.full_name,
+                      role: profile?.role,
+                      assigned_level: permissions?.assigned_level
+                    }
+                  }
+                }));
+                await supabase.from('activity_logs').insert(logRows);
             }
         } else {
             const hasSingleBatch = formData.files && formData.files.length === 1;
@@ -334,7 +382,31 @@ export default function PastQuestionsPage() {
             };
             const { data: inserted, error } = await supabase.from('past_questions').insert(singleData).select('*, course:courses(id, code, title, level, semester)').single();
             if (error) throw error;
-            if (inserted) useAdminDataStore.getState().addPastQuestion(inserted as any);
+            if (inserted) {
+                useAdminDataStore.getState().addPastQuestion(inserted as any);
+                await supabase.from('activity_logs').insert({
+                  user_id: profile?.id,
+                  action: 'past_question.create',
+                  entity_id: inserted.id,
+                  entity_type: 'past_question',
+                  description: `Uploaded past question: "${inserted.title}"`,
+                  metadata: {
+                    target: {
+                      id: inserted.id,
+                      title: inserted.title,
+                      level: inserted.level,
+                      semester: inserted.semester,
+                      course: inserted.course?.code || 'General'
+                    },
+                    actor: {
+                      id: profile?.id,
+                      full_name: profile?.full_name,
+                      role: profile?.role,
+                      assigned_level: permissions?.assigned_level
+                    }
+                  }
+                });
+            }
         }
       } else if (showModal === 'edit' && selectedPQ) {
         const hasBatch = formData.files && formData.files.length > 0;
@@ -348,7 +420,31 @@ export default function PastQuestionsPage() {
         };
         const { data: updated, error } = await supabase.from('past_questions').update(singleData).eq('id', selectedPQ.id).select('*, course:courses(id, code, title, level, semester)').single();
         if (error) throw error;
-        if (updated) useAdminDataStore.getState().updatePastQuestion(updated as any);
+        if (updated) {
+            useAdminDataStore.getState().updatePastQuestion(updated as any);
+            await supabase.from('activity_logs').insert({
+              user_id: profile?.id,
+              action: 'past_question.update',
+              entity_id: updated.id,
+              entity_type: 'past_question',
+              description: `Updated past question: "${updated.title}"`,
+              metadata: {
+                target: {
+                  id: updated.id,
+                  title: updated.title,
+                  level: updated.level,
+                  semester: updated.semester,
+                  course: updated.course?.code || 'General'
+                },
+                actor: {
+                  id: profile?.id,
+                  full_name: profile?.full_name,
+                  role: profile?.role,
+                  assigned_level: permissions?.assigned_level
+                }
+              }
+            });
+        }
       }
 
       setSuccessMessage(`Past Question ${showModal === 'create' ? 'created' : 'updated'} successfully!`);

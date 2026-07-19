@@ -572,6 +572,7 @@ export default function ArchiveManagementPage() {
                     
                     <div className="p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
                         <FileUpload
+                          folder="archives"
                           multiple={true}
                           onUploadComplete={(url, _name, size) => {
                             const sizeMB = size ? (Number(size) / (1024 * 1024)).toFixed(1) : '0.0';

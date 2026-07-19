@@ -199,6 +199,29 @@ export default function MaterialsPage() {
       } else {
         // Fire-and-forget: clean up Cloudinary storage
         deleteFromCloudinary([material.file_url]);
+        
+        await supabase.from('activity_logs').insert({
+          user_id: profile?.id,
+          action: 'material.delete',
+          entity_id: material.id,
+          entity_type: 'material',
+          description: `Deleted material: "${material.title}"`,
+          metadata: {
+            target: {
+              id: material.id,
+              title: material.title,
+              material_type: material.material_type,
+              level: material.level,
+              course: material.course?.code || 'General'
+            },
+            actor: {
+              id: profile?.id,
+              full_name: profile?.full_name,
+              role: profile?.role,
+              assigned_level: permissions?.assigned_level
+            }
+          }
+        });
       }
     } catch (err: any) {
       useAdminDataStore.getState().addMaterial(material as any);

@@ -79,6 +79,30 @@ export interface User {
   motivation?: string | null;
   biography?: string | null;
   hobbies?: string | null;
+  permissions?: {
+    can_manage_announcements: boolean;
+    can_manage_materials: boolean;
+    can_manage_events: boolean;
+    can_manage_past_questions: boolean;
+    can_manage_lecturers: boolean;
+    can_manage_executives: boolean;
+    can_manage_students: boolean;
+    can_manage_groups: boolean;
+    can_manage_group_media: boolean;
+    can_manage_news: boolean;
+    can_manage_archives: boolean;
+    can_manage_courses: boolean;
+    can_manage_graduates: boolean;
+    can_manage_analytics: boolean;
+    can_manage_logs: boolean;
+    can_manage_settings: boolean;
+    can_manage_storage: boolean;
+    can_manage_security: boolean;
+    can_manage_cloud_archive: boolean;
+    can_manage_gallery: boolean;
+    can_manage_event_pools: boolean;
+    can_manage_featured_students: boolean;
+  };
 }
 
 // Department Interface

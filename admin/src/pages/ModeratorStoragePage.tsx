@@ -18,7 +18,7 @@ interface StorageItem {
   file_url: string | null;
   file_size: number | null;
   created_at: string;
-  type: 'material' | 'past_question' | 'announcement' | 'event' | 'chat_media' | 'avatar';
+  type: 'material' | 'past_question' | 'announcement' | 'event' | 'chat_media' | 'avatar' | 'news' | 'archive' | 'gallery_topic' | 'gallery_media' | 'featured_student';
   level?: string | null;
   uploader_name?: string | null;
   sender_name?: string | null;
@@ -40,6 +40,11 @@ const TABLE_MAP: Record<string, string> = {
   event: 'events',
   chat_media: 'messages',
   avatar: 'users',
+  news: 'news',
+  archive: 'archives',
+  gallery_topic: 'gallery_topics',
+  gallery_media: 'gallery_media',
+  featured_student: 'featured_students',
 };
 
 const TYPE_CONFIG = {
@@ -49,6 +54,11 @@ const TYPE_CONFIG = {
   event:         { label: 'Events',         color: 'bg-purple-100 text-purple-700', bar: 'bg-purple-500',  icon: Calendar },
   chat_media:    { label: 'Chat Media',     color: 'bg-sky-100 text-sky-700',      bar: 'bg-sky-500',     icon: HardDrive },
   avatar:        { label: 'Avatars',        color: 'bg-rose-100 text-rose-700',    bar: 'bg-rose-500',    icon: HardDrive },
+  news:          { label: 'News',           color: 'bg-indigo-100 text-indigo-700',bar: 'bg-indigo-500',  icon: FileText },
+  archive:       { label: 'Archives',       color: 'bg-orange-100 text-orange-700',bar: 'bg-orange-500',  icon: FileText },
+  gallery_topic: { label: 'Gallery Topics', color: 'bg-pink-100 text-pink-700',    bar: 'bg-pink-500',    icon: HardDrive },
+  gallery_media: { label: 'Gallery Media',  color: 'bg-fuchsia-100 text-fuchsia-700',bar: 'bg-fuchsia-500', icon: HardDrive },
+  featured_student: { label: 'Featured Students', color: 'bg-teal-100 text-teal-700',bar: 'bg-teal-500', icon: HardDrive },
 } as const;
 
 export default function ModeratorStoragePage() {
@@ -134,6 +144,36 @@ export default function ModeratorStoragePage() {
         .not('avatar_url', 'is', null)
         .neq('avatar_url', '');
 
+      // Fetch news
+      const { data: newsData } = await supabase
+        .from('news')
+        .select('id, title, image_url, created_at')
+        .not('image_url', 'is', null);
+
+      // Fetch archives
+      const { data: archivesData } = await supabase
+        .from('archives')
+        .select('id, title, file_url, file_size, created_at')
+        .not('file_url', 'is', null);
+
+      // Fetch gallery topics
+      const { data: galleryTopics } = await supabase
+        .from('gallery_topics')
+        .select('id, title, cover_image, created_at')
+        .not('cover_image', 'is', null);
+
+      // Fetch gallery media
+      const { data: galleryMedia } = await supabase
+        .from('gallery_media')
+        .select('id, media_url, created_at, gallery_topics(title)')
+        .not('media_url', 'is', null);
+
+      // Fetch featured students
+      const { data: featuredStudents } = await supabase
+        .from('featured_students')
+        .select('id, title, custom_image_url, created_at')
+        .not('custom_image_url', 'is', null);
+
       const all: StorageItem[] = [
         ...(mats || []).map((m: any) => ({ id: m.id, title: m.title, file_url: m.file_url, file_size: m.file_size, created_at: m.created_at, type: 'material' as const, level: m.level })),
         ...(pqs || []).map((p: any) => ({ id: p.id, title: p.title, file_url: p.file_url, file_size: p.file_size, created_at: p.created_at, type: 'past_question' as const, level: p.level })),
@@ -143,7 +183,6 @@ export default function ModeratorStoragePage() {
           id: m.id,
           title: `${m.message_type.charAt(0).toUpperCase() + m.message_type.slice(1)} — ${(m.groups as any)?.name || 'Group Chat'}`,
           file_url: m.content,
-          // Use stored file_size first, then metadata.size (set by mobile uploader), then null
           file_size: m.file_size ?? m.metadata?.size ?? null,
           created_at: m.created_at,
           type: 'chat_media' as const,
@@ -151,14 +190,17 @@ export default function ModeratorStoragePage() {
         })),
         ...(avatarUsers || []).map((u: any) => ({
           id: u.id,
-          title: u.avatar_url?.includes('cloudinary.com')
-            ? `Avatar — ${u.full_name || 'User'}`
-            : `Default Avatar — ${u.full_name || 'User'}`,
+          title: u.avatar_url?.includes('cloudinary.com') ? `Avatar — ${u.full_name || 'User'}` : `Default Avatar — ${u.full_name || 'User'}`,
           file_url: u.avatar_url,
           file_size: null,
           created_at: u.created_at,
           type: 'avatar' as const,
         })),
+        ...(newsData || []).map((n: any) => ({ id: n.id, title: n.title, file_url: n.image_url, file_size: null, created_at: n.created_at, type: 'news' as const })),
+        ...(archivesData || []).map((a: any) => ({ id: a.id, title: a.title, file_url: a.file_url, file_size: typeof a.file_size === 'string' ? null : a.file_size, created_at: a.created_at, type: 'archive' as const })),
+        ...(galleryTopics || []).map((g: any) => ({ id: g.id, title: g.title, file_url: g.cover_image, file_size: null, created_at: g.created_at, type: 'gallery_topic' as const })),
+        ...(galleryMedia || []).map((g: any) => ({ id: g.id, title: `Gallery Media — ${(g.gallery_topics as any)?.title || 'Topic'}`, file_url: g.media_url, file_size: null, created_at: g.created_at, type: 'gallery_media' as const })),
+        ...(featuredStudents || []).map((f: any) => ({ id: f.id, title: f.title, file_url: f.custom_image_url, file_size: null, created_at: f.created_at, type: 'featured_student' as const })),
       ];
 
       setItems(all);
@@ -221,7 +263,7 @@ export default function ModeratorStoragePage() {
 
   // ── Real-time: any deletion/insert on content tables instantly re-fetches ─
   useEffect(() => {
-    const tables = ['materials', 'past_questions', 'announcements', 'events', 'messages'];
+    const tables = ['materials', 'past_questions', 'announcements', 'events', 'messages', 'news', 'archives', 'gallery_topics', 'gallery_media', 'featured_students'];
     const channels = tables.map(table =>
       supabase
         .channel(`storage-watch:${table}:${Date.now()}`)

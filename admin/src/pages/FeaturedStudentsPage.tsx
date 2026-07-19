@@ -6,8 +6,8 @@ import {
   ChevronLeft, ChevronRight, Clock, Send
 } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import Modal from '../components/ui/Modal';
 import FileUpload from '../lib/FileUpload';
+import { useFormDraft } from '../hooks/useFormDraft';
 
 // ─── Types ────────────────────────────────────────────────────────
 type FeaturedStudent = {
@@ -60,19 +60,18 @@ export default function FeaturedStudentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Modal
-  const [showModal, setShowModal] = useState<'create' | 'edit' | null>(null);
-  const [editingItem, setEditingItem] = useState<FeaturedStudent | null>(null);
+  const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('featured_draft', {
+    formType: 'student_of_the_week',
+    formScope: 'department',
+    formTitle: 'Student of the Week',
+    formSubtitle: '',
+    formDescription: '',
+    formImageUrl: '',
+    formExpiresAt: '',
+    formSelectedUser: null as SearchUser | null,
+  });
 
-  // Form
-  const [formType, setFormType] = useState<string>('student_of_the_week');
-  const [formScope, setFormScope] = useState<string>('department');
-  const [formTitle, setFormTitle] = useState('Student of the Week');
-  const [formSubtitle, setFormSubtitle] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formImageUrl, setFormImageUrl] = useState('');
-  const [formExpiresAt, setFormExpiresAt] = useState('');
-  const [formSelectedUser, setFormSelectedUser] = useState<SearchUser | null>(null);
+  const [editingItem, setEditingItem] = useState<FeaturedStudent | null>(null);
 
   // User search
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -154,61 +153,57 @@ export default function FeaturedStudentsPage() {
   }), [featured]);
 
   // ─── Form Helpers ───────────────────────────────────────────
-  const resetForm = () => {
-    setFormType('student_of_the_week');
-    setFormScope('department');
-    setFormTitle('Student of the Week');
-    setFormSubtitle('');
-    setFormDescription('');
-    setFormImageUrl('');
-    setFormExpiresAt('');
-    setFormSelectedUser(null);
+  const handleClearDraft = () => {
+    clearDraft();
+    setFormError(null);
     setUserSearchQuery('');
     setUserSearchResults([]);
-    setFormError(null);
+    setEditingItem(null);
   };
 
-  const openCreate = () => { resetForm(); setEditingItem(null); setShowModal('create'); };
+  const openCreate = () => { handleClearDraft(); setShowModal('create'); };
 
   const openEdit = (item: FeaturedStudent) => {
     setEditingItem(item);
-    setFormType(item.type);
-    setFormScope(item.scope);
-    setFormTitle(item.title);
-    setFormSubtitle(item.subtitle || '');
-    setFormDescription(item.description || '');
-    setFormImageUrl(item.custom_image_url || '');
-    setFormExpiresAt(item.expires_at ? new Date(item.expires_at).toISOString().slice(0, 16) : '');
-    setFormSelectedUser(item.users ? {
-      id: item.user_id,
-      full_name: item.users.full_name,
-      username: item.users.username,
-      avatar_url: item.users.avatar_url,
-      level: item.users.level,
-      department_id: item.users.department_id,
-    } : null);
+    setFormData({
+      formType: item.type,
+      formScope: item.scope,
+      formTitle: item.title,
+      formSubtitle: item.subtitle || '',
+      formDescription: item.description || '',
+      formImageUrl: item.custom_image_url || '',
+      formExpiresAt: item.expires_at ? new Date(item.expires_at).toISOString().slice(0, 16) : '',
+      formSelectedUser: item.users ? {
+        id: item.user_id,
+        full_name: item.users.full_name,
+        username: item.users.username,
+        avatar_url: item.users.avatar_url,
+        level: item.users.level,
+        department_id: item.users.department_id,
+      } : null
+    });
     setShowModal('edit');
   };
 
   // ─── Submit ─────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formSelectedUser) { setFormError('Please select a student.'); return; }
-    if (!formTitle.trim()) { setFormError('Title is required.'); return; }
+    if (!formData.formSelectedUser) { setFormError('Please select a student.'); return; }
+    if (!formData.formTitle.trim()) { setFormError('Title is required.'); return; }
 
     setIsSubmitting(true);
     setFormError(null);
 
     try {
       const payload = {
-        user_id: formSelectedUser.id,
-        type: formType,
-        scope: formScope,
-        title: formTitle.trim(),
-        subtitle: formSubtitle.trim() || `${formSelectedUser.level || ''} Level`.trim(),
-        description: formDescription.trim() || null,
-        custom_image_url: formImageUrl || null,
-        expires_at: formExpiresAt ? new Date(formExpiresAt).toISOString() : null,
+        user_id: formData.formSelectedUser.id,
+        type: formData.formType,
+        scope: formData.formScope,
+        title: formData.formTitle.trim(),
+        subtitle: formData.formSubtitle.trim() || `${formData.formSelectedUser.level || ''} Level`.trim(),
+        description: formData.formDescription.trim() || null,
+        custom_image_url: formData.formImageUrl || null,
+        expires_at: formData.formExpiresAt ? new Date(formData.formExpiresAt).toISOString() : null,
         is_active: true,
       };
 
@@ -222,8 +217,7 @@ export default function FeaturedStudentsPage() {
         setSuccessMessage('Featured student updated successfully.');
       }
 
-      setShowModal(null);
-      resetForm();
+      handleClearDraft();
       fetchFeatured();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
@@ -496,6 +490,267 @@ export default function FeaturedStudentsPage() {
         </div>
       )}
 
+      {/* ── Create / Edit Modal ── */}
+      {(showModal === 'create' || showModal === 'edit') && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden border border-white/10 animate-in zoom-in-95 duration-500">
+            <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-primary-950 text-white rounded-2xl shadow-lg ring-4 ring-primary-50">
+                  {showModal === 'create' ? <Plus className="w-6 h-6" /> : <Edit className="w-6 h-6" />}
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+                    {showModal === 'create' ? 'Feature a Student' : 'Edit Featured Student'}
+                  </h2>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Hall of Fame Network</p>
+                </div>
+              </div>
+              <button type="button" onClick={handleClearDraft} className="p-3 bg-white hover:bg-rose-500 hover:text-white rounded-xl shadow-sm transition-all active:scale-90 text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+              <form id="featured-student-form" onSubmit={handleSubmit} className="p-8 space-y-8">
+              {formError && (
+                <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-sm text-red-600 font-medium flex items-center gap-3">
+                  <X className="w-5 h-5 flex-shrink-0" />
+                  {formError}
+                </div>
+              )}
+
+              {/* Student Search */}
+              <div className="space-y-3">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Student</label>
+                {formData.formSelectedUser ? (
+                  <div className="flex items-center gap-4 p-4 bg-primary-50 rounded-2xl border border-primary-100">
+                    {formData.formSelectedUser.avatar_url ? (
+                      <img src={formData.formSelectedUser.avatar_url} alt="" className="w-12 h-12 rounded-xl object-cover" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center">
+                        <Users className="w-5 h-5 text-primary-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-black text-slate-950 truncate">{formData.formSelectedUser.full_name}</p>
+                      <p className="text-xs text-slate-400 font-medium">@{formData.formSelectedUser.username} • {formData.formSelectedUser.level || '—'} Level</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setFormData(prev => ({ ...prev, formSelectedUser: null })); setUserSearchQuery(''); }}
+                      className="p-2 bg-white rounded-xl hover:bg-rose-50 hover:text-rose-500 transition-all text-slate-400"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />
+                    <input
+                      type="text"
+                      value={userSearchQuery}
+                      onChange={e => setUserSearchQuery(e.target.value)}
+                      placeholder="Type a student name or username..."
+                      className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900"
+                    />
+                    {isSearching && (
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                        <div className="w-5 h-5 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+                      </div>
+                    )}
+                    {userSearchResults.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-100 shadow-2xl z-50 max-h-64 overflow-y-auto">
+                        {userSearchResults.map(user => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                formSelectedUser: user,
+                                formSubtitle: prev.formSubtitle || `${user.level || ''} Level`.trim()
+                              }));
+                              setUserSearchQuery('');
+                              setUserSearchResults([]);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left"
+                          >
+                            {user.avatar_url ? (
+                              <img src={user.avatar_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                                <Users className="w-4 h-4 text-slate-300" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-slate-900 truncate">{user.full_name}</p>
+                              <p className="text-xs text-slate-400">@{user.username} • {user.level || '—'} Level</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Type Selector */}
+              <div className="space-y-3">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Recognition Type</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {TYPE_OPTIONS.map(opt => {
+                    const Icon = opt.icon;
+                    const isSelected = formData.formType === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => {
+                            let title = prev.formTitle;
+                            if (opt.value === 'student_of_the_week') title = 'Student of the Week';
+                            else if (opt.value === 'legend_of_the_month') title = 'Legend of the Month';
+                            else title = 'Event Pool Winner';
+                            return { ...prev, formType: opt.value, formTitle: title };
+                          });
+                        }}
+                        className={`p-4 rounded-2xl border-2 transition-all text-center ${
+                          isSelected
+                            ? 'border-primary-950 bg-primary-50 shadow-lg shadow-primary-950/10'
+                            : 'border-transparent bg-slate-50 hover:border-slate-200'
+                        }`}
+                      >
+                        <Icon className={`w-6 h-6 mx-auto mb-2 ${isSelected ? 'text-primary-600' : opt.color}`} />
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-primary-950' : 'text-slate-500'}`}>
+                          {opt.label}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Scope */}
+              <div className="space-y-3">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Scope</label>
+                <div className="flex gap-3">
+                  {SCOPE_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, formScope: opt.value }))}
+                      className={`px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        formData.formScope === opt.value
+                          ? 'bg-primary-950 text-white shadow-lg'
+                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border-2 border-transparent'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Title & Subtitle */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Title</label>
+                  <input
+                    type="text"
+                    value={formData.formTitle}
+                    onChange={e => setFormData(prev => ({ ...prev, formTitle: e.target.value }))}
+                    className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900"
+                    placeholder="e.g. Student of the Week"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Subtitle</label>
+                  <input
+                    type="text"
+                    value={formData.formSubtitle}
+                    onChange={e => setFormData(prev => ({ ...prev, formSubtitle: e.target.value }))}
+                    className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900"
+                    placeholder="e.g. Computer Science — 300 Level"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Description (optional)</label>
+                <textarea
+                  value={formData.formDescription}
+                  onChange={e => setFormData(prev => ({ ...prev, formDescription: e.target.value }))}
+                  rows={3}
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900 resize-none"
+                  placeholder="Short write-up about the student's achievement..."
+                />
+              </div>
+
+              {/* Custom Flyer Image */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Custom Flyer / Photo</label>
+                <FileUpload
+                  accept="image/*"
+                  folder="featured-students"
+                  label="Upload Flyer"
+                  description="Upload a custom flyer or photo for the featured student"
+                  isImage
+                  currentFileUrl={formData.formImageUrl}
+                  onUploadComplete={(url) => setFormData(prev => ({ ...prev, formImageUrl: url }))}
+                />
+              </div>
+
+              {/* Expires At */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Auto-Expire (optional)</label>
+                <input
+                  type="datetime-local"
+                  value={formData.formExpiresAt}
+                  onChange={e => setFormData(prev => ({ ...prev, formExpiresAt: e.target.value }))}
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900"
+                />
+                <p className="text-xs text-slate-400 font-medium ml-1">Leave blank to keep it active until you manually deactivate it.</p>
+              </div>
+
+              </form>
+            </div>
+
+            {/* Submit */}
+            <div className="shrink-0 px-8 pb-8 pt-4 bg-white border-t border-slate-100">
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={handleClearDraft}
+                  className="flex-1 px-8 py-5 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                >
+                  Discard Changes
+                </button>
+                <button
+                  type="submit"
+                  form="featured-student-form"
+                  disabled={isSubmitting || !formData.formSelectedUser}
+                  className="flex-[2] relative group inline-flex items-center justify-center gap-3 px-8 py-5 bg-primary-950 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-primary-900 transition-all active:scale-95 shadow-xl shadow-primary-950/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="absolute -inset-px bg-gradient-to-r from-emerald-400 to-primary-400 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center gap-2">
+                  {isSubmitting ? (
+                    <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Send className="w-5 h-5" />
+                      {showModal === 'create' ? 'Publish to Students' : 'Save Changes'}
+                    </>
+                  )}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Pagination ── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 pt-8">
@@ -518,236 +773,6 @@ export default function FeaturedStudentsPage() {
           </button>
         </div>
       )}
-
-      {/* ── Create / Edit Modal ── */}
-      <Modal
-        isOpen={!!showModal}
-        onClose={() => { setShowModal(null); resetForm(); }}
-        title={showModal === 'create' ? 'Feature a Student' : 'Edit Featured Student'}
-        size="lg"
-      >
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {formError && (
-            <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-sm text-red-600 font-medium flex items-center gap-3">
-              <X className="w-5 h-5 flex-shrink-0" />
-              {formError}
-            </div>
-          )}
-
-          {/* Student Search */}
-          <div className="space-y-3">
-            <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Select Student</label>
-            {formSelectedUser ? (
-              <div className="flex items-center gap-4 p-4 bg-primary-50 rounded-2xl border border-primary-100">
-                {formSelectedUser.avatar_url ? (
-                  <img src={formSelectedUser.avatar_url} alt="" className="w-12 h-12 rounded-xl object-cover" />
-                ) : (
-                  <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center">
-                    <Users className="w-5 h-5 text-primary-400" />
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-black text-gray-950 truncate">{formSelectedUser.full_name}</p>
-                  <p className="text-xs text-gray-400 font-medium">@{formSelectedUser.username} • {formSelectedUser.level || '—'} Level</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setFormSelectedUser(null); setUserSearchQuery(''); }}
-                  className="p-2 bg-white rounded-xl hover:bg-red-50 transition-all"
-                >
-                  <X className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
-                <input
-                  type="text"
-                  value={userSearchQuery}
-                  onChange={e => setUserSearchQuery(e.target.value)}
-                  placeholder="Type a student name or username..."
-                  className="w-full pl-11 pr-4 py-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500/50"
-                />
-                {isSearching && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                    <div className="w-5 h-5 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
-                  </div>
-                )}
-                {userSearchResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-gray-100 shadow-2xl z-50 max-h-64 overflow-y-auto">
-                    {userSearchResults.map(user => (
-                      <button
-                        key={user.id}
-                        type="button"
-                        onClick={() => {
-                          setFormSelectedUser(user);
-                          setUserSearchQuery('');
-                          setUserSearchResults([]);
-                          if (!formSubtitle) setFormSubtitle(`${user.level || ''} Level`.trim());
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-all text-left"
-                      >
-                        {user.avatar_url ? (
-                          <img src={user.avatar_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-                            <Users className="w-4 h-4 text-gray-300" />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold text-gray-900 truncate">{user.full_name}</p>
-                          <p className="text-xs text-gray-400">@{user.username} • {user.level || '—'} Level</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Type Selector */}
-          <div className="space-y-3">
-            <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Recognition Type</label>
-            <div className="grid grid-cols-3 gap-3">
-              {TYPE_OPTIONS.map(opt => {
-                const Icon = opt.icon;
-                const isSelected = formType === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      setFormType(opt.value);
-                      if (opt.value === 'student_of_the_week') setFormTitle('Student of the Week');
-                      else if (opt.value === 'legend_of_the_month') setFormTitle('Legend of the Month');
-                      else setFormTitle('Event Pool Winner');
-                    }}
-                    className={`p-4 rounded-2xl border-2 transition-all text-center ${
-                      isSelected
-                        ? 'border-primary-500 bg-primary-50 shadow-lg shadow-primary-500/10'
-                        : 'border-gray-100 bg-gray-50 hover:border-gray-200'
-                    }`}
-                  >
-                    <Icon className={`w-6 h-6 mx-auto mb-2 ${isSelected ? 'text-primary-600' : opt.color}`} />
-                    <p className={`text-xs font-black uppercase tracking-wider ${isSelected ? 'text-primary-700' : 'text-gray-500'}`}>
-                      {opt.label}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Scope */}
-          <div className="space-y-3">
-            <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Scope</label>
-            <div className="flex gap-3">
-              {SCOPE_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setFormScope(opt.value)}
-                  className={`px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
-                    formScope === opt.value
-                      ? 'bg-primary-950 text-white shadow-lg'
-                      : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-100'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Title & Subtitle */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Title</label>
-              <input
-                type="text"
-                value={formTitle}
-                onChange={e => setFormTitle(e.target.value)}
-                className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500/50"
-                placeholder="e.g. Student of the Week"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Subtitle</label>
-              <input
-                type="text"
-                value={formSubtitle}
-                onChange={e => setFormSubtitle(e.target.value)}
-                className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500/50"
-                placeholder="e.g. Computer Science — 300 Level"
-              />
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="space-y-2">
-            <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Description (optional)</label>
-            <textarea
-              value={formDescription}
-              onChange={e => setFormDescription(e.target.value)}
-              rows={3}
-              className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500/50 resize-none"
-              placeholder="Short write-up about the student's achievement..."
-            />
-          </div>
-
-          {/* Custom Flyer Image */}
-          <div className="space-y-2">
-            <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Custom Flyer / Photo</label>
-            <FileUpload
-              accept="image/*"
-              folder="featured-students"
-              label="Upload Flyer"
-              description="Upload a custom flyer or photo for the featured student"
-              isImage
-              currentFileUrl={formImageUrl}
-              onUploadComplete={(url) => setFormImageUrl(url)}
-            />
-          </div>
-
-          {/* Expires At */}
-          <div className="space-y-2">
-            <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Auto-Expire (optional)</label>
-            <input
-              type="datetime-local"
-              value={formExpiresAt}
-              onChange={e => setFormExpiresAt(e.target.value)}
-              className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500/50"
-            />
-            <p className="text-xs text-gray-400 font-medium">Leave blank to keep it active until you manually deactivate it.</p>
-          </div>
-
-          {/* Submit */}
-          <div className="flex items-center gap-4 pt-4">
-            <button
-              type="button"
-              onClick={() => { setShowModal(null); resetForm(); }}
-              className="px-8 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold text-sm hover:bg-gray-200 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !formSelectedUser}
-              className="flex-1 flex items-center justify-center gap-3 px-8 py-4 bg-primary-950 text-white rounded-2xl font-black text-sm uppercase tracking-wider hover:bg-primary-900 transition-all shadow-xl shadow-primary-950/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Send className="w-5 h-5" />
-                  {showModal === 'create' ? 'Publish to Students' : 'Save Changes'}
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }

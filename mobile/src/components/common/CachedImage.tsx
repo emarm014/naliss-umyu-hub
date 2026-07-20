@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 interface CachedImageProps {
     entityId: string;
     remoteUrl: string | null | undefined;
-    assetType: 'user' | 'executive' | 'lecturer';
+    assetType: 'user' | 'executive' | 'lecturer' | 'gallery' | 'gallery_cover';
     style?: StyleProp<ImageStyle>;
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
     fallbackName?: string | null;
@@ -60,6 +60,15 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                         }
                         return;
                     }
+                }
+
+                // 2.5. If the provided remoteUrl is already a local file path, skip downloading
+                if (remoteUrl.startsWith('file://')) {
+                    if (isMounted) {
+                        setLocalUri(remoteUrl);
+                        setLoading(false);
+                    }
+                    return;
                 }
 
                 // 3. Download if not found or URL changed

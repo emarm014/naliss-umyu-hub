@@ -12,7 +12,10 @@ import NetInfo from '@react-native-community/netinfo';
 import { saveLocalUserSession, getLocalUserSession, clearLocalUserSession } from '../lib/database';
 
 const cacheAvatarLocally = async (userId: string, remoteUrl: string): Promise<string | null> => {
-  if (!userId || !remoteUrl || !remoteUrl.startsWith('http')) return null;
+  if (!userId || !remoteUrl) return null;
+  if (!remoteUrl.startsWith('http')) {
+    return remoteUrl.startsWith('file://') ? remoteUrl : null;
+  }
   try {
     const fs = FileSystem as any;
     const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
@@ -193,17 +196,13 @@ export const useAuthStore = create<AuthState>()(
             const localUri = await UnifiedDownloadEngine.download(
               merged.avatar_url,
               `user_avatar_${user.id}`,
-              `avatar_${user.id}.jpg`,
               undefined,
-              { assetType: 'user_avatar' }
+              'user_avatar'
             );
             if (localUri) {
               const updatedWithAvatar = { ...merged, local_avatar_path: localUri };
               set({ localAvatarUrl: localUri, profile: updatedWithAvatar as Profile });
               await saveLocalUserSession(updatedWithAvatar);
-              
-              
-              
             }
           }
 
@@ -496,9 +495,8 @@ export const useAuthStore = create<AuthState>()(
               const localPath = await UnifiedDownloadEngine.download(
                 resolvedProfile.avatar_url,
                 `user_avatar_${user.id}`,
-                `avatar_${user.id}.jpg`,
                 undefined,
-                { assetType: 'user_avatar' }
+                'user_avatar'
               );
               if (localPath) {
                 const updated = { ...resolvedProfile, local_avatar_path: localPath };

@@ -69,6 +69,10 @@ const cacheUserAvatars = async (users: any[]): Promise<any[]> => {
                 if (info.exists) {
                     return { ...user, avatar_url: `file://${localPath}` };
                 }
+                
+                if (!user.avatar_url.startsWith('http://') && !user.avatar_url.startsWith('https://')) {
+                    return user; // already a local file or invalid, skip download
+                }
                 const downloadRes = await FileSystem.downloadAsync(user.avatar_url, localPath);
                 if (downloadRes.status === 200) {
                     return { ...user, avatar_url: downloadRes.uri };

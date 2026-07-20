@@ -1105,26 +1105,40 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
 // ── Local-first entity cache ──────────────────────────────────────────────
 // Stores full entity lists in content_manifest so reads are instant from SQLite.
 export const cacheEntityList = async (contentType: string, entities: any[], userId: string) => {
-    if (!db || !entities.length) return;
+    const activeDb = db;
+    if (!activeDb || !entities.length) return;
     const now = new Date().toISOString();
     try {
-        for (const entity of entities) {
-            const id = entity.id || entity.content_id;
-            if (!id) continue;
-            await db.runAsync(
+        await activeDb.withTransactionAsync(async () => {
+            const statement = await activeDb.prepareAsync(
                 `INSERT OR REPLACE INTO content_manifest (id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    `${contentType}_${id}`,
-                    contentType,
-                    id,
-                    userId,
-                    JSON.stringify(entity),
-                    entity.updated_at || entity.created_at || now,
-                    now
-                ]
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`
             );
-        }
+            try {
+                for (let i = 0; i < entities.length; i++) {
+                    const entity = entities[i];
+                    const id = entity.id || entity.content_id;
+                    if (!id) continue;
+                    
+                    await statement.executeAsync([
+                        `${contentType}_${id}`,
+                        contentType,
+                        id,
+                        userId,
+                        JSON.stringify(entity),
+                        entity.updated_at || entity.created_at || now,
+                        now
+                    ]);
+                    
+                    // Yield occasionally to prevent native stack depth limit errors during bulk operations
+                    if (i > 0 && i % 50 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                    }
+                }
+            } finally {
+                await statement.finalizeAsync();
+            }
+        });
     } catch (e) {
         console.error('SQLite cacheEntityList error:', e);
     }
@@ -1133,15 +1147,30 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
 export const getCachedEntityList = async (contentType: string): Promise<any[]> => {
     if (!db) return [];
     try {
-        const rows = await db.getAllAsync<any>(
-            'SELECT * FROM content_manifest WHERE content_type = ? ORDER BY local_updated_at DESC',
-            [contentType]
-        );
-        return rows
-            .map(row => {
-                try { return row.raw_data ? JSON.parse(row.raw_data) : null; } catch { return null; }
-            })
-            .filter(Boolean);
+        let offset = 0;
+        const limit = 500;
+        const allRows: any[] = [];
+        let hasMore = true;
+
+        while (hasMore) {
+            const rows = await db.getAllAsync<any>(
+                'SELECT * FROM content_manifest WHERE content_type = ? ORDER BY local_updated_at DESC LIMIT ? OFFSET ?',
+                [contentType, limit, offset]
+            );
+            if (rows.length === 0) {
+                hasMore = false;
+            } else {
+                for (const row of rows) {
+                    try {
+                        const parsed = row.raw_data ? JSON.parse(row.raw_data) : null;
+                        if (parsed) allRows.push(parsed);
+                    } catch { /* ignore parse error */ }
+                }
+                offset += limit;
+                if (rows.length < limit) hasMore = false;
+            }
+        }
+        return allRows;
     } catch (e) {
         console.error('SQLite getCachedEntityList error:', e);
         return [];

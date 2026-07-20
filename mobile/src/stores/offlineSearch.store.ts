@@ -52,46 +52,65 @@ export const useOfflineSearchStore = create<OfflineSearchState>((set) => ({
             await db.runAsync('DELETE FROM offline_search_index');
 
             // 1. Index messages
-            const messages = await db.getAllAsync<any>('SELECT * FROM local_messages');
-            for (const msg of messages) {
-                try {
-                    const parsed = JSON.parse(msg.raw_data);
-                    const senderName = parsed.user?.username || parsed.user?.full_name || 'Member';
-                    await indexEntity(parsed.id, 'message', {
-                        group_id: parsed.group_id,
-                        sender_name: senderName,
-                        content: parsed.content,
-                        created_at: parsed.created_at
-                    });
-                } catch (_) {}
+            let msgOffset = 0;
+            let msgHasMore = true;
+            while (msgHasMore) {
+                const messages = await db.getAllAsync<any>('SELECT * FROM local_messages LIMIT 500 OFFSET ?', [msgOffset]);
+                if (messages.length === 0) {
+                    msgHasMore = false;
+                } else {
+                    for (const msg of messages) {
+                        try {
+                            const parsed = JSON.parse(msg.raw_data);
+                            const senderName = parsed.user?.username || parsed.user?.full_name || 'Member';
+                            await indexEntity(parsed.id, 'message', {
+                                group_id: parsed.group_id,
+                                sender_name: senderName,
+                                content: parsed.content,
+                                created_at: parsed.created_at
+                            });
+                        } catch (_) {}
+                    }
+                    msgOffset += 500;
+                    if (messages.length < 500) msgHasMore = false;
+                }
             }
 
             // 2. Index content manifests (Announcements, Events, Materials)
-            const contentItems = await db.getAllAsync<any>('SELECT * FROM content_manifest');
-            for (const item of contentItems) {
-                try {
-                    const parsed = JSON.parse(item.raw_data);
-                    if (item.content_type === 'announcement') {
-                        await indexEntity(parsed.id, 'announcement', {
-                            caption: parsed.title,
-                            content: parsed.content,
-                            created_at: parsed.created_at
-                        });
-                    } else if (item.content_type === 'event') {
-                        await indexEntity(parsed.id, 'event', {
-                            caption: parsed.title,
-                            content: parsed.description,
-                            created_at: parsed.created_at
-                        });
-                    } else if (item.content_type === 'material') {
-                        await indexEntity(parsed.id, 'material', {
-                            caption: parsed.title,
-                            content: parsed.description,
-                            file_name: parsed.file_name,
-                            created_at: parsed.created_at
-                        });
+            let contentOffset = 0;
+            let contentHasMore = true;
+            while (contentHasMore) {
+                const contentItems = await db.getAllAsync<any>('SELECT * FROM content_manifest LIMIT 500 OFFSET ?', [contentOffset]);
+                if (contentItems.length === 0) {
+                    contentHasMore = false;
+                } else {
+                    for (const item of contentItems) {
+                        try {
+                            const parsed = JSON.parse(item.raw_data);
+                            if (item.content_type === 'announcement') {
+                                await indexEntity(parsed.id, 'announcement', {
+                                    caption: parsed.title,
+                                    content: parsed.content,
+                                    created_at: parsed.created_at
+                                });
+                            } else if (item.content_type === 'event') {
+                                await indexEntity(parsed.id, 'event', {
+                                    caption: parsed.title,
+                                    content: parsed.description,
+                                    created_at: parsed.created_at
+                                });
+                            } else if (item.content_type === 'materials' || item.content_type === 'past_questions') {
+                                await indexEntity(parsed.id, 'material', {
+                                    caption: parsed.title,
+                                    content: parsed.description,
+                                    created_at: parsed.created_at
+                                });
+                            }
+                        } catch (_) {}
                     }
-                } catch (_) {}
+                    contentOffset += 500;
+                    if (contentItems.length < 500) contentHasMore = false;
+                }
             }
 
             Logger.info('offline-search', 'Full-text search index rebuild completed successfully.');

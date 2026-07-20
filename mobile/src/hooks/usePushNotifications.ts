@@ -221,7 +221,11 @@ export function usePushNotifications() {
       // Handle Quick Actions
       if (actionId === 'mark_read') {
         useNotificationStore.getState().markAsRead(notifId);
-        await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', notifId).catch((err: any) => console.error('[PushNotifications] mark notification read failed:', err));
+        try {
+          await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', notifId);
+        } catch (err: any) {
+          console.error('[PushNotifications] mark notification read failed:', err);
+        }
       } else if (actionId === 'reply' && (response as any).userText && (data as any)?.group_id && user) {
         const replyText = (response as any).userText;
         await (supabase as any).from('messages').insert({

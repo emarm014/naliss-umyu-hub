@@ -32,6 +32,11 @@ export const UnifiedDownloadEngine = {
         }
 
         try {
+            // Prevent attempting to download if it's already a local file
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                return url.startsWith('file://') ? url : `file://${url}`;
+            }
+
             const folder = localPath.substring(0, localPath.lastIndexOf('/') + 1);
             const dirInfo = await FileSystem.getInfoAsync(folder);
             if (!dirInfo.exists) {

@@ -96,17 +96,20 @@ export const useGroupStore = create<GroupState>()(
                     const lastMsgMap: Record<string, any> = {};
                     
                     if (groupIds.length > 0) {
-                        const lastMsgPromises = groupIds.map((gId: string) => 
-                            (supabase as any).from('messages')
-                                .select('id, group_id, content, content_type, message_type, created_at, sender:users!messages_sender_id_fkey(username, full_name)')
-                                .eq('group_id', gId)
-                                .eq('is_deleted', false)
-                                .order('created_at', { ascending: false })
-                                .limit(1)
-                                .maybeSingle()
-                                // Fix: Handle individual promise failures gracefully
-                                .catch((err: any) => ({ data: null, error: err }))
-                        );
+                        const lastMsgPromises = groupIds.map(async (gId: string) => {
+                            try {
+                                const res = await (supabase as any).from('messages')
+                                    .select('id, group_id, content, content_type, message_type, created_at, sender:users!messages_sender_id_fkey(username, full_name)')
+                                    .eq('group_id', gId)
+                                    .eq('is_deleted', false)
+                                    .order('created_at', { ascending: false })
+                                    .limit(1)
+                                    .maybeSingle();
+                                return res;
+                            } catch (err: any) {
+                                return { data: null, error: err };
+                            }
+                        });
                         
                         const lastMsgResults = await Promise.all(lastMsgPromises);
                         lastMsgResults.forEach((res) => {

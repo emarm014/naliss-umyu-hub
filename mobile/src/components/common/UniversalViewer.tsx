@@ -330,6 +330,16 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
               return `${VIEWER_CACHE}${safeName}`;
             })();
 
+        // If the URL is already a local file path, skip downloading
+        if (!viewerUrl.startsWith('http://') && !viewerUrl.startsWith('https://')) {
+          if (!cancelled) {
+            setLocalUri(viewerUrl.startsWith('file://') ? viewerUrl : `file://${viewerUrl}`);
+            setIsOffline(true);
+            setIsDownloading(false);
+          }
+          return;
+        }
+
         const destDir = destinationPath.substring(0, destinationPath.lastIndexOf('/') + 1);
         const dirInfo = await FileSystem.getInfoAsync(destDir);
         if (!dirInfo.exists) {
@@ -437,15 +447,23 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
         }
 
-        const resumable = FileSystem.createDownloadResumable(viewerUrl, destPath);
-        const result = await resumable.downloadAsync();
-        if (!result || result.status !== 200) {
-          Alert.alert('Save Failed', 'Could not download the file before saving.');
+        // If the URL is already a local file path, just copy it to the destination
+        if (!viewerUrl.startsWith('http://') && !viewerUrl.startsWith('https://')) {
+          const localSrc = viewerUrl.startsWith('file://') ? viewerUrl : `file://${viewerUrl}`;
+          await FileSystem.copyAsync({ from: localSrc, to: destPath });
+          fileToSave = destPath;
           setIsSaving(false);
-          return;
+        } else {
+          const resumable = FileSystem.createDownloadResumable(viewerUrl, destPath);
+          const result = await resumable.downloadAsync();
+          if (!result || result.status !== 200) {
+            Alert.alert('Save Failed', 'Could not download the file before saving.');
+            setIsSaving(false);
+            return;
+          }
+          fileToSave = result.uri;
+          setIsSaving(false);
         }
-        fileToSave = result.uri;
-        setIsSaving(false);
       }
 
       const fileUriNorm = fileToSave.startsWith('file://') ? fileToSave : `file://${fileToSave}`;

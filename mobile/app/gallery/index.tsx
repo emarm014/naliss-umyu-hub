@@ -24,7 +24,7 @@ export default function GalleryScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const { data: topics = [], isLoading, refetch, isRefetching } = useQuery({
+  const { data: topics = [], isLoading, refetch, isRefetching } = useQuery<any[]>({
     queryKey: ['gallery_topics'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -35,15 +35,8 @@ export default function GalleryScreen() {
       if (error) throw error;
       const result = data || [];
       // Cache for offline
-      mmkvStorage.setItem(TOPICS_CACHE_KEY, JSON.stringify(result)).catch(() => {});
+      Promise.resolve(mmkvStorage.setItem(TOPICS_CACHE_KEY, JSON.stringify(result))).catch(() => {});
       return result;
-    },
-    initialData: () => {
-      try {
-        const cached = mmkvStorage.getStringSync?.(TOPICS_CACHE_KEY);
-        if (cached) return JSON.parse(cached);
-      } catch {}
-      return undefined;
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -84,14 +77,15 @@ export default function GalleryScreen() {
       <View style={[styles.coverContainer, { backgroundColor: colors.background }]}>
         {item.cover_image ? (
           <CachedImage
-            url={item.cover_image}
+            remoteUrl={item.cover_image}
             style={styles.coverImage}
-            contentFit="cover"
-            cacheKey={`gallery_cover_${item.id}`}
+            resizeMode="cover"
+            entityId={item.id}
+            assetType="gallery_cover"
           />
         ) : (
           <View style={[styles.placeholderCover, { backgroundColor: isDark ? '#1f2937' : '#f3f4f6' }]}>
-            <Ionicons name="image-outline" size={48} color={colors.textLight} />
+            <Ionicons name="image-outline" size={48} color={colors.textSecondary} />
           </View>
         )}
         <LinearGradient
@@ -108,7 +102,7 @@ export default function GalleryScreen() {
           {item.title}
         </Text>
         {item.description ? (
-          <Text style={[styles.topicDescription, { color: colors.textLight }]} numberOfLines={2}>
+          <Text style={[styles.topicDescription, { color: colors.textSecondary }]} numberOfLines={2}>
             {item.description}
           </Text>
         ) : null}
@@ -145,7 +139,7 @@ export default function GalleryScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="images-outline" size={64} color={colors.border} />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No Albums Yet</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textLight }]}>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
                 Check back later for new photos and memories.
               </Text>
             </View>

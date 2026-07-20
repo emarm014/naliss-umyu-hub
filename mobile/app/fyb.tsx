@@ -42,7 +42,7 @@ export default function FYBScreen() {
 
   // Load cached data on mount
   useEffect(() => {
-    mmkvStorage.getItem(CACHE_KEY).then(cached => {
+    Promise.resolve(mmkvStorage.getItem(CACHE_KEY)).then((cached: any) => {
       if (cached) {
         try { setInitialData(JSON.parse(cached)); } catch {}
       }
@@ -58,12 +58,12 @@ export default function FYBScreen() {
         total_congratulations, created_at,
         users ( full_name, username, avatar_url )
       `)
-      .neq('type', 'event_winner')
+      .neq('type' as any, 'event_winner' as any)
       .order('published_at', { ascending: false });
 
     if (error) throw error;
-    const result = (data || []) as FeaturedStudentEntry[];
-    mmkvStorage.setItem(CACHE_KEY, JSON.stringify(result)).catch(() => {});
+    const result = (data || []) as unknown as FeaturedStudentEntry[];
+    Promise.resolve(mmkvStorage.setItem(CACHE_KEY, JSON.stringify(result))).catch(() => {});
     return result;
   };
 

@@ -118,6 +118,9 @@ export const getOfflineImageUri = async (remoteUrl: string): Promise<string> => 
 
     const downloadPromise = (async (): Promise<string | null> => {
         try {
+            if (remoteUrl.startsWith('file://')) {
+                return remoteUrl;
+            }
             await ensureCacheDir();
             const result = await FileSystem.downloadAsync(remoteUrl, localUri);
             if (!result?.uri) return null;

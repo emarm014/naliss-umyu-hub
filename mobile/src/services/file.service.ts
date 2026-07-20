@@ -54,6 +54,9 @@ export const FileService = {
     onProgress?: (progress: number) => void
   ): Promise<string | null> {
     try {
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return url.startsWith('file://') ? url : `file://${url}`;
+      }
       const localPath = this.getLocalUri(fileId, _displayName || url);
       const folder = localPath.substring(0, localPath.lastIndexOf('/') + 1);
       const dirInfo = await FileSystem.getInfoAsync(folder);

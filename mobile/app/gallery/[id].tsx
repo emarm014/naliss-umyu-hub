@@ -34,55 +34,46 @@ export default function GalleryTopicScreen() {
   const TOPIC_DETAILS_CACHE_KEY = `gallery_topic_details_${id}`;
 
   // Fetch Topic Details
-  const { data: topic } = useQuery({
+  const { data: topic } = useQuery<any>({
     queryKey: ['gallery_topic_details', id],
     queryFn: async () => {
-      const { data, error } = await supabase
+        const topicId = typeof id === 'string' ? id : id[0];
+        const { data, error } = await supabase
         .from('gallery_topics')
         .select('*')
-        .eq('id', id)
+        .eq('id' as any, topicId as any)
         .single();
       if (error) throw error;
-      mmkvStorage.setItem(TOPIC_DETAILS_CACHE_KEY, JSON.stringify(data)).catch(() => {});
+      Promise.resolve(mmkvStorage.setItem(TOPIC_DETAILS_CACHE_KEY, JSON.stringify(data))).catch(() => {});
       return data;
-    },
-    initialData: () => {
-      try {
-        const cached = mmkvStorage.getStringSync?.(TOPIC_DETAILS_CACHE_KEY);
-        if (cached) return JSON.parse(cached);
-      } catch {}
-      return undefined;
     },
     staleTime: 5 * 60 * 1000,
   });
 
   // Fetch Media
-  const { data: media = [], isLoading } = useQuery({
+  const { data: media = [], isLoading } = useQuery<any[]>({
     queryKey: ['gallery_media', id],
     queryFn: async () => {
-      const { data, error } = await supabase
+        const topicId = typeof id === 'string' ? id : id[0];
+        const { data, error } = await supabase
         .from('gallery_media')
         .select('*')
-        .eq('topic_id', id)
+        .eq('topic_id' as any, topicId as any)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true });
       if (error) throw error;
-      mmkvStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(data || [])).catch(() => {});
+      Promise.resolve(mmkvStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(data || []))).catch(() => {});
       return data || [];
-    },
-    initialData: () => {
-      try {
-        const cached = mmkvStorage.getStringSync?.(MEDIA_CACHE_KEY);
-        if (cached) return JSON.parse(cached);
-      } catch {}
-      return undefined;
     },
     staleTime: 5 * 60 * 1000,
   });
 
   const downloadMediaToDevice = async (url: string, filename: string) => {
     try {
-      const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return url.startsWith('file://') ? url : `file://${url}`;
+      }
+      const fileUri = `${(FileSystem as any).cacheDirectory || 'file:///tmp/'}${filename}`;
       const downloadResult = await FileSystem.downloadAsync(url, fileUri);
       return downloadResult.uri;
     } catch (e) {
@@ -146,10 +137,11 @@ export default function GalleryTopicScreen() {
         activeOpacity={0.8}
       >
         <CachedImage
-          url={item.media_url}
+          remoteUrl={item.media_url}
           style={styles.gridImage}
-          contentFit="cover"
-          cacheKey={`gallery_thumb_${item.id}`}
+          resizeMode="cover"
+          entityId={item.id}
+          assetType="gallery"
         />
         {isVideo && (
           <View style={styles.videoIndicator}>
@@ -181,10 +173,11 @@ export default function GalleryTopicScreen() {
             showsVerticalScrollIndicator={false}
           >
             <CachedImage
-              url={item.media_url}
-              style={{ width, height: height - 100 }}
-              contentFit="contain"
-              cacheKey={`gallery_full_${item.id}`}
+              remoteUrl={item.media_url}
+              style={{ width, height: height - 100 } as any}
+              resizeMode="contain"
+              entityId={item.id}
+              assetType="gallery"
             />
           </ScrollView>
         )}
@@ -208,8 +201,8 @@ export default function GalleryTopicScreen() {
         </View>
       ) : media.length === 0 ? (
         <View style={styles.center}>
-          <Ionicons name="images-outline" size={48} color={colors.textLight} />
-          <Text style={[styles.emptyText, { color: colors.textLight }]}>No media in this album yet.</Text>
+          <Ionicons name="images-outline" size={48} color={colors.textSecondary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No media in this album yet.</Text>
         </View>
       ) : (
         <FlatList
@@ -221,7 +214,6 @@ export default function GalleryTopicScreen() {
         />
       )}
 
-      {/* Full Screen Viewer Modal */}
       <Modal
         visible={selectedMediaIndex !== null}
         transparent={true}
@@ -242,6 +234,9 @@ export default function GalleryTopicScreen() {
                 <ActivityIndicator size="small" color="white" style={{ marginRight: 16 }} />
               ) : (
                 <>
+                  <Text style={[styles.counterText, { color: colors.textSecondary }]}>
+                    {topic?.total_media || media.length} Items
+                  </Text>
                   <TouchableOpacity
                     style={styles.iconButton}
                     onPress={() => handleSaveToDevice(media[selectedMediaIndex!])}

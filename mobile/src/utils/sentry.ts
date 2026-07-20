@@ -279,17 +279,19 @@ export function clearSentryUserContext() {
 }
 
 export function trackSqlTransaction(op: string, sql: string, durationMs: number, error?: any) {
-  Sentry.addBreadcrumb({
-    category: 'db.sqlite',
-    message: `SQL ${op} (${durationMs}ms)`,
-    data: {
-      op,
-      sql: sql?.slice(0, 200),
-      durationMs,
-      error: error ? (error.message ?? String(error)) : undefined,
-    },
-    level: error ? 'error' : 'info',
-  });
+  setTimeout(() => {
+    Sentry.addBreadcrumb({
+      category: 'db.sqlite',
+      message: `SQL ${op} (${durationMs}ms)`,
+      data: {
+        op,
+        sql: sql?.slice(0, 200),
+        durationMs,
+        error: error ? (error.message ?? String(error)) : undefined,
+      },
+      level: error ? 'error' : 'debug',
+    });
+  }, 0);
 }
 
 export function captureDatabaseError(op: string, error: unknown, extra?: Record<string, any>) {

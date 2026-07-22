@@ -303,14 +303,22 @@ function RootLayoutNav() {
       } catch (error) {
         console.warn("Silent Boot Warning: Isolated local configuration anomaly.", error);
       } finally {
-        // Smoothly drop the splash screen to reveal the UI dashboard instantly
+        // Trigger React to start building the root UI tree
         setIsReady(true);
-        await SplashScreen.hideAsync();
       }
     }
     
     prepareAppLifecycle();
   }, []);
+
+  // Drop splash screen safely AFTER React has committed the first UI frame
+  useEffect(() => {
+    if (isReady) {
+      setTimeout(() => {
+        SplashScreen.hideAsync().catch(() => {});
+      }, 50);
+    }
+  }, [isReady]);
 
   useEffect(() => {
     const netStore = useNetworkStore.getState();

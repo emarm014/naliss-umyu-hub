@@ -20,6 +20,8 @@ import { downloadFile, extractFileNameFromUrl, checkFileExists, getVaultFilePath
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
+import { cacheEntityList, getCachedEntityList } from '../../src/lib/database';
+
 export default function ArchiveScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -56,6 +58,10 @@ export default function ArchiveScreen() {
       setArchives(prev => pageIndex === 0 ? items : [...prev, ...items]);
       setPage(pageIndex);
       
+      if (pageIndex === 0 && items.length > 0) {
+        cacheEntityList('archives', items, '').catch(() => {});
+      }
+
       const cacheStatus: Record<string, boolean> = {};
       for (const item of items) {
         const displayName = extractFileNameFromUrl(item.file_url, item.title);
@@ -67,9 +73,29 @@ export default function ArchiveScreen() {
         }
       }
       setDownloadedIds(prev => ({ ...prev, ...cacheStatus }));
-    } catch (err) {
-      console.error('Error fetching archives:', err);
-      if (pageIndex === 0) Alert.alert('Error', 'Failed to load archives');
+    } catch (err: any) {
+      const isNetworkErr = err?.message?.includes('Network request failed') || String(err).includes('Network request failed');
+      if (isNetworkErr) {
+        console.warn('Network offline while fetching archives:', err?.message);
+      } else {
+        console.error('Error fetching archives:', err);
+      }
+
+      if (pageIndex === 0) {
+        try {
+          const cached = await getCachedEntityList('archives');
+          if (cached && cached.length > 0) {
+            setArchives(cached);
+            setHasMore(false);
+            return;
+          }
+        } catch (_) {}
+        if (!isNetworkErr) {
+          Alert.alert('Error', 'Failed to load archives');
+        }
+      } else {
+        setHasMore(false);
+      }
     } finally {
       setIsLoading(false);
       setIsFetchingMore(false);

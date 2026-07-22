@@ -66,13 +66,54 @@ export const useGroupStore = create<GroupState>()(
                     const { data: { session } } = await supabase.auth.getSession();
                     if (!session?.user) { set({ isLoading: false }); return; }
 
-                    // 1. Get groups the user is a member of
-                    const { data: memberships, error: memError } = await ((supabase as any).from('group_members')
-                        .select('group_id')
-                        .eq('user_id', session.user.id) as any);
+                    const { useAuthStore } = require('./auth.store');
+                    const profile = useAuthStore.getState().profile;
+                    const isStaff = profile?.role === 'super_admin' || profile?.role === 'moderator';
 
-                    if (memError) throw memError;
-                    const groupIds = (memberships || []).map((m: any) => m.group_id);
+                    let groupIds: string[] = [];
+
+                    if (isStaff) {
+                        // Staff can see all active groups
+                        const { data: allGroups } = await (supabase as any).from('groups')
+                            .select('id')
+                            .eq('is_active', true);
+                        if (allGroups) groupIds = allGroups.map((g: any) => g.id);
+                    } else {
+                        // 1. Get groups the student is a member of
+                        const { data: memberships, error: memError } = await ((supabase as any).from('group_members')
+                            .select('group_id')
+                            .eq('user_id', session.user.id) as any);
+
+                        if (memError) throw memError;
+                        groupIds = (memberships || []).map((m: any) => m.group_id);
+
+                        // Auto-repair missing default groups for students (Department and Level groups)
+                        let orQuery = 'group_type.eq.department';
+                        if (profile?.level) {
+                            orQuery += `,and(group_type.eq.level,level.eq.${profile.level})`;
+                        }
+
+                        const { data: defaultGroups } = await (supabase as any).from('groups')
+                            .select('id')
+                            .eq('is_active', true)
+                            .or(orQuery);
+                        
+                        if (defaultGroups) {
+                            const missingToJoin = defaultGroups.filter((g: any) => !groupIds.includes(g.id));
+                            if (missingToJoin.length > 0) {
+                                try {
+                                    // Silently try to insert them into the missing groups
+                                    await (supabase as any).from('group_members').insert(
+                                        missingToJoin.map((g: any) => ({ group_id: g.id, user_id: session.user.id, role: 'member' }))
+                                    );
+                                    missingToJoin.forEach((g: any) => groupIds.push(g.id));
+                                } catch (e) {
+                                    // Ignore RLS errors if any, just push the IDs so they can at least try to load them
+                                    missingToJoin.forEach((g: any) => groupIds.push(g.id));
+                                }
+                            }
+                        }
+                    }
 
                     if (groupIds.length === 0) {
                         set({ groups: [], isLoading: false, lastFetched: new Date().toISOString() });

@@ -32,8 +32,8 @@ const { width, height } = Dimensions.get('window');
 const getCacheBase = (): string => {
     const fs = FileSystem as any;
     const cacheDir: string =
-        fs.Paths?.cache?.uri ||
-        fs.cacheDirectory ||
+        fs.Paths?.document?.uri ||
+        fs.documentDirectory ||
         '';
     const base = cacheDir.endsWith('/') ? cacheDir : `${cacheDir}/`;
     return `${base}naliss_viewer/`;
@@ -758,7 +758,6 @@ function MicrosoftPdfViewer({ remoteUrl, isOffline }: { remoteUrl: string; isOff
   );
 }
 
-// react-native-pdf Hardware Accelerated Renderer — full-width, zoom, rotation, page counter
 function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }: {
   localUri: string | null;
   remoteUrl: string;
@@ -769,6 +768,7 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
   const [currentPage, setCurrentPage] = React.useState(1);
   const [rotation, setRotation] = React.useState(0);
   const [zoom, setZoom] = React.useState(scaleMultiplier);
+  const [hasError, setHasError] = React.useState(false);
 
   let source;
   if (localUri) {
@@ -780,6 +780,26 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
   const rotContainer = rotation !== 0
     ? { transform: [{ rotate: `${rotation}deg` }] }
     : {};
+
+  if (hasError) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <Ionicons name="alert-circle-outline" size={56} color="#f59e0b" style={{ marginBottom: 12 }} />
+        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
+          Unable to Load PDF
+        </Text>
+        <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center', marginBottom: 20, lineHeight: 20 }}>
+          The file may be corrupted, empty, or failed to download over your network connection.
+        </Text>
+        <TouchableOpacity
+          style={{ backgroundColor: COLORS.primary || '#3b82f6', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }}
+          onPress={() => setHasError(false)}
+        >
+          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Try Loading Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#1e293b' }}>
@@ -795,11 +815,12 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
           enablePaging={false}
           fitPolicy={0}
           spacing={16}
-          onLoadComplete={(count) => { setNumPages(count); }}
+          onLoadComplete={(count) => { setNumPages(count); setHasError(false); }}
           onPageChanged={(page) => { setCurrentPage(page); }}
           onPageSingleTap={() => onSingleTap?.()}
           onError={(error) => {
-            Sentry.captureException(new Error(`PDF rendering error: ${error}`));
+            console.warn('[PDF] Rendering error:', error);
+            setHasError(true);
           }}
         />
       </View>

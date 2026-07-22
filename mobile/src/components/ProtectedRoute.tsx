@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { useRouter, useSegments, usePathname } from 'expo-router';
-import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView, Platform, ScrollView } from 'react-native';
 import { useAuthStore, useSettingsStore, useTheme } from '../stores';
 import MaintenanceScreen from '../../app/maintenance';
 import { useSignupStore, useGlobalSyncStore } from '../stores';
@@ -52,6 +52,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [countdown, setCountdown] = useState<string>('');
   const [deviceSessionChecked, setDeviceSessionChecked] = useState(false);
   const [sessionError, setSessionError] = useState<'device_limit_exceeded' | null>(null);
+  const [exceededSessions, setExceededSessions] = useState<any[]>([]);
+  const [isRemovingDevice, setIsRemovingDevice] = useState<string | null>(null);
 
   // ── Device Session Registration & 5-Device Limit check ─────────────────────
   useEffect(() => {
@@ -66,9 +68,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           // 1. Fetch active sessions from the DB
           const { data: activeSessions, error: fetchErr } = await (supabase as any)
             .from('user_sessions')
-            .select('device_id, is_active')
+            .select('device_id, is_active, device_name, os, last_active_at')
             .eq('user_id', session.user.id)
-            .eq('is_active', true);
+            .eq('is_active', true)
+            .order('last_active_at', { ascending: false });
 
           if (fetchErr) throw normalizeError(fetchErr);
           if (!isSubscribed) return;
@@ -80,6 +83,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           // If the current device is NOT already one of the active sessions,
           // and we already have 5 or more active sessions, block access.
           if (!isCurrentDeviceActive && activeIds.length >= 5) {
+            setExceededSessions(activeSessions || []);
             setSessionError('device_limit_exceeded');
             setDeviceSessionChecked(true);
             return;
@@ -962,33 +966,115 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       setSessionError(null);
     };
 
+    const handleRemoveDevice = async (deviceIdToRemove: string) => {
+      try {
+        setIsRemovingDevice(deviceIdToRemove);
+        const { error } = await (supabase as any)
+          .from('user_sessions')
+          .update({ is_active: false })
+          .eq('user_id', session!.user.id)
+          .eq('device_id', deviceIdToRemove);
+        
+        if (error) throw error;
+        
+        const updatedSessions = exceededSessions.filter(s => s.device_id !== deviceIdToRemove);
+        setExceededSessions(updatedSessions);
+        
+        if (updatedSessions.length < 5) {
+          const deviceId = await getOrCreateDeviceId();
+          const ipAddress = await fetchIpAddress();
+          const deviceName = `${Platform.OS === 'ios' ? 'iPhone' : 'Android Device'} (${Platform.OS} ${Platform.Version})`;
+  
+          await (supabase as any).from('user_sessions').upsert({
+              user_id: session!.user.id,
+              device_id: deviceId,
+              device_name: deviceName,
+              os: Platform.OS,
+              ip_address: ipAddress,
+              is_active: true,
+              last_active_at: new Date().toISOString()
+          }, { onConflict: 'user_id,device_id' });
+          
+          setSessionError(null);
+          setDeviceSessionChecked(true);
+        }
+      } catch (err) {
+        Alert.alert('Error', 'Could not remove device. Please try again.');
+      } finally {
+        setIsRemovingDevice(null);
+      }
+    };
+
     return (
       <SafeAreaView style={styles.restrictionSafeArea}>
         <View style={styles.restrictionContainer}>
           <View style={styles.restrictionLogoRow}>
             <NalissLogo size={42} />
           </View>
-          <View style={[styles.restrictionCard, styles.suspendedCard, { borderColor: '#f59e0b' }]}>
+          <View style={[styles.restrictionCard, styles.suspendedCard, { borderColor: '#f59e0b', paddingHorizontal: 16 }]}>
             <View style={[styles.restrictionIconCircle, styles.suspendedIconCircle, { borderColor: 'rgba(245,158,11,0.3)' }]}>
               <Ionicons name="shield-outline" size={40} color="#f59e0b" />
             </View>
             <Text style={styles.restrictionTitle}>Device Limit Reached</Text>
             <Text style={styles.restrictionSubtitle}>
-              You are currently logged in on 5 active devices. To protect your account security, UMYU Hub restricts access to at most 5 concurrent devices.
+              You have reached the maximum limit of 5 active devices. Please sign out from one of the active devices below to authorize this device.
             </Text>
+            
             <View style={styles.restrictionDivider} />
-            <Text style={[styles.contactText, { color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 20 }]}>
-              Please log out of UMYU Hub on one of your other active devices, or manage your active sessions under Profile &gt; Security &gt; Device Management to authorize this device.
-            </Text>
+            
+            <ScrollView style={{ width: '100%', maxHeight: 250, marginTop: 10 }} showsVerticalScrollIndicator={false}>
+              {exceededSessions.map((s) => {
+                const dateObj = s.last_active_at ? new Date(s.last_active_at) : new Date();
+                const isRemoving = isRemovingDevice === s.device_id;
+                return (
+                  <View key={s.device_id} style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    padding: 12,
+                    borderRadius: 12,
+                    marginBottom: 8
+                  }}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
+                        {s.device_name || s.os || 'Unknown Device'}
+                      </Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 }}>
+                        Last active: {dateObj.toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={{
+                        backgroundColor: 'rgba(245,158,11,0.15)',
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: 'rgba(245,158,11,0.3)',
+                      }}
+                      onPress={() => handleRemoveDevice(s.device_id)}
+                      disabled={isRemovingDevice !== null}
+                    >
+                      {isRemoving ? (
+                        <ActivityIndicator size="small" color="#f59e0b" />
+                      ) : (
+                        <Text style={{ color: '#f59e0b', fontSize: 13, fontWeight: '700' }}>Remove</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
-          <View style={styles.restrictionActions}>
+          <View style={[styles.restrictionActions, { marginTop: 16 }]}>
             <TouchableOpacity
-              style={[styles.signOutButton, { backgroundColor: '#f59e0b', shadowColor: '#f59e0b' }]}
+              style={[styles.signOutButton, { backgroundColor: '#3f3f46', shadowColor: '#000' }]}
               onPress={handleExit}
               activeOpacity={0.8}
             >
               <Ionicons name="log-out-outline" size={18} color="#ffffff" />
-              <Text style={styles.signOutButtonText}>Back to Login</Text>
+              <Text style={styles.signOutButtonText}>Sign Out Entirely</Text>
             </TouchableOpacity>
           </View>
         </View>

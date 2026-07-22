@@ -187,8 +187,6 @@ export const useAuthStore = create<AuthState>()(
           
           // Anchor the fresh fetch payload into SQLite
           await saveLocalUserSession(merged);
-          
-          
 
           // Unify avatar download
           if (merged.avatar_url) {
@@ -261,7 +259,9 @@ export const useAuthStore = create<AuthState>()(
         if ((updates as any).full_name) metaUpdates.full_name = (updates as any).full_name;
 
         if (Object.keys(metaUpdates).length > 0) {
-          supabase.auth.updateUser({ data: metaUpdates }).catch(() => {}); 
+          (async () => {
+            try { await supabase.auth.updateUser({ data: metaUpdates }); } catch (_) {}
+          })();
         }
 
         const senderPatch: { username?: string; avatar_url?: string; full_name?: string } = {};

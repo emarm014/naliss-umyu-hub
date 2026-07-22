@@ -12,6 +12,10 @@ export const ensureLocalFile = async (urlOrPath: string, fileName?: string): Pro
     const safeFileName = (fileName || 'downloaded_file').replace(/[^a-zA-Z0-9.-]/g, '_');
     const destPath = `${FileSystem.cacheDirectory}temp_save_${Date.now()}_${safeFileName}`;
     
+    if (!urlOrPath.startsWith('http://') && !urlOrPath.startsWith('https://')) {
+        return urlOrPath.startsWith('file://') ? urlOrPath : `file://${urlOrPath}`;
+    }
+
     let downloadUrl = urlOrPath
         .replace('/raw/upload/fl_inline/', '/raw/upload/')
         .replace('/fl_inline/', '/');

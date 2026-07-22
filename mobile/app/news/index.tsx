@@ -19,17 +19,28 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { format } from 'date-fns';
 import { useNewsStore } from '../../src/stores/news.store';
+import { cacheEntityList, getCachedEntityList } from '../../src/lib/database';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 const { width } = Dimensions.get('window');
 
-const NewsCard = ({ item, isDark, colors }: { item: any; isDark: boolean; colors: any }) => {
+const NewsCard = ({ 
+  item, 
+  isDark, 
+  colors, 
+  onImagePress 
+}: { 
+  item: any; 
+  isDark: boolean; 
+  colors: any; 
+  onImagePress: (url: string, title: string) => void;
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showReadMore, setShowReadMore] = useState(false);
 
   const cardBg = isDark ? '#1E2638' : '#FFFFFF';
-  const textColor = isDark ? '#FFFFFF' : '#0f172a'; // dark navy title
-  const bodyColor = isDark ? '#cbd5e1' : '#475569'; // dark grey body text
-  const borderColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  const textColor = isDark ? '#FFFFFF' : '#0f172a';
+  const bodyColor = isDark ? '#cbd5e1' : '#475569';
+  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
   let formattedDate = '';
   if (item.created_at) {
@@ -46,87 +57,93 @@ const NewsCard = ({ item, isDark, colors }: { item: any; isDark: boolean; colors
       : (item.image_url ? [item.image_url] : []);
 
   const totalImages = imageUrls.length;
-
-  const onTextLayout = useCallback((e: any) => {
-    if (e.nativeEvent.lines.length > 3 && !showReadMore && !isExpanded) {
-      setShowReadMore(true);
-    }
-  }, [showReadMore, isExpanded]);
+  const isLongContent = item.content && item.content.length > 180;
 
   return (
     <View style={[styles.card, { backgroundColor: cardBg, borderColor }]}>
+      {/* Top Header Bar — Category Tag & Date (NEVER overlaps image or body text) */}
+      <View style={styles.cardTopHeader}>
+        <View style={[styles.categoryBadge, { backgroundColor: COLORS.primary || '#3b82f6' }]}>
+          <Ionicons name="pricetag-outline" size={11} color="#FFFFFF" style={{ marginRight: 4 }} />
+          <Text style={styles.categoryBadgeText}>
+            {(item.category || 'GENERAL').toUpperCase()}
+          </Text>
+        </View>
+
+        {formattedDate ? (
+          <View style={styles.dateRow}>
+            <Ionicons name="calendar-outline" size={13} color={isDark ? '#94a3b8' : '#64748b'} />
+            <Text style={[styles.dateText, { color: isDark ? '#94a3b8' : '#64748b' }]}>{formattedDate}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* Clickable Image Section */}
       {totalImages === 1 ? (
-        <View style={styles.heroContainer}>
+        <TouchableOpacity 
+          style={styles.heroContainer} 
+          activeOpacity={0.9}
+          onPress={() => onImagePress(imageUrls[0], item.title)}
+        >
           <Image 
             source={{ uri: imageUrls[0] }} 
             style={styles.heroImage}
             resizeMode="cover"
           />
-          {item.category && (
-            <View style={styles.badgeOverlay}>
-              <Text style={styles.badgeText}>{item.category.toUpperCase()}</Text>
-            </View>
-          )}
-        </View>
+          <View style={styles.imageTapHint}>
+            <Ionicons name="expand-outline" size={16} color="#FFFFFF" />
+            <Text style={styles.imageTapHintText}>Tap to view & save</Text>
+          </View>
+        </TouchableOpacity>
       ) : totalImages > 1 ? (
         <View style={styles.albumContainer}>
-          {item.category && (
-            <View style={[styles.badgeOverlay, { zIndex: 10 }]}>
-              <Text style={styles.badgeText}>{item.category.toUpperCase()}</Text>
-            </View>
-          )}
           <View style={styles.albumGrid}>
             {imageUrls.slice(0, 4).map((url, index) => {
               let itemStyle: any = styles.albumGridItemHalf;
               if (totalImages === 3 && index === 0) itemStyle = styles.albumGridItemFull;
 
               return (
-                <View key={index} style={itemStyle}>
+                <TouchableOpacity 
+                  key={index} 
+                  style={itemStyle}
+                  activeOpacity={0.88}
+                  onPress={() => onImagePress(url, item.title)}
+                >
                   <Image source={{ uri: url }} style={styles.albumGridImage} resizeMode="cover" />
                   {index === 3 && totalImages > 4 && (
                     <View style={styles.albumMoreOverlay}>
                       <Text style={styles.albumMoreText}>+{totalImages - 4}</Text>
+                      <Text style={styles.albumMoreSubText}>View All</Text>
                     </View>
                   )}
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
         </View>
-      ) : (
-        item.category && (
-          <View style={[styles.badgeOverlay, { position: 'relative', alignSelf: 'flex-start', margin: 16, marginBottom: 0 }]}>
-            <Text style={styles.badgeText}>{item.category.toUpperCase()}</Text>
-          </View>
-        )
-      )}
+      ) : null}
       
+      {/* Content Area */}
       <View style={styles.cardContent}>
-        <Text style={[styles.title, { color: textColor }]} numberOfLines={2}>
+        <Text style={[styles.title, { color: textColor }]}>
           {item.title}
         </Text>
-        
-        <View style={styles.metadataRow}>
-          <Ionicons name="calendar-outline" size={14} color={bodyColor} />
-          <Text style={[styles.dateText, { color: bodyColor }]}>{formattedDate}</Text>
-        </View>
 
         <Text 
           style={[styles.bodyText, { color: bodyColor }]} 
-          numberOfLines={isExpanded ? undefined : 3}
-          onTextLayout={onTextLayout}
+          numberOfLines={isExpanded ? undefined : 4}
         >
           {item.content}
         </Text>
 
-        {showReadMore && (
+        {isLongContent && (
           <TouchableOpacity 
             style={styles.readMoreButton} 
             onPress={() => setIsExpanded(!isExpanded)}
             activeOpacity={0.7}
           >
-            <Text style={styles.readMoreText}>{isExpanded ? 'Show Less' : 'Read More'}</Text>
-            <Ionicons name={isExpanded ? "chevron-up" : "chevron-forward"} size={16} color={COLORS.primary} />
+            <Text style={styles.readMoreText}>{isExpanded ? 'Show Less' : 'Read Full Story'}</Text>
+            <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={COLORS.primary} />
           </TouchableOpacity>
         )}
       </View>
@@ -138,57 +155,51 @@ export default function NewsScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   
-  const [news, setNews] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
-
-  const fetchNews = useCallback(async (pageIndex: number = 0) => {
-    if (pageIndex > 0) setIsFetchingMore(true);
-    
-    try {
-      const { data, error } = await supabase
-        .from('news')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(pageIndex * 20, (pageIndex * 20) + 19);
-
-      if (error) throw error;
-      const items = (data || []) as any[];
-      
-      setHasMore(items.length >= 20);
-      setNews(prev => pageIndex === 0 ? items : [...prev, ...items]);
-      setPage(pageIndex);
-    } catch (err) {
-      console.error('Error fetching news:', err);
-    } finally {
-      setIsLoading(false);
-      setIsFetchingMore(false);
-    }
-  }, []);
-
+  const news = useNewsStore(s => s.news);
+  const isLoading = useNewsStore(s => s.isLoading);
+  const fetchNews = useNewsStore(s => s.fetchNews);
   const markAsRead = useNewsStore(s => s.markAsRead);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Full-Screen Image Viewer State
+  const [viewerState, setViewerState] = useState<{
+    isVisible: boolean;
+    fileUri: string;
+    fileName: string;
+  }>({
+    isVisible: false,
+    fileUri: '',
+    fileName: '',
+  });
 
   useEffect(() => {
     markAsRead();
-    fetchNews(0);
+    fetchNews();
   }, [fetchNews, markAsRead]);
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await fetchNews(0);
+    await fetchNews(true);
     setIsRefreshing(false);
   };
 
   const handleLoadMore = () => {
-    if (!hasMore || isFetchingMore || isLoading) return;
-    fetchNews(page + 1);
+    // Pagination is currently limited to 100 in the store for offline stability.
+    // Future update could support infinite scroll if needed.
+  };
+
+  const handleOpenImage = (url: string, title: string) => {
+    const cleanName = title ? `${title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)}.jpg` : 'campus_news.jpg';
+    setViewerState({
+      isVisible: true,
+      fileUri: url,
+      fileName: cleanName,
+    });
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -197,6 +208,7 @@ export default function NewsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* Main List */}
       {isLoading && news.length === 0 ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
@@ -205,20 +217,20 @@ export default function NewsScreen() {
         <FlatList
           data={news}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <NewsCard item={item} isDark={isDark} colors={colors} />}
+          renderItem={({ item }) => (
+            <NewsCard 
+              item={item} 
+              isDark={isDark} 
+              colors={colors} 
+              onImagePress={handleOpenImage} 
+            />
+          )}
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 20 }]}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
           }
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.5}
-          ListFooterComponent={
-            isFetchingMore ? (
-              <View style={styles.footerLoader}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-              </View>
-            ) : null
-          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="newspaper-outline" size={64} color={colors.textMuted} />
@@ -230,6 +242,17 @@ export default function NewsScreen() {
           }
         />
       )}
+
+      {/* Interactive Full-Screen Viewer with Save to Device functionality */}
+      <UniversalViewer
+        isVisible={viewerState.isVisible}
+        onClose={() => setViewerState(prev => ({ ...prev, isVisible: false }))}
+        fileUri={viewerState.fileUri}
+        fileType="image"
+        fileName={viewerState.fileName}
+        showDownload={true}
+        showShare={true}
+      />
     </View>
   );
 }
@@ -266,24 +289,70 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  cardTopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  categoryBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dateText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   heroContainer: {
     width: '100%',
-    height: 220,
+    height: 230,
     position: 'relative',
   },
   heroImage: {
     width: '100%',
     height: '100%',
   },
+  imageTapHint: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  imageTapHintText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   albumContainer: {
     width: '100%',
     overflow: 'hidden',
-    position: 'relative',
   },
   albumGrid: {
     flexDirection: 'row',
@@ -294,11 +363,11 @@ const styles = StyleSheet.create({
   albumGridItemHalf: {
     flexBasis: '49.5%',
     flexGrow: 1,
-    aspectRatio: 1,
+    aspectRatio: 1.1,
   },
   albumGridItemFull: {
     width: '100%',
-    aspectRatio: 1.5,
+    aspectRatio: 1.6,
   },
   albumGridImage: {
     width: '100%',
@@ -306,69 +375,46 @@ const styles = StyleSheet.create({
   },
   albumMoreOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   albumMoreText: {
     color: '#FFF',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
   },
-  badgeOverlay: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  badgeText: {
-    color: '#FFFFFF',
+  albumMoreSubText: {
+    color: '#E2E8F0',
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontWeight: '600',
+    marginTop: 2,
   },
   cardContent: {
-    padding: 20,
+    padding: 18,
+    paddingTop: 14,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
-    lineHeight: 28,
-    marginBottom: 8,
-  },
-  metadataRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 6,
-  },
-  dateText: {
-    fontSize: 13,
-    fontWeight: '600',
+    lineHeight: 26,
+    marginBottom: 10,
   },
   bodyText: {
     fontSize: 15,
     lineHeight: 24,
-    marginBottom: 16,
   },
   readMoreButton: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 4,
-    paddingTop: 8,
+    gap: 5,
+    marginTop: 12,
+    paddingVertical: 4,
   },
   readMoreText: {
     color: COLORS.primary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
   centerContainer: {

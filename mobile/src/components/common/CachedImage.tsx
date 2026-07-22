@@ -7,6 +7,9 @@ import { saveMediaToDevice } from '../../utils/mediaSaver';
 import { showToast } from './overlays';
 import { Ionicons } from '@expo/vector-icons';
 
+// In-Memory Fast Cache to prevent UI flashing and 'half a second disappear' effect
+const globalMemoryCache: Record<string, string> = {};
+
 interface CachedImageProps {
     entityId: string;
     remoteUrl: string | null | undefined;
@@ -18,8 +21,11 @@ interface CachedImageProps {
 }
 
 export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials }: CachedImageProps) {
-    const [localUri, setLocalUri] = useState<string | null>(null);
-    const [loading, setLoading] = useState<boolean>(true);
+    // Initialize synchronously if the file is already cached in memory
+    const preCachedUri = entityId ? globalMemoryCache[entityId] : null;
+    
+    const [localUri, setLocalUri] = useState<string | null>(preCachedUri);
+    const [loading, setLoading] = useState<boolean>(!preCachedUri);
     const [hasError, setHasError] = useState<boolean>(false);
     const { colors, isDark } = useThemeStore();
 
@@ -38,6 +44,11 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         let isMounted = true;
         setHasError(false);
         
+        // If it's already solved via memory cache, do not show loaders or run async SQLite queries
+        if (preCachedUri) {
+            return;
+        }
+
         const loadAsset = async () => {
             if (!entityId || !remoteUrl) {
                 if (isMounted) {
@@ -54,6 +65,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     // 2. Verify file exists
                     const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
                     if (fileInfo.exists) {
+                        globalMemoryCache[entityId] = cached.local_path;
                         if (isMounted) {
                             setLocalUri(cached.local_path);
                             setLoading(false);
@@ -62,10 +74,10 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     }
                 }
 
-                // 2.5. If the provided remoteUrl is already a local file path, skip downloading
-                if (remoteUrl.startsWith('file://')) {
+                // 2.5. If the provided remoteUrl is already a local file path or non-http URI, skip downloading
+                if (!remoteUrl.startsWith('http://') && !remoteUrl.startsWith('https://')) {
                     if (isMounted) {
-                        setLocalUri(remoteUrl);
+                        setLocalUri(remoteUrl.startsWith('file://') ? remoteUrl : `file://${remoteUrl}`);
                         setLoading(false);
                     }
                     return;
@@ -82,12 +94,13 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     // 4. Save to SQLite
                     await upsertAssetCache(entityId, remoteUrl, result.uri, assetType);
                     
+                    globalMemoryCache[entityId] = result.uri;
                     if (isMounted) {
                         setLocalUri(result.uri);
                     }
                 }
             } catch (err) {
-                console.error('Failed to load cached image:', err);
+                console.warn('[CachedImage] Failed to load image:', err);
             } finally {
                 if (isMounted) {
                     setLoading(false);

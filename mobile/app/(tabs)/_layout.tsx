@@ -26,16 +26,16 @@ export default function TabsLayout() {
   const renderTabIcon = (iconName: string, outlineName: string) => ({ color, focused }: { color: string; focused: boolean }) => (
     <View
       style={{
-        width: 48,
-        height: 48,
-        borderRadius: 24,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
         backgroundColor: focused ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)') : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
       }}
     >
-      <Ionicons name={(focused ? iconName : outlineName) as any} size={26} color={color} />
+      <Ionicons name={(focused ? iconName : outlineName) as any} size={28} color={color} />
     </View>
   );
 

@@ -48,6 +48,9 @@ async function recoverDatabase(): Promise<boolean> {
 }
 
 function wrapStatementMethods(stmt: any): void {
+  if (stmt._isWrapped) return;
+  stmt._isWrapped = true;
+
   const origExecute = stmt.executeAsync.bind(stmt);
   const origFinalize = stmt.finalizeAsync.bind(stmt);
 
@@ -71,13 +74,27 @@ function wrapStatementMethods(stmt: any): void {
 }
 
 function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLite.SQLiteDatabase {
+  const rawMethods: Record<string, Function> = {};
+  const methodNames = ['execAsync', 'runAsync', 'getAllAsync', 'getFirstAsync', 'prepareAsync', 'withTransactionAsync'];
+
+  for (const name of methodNames) {
+    if (typeof (originalDb as any)[name] === 'function') {
+      rawMethods[name] = (originalDb as any)[name].bind(originalDb);
+    }
+  }
+
   const wrap = (methodName: string) => {
     return async (...args: any[]): Promise<any> => {
       const sql = typeof args[0] === 'string' ? args[0] : '';
 
       for (let attempt = 1; attempt <= 2; attempt++) {
-        const activeDb: any = currentRawDb || originalDb;
-        const method = activeDb[methodName]?.bind(activeDb);
+        let method: Function | undefined;
+        if (currentRawDb && currentRawDb !== originalDb && typeof (currentRawDb as any)[methodName] === 'function') {
+          method = (currentRawDb as any)[methodName].bind(currentRawDb);
+        } else {
+          method = rawMethods[methodName];
+        }
+
         if (!method) break;
 
         const start = Date.now();
@@ -110,16 +127,16 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
     };
   };
 
-  const db = originalDb as any;
-  db.execAsync = wrap('execAsync');
-  db.runAsync = wrap('runAsync');
-  db.getAllAsync = wrap('getAllAsync');
-  db.getFirstAsync = wrap('getFirstAsync');
-  db.prepareAsync = wrap('prepareAsync');
-  if (typeof db.withTransactionAsync === 'function') {
-    db.withTransactionAsync = wrap('withTransactionAsync');
+  const dbObj = originalDb as any;
+  dbObj.execAsync = wrap('execAsync');
+  dbObj.runAsync = wrap('runAsync');
+  dbObj.getAllAsync = wrap('getAllAsync');
+  dbObj.getFirstAsync = wrap('getFirstAsync');
+  dbObj.prepareAsync = wrap('prepareAsync');
+  if (typeof dbObj.withTransactionAsync === 'function') {
+    dbObj.withTransactionAsync = wrap('withTransactionAsync');
   }
-  return db as SQLite.SQLiteDatabase;
+  return dbObj as SQLite.SQLiteDatabase;
 }
 
 export const initDB = async () => {
@@ -499,28 +516,35 @@ export const batchInsertMessages = async (messages: any[], groupId: string) => {
     const activeDb = db;
     if (!activeDb || messages.length === 0) return;
     try {
-        await activeDb.withTransactionAsync(async () => {
-            const statement = await activeDb.prepareAsync(
-                `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
-                 VALUES ($id, $groupId, $createdAt, $rawData, $localMediaPath)`
-            );
-            try {
-                for (const msg of messages) {
-                    const rawData = JSON.stringify(msg);
-                    const createdAt = msg.created_at || new Date().toISOString();
-                    const localMediaPath = msg.local_media_path || null;
-                    await statement.executeAsync({
-                        $id: msg.id,
-                        $groupId: groupId,
-                        $createdAt: createdAt,
-                        $rawData: rawData,
-                        $localMediaPath: localMediaPath
-                    });
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+            const chunk = messages.slice(i, i + BATCH_SIZE);
+            await activeDb.withTransactionAsync(async () => {
+                const statement = await activeDb.prepareAsync(
+                    `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
+                     VALUES ($id, $groupId, $createdAt, $rawData, $localMediaPath)`
+                );
+                try {
+                    for (const msg of chunk) {
+                        const rawData = JSON.stringify(msg);
+                        const createdAt = msg.created_at || new Date().toISOString();
+                        const localMediaPath = msg.local_media_path || null;
+                        await statement.executeAsync({
+                            $id: msg.id,
+                            $groupId: groupId,
+                            $createdAt: createdAt,
+                            $rawData: rawData,
+                            $localMediaPath: localMediaPath
+                        });
+                    }
+                } finally {
+                    await statement.finalizeAsync();
                 }
-            } finally {
-                await statement.finalizeAsync();
+            });
+            if (i + BATCH_SIZE < messages.length) {
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
-        });
+        }
     } catch (e) {
         console.error('SQLite batch insert error:', e);
     }
@@ -1109,36 +1133,37 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
     if (!activeDb || !entities.length) return;
     const now = new Date().toISOString();
     try {
-        await activeDb.withTransactionAsync(async () => {
-            const statement = await activeDb.prepareAsync(
-                `INSERT OR REPLACE INTO content_manifest (id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`
-            );
-            try {
-                for (let i = 0; i < entities.length; i++) {
-                    const entity = entities[i];
-                    const id = entity.id || entity.content_id;
-                    if (!id) continue;
-                    
-                    await statement.executeAsync([
-                        `${contentType}_${id}`,
-                        contentType,
-                        id,
-                        userId,
-                        JSON.stringify(entity),
-                        entity.updated_at || entity.created_at || now,
-                        now
-                    ]);
-                    
-                    // Yield occasionally to prevent native stack depth limit errors during bulk operations
-                    if (i > 0 && i % 50 === 0) {
-                        await new Promise(resolve => setTimeout(resolve, 0));
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < entities.length; i += BATCH_SIZE) {
+            const chunk = entities.slice(i, i + BATCH_SIZE);
+            await activeDb.withTransactionAsync(async () => {
+                const statement = await activeDb.prepareAsync(
+                    `INSERT OR REPLACE INTO content_manifest (id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`
+                );
+                try {
+                    for (const entity of chunk) {
+                        const id = entity.id || entity.content_id;
+                        if (!id) continue;
+                        
+                        await statement.executeAsync([
+                            `${contentType}_${id}`,
+                            contentType,
+                            id,
+                            userId,
+                            JSON.stringify(entity),
+                            entity.updated_at || entity.created_at || now,
+                            now
+                        ]);
                     }
+                } finally {
+                    await statement.finalizeAsync();
                 }
-            } finally {
-                await statement.finalizeAsync();
+            });
+            if (i + BATCH_SIZE < entities.length) {
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
-        });
+        }
     } catch (e) {
         console.error('SQLite cacheEntityList error:', e);
     }

@@ -20,12 +20,21 @@ export const UnifiedDownloadEngine = {
     async download(
         url: string,
         fileId: string,
-        onProgress?: (progress: number) => void,
+        onProgress?: ((progress: number) => void) | string,
         assetType = 'document',
     ): Promise<string | null> {
+        let progressCallback: ((progress: number) => void) | undefined;
+        let resolvedAssetType = assetType;
+
+        if (typeof onProgress === 'string') {
+            resolvedAssetType = onProgress;
+        } else if (typeof onProgress === 'function') {
+            progressCallback = onProgress;
+        }
+
         let localPath: string;
         try {
-            localPath = AssetPathResolver.resolveLocalPath(fileId, assetType, url);
+            localPath = AssetPathResolver.resolveLocalPath(fileId, resolvedAssetType, url);
         } catch (err) {
             Logger.error('UnifiedDownload', 'Failed to resolve local path', err);
             return null;
@@ -51,13 +60,20 @@ export const UnifiedDownloadEngine = {
                     const pct = progress.totalBytesExpectedToWrite > 0
                         ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
                         : 0;
-                    onProgress?.(pct);
+                    if (typeof progressCallback === 'function') {
+                        progressCallback(pct);
+                    }
                 }
             );
 
             const result = await downloadResumable.downloadAsync();
-            if (result && result.status === 200) {
-                return result.uri;
+            if (result && result.status === 200 && result.uri) {
+                const fileInfo = await FileSystem.getInfoAsync(result.uri);
+                if (fileInfo.exists && (fileInfo as any).size > 0) {
+                    return result.uri;
+                }
+                // Delete empty/corrupted file
+                await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
             }
             return null;
         } catch (err) {

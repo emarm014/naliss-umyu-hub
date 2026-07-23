@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     View,
     Modal,
@@ -149,14 +149,15 @@ export const SafeBottomSheet = ({ size = 'fullscreen', contentStyle, children, .
     const maxWidth = SIZE_MAP[size];
 
     return (
-        <SafeOverlayContainer {...props} animationType={props.animationType || 'slide-up'} overlayStyle={{ justifyContent: 'flex-end' }}>
+        <SafeOverlayContainer {...props} animationType={props.animationType || 'slide-up'} overlayStyle={{ justifyContent: 'flex-start' }}>
             <View style={[
-                styles.sheetContent,
                 { 
                     backgroundColor: isDark ? '#1e293b' : '#ffffff',
                     width: '100%',
+                    flex: 1,
                     maxWidth,
                     alignSelf: 'center',
+                    paddingTop: insets.top,
                     paddingBottom: Math.max(insets.bottom, 16)
                 },
                 contentStyle

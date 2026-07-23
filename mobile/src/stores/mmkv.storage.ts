@@ -82,6 +82,17 @@ export const mmkvStorage: StateStorage = {
   },
 };
 
+export const getSyncItem = (name: string): string | null => {
+  if (useFallback || !storage) return null;
+  return storage.getString(name) ?? null;
+};
+
+export const setSyncItem = (name: string, value: string): void => {
+  if (!useFallback && storage) {
+    storage.set(name, value);
+  }
+};
+
 // Programmatic migration check from AsyncStorage to MMKV (only runs if MMKV is active)
 export const migrateAsyncStorageToMMKV = async () => {
   await initPromise;

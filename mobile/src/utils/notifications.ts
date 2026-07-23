@@ -1,7 +1,7 @@
-/**
+﻿/**
  * Push Notification Dispatcher
  * Calls the Supabase Edge Function to send push notifications to target users.
- * Uses the current user's JWT — no secret needed in the client.
+ * Uses the current user's JWT â€” no secret needed in the client.
  */
 
 import { supabase } from '../api/supabase/client';
@@ -17,7 +17,7 @@ interface PushPayload {
 
 /**
  * Send a push notification to a list of users.
- * Fire-and-forget — never throws, never blocks the caller.
+ * Fire-and-forget â€” never throws, never blocks the caller.
  */
 export async function sendPushNotification(payload: PushPayload): Promise<void> {
   if (!payload.targetUserIds || payload.targetUserIds.length === 0) return;
@@ -26,7 +26,7 @@ export async function sendPushNotification(payload: PushPayload): Promise<void> 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return;
 
-    // Fire and forget — don't await, don't block the UI
+    // Fire and forget â€” don't await, don't block the UI
     fetch(PUSH_FUNCTION_URL, {
       method: 'POST',
       headers: {

@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/Colors';
 import { NalissLogo } from '../../src/components/NalissLogo';
+import { CachedImage } from '../../src/components/common/CachedImage';
 import { format } from 'date-fns';
 import { supabase } from '../../src/api/supabase/client';
 import { useSettingsStore, useAuthStore, useGroupStore } from '../../src/stores';
@@ -268,7 +269,7 @@ function ConversationItem({
         {(() => {
           const cleanUrl = getCleanAvatarUrl(conversation.avatar_url);
           return cleanUrl ? (
-            <Image source={{ uri: cleanUrl }} style={styles.avatarImage} />
+            <CachedImage remoteUrl={cleanUrl} style={styles.avatarImage} entityId={`group_avatar_${conversation.id}`} assetType="avatar" />
           ) : (
             <View style={styles.logoAvatarContainer}>
               <NalissLogo size={46} />

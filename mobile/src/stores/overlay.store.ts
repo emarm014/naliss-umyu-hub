@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { create } from 'zustand';
 
 export type OverlayPriority = 'Low' | 'Normal' | 'High' | 'Critical';

@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { supabase } from '../../src/api/supabase/client';
 import { useTheme } from '../../src/stores/theme.store';
+import { useAuthStore } from '../../src/stores/auth.store';
+import { useEventPoolStore, EventPool } from '../../src/stores/event-pool.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { isBefore, differenceInSeconds } from 'date-fns';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,30 +13,6 @@ import { mmkvStorage } from '../../src/stores/mmkv.storage';
 
 const { width } = Dimensions.get('window');
 const CACHE_KEY = 'event_pools_cache';
-import { useAuthStore } from '../../src/stores/auth.store';
-
-type FeaturedStudent = {
-    id: string;
-    user_id: string;
-    title: string;
-    users: {
-        full_name: string;
-        username: string;
-        avatar_url: string | null;
-    };
-};
-
-type EventPool = {
-    id: string;
-    title: string;
-    type: string;
-    status: 'live' | 'scheduled' | 'draft' | 'completed';
-    start_time: string;
-    end_time: string;
-    participation_rule: string;
-    target_constraints: any;
-    featured_students?: FeaturedStudent[];
-};
 
 export default function EventPoolDashboard() {
     useSentryScreen('EventPoolDashboard');
@@ -42,72 +20,24 @@ export default function EventPoolDashboard() {
     const queryClient = useQueryClient();
     const { profile } = useAuthStore();
     
-    const [serverTimeOffset, setServerTimeOffset] = useState<number>(0);
     const [tick, setTick] = useState(0);
     const [securingTicketId, setSecuringTicketId] = useState<string | null>(null);
-    const [initialData, setInitialData] = useState<EventPool[] | undefined>();
 
-    // Load initial data from MMKV cache on mount
+    const pools = useEventPoolStore(s => s.pools);
+    const isLoading = useEventPoolStore(s => s.isLoading);
+    const fetchPools = useEventPoolStore(s => s.fetchPools);
+    const serverTimeOffset = useEventPoolStore(s => s.serverTimeOffset);
+    const [isRefetching, setIsRefetching] = useState(false);
+
+    const refetch = async () => {
+        setIsRefetching(true);
+        await fetchPools(true);
+        setIsRefetching(false);
+    };
+
     useEffect(() => {
-        const loadCache = async () => {
-            try {
-                const cached = await mmkvStorage.getItem(CACHE_KEY);
-                if (cached) {
-                    setInitialData(JSON.parse(cached));
-                }
-            } catch {}
-        };
-        loadCache();
-    }, []);
-
-    const fetchServerTimeOffset = async () => {
-        try {
-            const startFetch = Date.now();
-            const { data, error } = await supabase.rpc('get_server_time');
-            if (!error && data) {
-                const latency = (Date.now() - startFetch) / 2;
-                setServerTimeOffset(new Date(data).getTime() - Date.now() + latency);
-            }
-        } catch {}
-    };
-
-    const fetchPools = async (): Promise<EventPool[]> => {
-        await fetchServerTimeOffset();
-        const { data, error } = await (supabase as any)
-            .from('event_pools')
-            .select(`
-                *,
-                featured_students (
-                    id, user_id, title,
-                    users ( full_name, username, avatar_url )
-                )
-            `)
-            .in('status', ['live', 'scheduled', 'completed'])
-            .order('start_time', { ascending: false }); // Latest first
-        
-        if (error) throw error;
-        
-        // Filter featured_students to only include event_winner type (in case we didn't filter in query)
-        // Wait, the select is an inner join? No it's a left join. We can't filter the left join in PostgREST easily without an inner join.
-        // We'll filter in JS to be safe.
-        const typedData = (data as any[]).map(pool => ({
-            ...pool,
-            featured_students: pool.featured_students?.filter((fs: any) => fs.type === 'event_winner' || fs.title?.includes('Winner')) || []
-        }));
-
-        // Async write to cache
-        try {
-            await mmkvStorage.setItem(CACHE_KEY, JSON.stringify(typedData));
-        } catch {}
-        return typedData;
-    };
-
-    const { data: pools = initialData || [], isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['event_pools'],
-        queryFn: fetchPools,
-        initialData: initialData,
-        staleTime: 5 * 60 * 1000, // 5 minutes
-    });
+        fetchPools();
+    }, [fetchPools]);
 
     const { data: myApplications = [] } = useQuery({
         queryKey: ['my_pool_applications', profile?.id],

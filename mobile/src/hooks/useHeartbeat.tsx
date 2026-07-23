@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus, Animated, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';

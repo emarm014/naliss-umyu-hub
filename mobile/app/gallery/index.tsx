@@ -16,30 +16,30 @@ import { Header } from '../../src/components/common/Header';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 
+import { useGalleryStore } from '../../src/stores/gallery.store';
+
 const { width } = Dimensions.get('window');
-const TOPICS_CACHE_KEY = 'gallery_topics_cache';
 
 export default function GalleryScreen() {
   useSentryScreen('GalleryScreen');
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const { data: topics = [], isLoading, refetch, isRefetching } = useQuery<any[]>({
-    queryKey: ['gallery_topics'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('gallery_topics')
-        .select('*')
-        .order('created_at', { ascending: false });
+  const topics = useGalleryStore(s => s.topics);
+  const isLoading = useGalleryStore(s => s.isLoadingTopics);
+  const fetchTopics = useGalleryStore(s => s.fetchTopics);
+  
+  const [isRefetching, setIsRefetching] = React.useState(false);
 
-      if (error) throw error;
-      const result = data || [];
-      // Cache for offline
-      Promise.resolve(mmkvStorage.setItem(TOPICS_CACHE_KEY, JSON.stringify(result))).catch(() => {});
-      return result;
-    },
-    staleTime: 5 * 60 * 1000,
-  });
+  React.useEffect(() => {
+    fetchTopics();
+  }, [fetchTopics]);
+
+  const refetch = async () => {
+    setIsRefetching(true);
+    await fetchTopics(true);
+    setIsRefetching(false);
+  };
 
   const renderHeader = () => (
     <View style={styles.heroContainer}>

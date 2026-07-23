@@ -26,7 +26,7 @@ const MinimalLoader = () => {
 };
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  // ── Zustand selectors — subscribe to individual properties, NOT the whole store.
+  // â”€â”€ Zustand selectors â€” subscribe to individual properties, NOT the whole store.
   // This prevents re-renders from unrelated store changes (lastFetch, error, etc.)
   // which were amplifying navigation guard re-fires and contributing to the loop.
   const session = useAuthStore(s => s.session);
@@ -55,7 +55,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [exceededSessions, setExceededSessions] = useState<any[]>([]);
   const [isRemovingDevice, setIsRemovingDevice] = useState<string | null>(null);
 
-  // ── Device Session Registration & 5-Device Limit check ─────────────────────
+  // â”€â”€ Device Session Registration & 5-Device Limit check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (session && isProfileComplete === true) {
       let isSubscribed = true;
@@ -130,7 +130,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
   }, [session, isProfileComplete]);
 
-  // ── Remote Logout Check on App Focus ──────────────────────────────────────
+  // â”€â”€ Remote Logout Check on App Focus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!session || !deviceSessionChecked || sessionError) return;
 
@@ -191,13 +191,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  // ── OFFLINE-FIRST: Unblock spinner as fast as possible ───────────────────
+  // â”€â”€ OFFLINE-FIRST: Unblock spinner as fast as possible â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Strategy:
-  //   A) If hydration is done + session + complete profile → already resolved
+  //   A) If hydration is done + session + complete profile â†’ already resolved
   //      by onRehydrateStorage (isProfileComplete=true). No timer needed.
   //   B) If hydration is done + session + isProfileComplete still null after
-  //      100ms → network is unreachable. Trust the cache immediately.
-  //   C) If hydration is done + session + no cached profile → 4s fallback.
+  //      100ms â†’ network is unreachable. Trust the cache immediately.
+  //   C) If hydration is done + session + no cached profile â†’ 4s fallback.
   const [offlineUnblocked, setOfflineUnblocked] = useState(false);
   const offlineUnblockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Guard: prevents the offline timer from firing after onAuthStateChange already resolved
@@ -226,10 +226,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       const cachedProfile = useAuthStore.getState().profile;
       const hasCompleteCache = !!(cachedProfile?.registration_number && cachedProfile?.level);
 
-      // If we have a complete cached profile, unblock after 1500ms
-      // (gives onAuthStateChange enough time to complete its DB fetch before we trust cache)
+      // If we have a complete cached profile, unblock immediately (delay = 0)
+      // so the user goes straight to Home without seeing a blank/loading screen.
       // If no cached profile, wait 4s before giving up
-      const delay = hasCompleteCache ? 1500 : 4000;
+      const delay = hasCompleteCache ? 0 : 4000;
 
       offlineUnblockTimer.current = setTimeout(() => {
         // Bail out if onAuthStateChange resolved first
@@ -256,7 +256,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // Guard: skip navigation effect on the very first render (before hydration settles)
   const isMounted = useRef(false);
 
-  // Tracks whether the app just returned from background — suppresses
+  // Tracks whether the app just returned from background â€” suppresses
   // premature login redirects while Supabase session rehydrates
   const isRehydrating = useRef(false);
   const rehydrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -269,7 +269,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         if (rehydrateTimer.current) clearTimeout(rehydrateTimer.current);
         rehydrateTimer.current = setTimeout(() => {
           isRehydrating.current = false;
-        }, 5000); // extended to 5s — gives enough time for session rehydration
+        }, 5000); // extended to 5s â€” gives enough time for session rehydration
       }
     };
     const sub = AppState.addEventListener('change', handleAppStateChange);
@@ -281,7 +281,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   // 1. Initialize Settings Store & Realtime Listener
   useEffect(() => {
-    // Only fetch settings if online — cached values are used offline
+    // Only fetch settings if online â€” cached values are used offline
     if (isOnline) {
       useSettingsStore.getState().fetchSettings();
     }
@@ -290,13 +290,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return () => {
       unsubscribeSettings();
     };
-    // CRITICAL: Do NOT include store functions in dependencies — they can be
+    // CRITICAL: Do NOT include store functions in dependencies â€” they can be
     // recreated on every render, causing infinite loops. Use getState() instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
 
   // 1.1 Activate Global Ecosystem Sync when session is active
-  // NOTE: We intentionally do NOT terminate on cleanup here — that would kill
+  // NOTE: We intentionally do NOT terminate on cleanup here â€” that would kill
   // realtime channels on every navigation. terminate() is only called on sign-out.
   useEffect(() => {
     if (session && (isProfileComplete === true || offlineUnblocked)) {
@@ -317,7 +317,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         // silent load failure
       }
     }
-    // No cleanup / terminate here — channels must survive navigation
+    // No cleanup / terminate here â€” channels must survive navigation
     // CRITICAL: Do NOT include store functions in dependencies
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, isProfileComplete, offlineUnblocked]);
@@ -326,7 +326,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
 
-      // ── Sentry: log every auth state change as a breadcrumb ──────────────
+      // â”€â”€ Sentry: log every auth state change as a breadcrumb â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       Sentry.addBreadcrumb({
         category: 'auth',
         message: `Auth event: ${event}`,
@@ -344,10 +344,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // ── SIGNED_OUT intercept ──────────────────────────────────────────────
+      // â”€â”€ SIGNED_OUT intercept â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Supabase may fire SIGNED_OUT when the server invalidates a session
       // (e.g. after a ban/suspend). Before clearing state and redirecting to
-      // login, check if the user is actually banned/suspended — if so, show
+      // login, check if the user is actually banned/suspended â€” if so, show
       // the restriction screen instead of logging them out silently.
       if (event === 'SIGNED_OUT' && !currentSession) {
         if (!useNetworkStore.getState().isOnline) return;
@@ -375,7 +375,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           return;
         }
         
-        // Domain validation — block non-institutional emails
+        // Domain validation â€” block non-institutional emails
         // Google OAuth users in the middle of signup are allowed through temporarily
         const signupState = useSignupStore.getState();
         const isInSignupFlow = signupState.hasActiveSession() || signupState.provider === 'google';
@@ -389,11 +389,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         // Try to check user profile and status (Silently fail if offline)
         // GUARD: If profile is already marked complete, skip the DB re-check
         // for token refresh AND user-updated events. Password changes fire
-        // USER_UPDATED — re-querying the DB here is unnecessary and causes
+        // USER_UPDATED â€” re-querying the DB here is unnecessary and causes
         // the "endless loading" bug when changing password from the profile modal.
         const currentIsComplete = useAuthStore.getState().isProfileComplete;
         if (currentIsComplete === true && (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
-          // Token refresh or password change — profile already verified complete, no need to re-query
+          // Token refresh or password change â€” profile already verified complete, no need to re-query
           return;
         }
 
@@ -433,7 +433,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
                 'Access Denied', 
                 'This account has been graduated. Access to the platform is restricted to active students only.'
               );
-              // Clear state immediately, then sign out — avoids double SIGNED_OUT event
+              // Clear state immediately, then sign out â€” avoids double SIGNED_OUT event
               useAuthStore.getState().setSession(null);
               useAuthStore.getState().setUser(null);
               useAuthStore.getState().setIsProfileComplete(null);
@@ -448,7 +448,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
                 reason: profileData.banned_reason || null,
                 until: null,
               });
-              // DO NOT sign out — keep session so restriction screen persists
+              // DO NOT sign out â€” keep session so restriction screen persists
               return;
             }
             
@@ -460,17 +460,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
                   reason: (profileData as any).suspension_reason || null,
                   until: suspendedUntil,
                 });
-                // DO NOT sign out — keep session so restriction screen persists
+                // DO NOT sign out â€” keep session so restriction screen persists
                 return;
               } else {
-                // Suspension expired — auto-lift
+                // Suspension expired â€” auto-lift
                 await (supabase as any).from('users').update({ status: 'active', suspended_until: null, suspension_reason: null }).eq('id', currentSession.user.id);
                 setRestrictionInfo(null);
               }
             }
 
             // Atomic check: Is profile record complete?
-            // Everyone (including moderators) must have both fields — moderators are promoted students
+            // Everyone (including moderators) must have both fields â€” moderators are promoted students
             // Super admins and system owners bypass student checks.
             if (
               profileData.role === 'super_admin' ||
@@ -485,7 +485,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               hydrateSignupStore(currentSession);
             }
           } else {
-            // No profile record yet — attempt AUTO-REPAIR only if NOT in signup flow
+            // No profile record yet â€” attempt AUTO-REPAIR only if NOT in signup flow
             // This prevents "skipping" pages for users who have stale metadata
             const signupState = useSignupStore.getState();
             if (!signupState.hasActiveSession()) {
@@ -500,7 +500,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             hydrateSignupStore(currentSession);
           }
         } catch (profileErr) {
-          // Sentry: capture silent profile fetch failures — previously invisible
+          // Sentry: capture silent profile fetch failures â€” previously invisible
           Sentry.captureException(normalizeError(profileErr), {
             tags: { location: 'ProtectedRoute.onAuthStateChange.profileFetch' },
             extra: {
@@ -509,7 +509,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             },
           });
           // OFFLINE GUARD: If we have a local isProfileComplete, trust it
-          // Don't leave isProfileComplete as null — that causes infinite spinner
+          // Don't leave isProfileComplete as null â€” that causes infinite spinner
           const currentComplete = useAuthStore.getState().isProfileComplete;
           if (currentComplete === null) {
             // Check cached profile data
@@ -521,7 +521,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           }
         }
       } else {
-        // No session and not SIGNED_OUT — clear state
+        // No session and not SIGNED_OUT â€” clear state
         useAuthStore.getState().setIsProfileComplete(null);
         useAuthStore.getState().setProfile(null);
       }
@@ -531,7 +531,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Stable empty deps — setters accessed via getState() to avoid re-subscription loop
+  }, []); // Stable empty deps â€” setters accessed via getState() to avoid re-subscription loop
 
   const hydrateSignupStore = (currentSession: any) => {
     const signupState = useSignupStore.getState();
@@ -540,7 +540,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     // Don't interfere while Google OAuth is actively completing
     if (signupState.isGoogleDelaying) return;
     if (!signupState.email && currentSession.user.email) {
-      // Check providers array too — Google OAuth linked to email account keeps
+      // Check providers array too â€” Google OAuth linked to email account keeps
       // app_metadata.provider as 'email' but adds 'google' to providers array
       const providers: string[] = currentSession.user.app_metadata?.providers || [];
       const isGoogle = currentSession.user.app_metadata?.provider === 'google' ||
@@ -588,7 +588,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [restrictionInfo]);
 
-  // ── HEARTBEAT: Jittered REST Polling (Replaces Realtime WebSockets) ───────
+  // â”€â”€ HEARTBEAT: Jittered REST Polling (Replaces Realtime WebSockets) â”€â”€â”€â”€â”€â”€â”€
   // We use standard REST polling with a randomized 55s-65s jitter to check both
   // ban/suspension status and session eviction. This completely bypasses the
   // Supabase Free Tier 200 concurrent Realtime connection limit.
@@ -659,7 +659,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }, [session?.user?.id, deviceSessionChecked, sessionError]);
 
   const pathname = usePathname();
-  // Cooldown-based navigation guard — prevents infinite loops by throttling
+  // Cooldown-based navigation guard â€” prevents infinite loops by throttling
   // navigations to at most once per 500ms and blocking duplicate targets.
   const lastNavTime = useRef(0);
   const lastNavTarget = useRef('');
@@ -688,7 +688,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     // Sentry: track every auth-driven navigation redirect
     Sentry.addBreadcrumb({
       category: 'navigation',
-      message: `Auth redirect: ${pathname} → ${target}`,
+      message: `Auth redirect: ${pathname} â†’ ${target}`,
       data: {
         from: pathname,
         to: target,
@@ -713,7 +713,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // same target if the user navigates away and back.
   useEffect(() => {
     if (pathname === lastNavTarget.current) {
-      // We've arrived — clear the target lock after a short delay
+      // We've arrived â€” clear the target lock after a short delay
       const t = setTimeout(() => { lastNavTarget.current = ''; }, 600);
       return () => clearTimeout(t);
     }
@@ -721,7 +721,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   // 3. Navigation Guard
   useEffect(() => {
-    // Skip the very first synchronous render — store hasn't hydrated yet
+    // Skip the very first synchronous render â€” store hasn't hydrated yet
     if (!isMounted.current) {
       isMounted.current = true;
       return;
@@ -735,7 +735,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const inAuthGroup = segments[0] === 'auth';
     const currentScreen = segments[1] as string;
 
-    // ── SIGNUP LOCK — checked FIRST, before everything else ───────────────
+    // â”€â”€ SIGNUP LOCK â€” checked FIRST, before everything else â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const signupScreens = ['register-email', 'register-otp', 'register-password', 'identity', 'level', 'register-options', 'eligibility'];
     if (signupScreens.includes(currentScreen)) {
       if (isProfileComplete === true) {
@@ -756,7 +756,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     if (isRehydrating.current) return;
 
-    // ── OUTSIDE SIGNUP SCREENS ─────────────────────────────────────────────
+    // â”€â”€ OUTSIDE SIGNUP SCREENS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (!session) {
       if (!inAuthGroup) {
         safeNavigate.current('/auth/login');
@@ -802,6 +802,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         if (inAuthGroup) {
           const signupState = useSignupStore.getState();
           if (signupState.isGoogleDelaying) return;
+          // Prevent navigating to Home until we've checked the 5-device limit
+          if (!deviceSessionChecked || sessionError === 'device_limit_exceeded') return;
           safeNavigate.current('/(tabs)');
         }
       } else if (isProfileComplete === null && offlineUnblocked) {
@@ -827,13 +829,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    // CRITICAL: Remove `pathname` from dependencies — it changes AFTER navigation
+    // CRITICAL: Remove `pathname` from dependencies â€” it changes AFTER navigation
     // and causes the guard to re-run unnecessarily, creating infinite loops.
     // The safeNavigate ref already has its own pathname check internally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, isProfileComplete, segments, authLoading, offlineUnblocked, restrictionInfo]);
+  }, [session, isProfileComplete, segments, authLoading, offlineUnblocked, restrictionInfo, deviceSessionChecked, sessionError]);
 
-  // BLOCK: Ban / Suspension screen — shown immediately, persists until user chooses to logout
+  // BLOCK: Ban / Suspension screen â€” shown immediately, persists until user chooses to logout
   if (restrictionInfo) {
     const isBanned = restrictionInfo.type === 'banned';
     const handleSignOut = async () => {
@@ -900,7 +902,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
                     </Text>
                   </>
                 ) : (
-                  <Text style={styles.countdownText}>Permanent — manual review required</Text>
+                  <Text style={styles.countdownText}>Permanent â€” manual review required</Text>
                 )}
               </View>
             )}
@@ -929,11 +931,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // ── HYDRATION GATE ────────────────────────────────────────────────────────
+  // â”€â”€ HYDRATION GATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Don't render anything until AsyncStorage rehydration is complete.
   // This prevents the navigation guard from firing with stale null values
   // and causing a login redirect that immediately reverses to tabs.
-  // On a real device AsyncStorage reads in ~10-50ms — imperceptible.
+  // On a real device AsyncStorage reads in ~10-50ms â€” imperceptible.
   if (!_hasHydrated) {
     return null;
   }
@@ -953,6 +955,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const signupState = useSignupStore.getState();
     if (signupState.isGoogleDelaying) return <>{children}</>;
     return <MinimalLoader />;
+  }
+
+  // BLOCK: Wait for device session check to complete
+  if (session && isProfileComplete === true && !deviceSessionChecked) {
+    return <SplashLoadingScreen />;
   }
 
   // BLOCK: 5-Device limit exceeded screen

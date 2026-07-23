@@ -35,44 +35,27 @@ type FeaturedStudentEntry = {
   };
 };
 
+import { useFYBStore } from '../src/stores/fyb.store';
+
 export default function FYBScreen() {
   useSentryScreen('FYBScreen');
   const { colors, isDark } = useTheme();
-  const [initialData, setInitialData] = useState<FeaturedStudentEntry[] | undefined>();
+  
+  const allEntries = useFYBStore(s => s.entries);
+  const isLoading = useFYBStore(s => s.isLoading);
+  const fetchFeatured = useFYBStore(s => s.fetchFeatured);
+  
+  const [isRefetching, setIsRefetching] = useState(false);
 
-  // Load cached data on mount
   useEffect(() => {
-    Promise.resolve(mmkvStorage.getItem(CACHE_KEY)).then((cached: any) => {
-      if (cached) {
-        try { setInitialData(JSON.parse(cached)); } catch {}
-      }
-    });
-  }, []);
+    fetchFeatured();
+  }, [fetchFeatured]);
 
-  const fetchFeatured = async (): Promise<FeaturedStudentEntry[]> => {
-    const { data, error } = await supabase
-      .from('featured_students')
-      .select(`
-        id, user_id, type, title, subtitle, description,
-        custom_image_url, is_active, published_at, expires_at,
-        total_congratulations, created_at,
-        users ( full_name, username, avatar_url )
-      `)
-      .neq('type' as any, 'event_winner' as any)
-      .order('published_at', { ascending: false });
-
-    if (error) throw error;
-    const result = (data || []) as unknown as FeaturedStudentEntry[];
-    Promise.resolve(mmkvStorage.setItem(CACHE_KEY, JSON.stringify(result))).catch(() => {});
-    return result;
+  const refetch = async () => {
+    setIsRefetching(true);
+    await fetchFeatured(true);
+    setIsRefetching(false);
   };
-
-  const { data: allEntries = initialData || [], isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['fyb_featured_students'],
-    queryFn: fetchFeatured,
-    initialData: initialData,
-    staleTime: 5 * 60 * 1000,
-  });
 
   const now = new Date();
 

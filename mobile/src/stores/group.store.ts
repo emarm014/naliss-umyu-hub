@@ -23,7 +23,7 @@ interface GroupState {
     clearBadge: () => void;
 }
 
-const CACHE_TTL = Infinity; // No TTL — group list available offline indefinitely
+const CACHE_TTL = Infinity; // No TTL â€” group list available offline indefinitely
 
 export const useGroupStore = create<GroupState>()(
     persist(
@@ -48,6 +48,8 @@ export const useGroupStore = create<GroupState>()(
                         const cached = await getCachedEntityList('groups');
                         if (cached.length > 0) {
                             set({ groups: cached as any, isLoading: false });
+                            // Prevent background sync if we have local data, as requested by user
+                            return;
                         }
                     } catch { /* fall through to server fetch */ }
                 }
@@ -173,11 +175,11 @@ export const useGroupStore = create<GroupState>()(
                         if (lastMsg) {
                             const senderName = lastMsg.sender?.username || lastMsg.sender?.full_name || 'user';
                             const msgType = lastMsg.content_type || lastMsg.message_type || 'text';
-                            if (msgType === 'image') lastMessageText = `${senderName}: 📷 Photo`;
-                            else if (msgType === 'document') lastMessageText = `${senderName}: 📎 Document`;
-                            else if (msgType === 'video') lastMessageText = `${senderName}: 🎥 Video`;
-                            else if (msgType === 'audio') lastMessageText = `${senderName}: 🎵 Audio`;
-                            else if (msgType === 'sticker') lastMessageText = `${senderName}: 😊 Sticker`;
+                            if (msgType === 'image') lastMessageText = `${senderName}: ðŸ“· Photo`;
+                            else if (msgType === 'document') lastMessageText = `${senderName}: ðŸ“Ž Document`;
+                            else if (msgType === 'video') lastMessageText = `${senderName}: ðŸŽ¥ Video`;
+                            else if (msgType === 'audio') lastMessageText = `${senderName}: ðŸŽµ Audio`;
+                            else if (msgType === 'sticker') lastMessageText = `${senderName}: ðŸ˜Š Sticker`;
                             else lastMessageText = `${senderName}: ${lastMsg.content || ''}`;
                         }
                         return {
@@ -221,7 +223,7 @@ export const useGroupStore = create<GroupState>()(
             },
 
             markGroupAsRead: async (groupId: string) => {
-                // Optimistic update — instant UI feedback
+                // Optimistic update â€” instant UI feedback
                 set((state) => ({
                     groups: state.groups.map(g => 
                         g.id === groupId ? { ...g, unread_count: 0 } : g
@@ -230,7 +232,7 @@ export const useGroupStore = create<GroupState>()(
                 try {
                     await (supabase as any).rpc('mark_group_as_read', { p_group_id: groupId });
                 } catch {
-                    // silent — read marking is non-critical
+                    // silent â€” read marking is non-critical
                 }
             },
 
@@ -267,13 +269,13 @@ export const useGroupStore = create<GroupState>()(
             clearBadge: () => set({ isBadgeCleared: true }),
         }),
         {
-            name: 'group-storage',
+            name: 'group-store',
             storage: createJSONStorage(() => mmkvStorage),
             partialize: (state) => ({
+                // Persist groups so they load instantly on boot without waiting for SQLite
                 groups: state.groups,
-                membersCache: state.membersCache,
                 lastFetched: state.lastFetched,
-                isBadgeCleared: state.isBadgeCleared,
+                isBadgeCleared: state.isBadgeCleared
             }),
         }
     )

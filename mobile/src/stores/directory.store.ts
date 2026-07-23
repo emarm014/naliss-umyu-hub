@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -19,7 +19,7 @@ interface DirectoryState {
     clearCache: () => void;
 }
 
-const CACHE_TTL = Infinity; // No TTL — directory available offline indefinitely
+const CACHE_TTL = Infinity; // No TTL â€” directory available offline indefinitely
 
 export const useDirectoryStore = create<DirectoryState>()(
     persist(

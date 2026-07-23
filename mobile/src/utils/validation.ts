@@ -1,4 +1,4 @@
-export const INSTITUTIONAL_EMAIL_REGEX = /^(lis|blis)\d{6}@students\.umyu\.edu\.ng$/i;
+﻿export const INSTITUTIONAL_EMAIL_REGEX = /^(lis|blis)\d{6}@students\.umyu\.edu\.ng$/i;
 
 /**
  * Validates that the registration number matches the expected UMYU format

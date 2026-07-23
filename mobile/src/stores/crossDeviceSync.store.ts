@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import { supabase } from '../api/supabase/client';
@@ -261,7 +261,7 @@ export const useCrossDeviceSyncStore = create<CrossDeviceSyncState>()(
                 if (!authStore.user) return;
 
                 if (!useNetworkStore.getState().isOnline) {
-                    Logger.info('cross-device-sync', 'Offline — sync deferred');
+                    Logger.info('cross-device-sync', 'Offline â€” sync deferred');
                     set({ isSyncing: false });
                     return;
                 }

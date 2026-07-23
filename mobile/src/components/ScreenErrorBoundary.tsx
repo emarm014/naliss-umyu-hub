@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import * as Sentry from '@sentry/react-native';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';

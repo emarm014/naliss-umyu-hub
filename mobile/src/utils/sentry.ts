@@ -1,13 +1,13 @@
-/**
+﻿/**
  * NALISS Sentry Instrumentation Helpers
  *
  * Central module for structured breadcrumbs, performance spans, and safe
  * capture helpers used across the entire application.
- * Import from here — never import @sentry/react-native directly in stores/utils.
+ * Import from here â€” never import @sentry/react-native directly in stores/utils.
  */
 import * as Sentry from '@sentry/react-native';
 
-// ── Breadcrumb helpers ─────────────────────────────────────────────────────
+// â”€â”€ Breadcrumb helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function trackScreen(screenName: string, params?: Record<string, any>) {
   Sentry.addBreadcrumb({
@@ -107,7 +107,7 @@ export function isNetworkError(error: any): boolean {
   return error.status === 401;
 }
 
-// ── Exception capture helpers ──────────────────────────────────────────────
+// â”€â”€ Exception capture helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Wraps a Supabase error object ({code, details, hint, message}) into a proper
@@ -177,7 +177,7 @@ export function captureApiError(
   });
 }
 
-// ── Performance / Tracing helpers ────────────────────────────────────────────────────
+// â”€â”€ Performance / Tracing helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Wrap an async operation in a Sentry span so it shows up in Performance traces.
@@ -201,7 +201,7 @@ export async function withSpan<T>(
         span?.setStatus({ code: 1 }); // OK
         Sentry.addBreadcrumb({
           category: 'perf',
-          message: `${name} ✓ ${durationMs}ms`,
+          message: `${name} âœ“ ${durationMs}ms`,
           level: 'debug',
           data: { durationMs, ...attributes },
         });
@@ -211,7 +211,7 @@ export async function withSpan<T>(
         span?.setStatus({ code: 2 }); // ERROR
         Sentry.addBreadcrumb({
           category: 'perf',
-          message: `${name} ✗ FAILED after ${durationMs}ms`,
+          message: `${name} âœ— FAILED after ${durationMs}ms`,
           level: 'error',
           data: { durationMs, error: (err as any)?.message, ...attributes },
         });
@@ -234,7 +234,7 @@ export function startTransaction(name: string, data?: Record<string, string>) {
   // addBreadcrumb marks the start of the flow in the crash trail
   Sentry.addBreadcrumb({
     category: 'transaction',
-    message: `▶ ${name}`,
+    message: `â–¶ ${name}`,
     level: 'info',
     data,
   });
@@ -242,7 +242,7 @@ export function startTransaction(name: string, data?: Record<string, string>) {
   return function finish(status: 'ok' | 'error' = 'ok') {
     Sentry.addBreadcrumb({
       category: 'transaction',
-      message: `■ ${name} [${status}] ${Date.now() - startMs}ms`,
+      message: `â–  ${name} [${status}] ${Date.now() - startMs}ms`,
       level: status === 'ok' ? 'info' : 'error',
     });
   };

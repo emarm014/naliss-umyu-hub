@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+﻿import React, { useEffect } from 'react';
 import { supabase } from '../api/supabase/client';
 
 /**
@@ -18,7 +18,7 @@ export const GroupMembershipHandler: React.FC = () => {
             if (!userId) return;
 
             try {
-                // Just verify the profile exists — do NOT create it here
+                // Just verify the profile exists â€” do NOT create it here
                 // Profile creation happens in level.tsx during registration
                 // Creating it here without a level would waste the auto-join trigger
                 const { data: userData } = await ((supabase as any).from('users')
@@ -27,9 +27,9 @@ export const GroupMembershipHandler: React.FC = () => {
                     .maybeSingle() as any);
 
                 if (userData) {
-                    // Profile verified — group membership handled by DB trigger
+                    // Profile verified â€” group membership handled by DB trigger
                 } else {
-                    // Profile not yet created — registration still in progress
+                    // Profile not yet created â€” registration still in progress
                 }
             } catch {
                 // silent

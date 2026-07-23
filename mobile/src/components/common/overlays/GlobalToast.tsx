@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, Platform } from 'react-native';
 import { useOverlayStore } from '../../../stores/overlay.store';
 import { useThemeStore } from '../../../stores/theme.store';

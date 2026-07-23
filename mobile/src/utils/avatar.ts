@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Utility functions for handling user and group avatars.
  * Prevents blank spaces when React Native fails to render SVGs by converting
  * DiceBear SVGs to PNGs, or returning null to trigger fallback UI.

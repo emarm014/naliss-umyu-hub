@@ -1,4 +1,4 @@
-import 'react-native-url-polyfill/auto';
+﻿import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { mmkvStorage } from '../../stores/mmkv.storage';
 import { Database } from './database.types';

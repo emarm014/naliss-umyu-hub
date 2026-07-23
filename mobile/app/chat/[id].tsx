@@ -35,6 +35,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useSettingsStore, useAuthStore, useMessageStore, useMutationQueueStore, useNetworkStore } from '../../src/stores';
 import { useGroupStore } from '../../src/stores/group.store';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { CachedImage } from '../../src/components/common/CachedImage';
 import { Message } from '../../src/types';
 import { FileService } from '../../src/services/file.service';
 import { saveMediaToDevice, shareMedia } from '../../src/utils/mediaSaver';
@@ -146,7 +147,11 @@ export default function ChatScreen() {
         }
     };
 
-    const [messages, setMessages] = useState<any[]>([]);
+    const [messages, setMessages] = useState<any[]>(() => {
+        try {
+            return useMessageStore.getState().getMessages(id) || [];
+        } catch { return []; }
+    });
     const [group, setGroup] = useState<any>(null);
     
     // Canonical General Hub ID — matches the actual DB group ID
@@ -174,7 +179,11 @@ export default function ChatScreen() {
     const [showMembersList, setShowMembersList] = useState(false);
     const [viewingProfile, setViewingProfile] = useState<any>(null);
     const [expandedAvatarUrl, setExpandedAvatarUrl] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(() => {
+        try {
+            return (useMessageStore.getState().getMessages(id) || []).length === 0;
+        } catch { return true; }
+    });
     const [showSearch, setShowSearch] = useState(false);
     const [searchParams, setSearchParams] = useState({
         username: '',
@@ -401,7 +410,7 @@ export default function ChatScreen() {
         const { useNetworkStore } = require('../../src/stores/network.store');
         const isOnline = useNetworkStore.getState().isOnline;
 
-        if (!silent) setIsLoading(true);
+        if (!silent && messages.length === 0) setIsLoading(true);
         if (!isOnline && messages.length === 0) {
             // If completely offline and no messages, just stop loading to show empty state
             setIsLoading(false);
@@ -587,7 +596,7 @@ export default function ChatScreen() {
             {(() => {
                 const cleanUrl = getCleanAvatarUrl(member.avatar_url);
                 return cleanUrl ? (
-                    <Image source={{ uri: cleanUrl }} style={styles.memberAvatar} />
+                    <CachedImage remoteUrl={cleanUrl} style={styles.memberAvatar} entityId={`member_${item.id}`} assetType="avatar" />
                 ) : (
                     <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
                         <Text style={{ fontWeight: 'bold', color: '#64748b' }}>
@@ -1532,7 +1541,7 @@ export default function ChatScreen() {
                                 {(() => {
                                     const cleanUrl = getCleanAvatarUrl(displayUser?.avatar_url);
                                     return cleanUrl ? (
-                                        <Image source={{ uri: cleanUrl }} style={styles.messageAvatarImage} />
+                                        <CachedImage remoteUrl={cleanUrl} style={styles.messageAvatarImage} entityId={`msg_avatar_${item.sender_id}`} assetType="avatar" />
                                     ) : (
                                         <View style={styles.messageAvatarPlaceholder}>
                                             <Text style={styles.messageAvatarText}>
@@ -1672,9 +1681,11 @@ export default function ChatScreen() {
                                     const replyContent = item.reply_from_meta?.content || item.replyTo?.content || '';
                                     if (replyType === 'image' && replyContent && replyContent.startsWith('http')) {
                                         return (
-                                            <Image 
-                                                source={{ uri: replyContent }} 
+                                            <CachedImage 
+                                                remoteUrl={replyContent} 
                                                 style={{ width: 36, height: 36, borderRadius: 4, marginRight: 8, marginVertical: 4 }} 
+                                                entityId={`chat_media_${item.id}`}
+                                                assetType="chat_media"
                                             />
                                         );
                                     }
@@ -1740,11 +1751,12 @@ export default function ChatScreen() {
                                                     activeOpacity={0.8}
                                                     onPress={() => handleOpenSwipeableMedia(child.id)}
                                                 >
-                                                    <Image 
-                                                        source={{ uri: mediaUrl }}
+                                                    <CachedImage 
+                                                        remoteUrl={mediaUrl}
                                                         style={styles.albumGridImage}
                                                         resizeMode="cover"
-                                                        blurRadius={(!isDownloaded && !isMe) ? 3 : 0}
+                                                        entityId={`chat_media_${child.id}`}
+                                                        assetType="chat_media"
                                                     />
                                                     
                                                     {isVideo && (
@@ -1817,11 +1829,13 @@ export default function ChatScreen() {
                             >
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
-                                    <Image
-                                        source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content))) }}
+                                    <CachedImage
+                                        remoteUrl={downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content)))}
                                         style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
+                                        entityId={`chat_media_${item.id}`}
+                                        assetType="chat_media"
                                     />
 
                                     {/* Upload/Download Overlay */}
@@ -1883,10 +1897,12 @@ export default function ChatScreen() {
                                         })}                                    >
                                         {/* Cloudinary video thumbnail — generated automatically */}
                                         {item.content?.startsWith('http') || downloadedIds[item.id] || item.fileUri ? (
-                                            <Image
-                                                source={{ uri: downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content))) }}
+                                            <CachedImage
+                                                remoteUrl={downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content)))}
                                                 style={styles.videoThumb}
                                                 resizeMode="cover"
+                                                entityId={`chat_media_${item.id}`}
+                                                assetType="chat_media"
                                             />
                                         ) : (
                                             <View style={[styles.videoThumb, { backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center' }]}>
@@ -2680,9 +2696,11 @@ export default function ChatScreen() {
                         {(() => {
                             const cleanUrl = getCleanAvatarUrl(group?.avatar_url);
                             return cleanUrl ? (
-                                <Image
-                                    source={{ uri: cleanUrl }}
+                                <CachedImage
+                                    remoteUrl={cleanUrl}
                                     style={{ width: 36, height: 36, borderRadius: 10 }}
+                                    entityId={`group_avatar_${id}`}
+                                    assetType="avatar"
                                 />
                             ) : (
                                 <NalissLogo size={30} />
@@ -2938,7 +2956,7 @@ export default function ChatScreen() {
                                 >
                                     <View style={styles.previewMediaContainer}>
                                         {item.type === 'image' ? (
-                                            <Image source={{ uri: item.uri }} style={styles.previewThumbnail} />
+                                            <CachedImage remoteUrl={item.uri} style={styles.previewThumbnail} entityId={`preview_${index}`} assetType="chat_media" />
                                         ) : item.type === 'video' ? (
                                             <View style={[styles.previewPlaceholder, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
                                                 <Ionicons name="videocam" size={32} color={COLORS.primary} />
@@ -3126,8 +3144,8 @@ export default function ChatScreen() {
                                     const imgLeft = (CONTAINER_SIZE - imgWidth) / 2 + offsetX;
                                     const imgTop = (CONTAINER_SIZE - imgHeight) / 2 + offsetY;
                                     return cropImageUri ? (
-                                        <Image 
-                                            source={{ uri: cropImageUri }} 
+                                        <CachedImage 
+                                            remoteUrl={cropImageUri} 
                                             style={{
                                                 position: 'absolute',
                                                 width: imgWidth,
@@ -3136,6 +3154,8 @@ export default function ChatScreen() {
                                                 top: imgTop,
                                             }}
                                             resizeMode="stretch"
+                                            entityId="crop_canvas"
+                                            assetType="chat_media"
                                         />
                                     ) : null;
                                 })()}
@@ -3273,7 +3293,7 @@ export default function ChatScreen() {
                                                 setViewerFile({ uri: cleanUrl, name: viewingProfile.full_name || viewingProfile.username || 'Profile', type: 'image', isProfile: true, profileData: viewingProfile });
                                                 setViewerVisible(true);
                                             }}>
-                                                <Image source={{ uri: cleanUrl }} style={styles.profileAvatar} />
+                                                <CachedImage remoteUrl={cleanUrl} style={styles.profileAvatar} entityId={`profile_avatar_${viewingProfile.id}`} assetType="avatar" />
                                             </TouchableOpacity>
                                         ) : (
                                             <View style={[styles.profileAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>

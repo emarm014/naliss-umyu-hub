@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -43,7 +43,7 @@ interface AuthState {
   lastFetch: number | null;
   lastLocalProfileUpdateAt: number | null;
   pendingProfileUpdates: Partial<Record<string, any>>;
-  // The most recently confirmed avatar URL — set on upload, never overwritten by any fetch.
+  // The most recently confirmed avatar URL â€” set on upload, never overwritten by any fetch.
   // This is the single source of truth for the avatar displayed in the UI.
   confirmedAvatarUrl: string | null;
   // Local file system URI for the cached avatar image to support offline rendering.
@@ -294,10 +294,10 @@ export const useAuthStore = create<AuthState>()(
 
           if (error) {
             if (isNetworkError(error)) {
-              // Network failure — keep optimistic update
+              // Network failure â€” keep optimistic update
               return;
             }
-            // Real DB error — revert optimistic update
+            // Real DB error â€” revert optimistic update
             const revertedPending = { ...get().pendingProfileUpdates };
             Object.keys(prefs).forEach(k => delete revertedPending[k]);
             set({ profile, pendingProfileUpdates: revertedPending });
@@ -346,7 +346,7 @@ export const useAuthStore = create<AuthState>()(
                            !!(data?.registration_number && data?.level);
           set({ isProfileComplete: complete });
 
-          // ── SELF-HEALING: If no profile row but user is logged in, attempt repair ──
+          // â”€â”€ SELF-HEALING: If no profile row but user is logged in, attempt repair â”€â”€
           if (!complete) {
             const success = await get().attemptProfileRepair();
             if (success) set({ isProfileComplete: true });
@@ -395,7 +395,7 @@ export const useAuthStore = create<AuthState>()(
         const userId = user?.id;
         
         if (userId) {
-          // Clear push token from DB on sign out (best-effort — don't block signout)
+          // Clear push token from DB on sign out (best-effort â€” don't block signout)
           (supabase as any).from('users')
             .update({ push_token: null } as any)
             .eq('id', userId)

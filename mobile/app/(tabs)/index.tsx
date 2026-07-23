@@ -151,7 +151,7 @@ export default function HomeScreen() {
         .from('featured_students')
         .select(`
           id, title, subtitle, custom_image_url, published_at, expires_at,
-          users ( full_name, username, avatar_url )
+          users!featured_students_user_id_fkey ( full_name, username, avatar_url )
         `)
         .eq('is_active', true)
         .neq('type', 'event_winner')
@@ -520,11 +520,12 @@ export default function HomeScreen() {
                   onPress={() => router.push('/fyb' as any)}
                   activeOpacity={0.85}
                 >
-                  <PosterImage
-                    uri={item.custom_image_url ? getOptimizedCloudinaryUrl(item.custom_image_url, 600, 400) : undefined}
-                    fallbackUri={item.custom_image_url || undefined}
+                  <CachedImage
+                    remoteUrl={item.custom_image_url ? getOptimizedCloudinaryUrl(item.custom_image_url, 600, 400) : null}
                     style={styles.posterImage}
-                    gradientColors={['#d97706', '#ea580c']}
+                    entityId={item.id}
+                    assetType="fyb_poster"
+                    resizeMode="cover"
                   />
                   <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.posterGradient} />
                   <View style={styles.posterContent}>
@@ -574,11 +575,12 @@ export default function HomeScreen() {
                         router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any);
                       }}
                     >
-                      <PosterImage
-                        uri={item.cover_image_url ? getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400) : undefined}
-                        fallbackUri={item.cover_image_url || undefined}
+                      <CachedImage
+                        remoteUrl={item.cover_image_url ? getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400) : null}
                         style={styles.posterImage}
-                        gradientColors={['#0c4a6e', '#1e3a5f']}
+                        entityId={item.id}
+                        assetType="announcement_cover"
+                        resizeMode="cover"
                       />
                       <LinearGradient colors={['transparent', 'rgba(12,74,110,0.95)']} style={styles.posterGradient} />
                       <View style={styles.posterContent}>

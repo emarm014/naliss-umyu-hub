@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   View,
   Text,
@@ -40,7 +40,7 @@ const getCacheBase = (): string => {
 };
 const VIEWER_CACHE = getCacheBase();
 
-// Remove fl_inline — causes HTTP 400 on Cloudinary raw files
+// Remove fl_inline â€” causes HTTP 400 on Cloudinary raw files
 function getCleanUrl(url: string): string {
   return url
     .replace('/raw/upload/fl_inline/', '/raw/upload/')
@@ -64,7 +64,7 @@ function getViewerUrl(url: string): string {
     if (hasNonImageExt) {
       return clean.replace('/image/upload/', '/raw/upload/');
     }
-    // No extension or image extension — trust /image/upload/ as-is
+    // No extension or image extension â€” trust /image/upload/ as-is
     // (Cloudinary public IDs without extensions are images when under /image/upload/)
     return clean;
   }
@@ -86,7 +86,7 @@ interface UniversalViewerProps {
   fileUri: string;           // remote Cloudinary URL
   fileType: 'image' | 'video' | 'pdf' | 'audio' | 'document';
   fileName: string;
-  fileId?: string;           // material/past_question id — used to find vault file
+  fileId?: string;           // material/past_question id â€” used to find vault file
   showDownload?: boolean;
   showShare?: boolean;
   isHalfScreen?: boolean;
@@ -229,13 +229,13 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
 };
 
 /**
- * Universal In-App Viewer V3.0 — Full Offline Support
+ * Universal In-App Viewer V3.0 â€” Full Offline Support
  *
  * For ALL media types:
- *  1. Check vault (naliss_vault/) — file was previously downloaded by user
- *  2. Check viewer cache (naliss_viewer/) — file was previously previewed
+ *  1. Check vault (naliss_vault/) â€” file was previously downloaded by user
+ *  2. Check viewer cache (naliss_viewer/) â€” file was previously previewed
  *  3. Download to viewer cache if not found
- *  4. Render from local URI — works 100% offline after first open
+ *  4. Render from local URI â€” works 100% offline after first open
  *
  * Rendering:
  *  - PDF/Document: iOS native WebView, Android base64 embed
@@ -281,7 +281,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   React.useEffect(() => {
     if (!isVisible) return;
 
-    // Already a local file — open instantly, no download needed
+    // Already a local file â€” open instantly, no download needed
     // Handles both file:// URIs and bare absolute paths (/data/user/0/...)
     if (fileUri.startsWith('file://') || fileUri.startsWith('/')) {
       setLocalUri(fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`);
@@ -315,7 +315,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         // Use viewer URL (applies fl_attachment for non-image files)
         const viewerUrl = getViewerUrl(fileUri);
 
-        // 3. Download file — to vault path when fileId is available (eliminates dual cache),
+        // 3. Download file â€” to vault path when fileId is available (eliminates dual cache),
         //    otherwise to viewer cache
         const destinationPath = fileId
           ? getVaultFilePath(fileId, fileName, fileUri)
@@ -380,7 +380,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       const result = await downloadResumable.downloadAsync();
       if (!cancelled) {
         if (result && result.status === 200) {
-          // File downloaded successfully — use it directly
+          // File downloaded successfully â€” use it directly
           setLocalUri(result.uri);
             setIsOffline(false);
           } else {
@@ -472,7 +472,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
       if (result.success) {
         setIsSaved(true);
-        showToast('✓ Saved to Device');
+        showToast('âœ“ Saved to Device');
         setTimeout(() => setIsSaved(false), 3000);
       } else {
         Alert.alert('Save Failed', result.error || 'Could not save the file to your device.');
@@ -619,7 +619,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             </View>
           </TouchableWithoutFeedback>
 
-          {/* Footer — shown when download/share is enabled OR onViewProfile exists */}
+          {/* Footer â€” shown when download/share is enabled OR onViewProfile exists */}
           {shouldShowControls && (showDownload || showShare || onViewProfile) && (
             <View style={[styles.footer, !showShare && !showDownload && { justifyContent: 'center' }, isLandscape && styles.landscapeOverlayFooter]}>
               {showDownload && (
@@ -638,7 +638,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   />
                 )}
                 <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
-                  {isSaving ? 'Saving…' : isSaved ? 'Saved!' : 'Save to Device'}
+                  {isSaving ? 'Savingâ€¦' : isSaved ? 'Saved!' : 'Save to Device'}
                 </Text>
               </TouchableOpacity>
               )}
@@ -662,7 +662,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   );
 };
 
-// ── Video Player — expo-av native player ─────────────────────────────────────
+// â”€â”€ Video Player â€” expo-av native player â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
   const rawSrc = localUri || remoteUrl;
   const videoSrc = rawSrc && !rawSrc.startsWith('http') && !rawSrc.startsWith('file://')
@@ -981,7 +981,7 @@ function AudioPlayer({ uri, fileName }: { uri: string; fileName: string }) {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const audioStyles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 16 },
   iconWrap: { width: 96, height: 96, borderRadius: 24, backgroundColor: '#fef3c7', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },

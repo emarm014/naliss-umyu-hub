@@ -1,4 +1,4 @@
-import { Logger } from './logger';
+﻿import { Logger } from './logger';
 import { isNetworkError } from './sentry';
 
 export interface TimeoutError extends Error {

@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+﻿import * as FileSystem from 'expo-file-system/legacy';
 
 /**
  * Single source of truth for the local on-device vault directory.

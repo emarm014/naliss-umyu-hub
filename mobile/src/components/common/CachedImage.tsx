@@ -7,8 +7,23 @@ import { saveMediaToDevice } from '../../utils/mediaSaver';
 import { showToast } from './overlays';
 import { Ionicons } from '@expo/vector-icons';
 
+import { getSyncItem, setSyncItem } from '../../stores/mmkv.storage';
+
 // In-Memory Fast Cache to prevent UI flashing and 'half a second disappear' effect
-const globalMemoryCache: Record<string, string> = {};
+// Loaded synchronously from MMKV on boot
+let globalMemoryCache: Record<string, string> = {};
+try {
+    const cached = getSyncItem('global_image_cache');
+    if (cached) {
+        globalMemoryCache = JSON.parse(cached);
+    }
+} catch (e) {}
+
+const saveGlobalCache = () => {
+    try {
+        setSyncItem('global_image_cache', JSON.stringify(globalMemoryCache));
+    } catch (e) {}
+};
 
 interface CachedImageProps {
     entityId: string;
@@ -34,7 +49,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         if (!uriToSave) return;
         const result = await saveMediaToDevice(uriToSave, 'image');
         if (result.success) {
-            showToast('✓ Saved to Device');
+            showToast('âœ“ Saved to Device');
         } else {
             Alert.alert('Save Failed', result.error || 'Could not save the image to your device.');
         }
@@ -66,6 +81,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
                     if (fileInfo.exists) {
                         globalMemoryCache[entityId] = cached.local_path;
+                        saveGlobalCache();
                         if (isMounted) {
                             setLocalUri(cached.local_path);
                             setLoading(false);
@@ -95,6 +111,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     await upsertAssetCache(entityId, remoteUrl, result.uri, assetType);
                     
                     globalMemoryCache[entityId] = result.uri;
+                    saveGlobalCache();
                     if (isMounted) {
                         setLocalUri(result.uri);
                     }

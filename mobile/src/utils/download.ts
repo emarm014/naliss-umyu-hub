@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+﻿import * as FileSystem from 'expo-file-system/legacy';
 import { getVaultBase } from './vault';
 import { AssetPathResolver } from './assetResolver';
 import { UnifiedDownloadEngine } from './unifiedDownload';

@@ -54,17 +54,6 @@ export const useAnnouncementStore = create<AnnouncementState>()(
         // Stale-while-revalidate: show cached data immediately, refresh in background
         if (!force && isFresh) return;
 
-        // LOCAL-FIRST: read from SQLite cache immediately (always works)
-        if (!force && announcements.length === 0) {
-            try {
-                const { getCachedEntityList } = require('../lib/database');
-                const cached = await getCachedEntityList('announcements');
-                if (cached.length > 0) {
-                    set({ announcements: cached as any, isLoading: false });
-                }
-            } catch { /* fall through to server fetch */ }
-        }
-
         // SESSION GUARD: Don't query if unauthenticated — avoids 401 spam after logout
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {

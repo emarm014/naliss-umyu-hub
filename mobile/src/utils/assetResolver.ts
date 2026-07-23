@@ -1,4 +1,4 @@
-import { getVaultBase } from './vault';
+﻿import { getVaultBase } from './vault';
 
 export { getVaultBase };
 

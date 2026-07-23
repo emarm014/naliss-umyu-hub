@@ -21,19 +21,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { cacheEntityList, getCachedEntityList } from '../../src/lib/database';
+import { mmkvStorage } from '../../src/stores/mmkv.storage';
+
+import { useArchiveStore } from '../../src/stores/archive.store';
 
 export default function ArchiveScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   
-  const [archives, setArchives] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const archives = useArchiveStore(s => s.archives);
+  const isLoading = useArchiveStore(s => s.isLoading);
+  const isFetchingMore = useArchiveStore(s => s.isFetchingMore);
+  const hasMore = useArchiveStore(s => s.hasMore);
+  const page = useArchiveStore(s => s.page);
+  const fetchArchives = useArchiveStore(s => s.fetchArchives);
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number | null>>({});
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  
   const isOnline = useNetworkStore(s => s.isOnline);
 
   const [viewerVisible, setViewerVisible] = useState(false);
@@ -41,74 +47,13 @@ export default function ArchiveScreen() {
   const [readerFileType, setReaderFileType] = useState<'image' | 'video' | 'pdf' | 'audio' | 'document'>('document');
   const [readerTitle, setReaderTitle] = useState('');
 
-  const fetchArchives = useCallback(async (pageIndex: number = 0) => {
-    if (pageIndex > 0) setIsFetchingMore(true);
-    
-    try {
-      const { data, error } = await supabase
-        .from('archives')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(pageIndex * 20, (pageIndex * 20) + 19);
-
-      if (error) throw error;
-      const items = (data || []) as any[];
-      
-      setHasMore(items.length >= 20);
-      setArchives(prev => pageIndex === 0 ? items : [...prev, ...items]);
-      setPage(pageIndex);
-      
-      if (pageIndex === 0 && items.length > 0) {
-        cacheEntityList('archives', items, '').catch(() => {});
-      }
-
-      const cacheStatus: Record<string, boolean> = {};
-      for (const item of items) {
-        const displayName = extractFileNameFromUrl(item.file_url, item.title);
-        const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
-        const vaultFileName = `${item.id}_${safeName}`;
-        const isInVault = await checkFileExists(vaultFileName, item.file_url, item.id);
-        if (isInVault) {
-          cacheStatus[item.id] = true;
-        }
-      }
-      setDownloadedIds(prev => ({ ...prev, ...cacheStatus }));
-    } catch (err: any) {
-      const isNetworkErr = err?.message?.includes('Network request failed') || String(err).includes('Network request failed');
-      if (isNetworkErr) {
-        console.warn('Network offline while fetching archives:', err?.message);
-      } else {
-        console.error('Error fetching archives:', err);
-      }
-
-      if (pageIndex === 0) {
-        try {
-          const cached = await getCachedEntityList('archives');
-          if (cached && cached.length > 0) {
-            setArchives(cached);
-            setHasMore(false);
-            return;
-          }
-        } catch (_) {}
-        if (!isNetworkErr) {
-          Alert.alert('Error', 'Failed to load archives');
-        }
-      } else {
-        setHasMore(false);
-      }
-    } finally {
-      setIsLoading(false);
-      setIsFetchingMore(false);
-    }
-  }, []);
-
   useEffect(() => {
     fetchArchives(0);
   }, [fetchArchives]);
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await fetchArchives(0);
+    await fetchArchives(0, true);
     setIsRefreshing(false);
   };
 

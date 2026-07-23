@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import * as FileSystem from 'expo-file-system/legacy';
 import { mmkvStorage } from '../stores/mmkv.storage';
 
@@ -34,13 +34,13 @@ const urlToFilename = (url: string): string => {
 };
 
 /**
- * Read the MMKV-backed URL→localPath mapping.
+ * Read the MMKV-backed URLâ†’localPath mapping.
  */
 const getCacheMap = (): Record<string, string> => {
     try {
         const raw = mmkvStorage.getItem(MMKV_CACHE_MAP_KEY);
         if (typeof raw === 'string') return JSON.parse(raw);
-    } catch { /* corrupt data — reset */ }
+    } catch { /* corrupt data â€” reset */ }
     return {};
 };
 
@@ -65,7 +65,7 @@ const ensureCacheDir = async () => {
         try {
             await FileSystem.makeDirectoryAsync(AVATAR_CACHE_DIR, { intermediates: true });
             dirCreated = true;
-        } catch { /* give up — fallback to remote */ }
+        } catch { /* give up â€” fallback to remote */ }
     }
 };
 
@@ -83,7 +83,7 @@ export const getOfflineImageUri = async (remoteUrl: string): Promise<string> => 
     const filename = urlToFilename(remoteUrl);
     const localUri = `${AVATAR_CACHE_DIR}${filename}`;
 
-    // 1. Fast path — check MMKV map first (zero I/O)
+    // 1. Fast path â€” check MMKV map first (zero I/O)
     const map = getCacheMap();
     if (map[remoteUrl]) {
         // Verify the file still exists on disk
@@ -92,8 +92,8 @@ export const getOfflineImageUri = async (remoteUrl: string): Promise<string> => 
             if (info.exists && (info as any).size > 0) {
                 return map[remoteUrl];
             }
-        } catch { /* file gone — re-download */ }
-        // Stale entry — remove it
+        } catch { /* file gone â€” re-download */ }
+        // Stale entry â€” remove it
         delete map[remoteUrl];
         setCacheMap(map);
     }
@@ -110,7 +110,7 @@ export const getOfflineImageUri = async (remoteUrl: string): Promise<string> => 
         }
     } catch { /* ignore */ }
 
-    // 3. Download — deduplicate parallel requests for the same URL
+    // 3. Download â€” deduplicate parallel requests for the same URL
     if (inflightDownloads.has(remoteUrl)) {
         const result = await inflightDownloads.get(remoteUrl);
         return result || remoteUrl;
@@ -139,7 +139,7 @@ export const getOfflineImageUri = async (remoteUrl: string): Promise<string> => 
 
             return result.uri;
         } catch {
-            return null; // Network offline or download failed — caller gets remote URL
+            return null; // Network offline or download failed â€” caller gets remote URL
         } finally {
             inflightDownloads.delete(remoteUrl);
         }

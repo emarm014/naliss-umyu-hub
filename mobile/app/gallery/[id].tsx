@@ -21,6 +21,8 @@ import { ResizeMode, Video } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
+import { useGalleryStore } from '../../src/stores/gallery.store';
+
 export default function GalleryTopicScreen() {
   useSentryScreen('GalleryTopicScreen');
   const { id } = useLocalSearchParams();
@@ -30,43 +32,23 @@ export default function GalleryTopicScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  const MEDIA_CACHE_KEY = `gallery_media_${id}`;
-  const TOPIC_DETAILS_CACHE_KEY = `gallery_topic_details_${id}`;
+  const topicIdStr = typeof id === 'string' ? id : id[0];
+  
+  const [topic, setTopic] = useState<any>(null);
+  
+  const mediaByTopic = useGalleryStore(s => s.mediaByTopic);
+  const isLoadingMediaDict = useGalleryStore(s => s.isLoadingMedia);
+  
+  const fetchTopicDetails = useGalleryStore(s => s.fetchTopicDetails);
+  const fetchMedia = useGalleryStore(s => s.fetchMedia);
 
-  // Fetch Topic Details
-  const { data: topic } = useQuery<any>({
-    queryKey: ['gallery_topic_details', id],
-    queryFn: async () => {
-        const topicId = typeof id === 'string' ? id : id[0];
-        const { data, error } = await supabase
-        .from('gallery_topics')
-        .select('*')
-        .eq('id' as any, topicId as any)
-        .single();
-      if (error) throw error;
-      Promise.resolve(mmkvStorage.setItem(TOPIC_DETAILS_CACHE_KEY, JSON.stringify(data))).catch(() => {});
-      return data;
-    },
-    staleTime: 5 * 60 * 1000,
-  });
+  const media = mediaByTopic[topicIdStr] || [];
+  const isLoading = isLoadingMediaDict[topicIdStr] || false;
 
-  // Fetch Media
-  const { data: media = [], isLoading } = useQuery<any[]>({
-    queryKey: ['gallery_media', id],
-    queryFn: async () => {
-        const topicId = typeof id === 'string' ? id : id[0];
-        const { data, error } = await supabase
-        .from('gallery_media')
-        .select('*')
-        .eq('topic_id' as any, topicId as any)
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true });
-      if (error) throw error;
-      Promise.resolve(mmkvStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(data || []))).catch(() => {});
-      return data || [];
-    },
-    staleTime: 5 * 60 * 1000,
-  });
+  React.useEffect(() => {
+      fetchTopicDetails(topicIdStr).then(t => { if (t) setTopic(t) });
+      fetchMedia(topicIdStr);
+  }, [topicIdStr, fetchTopicDetails, fetchMedia]);
 
   const downloadMediaToDevice = async (url: string, filename: string) => {
     try {

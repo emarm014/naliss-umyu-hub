@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase/client';
 import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
 import { Logger } from '../utils/logger';
@@ -38,7 +38,7 @@ export const DownloadTracker = {
                 downloaded_at: new Date().toISOString(),
             }, { onConflict: 'user_id,asset_id', ignoreDuplicates: false });
         } catch {
-            // Fire-and-forget — never block the caller
+            // Fire-and-forget â€” never block the caller
         }
     },
 
@@ -84,7 +84,7 @@ export const DownloadTracker = {
                             await updateLocalMediaPath(dl.asset_id, localPath);
                         }
                     } catch {
-                        // Skip failed items — will retry on next login
+                        // Skip failed items â€” will retry on next login
                     }
                 }));
 

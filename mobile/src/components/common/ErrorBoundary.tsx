@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import * as Sentry from '@sentry/react-native';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,14 +37,14 @@ export function ErrorBoundary({ error, retry }: Props) {
       useAuthStore.getState().signOut();
       useSignupStore.getState().reset();
 
-      // Force reload the app (best-effort — expo-updates may not be installed)
+      // Force reload the app (best-effort â€” expo-updates may not be installed)
       try {
         const Updates = require('expo-updates');
         if (Updates?.reloadAsync) {
           await Updates.reloadAsync();
         }
       } catch {
-        // expo-updates not available — fallback to retry
+        // expo-updates not available â€” fallback to retry
       }
     } catch {
       // Fallback

@@ -1,4 +1,4 @@
-import * as Notifications from 'expo-notifications';
+﻿import * as Notifications from 'expo-notifications';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
@@ -38,7 +38,7 @@ interface EventState {
     clearCache: () => void;
 }
 
-const CACHE_TTL = Infinity; // No TTL — cached events available offline indefinitely
+const CACHE_TTL = Infinity; // No TTL â€” cached events available offline indefinitely
 
 
 export async function scheduleTimetableAlarms(events: Event[]) {

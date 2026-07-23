@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NalissLogo } from './NalissLogo';
@@ -125,7 +125,7 @@ export function SplashLoadingScreen({ message }: SplashLoadingScreenProps) {
 
       <View style={[styles.footer, { bottom: Math.max(insets.bottom + 16, 40) }]}>
         <Text style={[styles.copyright, { color: isDark ? 'rgba(255,255,255,0.25)' : '#94a3b8' }]}>
-          UMYU CHAPTER • © 2026
+          UMYU CHAPTER â€¢ Â© 2026
         </Text>
       </View>
     </LinearGradient>

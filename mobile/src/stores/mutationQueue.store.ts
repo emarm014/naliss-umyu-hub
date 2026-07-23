@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -111,7 +111,7 @@ export const useMutationQueueStore = create<MutationQueueState>()(
               failedMutations.push(mut);
               networkInterrupted = true;
             } else {
-              // Critical code/db/RLS violation error — log once, move to failedQueue to prevent queue blockage
+              // Critical code/db/RLS violation error â€” log once, move to failedQueue to prevent queue blockage
               const errKey = `${mut.id}-${err?.message || 'unknown'}`;
               if (!loggedFatalMutations.has(errKey)) {
                 loggedFatalMutations.add(errKey);

@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../api/supabase/client';
 import * as Sentry from '@sentry/react-native';
@@ -28,7 +28,7 @@ interface GlobalSyncState {
   _stopBackgroundSync: () => void;
 }
 
-// Background sync every 10 minutes — keeps data fresh even without realtime events
+// Background sync every 10 minutes â€” keeps data fresh even without realtime events
 const BG_SYNC_INTERVAL = 10 * 60 * 1000;
 
 export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
@@ -43,7 +43,7 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     // Reset any messages stuck in 'sending' from a previous kill
     useMessageStore.getState().resetStuckMessages();
 
-    // Only do initial sync if online — cached data is already in stores from AsyncStorage
+    // Only do initial sync if online â€” cached data is already in stores from AsyncStorage
     const isOnline = useNetworkStore.getState().isOnline;
     if (isOnline) {
       get().syncAll(true);
@@ -61,14 +61,14 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     set({ isInitialized: true });
   },
 
-  // Only called on sign-out — tears everything down
+  // Only called on sign-out â€” tears everything down
   terminate: () => {
     get()._stopBackgroundSync();
     get()._channels.forEach(channel => supabase.removeChannel(channel));
     set({ _channels: [], isInitialized: false });
   },
 
-  // Called when network comes back online — always force re-sync + fresh channels
+  // Called when network comes back online â€” always force re-sync + fresh channels
   resubscribe: () => {
     (async () => {
       // Safely await removal of all dead channels to prevent socket leaks
@@ -88,7 +88,7 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
   },
 
   syncAll: async (force = false) => {
-    // Skip network calls when offline — cached data is already in stores
+    // Skip network calls when offline â€” cached data is already in stores
     const isOnline = useNetworkStore.getState().isOnline;
     if (!isOnline) return;
 
@@ -98,15 +98,15 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     const level = authStore.profile?.level;
 
     // Priority 1: User-visible content first (groups, announcements, events)
-    // Priority 2: Secondary content (materials, courses, directory) — slightly deferred
-    // This makes the app feel faster — the most important screens load first
+    // Priority 2: Secondary content (materials, courses, directory) â€” slightly deferred
+    // This makes the app feel faster â€” the most important screens load first
     const [p1] = await Promise.allSettled([
       useGroupStore.getState().fetchGroups(force),
       useAnnouncementStore.getState().fetchAnnouncements(level, force),
       useEventStore.getState().fetchUpcomingEvents(level, force),
     ]);
 
-    // Secondary content — fire and forget, don't block
+    // Secondary content â€” fire and forget, don't block
     Promise.allSettled([
       useResourceStore.getState().fetchMaterials({ level: level as any }, force),
       useResourceStore.getState().fetchPastQuestions({ level: level as any }, force),
@@ -116,20 +116,20 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     ]);
   },
 
-  // ── Background periodic sync ──────────────────────────────────────────────
+  // â”€â”€ Background periodic sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   _startBackgroundSync: () => {
     // Clear any existing timer
     const existing = get()._bgTimer;
     if (existing) clearInterval(existing);
 
-    // Periodic background sync — silent, no loading spinners
+    // Periodic background sync â€” silent, no loading spinners
     const timer = setInterval(() => {
-      get().syncAll(false); // respect TTL — only re-fetches if stale
+      get().syncAll(false); // respect TTL â€” only re-fetches if stale
     }, BG_SYNC_INTERVAL);
 
     let lastBackgroundTime = 0;
 
-    // AppState listener — re-sync when app comes back to foreground (only if online)
+    // AppState listener â€” re-sync when app comes back to foreground (only if online)
     const appStateSub = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
       if (nextState === 'background') {
         lastBackgroundTime = Date.now();
@@ -159,11 +159,11 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     set({ _bgTimer: null, _appStateSubscription: null });
   },
 
-  // ── Realtime channels ─────────────────────────────────────────────────────
-  // Single multiplexed channel for all tables — far more efficient than 11 separate channels.
+  // â”€â”€ Realtime channels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Single multiplexed channel for all tables â€” far more efficient than 11 separate channels.
   // One WebSocket connection, one handshake, one heartbeat.
   _openChannels: async () => {
-    // ── Emergency Realtime Optimization ─────────────────────────────────────
+    // â”€â”€ Emergency Realtime Optimization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Removed the 'mobile:global:broadcast' WebSocket completely to protect the
     // Supabase Free Tier 200 concurrent connection limit.
     // Sync now relies exclusively on AppState foregrounding and background sync intervals.

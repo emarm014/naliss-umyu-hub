@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+﻿import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Alert } from 'react-native';
 import { extractFileNameFromUrl } from '../utils/download';
@@ -24,7 +24,7 @@ export const FileService = {
   },
 
   /**
-   * Gets the local URI for a file — uses the original filename from Cloudinary
+   * Gets the local URI for a file â€” uses the original filename from Cloudinary
    */
   getLocalUri(fileId: string, fileUrlOrName: string) {
     // If it's a URL, extract the real filename
@@ -39,7 +39,7 @@ export const FileService = {
     const localUri = this.getLocalUri(fileId, fileUrlOrName);
     const info = await FileSystem.getInfoAsync(localUri);
     if (!info.exists) return false;
-    // Validate real content — not an empty file
+    // Validate real content â€” not an empty file
     if ((info as any).size !== undefined && (info as any).size === 0) {
       await FileSystem.deleteAsync(localUri, { idempotent: true });
       return false;

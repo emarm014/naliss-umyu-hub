@@ -1,8 +1,8 @@
-import * as FileSystem from 'expo-file-system/legacy';
+﻿import * as FileSystem from 'expo-file-system/legacy';
 import { AssetPathResolver } from './assetResolver';
 import { Logger } from './logger';
 
-/** Clean Cloudinary URL for download — same logic as viewer's getViewerUrl */
+/** Clean Cloudinary URL for download â€” same logic as viewer's getViewerUrl */
 function cleanDownloadUrl(url: string): string {
   let clean = url
     .replace('/raw/upload/fl_inline/', '/raw/upload/')

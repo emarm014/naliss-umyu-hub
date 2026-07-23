@@ -1,4 +1,4 @@
-// User Role Types
+﻿// User Role Types
 export type UserRole = 'student' | 'moderator' | 'super_admin';
 
 // Account Status Types

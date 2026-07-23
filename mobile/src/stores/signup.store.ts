@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 
@@ -31,7 +31,7 @@ interface SignupState {
   // For artificial delay
   isGoogleDelaying: boolean;
 
-  // Timeout tracking — timestamp of last activity during signup
+  // Timeout tracking â€” timestamp of last activity during signup
   lastActivityTime: number | null;
 
   setIsGoogleDelaying: (delaying: boolean) => void;
@@ -87,10 +87,10 @@ export const useSignupStore = create<SignupState>()(
       setProvider: (provider: 'email' | 'google') => set({ provider }),
 
       setCredentials: (email, password) => set((state) => ({
-        // Preserve existing provider (e.g. 'google') — never override it silently
+        // Preserve existing provider (e.g. 'google') â€” never override it silently
         provider: state.provider,
         email: email ?? state.email,
-        // Only update password if explicitly provided — never wipe it with undefined
+        // Only update password if explicitly provided â€” never wipe it with undefined
         ...(password !== undefined ? { password } : {}),
         lastActivityTime: Date.now(),
       })),

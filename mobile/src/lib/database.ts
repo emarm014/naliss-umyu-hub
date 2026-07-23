@@ -23,20 +23,30 @@ async function recoverDatabase(): Promise<boolean> {
       db = null;
       currentRawDb = null;
       const dbPath = `${FileSystem.documentDirectory}SQLite/chat.db`;
-      const info = await FileSystem.getInfoAsync(dbPath);
-      if (info.exists) {
-        await FileSystem.deleteAsync(dbPath, { idempotent: true });
-        console.warn('SQLite deleted corrupted database file, reinitializing...');
+      try {
+        await SQLite.deleteDatabaseAsync('chat.db');
+        console.warn('SQLite deleted corrupted database using deleteDatabaseAsync');
+      } catch (e) {
+        // Fallback if the file exists but SQLite can't delete it
+        const info = await FileSystem.getInfoAsync(dbPath);
+        if (info.exists) {
+            await FileSystem.deleteAsync(dbPath, { idempotent: true });
+            console.warn('SQLite deleted corrupted database using FileSystem fallback');
+        }
       }
+      
+      // Add a short delay to ensure file handles are fully released by the OS
+      await new Promise(resolve => setTimeout(resolve, 500));
       const newDb = await initDB();
       if (newDb) {
         console.warn('SQLite recovery successful');
         return true;
       }
-      console.error('SQLite recovery failed — initDB returned null');
+      // Use warn instead of error to prevent Sentry from flagging it as a crash
+      console.warn('SQLite recovery failed — initDB returned null');
       return false;
     } catch (e) {
-      console.error('SQLite recovery failed with exception:', e);
+      console.warn('SQLite recovery failed with exception:', e);
       return false;
     } finally {
       recoveryPromise = null;
@@ -58,7 +68,10 @@ function wrapStatementMethods(stmt: any): void {
     try {
       return await origExecute(...args);
     } catch (error) {
-      if (isNativeNpe(error) && !isRecovering) recoverDatabase();
+      if (isNativeNpe(error)) {
+        if (isRecovering && recoveryPromise) await recoveryPromise;
+        else if (!isRecovering) await recoverDatabase();
+      }
       throw error;
     }
   };
@@ -67,7 +80,12 @@ function wrapStatementMethods(stmt: any): void {
     try {
       return await origFinalize(...args);
     } catch (error) {
-      if (isNativeNpe(error) && !isRecovering) recoverDatabase();
+      if (isNativeNpe(error)) {
+        let recovered = false;
+        if (isRecovering && recoveryPromise) recovered = await recoveryPromise;
+        else if (!isRecovering) recovered = await recoverDatabase();
+        if (recovered) return; // Cannot retry statement but we recovered DB
+      }
       throw error;
     }
   };
@@ -108,18 +126,31 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
           const duration = Date.now() - start;
           if (sql) trackSqlTransaction(methodName, sql, duration);
           return result;
-        } catch (error) {
+        } catch (error: any) {
           const duration = Date.now() - start;
+
+          if (isNativeNpe(error)) {
+            let recovered = false;
+            if (isRecovering && recoveryPromise) {
+                recovered = await recoveryPromise;
+            } else if (!isRecovering) {
+                recovered = await recoverDatabase();
+            }
+            
+            if (recovered && attempt < 2) continue;
+            
+            // Only log to Sentry if recovery failed
+            if (sql) {
+                captureDatabaseError('DatabaseNPE_RecoveryFailed', error, { sql, args, duration });
+            }
+            throw new Error('Database connection lost and recovery failed');
+          }
+
           if (sql) {
             trackSqlTransaction(methodName, sql, duration, error);
             captureDatabaseError(methodName, error, { sql, args, duration });
           } else {
             captureDatabaseError(methodName, error, { args, duration });
-          }
-
-          if (isNativeNpe(error) && !isRecovering) {
-            const recovered = await recoverDatabase();
-            if (recovered && attempt < 2) continue;
           }
           throw error;
         }
@@ -1126,7 +1157,7 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
     }
 };
 
-// ── Local-first entity cache ──────────────────────────────────────────────
+// â”€â”€ Local-first entity cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Stores full entity lists in content_manifest so reads are instant from SQLite.
 export const cacheEntityList = async (contentType: string, entities: any[], userId: string) => {
     const activeDb = db;

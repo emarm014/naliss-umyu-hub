@@ -21,6 +21,7 @@ import { format } from 'date-fns';
 import { useNewsStore } from '../../src/stores/news.store';
 import { cacheEntityList, getCachedEntityList } from '../../src/lib/database';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { CachedImage } from '../../src/components/common/CachedImage';
 
 const { width } = Dimensions.get('window');
 
@@ -85,10 +86,12 @@ const NewsCard = ({
           activeOpacity={0.9}
           onPress={() => onImagePress(imageUrls[0], item.title)}
         >
-          <Image 
-            source={{ uri: imageUrls[0] }} 
+          <CachedImage 
+            remoteUrl={imageUrls[0]} 
             style={styles.heroImage}
             resizeMode="cover"
+            entityId={`${item.id}_hero_0`}
+            assetType="news_image"
           />
           <View style={styles.imageTapHint}>
             <Ionicons name="expand-outline" size={16} color="#FFFFFF" />
@@ -109,7 +112,13 @@ const NewsCard = ({
                   activeOpacity={0.88}
                   onPress={() => onImagePress(url, item.title)}
                 >
-                  <Image source={{ uri: url }} style={styles.albumGridImage} resizeMode="cover" />
+                  <CachedImage 
+                    remoteUrl={url} 
+                    style={styles.albumGridImage} 
+                    resizeMode="cover" 
+                    entityId={`${item.id}_album_${index}`}
+                    assetType="news_image"
+                  />
                   {index === 3 && totalImages > 4 && (
                     <View style={styles.albumMoreOverlay}>
                       <Text style={styles.albumMoreText}>+{totalImages - 4}</Text>

@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import * as Network from 'expo-network';
 import { trackNetworkChange, setSentryNetworkContext } from '../utils/sentry';
 import { useMutationQueueStore } from './mutationQueue.store';
@@ -86,14 +86,14 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     try {
       const networkState = await Network.getNetworkStateAsync();
       // isInternetReachable can be null on Android (unknown state).
-      // Treat null as true — assume reachable if connected, to avoid
+      // Treat null as true â€” assume reachable if connected, to avoid
       // falsely blocking syncs on Android devices.
       const reachable = networkState.isInternetReachable !== false;
       const isOnline = !!(networkState.isConnected && reachable);
       const wasOnline = get().isOnline;
 
       if (!wasOnline && isOnline) {
-        // Just came back online — trigger all registered callbacks
+        // Just came back online â€” trigger all registered callbacks
         get().setOnline();
         trackNetworkChange(true, networkState.type);
         onlineCallbacks.forEach(cb => {

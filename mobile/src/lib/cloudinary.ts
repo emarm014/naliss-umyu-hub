@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cloudinary Upload Helper for Mobile
  * Uploads files directly to Cloudinary using a secure signed preset with fallback.
  * 
@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../api/supabase/client';
 import { trackCloudinary } from '../utils/sentry';
 
@@ -34,7 +34,7 @@ function getUploadUrl(mimeType: string): string {
   if (mime.startsWith('video/') || mime.startsWith('audio/')) {
     return `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`;
   }
-  // PDF, DOC, PPT, XLS, ZIP, and everything else → raw
+  // PDF, DOC, PPT, XLS, ZIP, and everything else â†’ raw
   return `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`;
 }
 
@@ -191,7 +191,7 @@ export async function uploadToCloudinary(
 /**
  * Upload a local file URI to Cloudinary.
  * This is the preferred method for React Native images/documents.
- * Uses XMLHttpRequest for real granular upload progress (not just 0% → 100%).
+ * Uses XMLHttpRequest for real granular upload progress (not just 0% â†’ 100%).
  * @param localUri - The local file URI (from expo-image-picker or document-picker)
  * @param fileName - Optional file name
  * @param folder - The Cloudinary folder
@@ -376,7 +376,7 @@ export function getOptimizedCloudinaryUrl(
 
 /**
  * Generate a tiny thumbnail URL for list views and avatars.
- * Much smaller payload than full images — loads near-instantly.
+ * Much smaller payload than full images â€” loads near-instantly.
  */
 export function getThumbnailUrl(url: string | null, size: number = 80): string {
   if (!url || !url.includes('cloudinary.com')) return url || '';

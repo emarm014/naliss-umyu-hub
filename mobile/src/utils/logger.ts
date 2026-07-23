@@ -1,7 +1,7 @@
-import * as Sentry from '@sentry/react-native';
+﻿import * as Sentry from '@sentry/react-native';
 import { TimeoutError } from './api-protection';
 
-// Errors that are transient/environmental — should never create Sentry issues
+// Errors that are transient/environmental â€” should never create Sentry issues
 function isTransientError(error: any): boolean {
   if (!error) return false;
   if (error instanceof TimeoutError) return true;
@@ -95,13 +95,13 @@ export const Logger = {
       level: 'error',
     });
 
-    // Don't send transient network/timeout errors to Sentry — they're environmental,
+    // Don't send transient network/timeout errors to Sentry â€” they're environmental,
     // not code bugs. The app handles them gracefully with retries and cached data.
     if (isTransientError(error)) {
       return;
     }
 
-    // Normalize error to a proper Error instance — handles plain objects like
+    // Normalize error to a proper Error instance â€” handles plain objects like
     // Supabase errors {code, message, details, hint} which produce "[object Object]"
     // when passed to new Error(String(error))
     let normalizedError: Error;

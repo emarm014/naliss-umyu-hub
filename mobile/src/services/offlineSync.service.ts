@@ -1,4 +1,4 @@
-import { supabase } from '../api/supabase/client';
+﻿import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
 import { trackOfflineSync, captureStoreError } from '../utils/sentry';
 import { useAuthStore } from '../stores/auth.store';

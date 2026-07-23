@@ -1,0 +1,144 @@
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { mmkvStorage } from './mmkv.storage';
+import { supabase } from '../api/supabase/client';
+import { useNetworkStore } from './network.store';
+
+export type GalleryTopic = {
+    id: string;
+    title: string;
+    description: string | null;
+    cover_image: string | null;
+    created_at: string;
+    total_items?: number;
+};
+
+export type GalleryMedia = {
+    id: string;
+    topic_id: string;
+    media_url: string;
+    media_type: 'image' | 'video';
+    caption: string | null;
+    sort_order: number;
+    created_at: string;
+};
+
+interface GalleryState {
+  topics: GalleryTopic[];
+  isLoadingTopics: boolean;
+  lastFetchTopics: number | null;
+
+  topicDetails: Record<string, GalleryTopic>;
+  
+  mediaByTopic: Record<string, GalleryMedia[]>;
+  isLoadingMedia: Record<string, boolean>;
+
+  fetchTopics: (force?: boolean) => Promise<void>;
+  fetchTopicDetails: (topicId: string) => Promise<GalleryTopic | null>;
+  fetchMedia: (topicId: string, force?: boolean) => Promise<void>;
+}
+
+export const useGalleryStore = create<GalleryState>()(
+  persist(
+    (set, get) => ({
+      topics: [],
+      isLoadingTopics: false,
+      lastFetchTopics: null,
+
+      topicDetails: {},
+
+      mediaByTopic: {},
+      isLoadingMedia: {},
+
+      fetchTopics: async (force = false) => {
+        if (!force && get().topics.length > 0 && !useNetworkStore.getState().isOnline) {
+          return;
+        }
+
+        if (get().topics.length === 0) set({ isLoadingTopics: true });
+
+        try {
+          const { data, error } = await supabase
+            .from('gallery_topics')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (error) throw error;
+          
+          set({ 
+            topics: (data || []) as unknown as GalleryTopic[], 
+            isLoadingTopics: false, 
+            lastFetchTopics: Date.now() 
+          });
+        } catch (err) {
+          set({ isLoadingTopics: false });
+        }
+      },
+
+      fetchTopicDetails: async (topicId: string) => {
+        // Find in topics list first
+        const existing = get().topics.find(t => t.id === topicId) || get().topicDetails[topicId];
+        if (existing && !useNetworkStore.getState().isOnline) {
+            return existing;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('gallery_topics')
+                .select('*')
+                .eq('id' as any, topicId as any)
+                .single();
+                
+            if (error) throw error;
+            
+            const topic = data as unknown as GalleryTopic;
+            set(state => ({
+                topicDetails: { ...state.topicDetails, [topicId]: topic }
+            }));
+            return topic;
+        } catch (err) {
+            return existing || null;
+        }
+      },
+
+      fetchMedia: async (topicId: string, force = false) => {
+        const currentMedia = get().mediaByTopic[topicId] || [];
+        if (!force && currentMedia.length > 0 && !useNetworkStore.getState().isOnline) {
+          return;
+        }
+
+        if (currentMedia.length === 0) {
+            set(state => ({ isLoadingMedia: { ...state.isLoadingMedia, [topicId]: true } }));
+        }
+
+        try {
+          const { data, error } = await supabase
+            .from('gallery_media')
+            .select('*')
+            .eq('topic_id' as any, topicId as any)
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true });
+
+          if (error) throw error;
+          
+          set(state => ({ 
+            mediaByTopic: { ...state.mediaByTopic, [topicId]: (data || []) as unknown as GalleryMedia[] },
+            isLoadingMedia: { ...state.isLoadingMedia, [topicId]: false }
+          }));
+        } catch (err) {
+          set(state => ({ isLoadingMedia: { ...state.isLoadingMedia, [topicId]: false } }));
+        }
+      },
+    }),
+    {
+      name: 'gallery-storage',
+      storage: createJSONStorage(() => mmkvStorage),
+      partialize: (state) => ({
+        topics: state.topics,
+        topicDetails: state.topicDetails,
+        mediaByTopic: state.mediaByTopic,
+        lastFetchTopics: state.lastFetchTopics,
+      })
+    }
+  )
+);

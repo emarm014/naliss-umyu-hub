@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -81,10 +81,10 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       initializeListener: () => {
-        // ── Scale optimisation: poll every 5 minutes instead of holding a
+        // â”€â”€ Scale optimisation: poll every 5 minutes instead of holding a
         // permanent WebSocket per user. system_settings almost never changes
         // (only when admin toggles maintenance/read-only mode).
-        // This saves 1 realtime connection slot per active user — at 200 users
+        // This saves 1 realtime connection slot per active user â€” at 200 users
         // that's 200 freed slots on the free tier (limit: 200 total).
         //
         // The realtime channel is still used as an instant-update path for

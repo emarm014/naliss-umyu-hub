@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -29,7 +29,7 @@ interface ResourceState {
     clearCache: () => void;
 }
 
-const CACHE_TTL = Infinity; // No TTL — materials/courses/past questions available offline indefinitely
+const CACHE_TTL = Infinity; // No TTL â€” materials/courses/past questions available offline indefinitely
 
 export const useResourceStore = create<ResourceState>()(
     persist(
@@ -190,7 +190,7 @@ export const useResourceStore = create<ResourceState>()(
                 const { materials, pastQuestions } = get();
                 const { AssetPathResolver } = require('../utils/assetResolver');
                 
-                // Parallel file existence checks — 10x faster than sequential for loop
+                // Parallel file existence checks â€” 10x faster than sequential for loop
                 const checks = await Promise.all(
                     [...materials, ...pastQuestions].map(async (item) => {
                         // Check primary file
@@ -244,7 +244,7 @@ export const useResourceStore = create<ResourceState>()(
                     
                     await get().refreshDownloadedStatus();
                 } catch {
-                    // silent — download count is telemetry, not critical
+                    // silent â€” download count is telemetry, not critical
                 }
             },
 
@@ -272,7 +272,7 @@ export const useResourceStore = create<ResourceState>()(
                         }));
                     }
                 } catch {
-                    // silent — view count is telemetry, not critical
+                    // silent â€” view count is telemetry, not critical
                 }
             },
 

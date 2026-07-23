@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useOverlayStore, OverlayConfig } from '../../../stores/overlay.store';
 import * as Sentry from '@sentry/react-native';

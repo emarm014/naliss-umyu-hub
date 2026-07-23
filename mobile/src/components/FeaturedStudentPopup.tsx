@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, Animated, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -52,7 +52,7 @@ export function FeaturedStudentPopup() {
                 .from('featured_students')
                 .select(`
                     id, user_id, type, title, subtitle, description, custom_image_url, total_congratulations,
-                    users ( full_name, username, avatar_url, department_id )
+                    users!featured_students_user_id_fkey ( full_name, username, avatar_url, department_id )
                 `)
                 .eq('is_active', true as any)
                 .order('published_at', { ascending: false })
@@ -246,7 +246,7 @@ export function FeaturedStudentPopup() {
                                         color={hasCongratulated ? badge.color : "#fff"} 
                                     />
                                     <Text style={[styles.btnText, hasCongratulated && { color: badge.color }]}>
-                                        {hasCongratulated ? 'Congratulated! 🎉' : 'Congratulate'}
+                                        {hasCongratulated ? 'Congratulated! ðŸŽ‰' : 'Congratulate'}
                                     </Text>
                                 </>
                             )}

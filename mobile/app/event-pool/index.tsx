@@ -250,7 +250,7 @@ export default function EventPoolDashboard() {
                         <View style={styles.winnerBadge}>
                             <Ionicons name="trophy" size={16} color="#d97706" />
                         </View>
-                        <CachedImage remoteUrl={winner.avatar_url} style={styles.winnerAvatar} entityId={`winner_${winner.user_id}`} assetType="user" fallbackName={winner.full_name} />
+                        <CachedImage remoteUrl={winner.avatar_url} style={styles.winnerAvatar} entityId={`winner_${item.featured_students?.[0]?.user_id || 'none'}`} assetType="user" fallbackName={winner.full_name} />
                         <View style={styles.winnerInfo}>
                             <Text style={[styles.winnerName, { color: textColor }]}>{winner.full_name}</Text>
                             <Text style={[styles.winnerUsername, { color: subtextColor }]}>Event Winner</Text>

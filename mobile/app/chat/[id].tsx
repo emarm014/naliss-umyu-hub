@@ -593,18 +593,13 @@ export default function ChatScreen() {
                 setViewingProfile(member);
             }}
         >
-            {(() => {
-                const cleanUrl = getCleanAvatarUrl(member.avatar_url);
-                return cleanUrl ? (
-                    <CachedImage remoteUrl={cleanUrl} style={styles.memberAvatar} entityId={`member_${member.id}`} assetType="avatar" />
-                ) : (
-                    <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
-                        <Text style={{ fontWeight: 'bold', color: '#64748b' }}>
-                            {member.username?.charAt(0)?.toUpperCase() || 'U'}
-                        </Text>
-                    </View>
-                );
-            })()}
+            <CachedImage 
+                remoteUrl={getCleanAvatarUrl(member.avatar_url)} 
+                style={styles.memberAvatar} 
+                entityId={`member_${member.id}`} 
+                assetType="user" 
+                fallbackName={member.full_name || member.username} 
+            />
             <View style={styles.memberInfo}>
                 <View style={styles.memberNameRow}>
                     <Text style={styles.memberFullName}>
@@ -1538,18 +1533,13 @@ export default function ChatScreen() {
                             <View style={{ width: 36, marginRight: 8 }} />
                         ) : (
                             <TouchableOpacity style={styles.messageAvatarContainer} onPress={() => openProfile(item.sender_id)}>
-                                {(() => {
-                                    const cleanUrl = getCleanAvatarUrl(displayUser?.avatar_url);
-                                    return cleanUrl ? (
-                                        <CachedImage remoteUrl={cleanUrl} style={styles.messageAvatarImage} entityId={`msg_avatar_${item.sender_id}`} assetType="avatar" />
-                                    ) : (
-                                        <View style={styles.messageAvatarPlaceholder}>
-                                            <Text style={styles.messageAvatarText}>
-                                                {displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}
-                                            </Text>
-                                        </View>
-                                    );
-                                })()}
+                                <CachedImage 
+                                    remoteUrl={getCleanAvatarUrl(displayUser?.avatar_url)} 
+                                    style={styles.messageAvatarImage} 
+                                    entityId={`msg_avatar_${item.sender_id}`} 
+                                    assetType="user" 
+                                    fallbackName={displayUser?.full_name || displayUser?.username} 
+                                />
                                 {/* Crown badge for moderators */}
                                 {(displayUser?.role === 'moderator' || displayUser?.role === 'super_admin') && (
                                     <View style={[
@@ -3286,23 +3276,21 @@ export default function ChatScreen() {
                         {viewingProfile && (
                             <ScrollView showsVerticalScrollIndicator={false}>
                                 <View style={styles.profileHeader}>
-                                    {(() => {
+                                    <TouchableOpacity onPress={() => {
                                         const cleanUrl = getCleanAvatarUrl(viewingProfile.avatar_url);
-                                        return cleanUrl ? (
-                                            <TouchableOpacity onPress={() => {
-                                                setViewerFile({ uri: cleanUrl, name: viewingProfile.full_name || viewingProfile.username || 'Profile', type: 'image', isProfile: true, profileData: viewingProfile });
-                                                setViewerVisible(true);
-                                            }}>
-                                                <CachedImage remoteUrl={cleanUrl} style={styles.profileAvatar} entityId={`profile_avatar_${viewingProfile.id}`} assetType="avatar" />
-                                            </TouchableOpacity>
-                                        ) : (
-                                            <View style={[styles.profileAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
-                                                <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#64748b' }}>
-                                                    {viewingProfile.username?.charAt(0)?.toUpperCase() || 'U'}
-                                                </Text>
-                                            </View>
-                                        );
-                                    })()}
+                                        if (cleanUrl) {
+                                            setViewerFile({ uri: cleanUrl, name: viewingProfile.full_name || viewingProfile.username || 'Profile', type: 'image', isProfile: true, profileData: viewingProfile });
+                                            setViewerVisible(true);
+                                        }
+                                    }} disabled={!getCleanAvatarUrl(viewingProfile.avatar_url)}>
+                                        <CachedImage 
+                                            remoteUrl={getCleanAvatarUrl(viewingProfile.avatar_url)} 
+                                            style={styles.profileAvatar} 
+                                            entityId={`profile_avatar_${viewingProfile.id}`} 
+                                            assetType="user" 
+                                            fallbackName={viewingProfile.full_name || viewingProfile.username} 
+                                        />
+                                    </TouchableOpacity>
                                     <Text style={styles.profileFullName}>{viewingProfile.full_name}</Text>
                                     <Text style={styles.profileUsername}>@{viewingProfile.username}</Text>
                                     <View style={styles.profileOnlineStatus}>

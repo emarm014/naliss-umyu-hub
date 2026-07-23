@@ -11,6 +11,7 @@ import { useSentryScreen } from '../src/hooks/useSentryScreen';
 import { useQuery } from '@tanstack/react-query';
 import { mmkvStorage } from '../src/stores/mmkv.storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { CachedImage } from '../src/components/common/CachedImage';
 
 const { width } = Dimensions.get('window');
 const CACHE_KEY = 'fyb_featured_students_cache';
@@ -94,15 +95,7 @@ export default function FYBScreen() {
           </View>
           <Text style={styles.flyerTitle} numberOfLines={2}>{item.title}</Text>
           <View style={styles.flyerMeta}>
-            {item.users?.avatar_url ? (
-              <Image source={{ uri: item.users.avatar_url }} style={styles.flyerAvatar} />
-            ) : (
-              <View style={[styles.flyerAvatar, { backgroundColor: '#d97706', justifyContent: 'center', alignItems: 'center' }]}>
-                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>
-                  {item.users?.full_name?.[0] || '?'}
-                </Text>
-              </View>
-            )}
+            <CachedImage remoteUrl={item.users.avatar_url} style={styles.flyerAvatar} entityId={item.user_id} assetType="user" />
             <View style={{ flex: 1 }}>
               <Text style={styles.flyerName} numberOfLines={1}>{item.users?.full_name}</Text>
               <Text style={styles.flyerHandle}>@{item.users?.username}</Text>

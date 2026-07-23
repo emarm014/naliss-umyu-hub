@@ -9,7 +9,7 @@ import { useVotingStore } from '../../../src/stores/voting.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { differenceInSeconds } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
+import { CachedImage } from '../../../src/components/common/CachedImage';
 type Candidate = {
     id: string;
     user_id: string;
@@ -242,15 +242,7 @@ export default function VotingEngineScreen() {
                             >
                                 <View style={styles.cardHeader}>
                                     <View style={styles.avatarContainer}>
-                                        {c.users?.avatar_url ? (
-                                            <Image source={{ uri: c.users.avatar_url }} style={styles.avatar} />
-                                        ) : (
-                                            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
-                                                <Text style={{ color: colors.text, fontWeight: '700' }}>
-                                                    {c.users?.full_name?.substring(0, 2).toUpperCase() || 'U'}
-                                                </Text>
-                                            </View>
-                                        )}
+                                        <CachedImage remoteUrl={c.users?.avatar_url} style={styles.avatar} entityId={`candidate_${c.user_id}`} assetType="user" fallbackName={c.users?.full_name} />
                                         <View style={styles.nameDetails}>
                                             <Text style={[styles.fullName, { color: colors.text }]}>{c.users?.full_name || 'Anonymous'}</Text>
                                             <Text style={[styles.username, { color: colors.textMuted }]}>@{c.users?.username || 'user'}</Text>

@@ -553,7 +553,7 @@ export default function HomeScreen() {
                     <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                       {item.users?.avatar_url ? (
-                        <Image source={{ uri: item.users.avatar_url }} style={{ width: 20, height: 20, borderRadius: 10 }} />
+                        <CachedImage remoteUrl={item.users.avatar_url} style={{ width: 20, height: 20, borderRadius: 10 }} entityId={`poster_avatar_${item.id}`} assetType="user" />
                       ) : null}
                       <Text style={styles.posterMeta} numberOfLines={1}>{item.users?.full_name || 'Student'}</Text>
                     </View>

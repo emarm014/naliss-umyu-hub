@@ -10,6 +10,7 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { isBefore, differenceInSeconds } from 'date-fns';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mmkvStorage } from '../../src/stores/mmkv.storage';
+import { CachedImage } from '../../src/components/common/CachedImage';
 
 const { width } = Dimensions.get('window');
 const CACHE_KEY = 'event_pools_cache';
@@ -249,13 +250,7 @@ export default function EventPoolDashboard() {
                         <View style={styles.winnerBadge}>
                             <Ionicons name="trophy" size={16} color="#d97706" />
                         </View>
-                        {winner.avatar_url ? (
-                            <Image source={{ uri: winner.avatar_url }} style={styles.winnerAvatar} />
-                        ) : (
-                            <View style={styles.winnerAvatarPlaceholder}>
-                                <Ionicons name="person" size={20} color="#9ca3af" />
-                            </View>
-                        )}
+                        <CachedImage remoteUrl={winner.avatar_url} style={styles.winnerAvatar} entityId={`winner_${winner.user_id}`} assetType="user" fallbackName={winner.full_name} />
                         <View style={styles.winnerInfo}>
                             <Text style={[styles.winnerName, { color: textColor }]}>{winner.full_name}</Text>
                             <Text style={[styles.winnerUsername, { color: subtextColor }]}>Event Winner</Text>

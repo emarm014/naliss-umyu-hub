@@ -596,7 +596,7 @@ export default function ChatScreen() {
             {(() => {
                 const cleanUrl = getCleanAvatarUrl(member.avatar_url);
                 return cleanUrl ? (
-                    <CachedImage remoteUrl={cleanUrl} style={styles.memberAvatar} entityId={`member_${item.id}`} assetType="avatar" />
+                    <CachedImage remoteUrl={cleanUrl} style={styles.memberAvatar} entityId={`member_${member.id}`} assetType="avatar" />
                 ) : (
                     <View style={[styles.memberAvatar, { backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }]}>
                         <Text style={{ fontWeight: 'bold', color: '#64748b' }}>

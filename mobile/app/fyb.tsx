@@ -47,9 +47,12 @@ export default function FYBScreen() {
   
   const [isRefetching, setIsRefetching] = useState(false);
 
+  const markAsRead = useFYBStore(s => s.markAsRead);
+
   useEffect(() => {
+    markAsRead();
     fetchFeatured();
-  }, [fetchFeatured]);
+  }, [fetchFeatured, markAsRead]);
 
   const refetch = async () => {
     setIsRefetching(true);

@@ -47,9 +47,12 @@ export default function ArchiveScreen() {
   const [readerFileType, setReaderFileType] = useState<'image' | 'video' | 'pdf' | 'audio' | 'document'>('document');
   const [readerTitle, setReaderTitle] = useState('');
 
+  const markAsRead = useArchiveStore(s => s.markAsRead);
+
   useEffect(() => {
+    markAsRead();
     fetchArchives(0);
-  }, [fetchArchives]);
+  }, [fetchArchives, markAsRead]);
 
   const onRefresh = async () => {
     setIsRefreshing(true);

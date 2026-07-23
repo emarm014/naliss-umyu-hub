@@ -130,7 +130,7 @@ export default function EventPoolDashboard() {
                     <View style={styles.titleContainer}>
                         <Text style={[styles.title, { color: textColor }]} numberOfLines={2}>{item.title}</Text>
                         <Text style={[styles.subtitle, { color: subtextColor }]}>
-                            {item.type.toUpperCase()} • {item.participation_rule.replace('_', ' ').toUpperCase()}
+                            {(item.type || 'EVENT').toUpperCase()} • {item.participation_rule.replace('_', ' ').toUpperCase()}
                         </Text>
                     </View>
                     <View style={[styles.statusBadge, { backgroundColor: isLive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)' }]}>

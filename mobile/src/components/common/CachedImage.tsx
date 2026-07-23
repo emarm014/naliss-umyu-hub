@@ -25,17 +25,20 @@ const saveGlobalCache = () => {
     } catch (e) {}
 };
 
+export type AssetType = 'user' | 'executive' | 'lecturer' | 'gallery' | 'gallery_cover' | 'avatar' | 'chat_media' | 'fyb_poster' | 'announcement_cover' | 'news_image' | (string & {});
+
 interface CachedImageProps {
     entityId: string;
     remoteUrl: string | null | undefined;
-    assetType: 'user' | 'executive' | 'lecturer' | 'gallery' | 'gallery_cover';
+    assetType: AssetType;
     style?: StyleProp<ImageStyle>;
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
     fallbackName?: string | null;
     fallbackInitials?: string | null;
+    blurRadius?: number;
 }
 
-export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials }: CachedImageProps) {
+export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials, blurRadius }: CachedImageProps) {
     // Initialize synchronously if the file is already cached in memory
     const preCachedUri = entityId ? globalMemoryCache[entityId] : null;
     
@@ -162,6 +165,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 source={{ uri: localUri || remoteUrl! }}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode={resizeMode}
+                blurRadius={blurRadius}
                 onLoad={() => { setLoading(false); setHasError(false); }}
                 onError={() => { setLoading(false); setHasError(true); }}
             />

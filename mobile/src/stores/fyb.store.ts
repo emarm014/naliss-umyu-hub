@@ -28,8 +28,12 @@ interface FYBState {
   entries: FeaturedStudentEntry[];
   isLoading: boolean;
   lastFetch: number | null;
+  unreadCount: number;
+  lastOpenedAt: string | null;
   
   fetchFeatured: (force?: boolean) => Promise<void>;
+  fetchUnreadCount: () => Promise<void>;
+  markAsRead: () => void;
 }
 
 export const useFYBStore = create<FYBState>()(
@@ -38,6 +42,26 @@ export const useFYBStore = create<FYBState>()(
       entries: [],
       isLoading: false,
       lastFetch: null,
+      unreadCount: 0,
+      lastOpenedAt: null,
+
+      fetchUnreadCount: async () => {
+        try {
+          const lastOpened = get().lastOpenedAt;
+          let query = supabase.from('featured_students').select('id', { count: 'exact', head: true });
+          if (lastOpened) {
+            query = query.gt('created_at', lastOpened);
+          }
+          const { count, error } = await query;
+          if (!error && count !== null) {
+            set({ unreadCount: count });
+          }
+        } catch (err) {}
+      },
+
+      markAsRead: () => {
+        set({ lastOpenedAt: new Date().toISOString(), unreadCount: 0 });
+      },
 
       fetchFeatured: async (force = false) => {
         if (!force && get().entries.length > 0 && !useNetworkStore.getState().isOnline) {
@@ -77,6 +101,8 @@ export const useFYBStore = create<FYBState>()(
       partialize: (state) => ({
         entries: state.entries,
         lastFetch: state.lastFetch,
+        unreadCount: state.unreadCount,
+        lastOpenedAt: state.lastOpenedAt,
       })
     }
   )

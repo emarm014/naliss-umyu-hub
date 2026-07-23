@@ -11,8 +11,12 @@ interface ArchiveState {
   hasMore: boolean;
   page: number;
   lastFetch: number | null;
+  unreadCount: number;
+  lastOpenedAt: string | null;
   
   fetchArchives: (pageIndex?: number, force?: boolean) => Promise<void>;
+  fetchUnreadCount: () => Promise<void>;
+  markAsRead: () => void;
 }
 
 export const useArchiveStore = create<ArchiveState>()(
@@ -24,6 +28,26 @@ export const useArchiveStore = create<ArchiveState>()(
       hasMore: true,
       page: 0,
       lastFetch: null,
+      unreadCount: 0,
+      lastOpenedAt: null,
+
+      fetchUnreadCount: async () => {
+        try {
+          const lastOpened = get().lastOpenedAt;
+          let query = supabase.from('archives').select('id', { count: 'exact', head: true });
+          if (lastOpened) {
+            query = query.gt('created_at', lastOpened);
+          }
+          const { count, error } = await query;
+          if (!error && count !== null) {
+            set({ unreadCount: count });
+          }
+        } catch (err) {}
+      },
+
+      markAsRead: () => {
+        set({ lastOpenedAt: new Date().toISOString(), unreadCount: 0 });
+      },
 
       fetchArchives: async (pageIndex = 0, force = false) => {
         const { archives, hasMore, isFetchingMore } = get();
@@ -67,6 +91,8 @@ export const useArchiveStore = create<ArchiveState>()(
       partialize: (state) => ({
         archives: state.archives,
         lastFetch: state.lastFetch,
+        unreadCount: state.unreadCount,
+        lastOpenedAt: state.lastOpenedAt,
       })
     }
   )

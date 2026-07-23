@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -102,6 +102,7 @@ export const useNewsStore = create<NewsState>()(
         news: state.news,
         lastFetchNews: state.lastFetchNews,
         lastOpenedAt: state.lastOpenedAt,
+        unreadCount: state.unreadCount
       }),
     }
   )

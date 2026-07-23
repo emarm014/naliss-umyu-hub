@@ -112,7 +112,7 @@ import { supabase } from '../../src/api/supabase/client';
 const quickActions = [
   { id: 'notepad', name: 'Notepad', icon: 'document-text', color: '#005A36', bg: '#e6f4ea', route: '/notepad' },
   { id: 'news', name: 'News', icon: 'newspaper', color: '#005A36', bg: '#e6f4ea', route: '/news' },
-  { id: 'archive', name: 'ARCHIVE', icon: 'library', color: '#059669', bg: '#ecfdf5', route: '/archive' },
+  { id: 'archive', name: 'Archive', icon: 'library', color: '#059669', bg: '#ecfdf5', route: '/archive' },
   { id: 'fyb', name: 'FYB', icon: 'star', color: '#d97706', bg: '#fef3c7', route: '/fyb' },
   { id: 'event_pool', name: 'Event Pool', icon: 'trophy', color: '#d97706', bg: '#fef3c7', route: '/event-pool' },
   { id: 'gallery', name: 'Gallery', icon: 'images', color: '#8b5cf6', bg: '#f3e8ff', route: '/gallery' },
@@ -138,6 +138,10 @@ export default function HomeScreen() {
   const markAsRead = useAnnouncementStore(s => s.markAsRead);
   const fetchNewsUnreadCount = useNewsStore(s => s.fetchUnreadCount);
   const newsUnreadCount = useNewsStore(s => s.unreadCount);
+  const fetchArchiveUnreadCount = require('../../src/stores/archive.store').useArchiveStore((s: any) => s.fetchUnreadCount);
+  const archiveUnreadCount = require('../../src/stores/archive.store').useArchiveStore((s: any) => s.unreadCount);
+  const fetchFYBUnreadCount = require('../../src/stores/fyb.store').useFYBStore((s: any) => s.fetchUnreadCount);
+  const fybUnreadCount = require('../../src/stores/fyb.store').useFYBStore((s: any) => s.unreadCount);
   const [refreshing, setRefreshing] = React.useState(false);
   const notifications = useNotificationStore(s => s.notifications);
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -327,8 +331,10 @@ export default function HomeScreen() {
       fetchMaterials({ level }),
       fetchCourses(level),
       fetchNewsUnreadCount(),
+      fetchArchiveUnreadCount(),
+      fetchFYBUnreadCount(),
     ]);
-  }, [user?.level, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses, fetchNewsUnreadCount]);
+  }, [user?.level, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses, fetchNewsUnreadCount, fetchArchiveUnreadCount, fetchFYBUnreadCount]);
 
   useEffect(() => {
     fetchProfile();
@@ -496,6 +502,16 @@ export default function HomeScreen() {
                   {action.id === 'news' && newsUnreadCount > 0 && (
                     <View style={styles.newsBadge}>
                       <Text style={styles.newsBadgeText}>{newsUnreadCount > 99 ? '99+' : newsUnreadCount}</Text>
+                    </View>
+                  )}
+                  {action.id === 'archive' && archiveUnreadCount > 0 && (
+                    <View style={styles.newsBadge}>
+                      <Text style={styles.newsBadgeText}>{archiveUnreadCount > 99 ? '99+' : archiveUnreadCount}</Text>
+                    </View>
+                  )}
+                  {action.id === 'fyb' && fybUnreadCount > 0 && (
+                    <View style={styles.newsBadge}>
+                      <Text style={styles.newsBadgeText}>{fybUnreadCount > 99 ? '99+' : fybUnreadCount}</Text>
                     </View>
                   )}
                 </View>

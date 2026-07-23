@@ -200,7 +200,20 @@ export const useGroupStore = create<GroupState>()(
                     // Cache to SQLite for local-first reads
                     const { cacheEntityList } = require('../lib/database');
                     cacheEntityList('groups', processed, session.user.id).catch(() => {});
-                    set({ groups: processed, isLoading: false, lastFetched: new Date().toISOString() });
+                    
+                    const newTotalUnread = processed.reduce((sum, g) => sum + (g.unread_count || 0), 0);
+                    const oldTotalUnread = get().groups.reduce((sum: number, g: any) => sum + (g.unread_count || 0), 0);
+                    let badgeCleared = get().isBadgeCleared;
+                    if (newTotalUnread > oldTotalUnread && get().currentTab !== 'messages') {
+                        badgeCleared = false;
+                    }
+
+                    set({ 
+                        groups: processed, 
+                        isLoading: false, 
+                        lastFetched: new Date().toISOString(),
+                        isBadgeCleared: badgeCleared
+                    });
                 } catch (err: unknown) {
                     captureStoreError('group', 'fetchGroups', err);
                     set({ isLoading: false, error: (err as Error)?.message || 'Failed to load groups.' });
@@ -223,16 +236,27 @@ export const useGroupStore = create<GroupState>()(
             },
 
             markGroupAsRead: async (groupId: string) => {
-                // Optimistic update â€” instant UI feedback
+                // Optimistic update — instant UI feedback
                 set((state) => ({
                     groups: state.groups.map(g => 
                         g.id === groupId ? { ...g, unread_count: 0 } : g
                     )
                 }));
                 try {
-                    await (supabase as any).rpc('mark_group_as_read', { p_group_id: groupId });
-                } catch {
-                    // silent â€” read marking is non-critical
+                    const { error } = await (supabase as any).rpc('mark_group_as_read', { p_group_id: groupId });
+                    if (error) {
+                        console.error('Failed to mark group as read via RPC:', error);
+                    }
+                    
+                    // Also update SQLite cache so local-first reads don't show stale unread counts
+                    const { cacheEntityList } = require('../lib/database');
+                    const { useAuthStore } = require('./auth.store');
+                    const session = useAuthStore.getState().session;
+                    if (session?.user?.id) {
+                        cacheEntityList('groups', get().groups, session.user.id).catch(() => {});
+                    }
+                } catch (err) {
+                    console.error('Exception in markGroupAsRead:', err);
                 }
             },
 

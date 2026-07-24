@@ -70,42 +70,54 @@ export default function GalleryScreen() {
 
   const renderTopic = ({ item }: { item: any }) => (
     <TouchableOpacity
-      style={[styles.topicCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+      style={styles.topicCardContainer}
       onPress={() => router.push(`/gallery/${item.id}` as any)}
       activeOpacity={0.7}
     >
-      <View style={[styles.coverContainer, { backgroundColor: colors.background }]}>
-        {item.cover_image ? (
-          <CachedImage
-            remoteUrl={item.cover_image}
-            style={styles.coverImage}
-            resizeMode="cover"
-            entityId={item.id}
-            assetType="gallery_cover"
-          />
-        ) : (
-          <View style={[styles.placeholderCover, { backgroundColor: isDark ? '#1f2937' : '#f3f4f6' }]}>
-            <Ionicons name="image-outline" size={48} color={colors.textSecondary} />
+      {/* Stacked background cards for visual effect */}
+      <View style={[styles.stackCard, styles.stackCardBack, { backgroundColor: colors.border }]} />
+      <View style={[styles.stackCard, styles.stackCardMiddle, { backgroundColor: isDark ? '#374151' : '#e5e7eb' }]} />
+      
+      <View style={[styles.topicCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.coverContainer, { backgroundColor: colors.background }]}>
+          {item.cover_image ? (
+            <CachedImage
+              remoteUrl={item.cover_image}
+              style={styles.coverImage}
+              resizeMode="cover"
+              entityId={item.id}
+              assetType="gallery_cover"
+            />
+          ) : (
+            <View style={[styles.placeholderCover, { backgroundColor: isDark ? '#1f2937' : '#f3f4f6' }]}>
+              <Ionicons name="image-outline" size={48} color={colors.textSecondary} />
+            </View>
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={styles.coverGradient}
+          >
+            <Text style={styles.topicDate}>
+              {format(new Date(item.created_at), 'MMM d, yyyy')}
+            </Text>
+          </LinearGradient>
+
+          {/* Indicator showing it is an album collection */}
+          <View style={styles.albumIndicator}>
+            <Ionicons name="images" size={16} color="white" />
+            <Text style={styles.albumIndicatorText}>Album</Text>
           </View>
-        )}
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)']}
-          style={styles.coverGradient}
-        >
-          <Text style={styles.topicDate}>
-            {format(new Date(item.created_at), 'MMM d, yyyy')}
+        </View>
+        <View style={styles.topicInfo}>
+          <Text style={[styles.topicTitle, { color: colors.text }]} numberOfLines={2}>
+            {item.title}
           </Text>
-        </LinearGradient>
-      </View>
-      <View style={styles.topicInfo}>
-        <Text style={[styles.topicTitle, { color: colors.text }]} numberOfLines={2}>
-          {item.title}
-        </Text>
-        {item.description ? (
-          <Text style={[styles.topicDescription, { color: colors.textSecondary }]} numberOfLines={2}>
-            {item.description}
-          </Text>
-        ) : null}
+          {item.description ? (
+            <Text style={[styles.topicDescription, { color: colors.textSecondary }]} numberOfLines={2}>
+              {item.description}
+            </Text>
+          ) : null}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -120,8 +132,6 @@ export default function GalleryScreen() {
         renderItem={renderTopic}
         ListHeaderComponent={renderHeader}
         contentContainerStyle={styles.listContent}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
@@ -213,17 +223,42 @@ const styles = StyleSheet.create({
     left: -30,
   },
   row: {
+    // No longer used, kept to avoid undefined if referenced
     justifyContent: 'space-between',
     marginBottom: 16,
   },
+  topicCardContainer: {
+    width: '100%',
+    marginBottom: 24,
+    position: 'relative',
+    alignItems: 'center',
+  },
+  stackCard: {
+    position: 'absolute',
+    borderRadius: 16,
+    width: '90%',
+  },
+  stackCardBack: {
+    height: 60,
+    top: -12,
+    opacity: 0.5,
+    transform: [{ scaleX: 0.9 }],
+  },
+  stackCardMiddle: {
+    height: 60,
+    top: -6,
+    opacity: 0.8,
+    transform: [{ scaleX: 0.95 }],
+  },
   topicCard: {
-    width: (width - 48) / 2, // 2 columns, 16px padding on sides + 16px gap
+    width: '100%',
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    zIndex: 2,
   },
   coverContainer: {
-    height: 140,
+    height: 180,
     width: '100%',
     position: 'relative',
   },
@@ -242,22 +277,39 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 60,
+    height: 80,
     justifyContent: 'flex-end',
-    padding: 10,
+    padding: 12,
   },
   topicDate: {
     color: 'white',
-    fontSize: 11,
     fontFamily: 'Inter-Medium',
+    fontSize: 12,
+  },
+  albumIndicator: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  albumIndicatorText: {
+    color: 'white',
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
   },
   topicInfo: {
     padding: 12,
   },
   topicTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    lineHeight: 20,
+    marginBottom: 4,
   },
   topicDescription: {
     fontSize: 12,

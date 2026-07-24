@@ -112,9 +112,22 @@ export default function GalleryTopicScreen() {
 
   const renderGridItem = ({ item, index }: { item: any, index: number }) => {
     const isVideo = item.media_type === 'video';
+    
+    // Dynamic width based on media length
+    let itemWidth = (width - 4) / 3;
+    let itemHeight = itemWidth;
+    
+    if (media.length === 1) {
+      itemWidth = width - 4;
+      itemHeight = width * 0.75;
+    } else if (media.length === 2) {
+      itemWidth = (width - 4) / 2;
+      itemHeight = itemWidth;
+    }
+
     return (
       <TouchableOpacity
-        style={styles.gridItem}
+        style={[styles.gridItem, { width: itemWidth, height: itemHeight }]}
         onPress={() => setSelectedMediaIndex(index)}
         activeOpacity={0.8}
       >
@@ -191,7 +204,8 @@ export default function GalleryTopicScreen() {
           data={media}
           keyExtractor={item => item.id}
           renderItem={renderGridItem}
-          numColumns={3}
+          numColumns={media.length === 1 ? 1 : media.length === 2 ? 2 : 3}
+          key={media.length === 1 ? 'one' : media.length === 2 ? 'two' : 'three'}
           contentContainerStyle={styles.gridContent}
         />
       )}
@@ -244,8 +258,15 @@ export default function GalleryTopicScreen() {
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
+            removeClippedSubviews={false}
             initialScrollIndex={selectedMediaIndex || 0}
             getItemLayout={(data, index) => ({ length: width, offset: width * index, index })}
+            onScrollToIndexFailed={info => {
+              const wait = new Promise(resolve => setTimeout(resolve, 100));
+              wait.then(() => {
+                flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+              });
+            }}
             onMomentumScrollEnd={(e) => {
               const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
               if (newIndex !== selectedMediaIndex) {

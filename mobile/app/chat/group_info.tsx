@@ -8,11 +8,9 @@ import { COLORS } from '../../src/constants/Colors';
 import { supabase } from '../../src/api/supabase/client';
 import { useGroupStore } from '../../src/stores/group.store';
 import { useAuthStore } from '../../src/stores/auth.store';
-import { getCleanAvatarUrl } from '../../src/lib/cloudinary';
+import { getCleanAvatarUrl } from '../../src/utils/avatar';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { NalissLogo } from '../../src/components/NalissLogo';
-import { getGroupMembers, setGroupMembers } from '../../src/lib/database';
-import { cacheUserAvatars } from '../../src/utils/mediaCache';
 
 export default function GroupInfoScreen() {
     const { id } = useLocalSearchParams();
@@ -33,7 +31,7 @@ export default function GroupInfoScreen() {
             if (!id || typeof id !== 'string') return;
             
             // Fast path: cached members
-            const cached = getGroupMembers(id);
+            const cached = useGroupStore.getState().getGroupMembers(id as string);
             if (cached && cached.length > 0 && mounted) {
                 setMembers(cached);
                 setIsLoading(false);
@@ -43,18 +41,16 @@ export default function GroupInfoScreen() {
             try {
                 const { data, error } = await supabase.from('group_members')
                     .select('*, user:users(*, department:departments(name))')
-                    .eq('group_id', id);
+                    .eq('group_id', id as string);
 
                 if (error) throw error;
                 const fetched = (data as any[])?.map(m => m.user).filter(Boolean) || [];
                 
-                // Cache avatars
-                const updated = await cacheUserAvatars(fetched);
                 if (mounted) {
-                    setMembers(updated);
+                    setMembers(fetched);
                     setIsLoading(false);
                 }
-                setGroupMembers(id, updated).catch(() => {});
+                useGroupStore.getState().setGroupMembers(id as string, fetched);
             } catch (error) {
                 if (mounted && members.length === 0) {
                     setIsLoading(false);

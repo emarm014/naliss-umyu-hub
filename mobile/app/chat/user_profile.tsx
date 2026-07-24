@@ -35,7 +35,7 @@ export default function UserProfileScreen() {
             if (!id || typeof id !== 'string') return;
             
             try {
-                const { data, error } = await supabase.from('users')
+                const { data, error } = await (supabase as any).from('users')
                     .select('*, department:departments(name)')
                     .eq('id', id as string)
                     .single();

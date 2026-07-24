@@ -4,12 +4,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
-import { useTheme } from '../../src/contexts/ThemeContext';
-import { COLORS } from '../../src/constants/theme';
-import { supabase } from '../../src/lib/supabase';
-import { getCleanAvatarUrl } from '../../src/lib/cloudinary';
+import { useTheme } from '../../src/stores/theme.store';
+import { COLORS } from '../../src/constants/Colors';
+import { supabase } from '../../src/api/supabase/client';
+import { getCleanAvatarUrl } from '../../src/utils/avatar';
 import { CachedImage } from '../../src/components/common/CachedImage';
-import NalissLogo from '../../src/components/common/NalissLogo';
+import { NalissLogo } from '../../src/components/NalissLogo';
 
 export default function UserProfileScreen() {
     const { id, initialData } = useLocalSearchParams();

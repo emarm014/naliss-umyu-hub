@@ -145,13 +145,15 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           .maybeSingle();
 
         if (error) {
+          if (isNetworkError(error)) return;
+          
+          // DO NOT aggressively logout on 401 here.
+          // If the app was backgrounded for > 1 hour, the JWT is expired.
+          // Supabase's auto-refresh will fix it in the background. If we logout here,
+          // we interrupt the refresh process and force the user to log in again.
           if (error.status === 401 || error.message?.toLowerCase().includes('jwt') || error.message?.toLowerCase().includes('invalid')) {
-            console.warn('[ProtectedRoute] Active session check failed with 401/invalid token. Logging out...');
-            await supabase.auth.signOut();
-            useAuthStore.getState().setSession(null);
-            useAuthStore.getState().setUser(null);
-            useAuthStore.getState().setIsProfileComplete(null);
-            useAuthStore.getState().setProfile(null);
+            console.warn('[ProtectedRoute] Active session check failed with 401/invalid token. Ignoring to allow auto-refresh.');
+            return;
           }
           return;
         }

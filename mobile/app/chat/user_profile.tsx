@@ -37,7 +37,7 @@ export default function UserProfileScreen() {
             try {
                 const { data, error } = await supabase.from('users')
                     .select('*, department:departments(name)')
-                    .eq('id', id)
+                    .eq('id', id as string)
                     .single();
 
                 if (error) throw error;
@@ -45,7 +45,8 @@ export default function UserProfileScreen() {
                     setProfile(data);
                     
                     // Check online status
-                    const isUserOnline = data.last_active_at && (new Date().getTime() - new Date(data.last_active_at).getTime() < 300000);
+                    const lastActive = (data as any).last_active_at;
+                    const isUserOnline = lastActive && (new Date().getTime() - new Date(lastActive).getTime() < 300000);
                     setIsOnline(!!isUserOnline);
                 }
             } catch (error) {

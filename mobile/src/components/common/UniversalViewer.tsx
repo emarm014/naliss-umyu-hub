@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -426,7 +426,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     video: 'video/mp4',
     pdf: 'application/pdf',
     audio: 'audio/mpeg',
-    document: 'application/octet-stream',
+    document: '*/*',
   };
 
   const saveToDevice = async () => {

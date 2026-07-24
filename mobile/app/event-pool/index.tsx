@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, SafeAreaView, Dimensions, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Dimensions, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { supabase } from '../../src/api/supabase/client';
@@ -11,6 +11,7 @@ import { isBefore, differenceInSeconds } from 'date-fns';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { CachedImage } from '../../src/components/common/CachedImage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 const CACHE_KEY = 'event_pools_cache';
@@ -18,6 +19,7 @@ const CACHE_KEY = 'event_pools_cache';
 export default function EventPoolDashboard() {
     useSentryScreen('EventPoolDashboard');
     const { colors, isDark } = useTheme();
+    const insets = useSafeAreaInsets();
     const queryClient = useQueryClient();
     const { profile } = useAuthStore();
     
@@ -268,8 +270,8 @@ export default function EventPoolDashboard() {
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <View style={[styles.header, { borderBottomColor: borderColor }]}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <View style={[styles.header, { borderBottomColor: borderColor, paddingTop: insets.top + 10 }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={24} color={textColor} />
                 </TouchableOpacity>
@@ -277,46 +279,52 @@ export default function EventPoolDashboard() {
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView 
-                contentContainerStyle={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl refreshing={isRefetching && !isLoading} onRefresh={refetch} tintColor={colors.primary} />
-                }
-            >
-                {livePools.length > 0 && (
-                    <View style={styles.section}>
-                        <Text style={[styles.sectionTitle, { color: textColor }]}>Active Competitions / Live Rooms</Text>
-                        {livePools.map(pool => renderPoolCard(pool, true))}
-                    </View>
-                )}
-
-                {scheduledPools.length > 0 && (
-                    <View style={[styles.section, { marginTop: livePools.length > 0 ? 24 : 0 }]}>
-                        <Text style={[styles.sectionTitle, { color: textColor }]}>Upcoming Events</Text>
-                        {scheduledPools.map(pool => renderPoolCard(pool, false))}
-                    </View>
-                )}
-
-                {completedPools.length > 0 && (
-                    <View style={[styles.section, { marginTop: (livePools.length > 0 || scheduledPools.length > 0) ? 32 : 0 }]}>
-                        <View style={styles.historyHeader}>
-                            <Ionicons name="time" size={20} color={subtextColor} />
-                            <Text style={[styles.sectionTitle, { color: textColor, marginBottom: 0, marginLeft: 8 }]}>Past Events & Winners</Text>
+            {isLoading && pools.length === 0 ? (
+                <View style={styles.centerContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+            ) : (
+                <ScrollView 
+                    contentContainerStyle={styles.scrollContent}
+                    refreshControl={
+                        <RefreshControl refreshing={isRefetching && !isLoading} onRefresh={refetch} tintColor={colors.primary} />
+                    }
+                >
+                    {livePools.length > 0 && (
+                        <View style={styles.section}>
+                            <Text style={[styles.sectionTitle, { color: textColor }]}>Active Competitions / Live Rooms</Text>
+                            {livePools.map(pool => renderPoolCard(pool, true))}
                         </View>
-                        <Text style={[styles.historySubtitle, { color: subtextColor }]}>History of previous competitions and their champions.</Text>
-                        {completedPools.map(pool => renderCompletedCard(pool))}
-                    </View>
-                )}
+                    )}
 
-                {!isLoading && pools.length === 0 && (
-                    <View style={styles.emptyState}>
-                        <Ionicons name="trophy-outline" size={64} color={subtextColor} style={{ opacity: 0.5 }} />
-                        <Text style={[styles.emptyTitle, { color: textColor }]}>No Events Available</Text>
-                        <Text style={[styles.emptySubtitle, { color: subtextColor }]}>Check back later for upcoming competitions and challenges.</Text>
-                    </View>
-                )}
-            </ScrollView>
-        </SafeAreaView>
+                    {scheduledPools.length > 0 && (
+                        <View style={[styles.section, { marginTop: livePools.length > 0 ? 24 : 0 }]}>
+                            <Text style={[styles.sectionTitle, { color: textColor }]}>Upcoming Events</Text>
+                            {scheduledPools.map(pool => renderPoolCard(pool, false))}
+                        </View>
+                    )}
+
+                    {completedPools.length > 0 && (
+                        <View style={[styles.section, { marginTop: (livePools.length > 0 || scheduledPools.length > 0) ? 32 : 0 }]}>
+                            <View style={styles.historyHeader}>
+                                <Ionicons name="time" size={20} color={subtextColor} />
+                                <Text style={[styles.sectionTitle, { color: textColor, marginBottom: 0, marginLeft: 8 }]}>Past Events & Winners</Text>
+                            </View>
+                            <Text style={[styles.historySubtitle, { color: subtextColor }]}>History of previous competitions and their champions.</Text>
+                            {completedPools.map(pool => renderCompletedCard(pool))}
+                        </View>
+                    )}
+
+                    {pools.length === 0 && (
+                        <View style={styles.emptyState}>
+                            <Ionicons name="trophy-outline" size={64} color={subtextColor} style={{ opacity: 0.5 }} />
+                            <Text style={[styles.emptyTitle, { color: textColor }]}>No Events Available</Text>
+                            <Text style={[styles.emptySubtitle, { color: subtextColor }]}>Check back later for upcoming competitions and challenges.</Text>
+                        </View>
+                    )}
+                </ScrollView>
+            )}
+        </View>
     );
 }
 
@@ -329,7 +337,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingBottom: 16,
         borderBottomWidth: 1,
     },
     backBtn: {
@@ -337,14 +345,20 @@ const styles = StyleSheet.create({
         height: 40,
         justifyContent: 'center',
         alignItems: 'flex-start',
+        marginLeft: -8,
     },
     headerTitle: {
-        fontSize: 18,
+        fontSize: 20,
         fontWeight: '700',
     },
     scrollContent: {
         padding: 16,
         paddingBottom: 40,
+    },
+    centerContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center'
     },
     section: {
         marginBottom: 8,

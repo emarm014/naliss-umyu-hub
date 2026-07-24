@@ -1,4 +1,4 @@
-﻿/**
+/**
  * NALISS Sentry Instrumentation Helpers
  *
  * Central module for structured breadcrumbs, performance spans, and safe
@@ -98,13 +98,26 @@ export function trackUserAction(action: string, data?: Record<string, any>) {
 }
 
 export function isNetworkError(error: any): boolean {
-  // Configured to return false to ensure Sentry detects and tracks absolutely all errors 
-  // without hiding any transient, network, timeout, or gateway exceptions.
   if (!error) return false;
   
-  // We only filter out expected 401 Unauthorized status codes (e.g. from clean logout sequences)
-  // to avoid tracking user-triggered logouts as application failures.
-  return error.status === 401;
+  const errStr = typeof error === 'object' ? String((error as Error).message || error) : String(error);
+  const lowerErrStr = errStr.toLowerCase();
+  
+  if (
+    lowerErrStr.includes('network request failed') || 
+    lowerErrStr.includes('failed to fetch') || 
+    lowerErrStr.includes('timeout') ||
+    lowerErrStr.includes('software caused connection abort') ||
+    lowerErrStr.includes('unable to resolve host') ||
+    lowerErrStr.includes('networkerror')
+  ) {
+    return true;
+  }
+
+  // Also filter out expected 401 Unauthorized status codes (e.g. from clean logout sequences)
+  if ((error as any).status === 401) return true;
+
+  return false;
 }
 
 // â”€â”€ Exception capture helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -1,4 +1,4 @@
-﻿import * as Sentry from '@sentry/react-native';
+import * as Sentry from '@sentry/react-native';
 import { TimeoutError } from './api-protection';
 
 // Errors that are transient/environmental â€” should never create Sentry issues
@@ -85,19 +85,24 @@ export const Logger = {
   error: (component: string, message: string, error: any, context?: LogContext) => {
     const timestamp = new Date().toISOString();
     const reqId = context?.requestId || generateRequestId();
+    const transient = isTransientError(error);
     
-    console.error(`[ERROR] [${timestamp}] [${component}] [${reqId}] ${message}`, error, context || '');
+    if (transient) {
+      console.warn(`[WARN/TRANSIENT] [${timestamp}] [${component}] [${reqId}] ${message}`, error, context || '');
+    } else {
+      console.error(`[ERROR] [${timestamp}] [${component}] [${reqId}] ${message}`, error, context || '');
+    }
     
     Sentry.addBreadcrumb({
       category: component,
       message: `[${reqId}] ${message}`,
       data: context,
-      level: 'error',
+      level: transient ? 'warning' : 'error',
     });
 
     // Don't send transient network/timeout errors to Sentry â€” they're environmental,
     // not code bugs. The app handles them gracefully with retries and cached data.
-    if (isTransientError(error)) {
+    if (transient) {
       return;
     }
 

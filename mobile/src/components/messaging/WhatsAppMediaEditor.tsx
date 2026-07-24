@@ -1,0 +1,295 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, Image, Dimensions, KeyboardAvoidingView, Platform, FlatList, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from '../../constants/Colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+
+const { width, height } = Dimensions.get('window');
+
+export interface MediaAsset {
+    uri: string;
+    width: number;
+    height: number;
+    type?: 'image' | 'video' | 'audio' | 'application/pdf' | string;
+    fileName?: string | null;
+    mimeType?: string;
+    fileSize?: number;
+}
+
+export interface FinalizedMedia extends MediaAsset {
+    caption?: string;
+}
+
+interface WhatsAppMediaEditorProps {
+    visible: boolean;
+    assets: MediaAsset[];
+    onSend: (finalizedAssets: FinalizedMedia[]) => void;
+    onCancel: () => void;
+}
+
+export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visible, assets, onSend, onCancel }) => {
+    const insets = useSafeAreaInsets();
+    const [finalizedAssets, setFinalizedAssets] = useState<FinalizedMedia[]>([]);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const [isProcessing, setIsProcessing] = useState(false);
+
+    useEffect(() => {
+        if (visible && assets.length > 0) {
+            setFinalizedAssets(assets.map(asset => ({ ...asset, caption: '' })));
+            setActiveIndex(0);
+        }
+    }, [visible, assets]);
+
+    if (!visible || finalizedAssets.length === 0) return null;
+
+    const activeAsset = finalizedAssets[activeIndex];
+
+    const handleCaptionChange = (text: string) => {
+        const newAssets = [...finalizedAssets];
+        newAssets[activeIndex].caption = text;
+        setFinalizedAssets(newAssets);
+    };
+
+    const handleRotate = async () => {
+        if (!activeAsset || activeAsset.type === 'video') return;
+        setIsProcessing(true);
+        try {
+            const result = await manipulateAsync(
+                activeAsset.uri,
+                [{ rotate: 90 }],
+                { compress: 0.9, format: SaveFormat.JPEG }
+            );
+            
+            const newAssets = [...finalizedAssets];
+            newAssets[activeIndex] = {
+                ...newAssets[activeIndex],
+                uri: result.uri,
+                width: result.width,
+                height: result.height,
+            };
+            setFinalizedAssets(newAssets);
+        } catch (e) {
+            console.warn('Failed to rotate image', e);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const renderThumbnail = ({ item, index }: { item: FinalizedMedia, index: number }) => {
+        const isActive = index === activeIndex;
+        return (
+            <TouchableOpacity 
+                style={[styles.thumbnailWrapper, isActive && styles.thumbnailActive]} 
+                onPress={() => setActiveIndex(index)}
+            >
+                <Image source={{ uri: item.uri }} style={styles.thumbnail} />
+            </TouchableOpacity>
+        );
+    };
+
+    return (
+        <Modal visible={visible} transparent={false} animationType="slide">
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={[styles.container, { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20) }]}
+            >
+                {/* Top Header */}
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={onCancel} style={styles.iconButton}>
+                        <Ionicons name="close" size={28} color="#fff" />
+                    </TouchableOpacity>
+                    
+                    <View style={styles.headerActions}>
+                        {activeAsset.type !== 'video' && (
+                            <TouchableOpacity onPress={handleRotate} style={styles.iconButton} disabled={isProcessing}>
+                                <Ionicons name="refresh" size={24} color="#fff" />
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity onPress={onCancel} style={styles.iconButton}>
+                            <Ionicons name="trash" size={24} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Main Preview */}
+                <View style={styles.mainPreview}>
+                    {isProcessing && (
+                        <View style={styles.processingOverlay}>
+                            <ActivityIndicator size="large" color={COLORS.primary} />
+                        </View>
+                    )}
+                    <Image 
+                        source={{ uri: activeAsset.uri }} 
+                        style={styles.previewImage} 
+                        resizeMode="contain" 
+                    />
+                </View>
+
+                {/* Bottom Controls */}
+                <View style={styles.bottomControls}>
+                    {/* Caption Input */}
+                    <View style={styles.captionContainer}>
+                        <Ionicons name="add-circle-outline" size={28} color="#fff" style={styles.addIcon} />
+                        <TextInput
+                            style={styles.captionInput}
+                            placeholder="Add a caption..."
+                            placeholderTextColor="#999"
+                            value={activeAsset.caption}
+                            onChangeText={handleCaptionChange}
+                            multiline
+                            maxLength={1024}
+                        />
+                    </View>
+
+                    {/* Thumbnail Carousel */}
+                    {finalizedAssets.length > 1 && (
+                        <View style={styles.carouselContainer}>
+                            <FlatList
+                                data={finalizedAssets}
+                                keyExtractor={(item, index) => `${item.uri}-${index}`}
+                                renderItem={renderThumbnail}
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.carouselContent}
+                            />
+                        </View>
+                    )}
+
+                    {/* Send Button */}
+                    <View style={styles.footerRow}>
+                        <View style={styles.selectedCountBadge}>
+                            <Text style={styles.selectedCountText}>{finalizedAssets.length} selected</Text>
+                        </View>
+                        <TouchableOpacity 
+                            style={styles.sendButton} 
+                            onPress={() => onSend(finalizedAssets)}
+                            disabled={isProcessing}
+                        >
+                            <Ionicons name="send" size={20} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </KeyboardAvoidingView>
+        </Modal>
+    );
+};
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#000', // WhatsApp uses pitch black
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        height: 56,
+        zIndex: 10,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
+    },
+    iconButton: {
+        padding: 4,
+    },
+    mainPreview: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        position: 'relative',
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+    },
+    processingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 2,
+    },
+    bottomControls: {
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingTop: 10,
+    },
+    captionContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#2A2A2A',
+        marginHorizontal: 16,
+        borderRadius: 24,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        minHeight: 48,
+        marginBottom: 16,
+    },
+    addIcon: {
+        marginRight: 10,
+    },
+    captionInput: {
+        flex: 1,
+        color: '#fff',
+        fontSize: 16,
+        maxHeight: 100,
+    },
+    carouselContainer: {
+        height: 60,
+        marginBottom: 16,
+    },
+    carouselContent: {
+        paddingHorizontal: 16,
+        gap: 8,
+    },
+    thumbnailWrapper: {
+        width: 50,
+        height: 50,
+        borderRadius: 8,
+        overflow: 'hidden',
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    thumbnailActive: {
+        borderColor: COLORS.primary,
+    },
+    thumbnail: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
+    },
+    footerRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingBottom: 8,
+    },
+    selectedCountBadge: {
+        backgroundColor: '#2A2A2A',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+    },
+    selectedCountText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    sendButton: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+});

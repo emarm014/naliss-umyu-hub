@@ -46,6 +46,16 @@ const originalConsoleError = console.error;
 console.error = (...args) => {
   originalConsoleError(...args); // Keep logging to terminal/bundler
   
+  // Skip transient network errors to prevent false crash reports
+  const strArgs = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ').toLowerCase();
+  if (strArgs.includes('network request failed') || 
+      strArgs.includes('failed to fetch') || 
+      strArgs.includes('timeout') ||
+      strArgs.includes('unable to resolve host') ||
+      strArgs.includes('software caused connection abort')) {
+    return;
+  }
+
   // Find if an actual Error object was passed
   const err = args.find(a => a instanceof Error);
   if (err) {

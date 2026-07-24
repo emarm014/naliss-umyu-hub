@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cloudinary Upload Helper for Mobile
  * Uploads files directly to Cloudinary using a secure signed preset with fallback.
  * 
@@ -20,6 +20,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../api/supabase/client';
 import { trackCloudinary } from '../utils/sentry';
+import { Platform } from 'react-native';
 
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dno3wqlm3';
 const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'naliss_uploads';
@@ -86,9 +87,10 @@ async function fetchUploadSignature(folder?: string): Promise<any> {
  */
 export async function uploadToCloudinary(
   blob: Blob,
-  folder: string = 'mobile_uploads'
+  folder: string = 'mobile_uploads',
+  forcedMimeType?: string
 ): Promise<string> {
-  const mimeType = blob.type.toLowerCase();
+  const mimeType = (blob.type || forcedMimeType || '').toLowerCase();
   const size = blob.size;
   const startTime = Date.now();
 
@@ -99,7 +101,7 @@ export async function uploadToCloudinary(
                 mimeType === 'application/msword' || 
                 mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-  if (!isImage && !isVideo && !isAudio && !isDoc) {
+  if (!isImage && !isVideo && !isAudio && !isDoc && mimeType !== '' && mimeType !== 'unknown') {
     throw new Error(`Unsupported MIME type: ${mimeType || 'unknown'}`);
   }
 
@@ -206,7 +208,11 @@ export async function uploadLocalFileToCloudinary(
   contentType: string = 'image/jpeg',
   onProgress?: (progress: number) => void
 ): Promise<string> {
-  const mimeType = contentType.toLowerCase();
+  let mimeType = contentType.toLowerCase();
+  if (!mimeType || mimeType === 'unknown' || mimeType === '*/*') {
+    mimeType = 'image/jpeg';
+  }
+
   const startTime = Date.now();
   const isImage = mimeType.startsWith('image/');
   const isVideo = mimeType.startsWith('video/');
@@ -246,9 +252,16 @@ export async function uploadLocalFileToCloudinary(
           return reject(new Error('File size exceeds the 5MB limit.'));
         }
 
+        let normalizedUri = localUri;
+        if (Platform.OS === 'ios' && normalizedUri.startsWith('file://')) {
+          normalizedUri = normalizedUri.replace('file://', '');
+        } else if (Platform.OS === 'android' && !normalizedUri.startsWith('content://') && !normalizedUri.startsWith('file://')) {
+          normalizedUri = `file://${normalizedUri}`;
+        }
+
         const formData = new FormData();
         formData.append('file', {
-          uri: localUri,
+          uri: normalizedUri,
           name: fileName,
           type: contentType,
         } as any);

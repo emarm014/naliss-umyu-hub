@@ -154,7 +154,7 @@ export default function ArchiveScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 }}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: textPrimary }]} numberOfLines={2}>{item.title}</Text>
-            {item.description ? (
+            {item.description && item.description.trim().toLowerCase() !== item.title.trim().toLowerCase() ? (
               <Text style={[styles.description, { color: textMuted }]} numberOfLines={2}>{item.description}</Text>
             ) : null}
           </View>

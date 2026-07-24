@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,6 +48,7 @@ import { captureUIError, trackFeature, isNetworkError } from '../../src/utils/se
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getCleanAvatarUrl } from '../../src/utils';
+import { WhatsAppMediaEditor, FinalizedMedia } from '../../src/components/messaging/WhatsAppMediaEditor';
 
 const MAX_CHARS = 500;
 
@@ -105,6 +106,14 @@ export default function ChatScreen() {
     useSentryScreen('ChatScreen');
     const params = useLocalSearchParams();
     const id = Array.isArray(params.id) ? params.id[0] : params.id as string;
+    
+    useFocusEffect(
+        React.useCallback(() => {
+            if (id) {
+                useGroupStore.getState().markGroupAsRead(id);
+            }
+        }, [id])
+    );
     const type = params.type;
     const initialName = params.name;
     const initialAvatar = params.avatar;
@@ -176,8 +185,8 @@ export default function ChatScreen() {
     const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
     const [uploadingIds, setUploadingIds] = useState<Record<string, number>>({});
     const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
-    const [showMembersList, setShowMembersList] = useState(false);
-    const [viewingProfile, setViewingProfile] = useState<any>(null);
+
+
     const [expandedAvatarUrl, setExpandedAvatarUrl] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(() => {
         try {
@@ -194,26 +203,8 @@ export default function ChatScreen() {
     const [isSearching, setIsSearching] = useState(false);
     const [isSending, setIsSending] = useState(false);
 
-    // Multi-file selection & cropping states
-    const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
-    const [isPreviewVisible, setIsPreviewVisible] = useState(false);
-    const [isCropVisible, setIsCropVisible] = useState(false);
-    const [croppingIndex, setCroppingIndex] = useState<number | null>(null);
+    // WhatsApp Media Editor State
     const [unprocessedImages, setUnprocessedImages] = useState<any[]>([]);
-    const [currentCropIndex, setCurrentCropIndex] = useState<number>(0);
-    const [useSameCaptionForAll, setUseSameCaptionForAll] = useState(true);
-    const [generalCaption, setGeneralCaption] = useState('');
-    const [activeCaptionIndex, setActiveCaptionIndex] = useState<number | 'all'>('all');
-
-    const [cropImageUri, setCropImageUri] = useState<string>('');
-    const [imageWidth, setImageWidth] = useState<number>(1);
-    const [imageHeight, setImageHeight] = useState<number>(1);
-    const [zoomScale, setZoomScale] = useState<number>(1.0);
-    const [offsetX, setOffsetX] = useState<number>(0);
-    const [offsetY, setOffsetY] = useState<number>(0);
-
-    const lastOffsetX = useRef(0);
-    const lastOffsetY = useRef(0);
 
     const flatListRef = useRef<FlatList>(null);
     const realtimeChannelRef = useRef<any>(null);
@@ -222,37 +213,7 @@ export default function ChatScreen() {
     const setupRealtimeRef = useRef<() => void>(() => {});
     const fetchMissedMessagesRef = useRef<() => Promise<void>>(async () => {});
 
-    useEffect(() => {
-        if (isPreviewVisible) {
-            setUseSameCaptionForAll(true);
-            setGeneralCaption('');
-            setActiveCaptionIndex('all');
-        }
-    }, [isPreviewVisible]);
 
-    useEffect(() => {
-        if (unprocessedImages.length > 0 && currentCropIndex < unprocessedImages.length) {
-            const asset = unprocessedImages[currentCropIndex];
-            initCrop(asset.uri, asset.width || 800, asset.height || 800);
-            setIsCropVisible(true);
-        } else if (unprocessedImages.length > 0 && currentCropIndex >= unprocessedImages.length) {
-            // Finished cropping all images in the queue
-            const newFiles = unprocessedImages.map(asset => ({
-                uri: asset.croppedUri || asset.uri, // Use cropped if available
-                name: asset.fileName || `image_${Date.now()}_${Math.floor(Math.random() * 1000)}.jpg`,
-                size: asset.fileSize,
-                mimeType: asset.mimeType || 'image/jpeg',
-                type: 'image' as const,
-                width: asset.cropWidth || asset.width,
-                height: asset.cropHeight || asset.height,
-                caption: ''
-            }));
-            setSelectedFiles(prev => [...prev, ...newFiles]);
-            setUnprocessedImages([]);
-            setCurrentCropIndex(0);
-            setIsPreviewVisible(true);
-        }
-    }, [unprocessedImages, currentCropIndex]);
 
     // Track whether user is near the bottom — only auto-scroll if they are
     const isNearBottomRef = useRef(true);
@@ -583,48 +544,7 @@ export default function ChatScreen() {
         }
     };
 
-    const renderMemberItem = React.useCallback(({ item: member }: { item: any }) => {
-        const isYou = member.id === currentUser?.id;
-        return (
-        <TouchableOpacity
-            style={styles.memberItem}
-            onPress={() => {
-                setShowMembersList(false);
-                setViewingProfile(member);
-            }}
-        >
-            <CachedImage 
-                remoteUrl={getCleanAvatarUrl(member.avatar_url)} 
-                style={styles.memberAvatar} 
-                entityId={`member_${member.id}`} 
-                assetType="user" 
-                fallbackName={member.full_name || member.username} 
-            />
-            <View style={styles.memberInfo}>
-                <View style={styles.memberNameRow}>
-                    <Text style={styles.memberFullName}>
-                        {isYou ? `${member.full_name} (You)` : member.full_name}
-                    </Text>
-                    {(() => {
-                        const { useNetworkStore } = require('../../src/stores/network.store');
-                        const isOnline = useNetworkStore.getState().isOnline;
-                        if (!isOnline) return null;
-                        
-                        const isUserOnline = isYou || (member.last_active_at && (new Date().getTime() - new Date(member.last_active_at).getTime() < 300000));
-                        if (isUserOnline) {
-                            return <View style={styles.memberOnlineDot} />;
-                        }
-                        return null;
-                    })()}
-                </View>
-                <Text style={styles.memberUsername}>@{member.username}</Text>
-            </View>
-            <View style={styles.memberLevelBadge}>
-                <Text style={styles.memberLevelText}>{member.level}</Text>
-            </View>
-        </TouchableOpacity>
-        );
-    }, [currentUser?.id]);
+
 
     const setupRealtime = () => {
         // Clean up any existing channel first
@@ -1198,7 +1118,6 @@ export default function ChatScreen() {
         if (result.canceled || !result.assets || result.assets.length === 0) return;
 
         setUnprocessedImages(result.assets);
-        setCurrentCropIndex(0);
     };
 
     const handleDelete = async (messageId: string) => {
@@ -1311,49 +1230,40 @@ export default function ChatScreen() {
         setInputText('');
     };
 
-    // Open profile by user_id — always fetch fresh data from DB so avatar is current
+    // Open profile by user_id
     const openProfile = async (userId: string) => {
-        // Show immediately from cached members while fresh data loads
         const cached = members.find(m => m.id === userId);
-        if (cached) {
-            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url) || '', type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
-            setViewerVisible(true);
-        }
-
-        try {
-            const { data } = await (supabase as any).from('users')
-                .select('*, department:departments(name)')
-                .eq('id', userId)
-                .single();
-            if (data) {
-                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url) || '', name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
-                if (!cached) setViewerVisible(true);
-            }
-        } catch {
-            // Keep cached version if fetch fails
-        }
+        router.push({
+            pathname: '/chat/user_profile' as any,
+            params: cached ? { id: userId, initialData: JSON.stringify(cached) } : { id: userId }
+        });
     };
 
-    // Open profile by username — always fetch fresh data from DB
+    // Open profile by username
     const openProfileByUsername = async (username: string) => {
         const clean = username.startsWith('@') ? username.slice(1) : username;
         const cached = members.find(m => m.username === clean);
         if (cached) {
-            setViewerFile({ uri: getCleanAvatarUrl(cached.avatar_url) || '', type: 'image', name: cached.full_name || cached.username || 'Profile', isProfile: true, profileData: cached });
-            setViewerVisible(true);
+            router.push({
+                pathname: '/chat/user_profile' as any,
+                params: { id: cached.id, initialData: JSON.stringify(cached) }
+            });
+            return;
         }
 
         try {
             const { data } = await (supabase as any).from('users')
-                .select('*, department:departments(name)')
+                .select('id')
                 .eq('username', clean)
                 .single();
             if (data) {
-                setViewerFile(prev => ({ ...prev, uri: getCleanAvatarUrl(data.avatar_url) || '', name: data.full_name || data.username || 'Profile', isProfile: true, profileData: data }));
-                if (!cached) setViewerVisible(true);
+                router.push({
+                    pathname: '/chat/user_profile' as any,
+                    params: { id: data.id }
+                });
             }
         } catch {
-            // Keep cached version if fetch fails
+            // silent
         }
     };
 
@@ -1739,7 +1649,13 @@ export default function ChatScreen() {
                                                     key={child.id}
                                                     style={[itemStyle, { position: 'relative' }]}
                                                     activeOpacity={0.8}
-                                                    onPress={() => handleOpenSwipeableMedia(child.id)}
+                                                    onPress={() => {
+                                                        if (!isMe && !isDownloaded && !isDownloading) {
+                                                            handleDownloadMedia(child.id, child.content, child.metadata?.name || `${child.message_type}_${child.id}.jpg`);
+                                                        } else {
+                                                            handleOpenSwipeableMedia(child.id);
+                                                        }
+                                                    }}
                                                 >
                                                     <CachedImage 
                                                         remoteUrl={mediaUrl}
@@ -1747,6 +1663,7 @@ export default function ChatScreen() {
                                                         resizeMode="cover"
                                                         entityId={`chat_media_${child.id}`}
                                                         assetType="chat_media"
+                                                        blurRadius={(!isMe && !isDownloaded) ? 3 : 0}
                                                     />
                                                     
                                                     {isVideo && (
@@ -1755,22 +1672,12 @@ export default function ChatScreen() {
                                                         </View>
                                                     )}
                                                     
-                                                    {/* Upload/Download overlay */}
-                                                    {((isMe && isUploading) || (!isMe && !isDownloaded)) ? (
+                                                    {/* Upload overlay ONLY for sender */}
+                                                    {(isMe && isUploading) ? (
                                                         <View style={styles.imageUploadOverlay}>
-                                                            {isUploading ? (
-                                                                <View style={styles.mediaOverlayProgress}>
-                                                                    <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(uploadingIds[child.id]), 100)}%</Text>
-                                                                </View>
-                                                            ) : isDownloading ? (
-                                                                <View style={styles.mediaOverlayProgress}>
-                                                                    <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(downloadingIds[child.id]), 100)}%</Text>
-                                                                </View>
-                                                            ) : (
-                                                                <View style={styles.mediaOverlayProgress}>
-                                                                    <Ionicons name="cloud-download-outline" size={24} color="#fff" />
-                                                                </View>
-                                                            )}
+                                                            <View style={styles.mediaOverlayProgress}>
+                                                                <Text style={styles.mediaOverlayProgressText}>{Math.min(Math.round(uploadingIds[child.id]), 100)}%</Text>
+                                                            </View>
                                                         </View>
                                                     ) : null}
 
@@ -1784,6 +1691,43 @@ export default function ChatScreen() {
                                             );
                                         })}
                                     </View>
+                                    
+                                    {/* Album Download All Overlay (WhatsApp style) */}
+                                    {(() => {
+                                        if (isMe) return null;
+                                        const notDownloadedItems = item.albumItems.filter((child: any) => !downloadedIds[child.id]);
+                                        const isDownloadingAlbum = item.albumItems.some((child: any) => downloadingIds[child.id] !== undefined);
+                                        
+                                        if (notDownloadedItems.length > 0) {
+                                            const totalSize = notDownloadedItems.reduce((acc: number, child: any) => acc + (child.metadata?.size || 0), 0);
+                                            const sizeStr = totalSize > 0 ? `${(totalSize / 1024 / 1024).toFixed(1)} MB` : '';
+                                            return (
+                                                <TouchableOpacity 
+                                                    style={styles.albumDownloadAllBtn}
+                                                    activeOpacity={0.8}
+                                                    onPress={() => {
+                                                        notDownloadedItems.forEach((child: any) => {
+                                                            if (downloadingIds[child.id] === undefined) {
+                                                                handleDownloadMedia(child.id, child.content, child.metadata?.name || `${child.message_type}_${child.id}.jpg`);
+                                                            }
+                                                        });
+                                                    }}
+                                                >
+                                                    {isDownloadingAlbum ? (
+                                                        <ActivityIndicator size="small" color="#fff" />
+                                                    ) : (
+                                                        <>
+                                                            <Ionicons name="cloud-download" size={20} color="#fff" />
+                                                            <Text style={styles.albumDownloadAllText}>
+                                                                {sizeStr ? sizeStr : `${notDownloadedItems.length} items`}
+                                                            </Text>
+                                                        </>
+                                                    )}
+                                                </TouchableOpacity>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
                                     
                                     {/* Album Caption (First available) */}
                                     {(() => {
@@ -1814,7 +1758,11 @@ export default function ChatScreen() {
                                 delayLongPress={400}
                                 onLongPress={() => setLongPressedMessage(item)}
                                 onPress={() => handleDoubleTapReply(item, () => {
-                                    handleOpenSwipeableMedia(item.id);
+                                    if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
+                                        handleDownloadMedia(item.id, item.content, item.metadata?.name || `image_${item.id}.jpg`);
+                                    } else {
+                                        handleOpenSwipeableMedia(item.id);
+                                    }
                                 })}
                             >
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
@@ -1883,7 +1831,11 @@ export default function ChatScreen() {
                                         delayLongPress={400}
                                         onLongPress={() => setLongPressedMessage(item)}
                                         onPress={() => handleDoubleTapReply(item, () => {
-                                            handleOpenSwipeableMedia(item.id);
+                                            if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
+                                                handleDownloadMedia(item.id, item.content, item.metadata?.name || `video_${item.id}.mp4`);
+                                            } else {
+                                                handleOpenSwipeableMedia(item.id);
+                                            }
                                         })}                                    >
                                         {/* Cloudinary video thumbnail — generated automatically */}
                                         {item.content?.startsWith('http') || downloadedIds[item.id] || item.fileUri ? (
@@ -1962,7 +1914,7 @@ export default function ChatScreen() {
                                             if (downloadedIds[item.id]) {
                                                 handleOpenMedia(item.id, item.content, item.message_type);
                                             } else if (downloadingIds[item.id] === undefined) {
-                                                handleDownloadAndOpen(item.id, item.content, fileName, item.message_type);
+                                                handleDownloadMedia(item.id, item.content, fileName);
                                             }
                                         })}
                                     >
@@ -2096,8 +2048,7 @@ export default function ChatScreen() {
                     }
                 }
 
-                setSelectedFiles(files);
-                setIsPreviewVisible(true);
+                setUnprocessedImages(files);
             }
         } catch (err: any) {
             captureUIError('ChatScreen.pickDocument', err, { groupId: id });
@@ -2150,8 +2101,7 @@ export default function ChatScreen() {
                     }
                 }
 
-                setSelectedFiles(files);
-                setIsPreviewVisible(true);
+                setUnprocessedImages(files);
             }
         } catch (err: any) {
             captureUIError('ChatScreen.pickAudioVideo', err, { groupId: id });
@@ -2166,206 +2116,42 @@ export default function ChatScreen() {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     };
 
-    // Multi-file cropping and sending helpers
-    const zoomScaleRef = useRef(1.0);
-    const offsetXRef = useRef(0);
-    const offsetYRef = useRef(0);
-    const imageWidthRef = useRef(1);
-    const imageHeightRef = useRef(1);
 
-    const setZoomScaleWithRef = (val: number | ((prev: number) => number)) => {
-        setZoomScale(prev => {
-            const next = typeof val === 'function' ? val(prev) : val;
-            zoomScaleRef.current = next;
-            return next;
-        });
-    };
-    const setOffsetXWithRef = (val: number | ((prev: number) => number)) => {
-        setOffsetX(prev => {
-            const next = typeof val === 'function' ? val(prev) : val;
-            offsetXRef.current = next;
-            return next;
-        });
-    };
-    const setOffsetYWithRef = (val: number | ((prev: number) => number)) => {
-        setOffsetY(prev => {
-            const next = typeof val === 'function' ? val(prev) : val;
-            offsetYRef.current = next;
-            return next;
-        });
-    };
 
-    // Width and height of the container
-    const CONTAINER_SIZE = 300;
-    const CROP_SIZE = 200;
-
-    const initCrop = (uri: string, w: number, h: number) => {
-        setCropImageUri(uri);
-        const originalW = w || 1;
-        const originalH = h || 1;
-        setImageWidth(originalW);
-        imageWidthRef.current = originalW;
-        setImageHeight(originalH);
-        imageHeightRef.current = originalH;
-
-        const ar = originalW / originalH;
-        let dw = CONTAINER_SIZE;
-        let dh = CONTAINER_SIZE;
-        if (ar > 1) {
-            dh = CONTAINER_SIZE;
-            dw = CONTAINER_SIZE * ar;
-        } else {
-            dw = CONTAINER_SIZE;
-            dh = CONTAINER_SIZE / ar;
-        }
-
-        const initialMinZoom = Math.max(CROP_SIZE / dw, CROP_SIZE / dh);
-        setZoomScale(initialMinZoom);
-        zoomScaleRef.current = initialMinZoom;
-        setOffsetX(0);
-        offsetXRef.current = 0;
-        setOffsetY(0);
-        offsetYRef.current = 0;
-    };
-
-    const handleZoom = (factor: number) => {
-        let ar = imageWidthRef.current / imageHeightRef.current;
-        let dw = CONTAINER_SIZE;
-        let dh = CONTAINER_SIZE;
-        if (ar > 1) {
-            dh = CONTAINER_SIZE;
-            dw = CONTAINER_SIZE * ar;
-        } else {
-            dw = CONTAINER_SIZE;
-            dh = CONTAINER_SIZE / ar;
-        }
-        const minZ = Math.max(CROP_SIZE / dw, CROP_SIZE / dh);
-
-        setZoomScaleWithRef(prev => {
-            const nextZoom = Math.max(minZ, Math.min(5.0, prev + factor));
-            
-            // Adjust and clamp offsets for new size
-            const W_img = dw * nextZoom;
-            const H_img = dh * nextZoom;
-            const maxOffsetX = W_img / 2 - 100;
-            const minOffsetX = 100 - W_img / 2;
-            const maxOffsetY = H_img / 2 - 100;
-            const minOffsetY = 100 - H_img / 2;
-
-            setOffsetXWithRef(x => Math.max(minOffsetX, Math.min(maxOffsetX, x)));
-            setOffsetYWithRef(y => Math.max(minOffsetY, Math.min(maxOffsetY, y)));
-            return nextZoom;
-        });
-    };
-
-    const handleApplyCrop = async () => {
-        if (croppingIndex === null && unprocessedImages.length === 0) return;
-        try {
-            const fileUri = unprocessedImages.length > 0 
-                ? unprocessedImages[currentCropIndex].uri 
-                : selectedFiles[croppingIndex!].uri;
-
-            let ar = imageWidthRef.current / imageHeightRef.current;
-            let dw = CONTAINER_SIZE;
-            let dh = CONTAINER_SIZE;
-            if (ar > 1) {
-                dh = CONTAINER_SIZE;
-                dw = CONTAINER_SIZE * ar;
-            } else {
-                dw = CONTAINER_SIZE;
-                dh = CONTAINER_SIZE / ar;
-            }
-
-            const W_img = dw * zoomScaleRef.current;
-            const H_img = dh * zoomScaleRef.current;
-
-            const x_img = (CONTAINER_SIZE - W_img) / 2 + offsetXRef.current;
-            const y_img = (CONTAINER_SIZE - H_img) / 2 + offsetYRef.current;
-
-            const relX = 50 - x_img;
-            const relY = 50 - y_img;
-
-            const scale = imageWidthRef.current / W_img;
-            const originX = Math.max(0, Math.round(relX * scale));
-            const originY = Math.max(0, Math.round(relY * scale));
-            const cropWidth = Math.min(imageWidthRef.current - originX, Math.round(CROP_SIZE * scale));
-            const cropHeight = Math.min(imageHeightRef.current - originY, Math.round(CROP_SIZE * scale));
-
-            const result = await ImageManipulator.manipulateAsync(
-                fileUri,
-                [{ crop: { originX, originY, width: cropWidth, height: cropHeight } }],
-                { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-            );
-
-            if (unprocessedImages.length > 0) {
-                setUnprocessedImages(prev => {
-                    const next = [...prev];
-                    next[currentCropIndex] = {
-                        ...next[currentCropIndex],
-                        croppedUri: result.uri,
-                        cropWidth: result.width,
-                        cropHeight: result.height,
-                    };
-                    return next;
-                });
-                setIsCropVisible(false);
-                setCurrentCropIndex(prev => prev + 1);
-            } else {
-                const file = selectedFiles[croppingIndex!];
-                setSelectedFiles(prev => {
-                    const next = [...prev];
-                    next[croppingIndex!] = {
-                        ...file,
-                        uri: result.uri,
-                        width: result.width,
-                        height: result.height,
-                        size: undefined
-                    };
-                    return next;
-                });
-                setIsCropVisible(false);
-                setCroppingIndex(null);
-            }
-        } catch (err) {
-            console.error('Cropping error:', err);
-            Alert.alert('Crop Error', 'Failed to crop image. Please try again.');
-        }
-    };
-
-    const handleSendSelectedFiles = async () => {
-        if (selectedFiles.length === 0) return;
-        setIsPreviewVisible(false);
-        const filesToSend = [...selectedFiles];
-        setSelectedFiles([]);
+    const handleMediaSend = async (finalizedAssets: FinalizedMedia[]) => {
+        if (finalizedAssets.length === 0) return;
+        setUnprocessedImages([]); // Close the editor
 
         const batchId = Date.now().toString();
 
-        for (const file of filesToSend) {
+        for (const file of finalizedAssets) {
             const tempId = `temp-upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            let msgType = file.type;
-            let originalName = file.name;
+            let msgType = file.type || 'image';
+            if (!file.type && file.mimeType) {
+                if (file.mimeType.startsWith('video')) msgType = 'video';
+                if (file.mimeType.startsWith('audio')) msgType = 'audio';
+            }
+            let originalName = file.fileName || file.uri.split('/').pop() || `media-${Date.now()}`;
             let uploadName = `${Date.now()}-${originalName}`;
             let folder = 'chat-docs';
             let contentType = file.mimeType || 'application/octet-stream';
 
-            if (file.type === 'image') {
+            if (msgType === 'image') {
                 folder = 'chat-images';
-                contentType = 'image/jpeg';
-                if (!uploadName.toLowerCase().endsWith('.jpg') && !uploadName.toLowerCase().endsWith('.jpeg')) {
+                contentType = file.mimeType || 'image/jpeg';
+                if (!uploadName.toLowerCase().endsWith('.jpg') && !uploadName.toLowerCase().endsWith('.jpeg') && !uploadName.toLowerCase().endsWith('.png')) {
                     uploadName += '.jpg';
                 }
-            } else if (file.type === 'video') {
+            } else if (msgType === 'video') {
                 folder = 'chat-videos';
-            } else if (file.type === 'audio') {
+            } else if (msgType === 'audio') {
                 folder = 'chat-audios';
             }
-
-            const fileCaption = useSameCaptionForAll ? generalCaption : file.caption;
 
             // Optimistic UI
             const newMessage = {
                 id: tempId,
-                content: file.type === 'image' ? file.uri : originalName,
+                content: msgType === 'image' ? file.uri : originalName,
                 fileUri: file.uri,
                 created_at: new Date().toISOString(),
                 sender_id: currentUser!.id,
@@ -2379,8 +2165,8 @@ export default function ChatScreen() {
                 message_type: msgType,
                 content_type: msgType,
                 status: 'sending' as any,
-                metadata: { name: originalName, size: file.size, tempId, batchId },
-                caption: fileCaption || null
+                metadata: { name: originalName, size: file.fileSize, tempId, batchId },
+                caption: file.caption || null
             };
 
             setMessages(prev => [...prev, newMessage]);
@@ -2403,7 +2189,7 @@ export default function ChatScreen() {
                         group_id: id,
                         message_type: msgType,
                         content_type: msgType,
-                        metadata: { name: originalName, size: file.size, tempId, batchId, caption: fileCaption || null }
+                        metadata: { name: originalName, size: file.fileSize, tempId, batchId, caption: file.caption || null }
                     }])
                     .select()
                     .single();
@@ -2413,10 +2199,10 @@ export default function ChatScreen() {
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
                 setMessages(prev => prev.map(m =>
                     m.id === tempId
-                        ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null, created_at: (data as any).created_at }
+                        ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent', caption: file.caption || null, created_at: (data as any).created_at }
                         : m
                 ));
-                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent', caption: fileCaption || null, created_at: (data as any).created_at });
+                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent', caption: file.caption || null, created_at: (data as any).created_at });
             } catch (err: any) {
                 captureUIError('ChatScreen.sendSelectedFileQueue', err, { groupId: id });
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
@@ -2426,45 +2212,6 @@ export default function ChatScreen() {
             }
         }
     };
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: () => true,
-            onPanResponderGrant: () => {
-                lastOffsetX.current = offsetXRef.current;
-                lastOffsetY.current = offsetYRef.current;
-            },
-            onPanResponderMove: (evt, gestureState) => {
-                let newX = lastOffsetX.current + gestureState.dx;
-                let newY = lastOffsetY.current + gestureState.dy;
-
-                let ar = imageWidthRef.current / imageHeightRef.current;
-                let dw = CONTAINER_SIZE;
-                let dh = CONTAINER_SIZE;
-                if (ar > 1) {
-                    dh = CONTAINER_SIZE;
-                    dw = CONTAINER_SIZE * ar;
-                } else {
-                    dw = CONTAINER_SIZE;
-                    dh = CONTAINER_SIZE / ar;
-                }
-
-                const W_img = dw * zoomScaleRef.current;
-                const H_img = dh * zoomScaleRef.current;
-                const maxOffsetX = W_img / 2 - 100;
-                const minOffsetX = 100 - W_img / 2;
-                const maxOffsetY = H_img / 2 - 100;
-                const minOffsetY = 100 - H_img / 2;
-
-                const clampedX = Math.max(minOffsetX, Math.min(maxOffsetX, newX));
-                const clampedY = Math.max(minOffsetY, Math.min(maxOffsetY, newY));
-
-                setOffsetXWithRef(clampedX);
-                setOffsetYWithRef(clampedY);
-            }
-        })
-    ).current;
 
     // Check which media messages are already downloaded on load
     const checkDownloadedState = async (msgs: any[]) => {
@@ -2681,7 +2428,7 @@ export default function ChatScreen() {
                     <Ionicons name="chevron-back" size={24} color={colors.text} />
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.headerTitleContainer} onPress={() => setShowMembersList(true)}>
+                <TouchableOpacity style={styles.headerTitleContainer} onPress={() => router.push(`/chat/group_info?id=${id}`)}>
                     <View style={[styles.headerAvatarPlaceholderLight, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         {(() => {
                             const cleanUrl = getCleanAvatarUrl(group?.avatar_url);
@@ -2915,292 +2662,13 @@ export default function ChatScreen() {
                 </SafeOverlayContainer>
             )}
 
-            {/* File Preview Modal */}
-            <SafeBottomSheet
-                visible={isPreviewVisible}
-                onClose={() => { setSelectedFiles([]); setIsPreviewVisible(false); }}
-                contentStyle={[styles.previewModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-                        <View style={styles.previewHeader}>
-                            <Text style={[styles.previewTitle, { color: colors.text }]}>Selected Files</Text>
-                            <TouchableOpacity onPress={() => { setSelectedFiles([]); setIsPreviewVisible(false); }}>
-                                <Ionicons name="close" size={24} color={colors.text} />
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewScrollContent}>
-                            {selectedFiles.map((item, index) => (
-                                <TouchableOpacity 
-                                    key={index} 
-                                    activeOpacity={0.85}
-                                    onPress={() => {
-                                        if (!useSameCaptionForAll) {
-                                            setActiveCaptionIndex(index);
-                                        }
-                                    }}
-                                    style={[
-                                        styles.previewItemCard, 
-                                        { backgroundColor: isDark ? '#1e293b' : '#f8fafc' },
-                                        !useSameCaptionForAll && activeCaptionIndex === index && { borderWidth: 2, borderColor: COLORS.primary }
-                                    ]}
-                                >
-                                    <View style={styles.previewMediaContainer}>
-                                        {item.type === 'image' ? (
-                                            <CachedImage remoteUrl={item.uri} style={styles.previewThumbnail} entityId={`preview_${index}`} assetType="chat_media" />
-                                        ) : item.type === 'video' ? (
-                                            <View style={[styles.previewPlaceholder, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
-                                                <Ionicons name="videocam" size={32} color={COLORS.primary} />
-                                                <Text style={[styles.previewPlaceholderText, { color: colors.text }]}>Video</Text>
-                                            </View>
-                                        ) : item.type === 'audio' ? (
-                                            <View style={[styles.previewPlaceholder, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
-                                                <Ionicons name="musical-notes" size={32} color={COLORS.primary} />
-                                                <Text style={[styles.previewPlaceholderText, { color: colors.text }]}>Audio</Text>
-                                            </View>
-                                        ) : (
-                                            <View style={[styles.previewPlaceholder, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
-                                                <Ionicons name="document-text" size={32} color={COLORS.primary} />
-                                                <Text style={[styles.previewPlaceholderText, { color: colors.text }]}>PDF</Text>
-                                            </View>
-                                        )}
-
-                                        {item.type === 'image' && (
-                                            <TouchableOpacity 
-                                                onPress={() => {
-                                                    initCrop(item.uri, item.width || 0, item.height || 0);
-                                                    setCroppingIndex(index);
-                                                    setIsCropVisible(true);
-                                                }}
-                                                style={styles.previewCropBadge}
-                                            >
-                                                <Ionicons name="crop" size={14} color="#FFF" />
-                                                <Text style={styles.previewCropText}>Crop</Text>
-                                            </TouchableOpacity>
-                                        )}
-
-                                        {item.caption ? (
-                                            <View style={styles.previewCaptionBadge}>
-                                                <Ionicons name="chatbox-ellipses" size={10} color="#FFF" />
-                                            </View>
-                                        ) : null}
-                                    </View>
-
-                                    <Text numberOfLines={1} style={[styles.previewItemName, { color: colors.text }]}>
-                                        {item.name}
-                                    </Text>
-
-                                    <TouchableOpacity 
-                                        onPress={() => {
-                                            const updated = selectedFiles.filter((_, i) => i !== index);
-                                            setSelectedFiles(updated);
-                                            if (updated.length === 0) {
-                                                setIsPreviewVisible(false);
-                                            } else {
-                                                if (activeCaptionIndex !== 'all' && activeCaptionIndex >= updated.length) {
-                                                    setActiveCaptionIndex(0);
-                                                }
-                                            }
-                                        }}
-                                        style={styles.previewRemoveBtn}
-                                    >
-                                        <Ionicons name="close-circle" size={22} color="#ef4444" />
-                                    </TouchableOpacity>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-
-                        {/* Caption Entry Section */}
-                        <View style={styles.captionSectionContainer}>
-                            <View style={styles.previewCaptionToggleRow}>
-                                <Text style={[styles.previewCaptionToggleText, { color: colors.text }]}>
-                                    Use same caption for all files
-                                </Text>
-                                <TouchableOpacity 
-                                    onPress={() => {
-                                        setUseSameCaptionForAll(prev => {
-                                            const next = !prev;
-                                            if (next) {
-                                                setActiveCaptionIndex('all');
-                                            } else {
-                                                setActiveCaptionIndex(0);
-                                            }
-                                            return next;
-                                        });
-                                    }}
-                                    style={[
-                                        styles.previewCaptionSwitch,
-                                        { backgroundColor: useSameCaptionForAll ? COLORS.primary : (isDark ? '#334155' : '#cbd5e1') }
-                                    ]}
-                                >
-                                    <View style={[
-                                        styles.previewCaptionSwitchThumb,
-                                        useSameCaptionForAll ? { right: 2 } : { left: 2 }
-                                    ]} />
-                                </TouchableOpacity>
-                            </View>
-
-                            {!useSameCaptionForAll && (
-                                <Text style={[styles.captionInstructionsText, { color: isDark ? '#94a3b8' : '#64748b' }]}>
-                                    Tap a file thumbnail above to write its caption:
-                                </Text>
-                            )}
-
-                            {useSameCaptionForAll ? (
-                                <TextInput
-                                    placeholder="Write a caption for all items... (optional)"
-                                    placeholderTextColor={isDark ? '#94a3b8' : '#64748b'}
-                                    value={generalCaption}
-                                    onChangeText={setGeneralCaption}
-                                    style={[styles.previewCaptionInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
-                                    multiline
-                                    maxLength={200}
-                                />
-                            ) : (
-                                <TextInput
-                                    placeholder={`Write a caption for ${activeCaptionIndex !== 'all' && selectedFiles[activeCaptionIndex as number] ? selectedFiles[activeCaptionIndex as number].name : 'selected item'}... (optional)`}
-                                    placeholderTextColor={isDark ? '#94a3b8' : '#64748b'}
-                                    value={activeCaptionIndex !== 'all' && selectedFiles[activeCaptionIndex as number] ? (selectedFiles[activeCaptionIndex as number].caption || '') : ''}
-                                    onChangeText={(text) => {
-                                        if (activeCaptionIndex !== 'all') {
-                                            setSelectedFiles(prev => {
-                                                const next = [...prev];
-                                                next[activeCaptionIndex as number] = {
-                                                    ...next[activeCaptionIndex as number],
-                                                    caption: text
-                                                };
-                                                return next;
-                                            });
-                                        }
-                                    }}
-                                    style={[styles.previewCaptionInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
-                                    multiline
-                                    maxLength={200}
-                                />
-                            )}
-                        </View>
-
-                        <View style={styles.previewActionRow}>
-                            <TouchableOpacity 
-                                onPress={() => { setSelectedFiles([]); setIsPreviewVisible(false); }} 
-                                style={[styles.previewCancelBtn, { borderColor: colors.border }]}
-                            >
-                                <Text style={[styles.previewCancelText, { color: colors.text }]}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                                onPress={handleSendSelectedFiles} 
-                                style={[styles.previewSendBtn, { backgroundColor: COLORS.primary }]}
-                            >
-                                <Ionicons name="send" size={16} color="#FFF" style={{ marginRight: 6 }} />
-                                <Text style={styles.previewSendText}>Add</Text>
-                            </TouchableOpacity>
-                        </View>
-            </SafeBottomSheet>
-
-            {/* Image Cropper Modal */}
-            <SafeModal
-                visible={isCropVisible}
-                onClose={() => {}}
-                dismissible={false}
-                contentStyle={[styles.cropCard, { backgroundColor: colors.card }]}
-                animationType="fade"
-            >
-                        <View style={styles.cropHeader}>
-                            <Text style={[styles.cropTitle, { color: colors.text }]}>Crop Image</Text>
-                            <TouchableOpacity onPress={() => { 
-                                if (unprocessedImages.length > 0) {
-                                    setIsCropVisible(false);
-                                    setCurrentCropIndex(prev => prev + 1);
-                                } else {
-                                    setIsCropVisible(false); 
-                                    setCroppingIndex(null); 
-                                }
-                            }}>
-                                <Ionicons name="close" size={24} color={colors.text} />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Interactive Cropper Canvas */}
-                        <View style={styles.cropCanvasContainer}>
-                            <View 
-                                style={[styles.cropCanvas, { backgroundColor: isDark ? '#0f172a' : '#e2e8f0' }]} 
-                                {...panResponder.panHandlers}
-                            >
-                                {(() => {
-                                    const ar = imageWidth / imageHeight;
-                                    const dw = ar > 1 ? CONTAINER_SIZE * ar : CONTAINER_SIZE;
-                                    const dh = ar > 1 ? CONTAINER_SIZE : CONTAINER_SIZE / ar;
-                                    const imgWidth = dw * zoomScale;
-                                    const imgHeight = dh * zoomScale;
-                                    const imgLeft = (CONTAINER_SIZE - imgWidth) / 2 + offsetX;
-                                    const imgTop = (CONTAINER_SIZE - imgHeight) / 2 + offsetY;
-                                    return cropImageUri ? (
-                                        <CachedImage 
-                                            remoteUrl={cropImageUri} 
-                                            style={{
-                                                position: 'absolute',
-                                                width: imgWidth,
-                                                height: imgHeight,
-                                                left: imgLeft,
-                                                top: imgTop,
-                                            }}
-                                            resizeMode="stretch"
-                                            entityId="crop_canvas"
-                                            assetType="chat_media"
-                                        />
-                                    ) : null;
-                                })()}
-
-                                {/* Crop Area Frame Overlay (200x200 box centered inside 300x300 container) */}
-                                <View style={styles.cropFrameOverlay} pointerEvents="none" />
-                                
-                                {/* Dimmed surrounding overlays */}
-                                <View style={[styles.cropDimOverlay, { top: 0, left: 0, width: 300, height: 50 }]} pointerEvents="none" />
-                                <View style={[styles.cropDimOverlay, { top: 250, left: 0, width: 300, height: 50 }]} pointerEvents="none" />
-                                <View style={[styles.cropDimOverlay, { top: 50, left: 0, width: 50, height: 200 }]} pointerEvents="none" />
-                                <View style={[styles.cropDimOverlay, { top: 50, left: 250, width: 50, height: 200 }]} pointerEvents="none" />
-                            </View>
-                        </View>
-
-                        {/* Zoom Controls */}
-                        <View style={styles.cropZoomRow}>
-                            <TouchableOpacity onPress={() => handleZoom(-0.2)} style={[styles.zoomBtn, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
-                                <Ionicons name="remove" size={20} color={colors.text} />
-                            </TouchableOpacity>
-                            <Text style={[styles.zoomText, { color: colors.text }]}>
-                                {Math.round(zoomScale * 100)}%
-                            </Text>
-                            <TouchableOpacity onPress={() => handleZoom(0.2)} style={[styles.zoomBtn, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
-                                <Ionicons name="add" size={20} color={colors.text} />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Actions */}
-                        <View style={styles.cropActionRow}>
-                            <TouchableOpacity 
-                                onPress={() => { 
-                                    if (unprocessedImages.length > 0) {
-                                        setIsCropVisible(false);
-                                        setCurrentCropIndex(prev => prev + 1);
-                                    } else {
-                                        setIsCropVisible(false); 
-                                        setCroppingIndex(null); 
-                                    }
-                                }} 
-                                style={[styles.cropCancelBtn, { borderColor: colors.border }]}
-                            >
-                                <Text style={[styles.cropCancelText, { color: colors.text }]}>
-                                    {unprocessedImages.length > 0 ? "Skip" : "Cancel"}
-                                </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                                onPress={handleApplyCrop} 
-                                style={[styles.cropApplyBtn, { backgroundColor: COLORS.primary }]}
-                            >
-                                <Ionicons name="checkmark" size={18} color="#FFF" style={{ marginRight: 6 }} />
-                                <Text style={styles.cropApplyText}>Apply</Text>
-                            </TouchableOpacity>
-                        </View>
-            </SafeModal>
+            {/* WhatsApp Media Editor Component */}
+            <WhatsAppMediaEditor
+                visible={unprocessedImages.length > 0}
+                assets={unprocessedImages}
+                onCancel={() => setUnprocessedImages([])}
+                onSend={handleMediaSend}
+            />
 
             {/* Attachment Menu Modal */}
             <SafeBottomSheet
@@ -3229,155 +2697,6 @@ export default function ChatScreen() {
                             </TouchableOpacity>
             </SafeBottomSheet>
 
-            {/* ========== MEMBERS LIST MODAL ========== */}
-            <SafeBottomSheet
-                visible={showMembersList}
-                onClose={() => setShowMembersList(false)}
-                onShow={fetchMembers}
-                contentStyle={styles.membersModal}
-            >
-                        <View style={styles.membersHeader}>
-                            <Text style={styles.membersTitle}>Group Members</Text>
-                            <TouchableOpacity onPress={() => setShowMembersList(false)}>
-                                <Ionicons name="close" size={24} color={COLORS.text} />
-                            </TouchableOpacity>
-                        </View>
-                        <Text style={styles.membersCount}>{
-                            // Always count current user as a member even if not in the fetched list
-                            (() => {
-                                const hasCurrentUser = members.some(m => m.id === currentUser?.id);
-                                const total = hasCurrentUser ? members.length : members.length + 1;
-                                return `${total} ${total === 1 ? 'member' : 'members'}`;
-                            })()
-                        }</Text>
-
-                        <FlatList
-                            style={styles.membersList}
-                            data={members}
-                            keyExtractor={(item) => item.id}
-                            renderItem={renderMemberItem}
-                            initialNumToRender={20}
-                            maxToRenderPerBatch={20}
-                            windowSize={10}
-                            removeClippedSubviews={Platform.OS === 'android'}
-                        />
-            </SafeBottomSheet>
-
-            {/* ========== PROFILE VIEW MODAL ========== */}
-            <SafeBottomSheet
-                visible={!!viewingProfile}
-                onClose={() => setViewingProfile(null)}
-                contentStyle={styles.profileModal}
-            >
-                        <TouchableOpacity style={styles.profileClose} onPress={() => setViewingProfile(null)}>
-                            <Ionicons name="close" size={24} color={COLORS.text} />
-                        </TouchableOpacity>
-
-                        {viewingProfile && (
-                            <ScrollView showsVerticalScrollIndicator={false}>
-                                <View style={styles.profileHeader}>
-                                    <TouchableOpacity onPress={() => {
-                                        const cleanUrl = getCleanAvatarUrl(viewingProfile.avatar_url);
-                                        if (cleanUrl) {
-                                            setViewerFile({ uri: cleanUrl, name: viewingProfile.full_name || viewingProfile.username || 'Profile', type: 'image', isProfile: true, profileData: viewingProfile });
-                                            setViewerVisible(true);
-                                        }
-                                    }} disabled={!getCleanAvatarUrl(viewingProfile.avatar_url)}>
-                                        <CachedImage 
-                                            remoteUrl={getCleanAvatarUrl(viewingProfile.avatar_url)} 
-                                            style={styles.profileAvatar} 
-                                            entityId={`profile_avatar_${viewingProfile.id}`} 
-                                            assetType="user" 
-                                            fallbackName={viewingProfile.full_name || viewingProfile.username} 
-                                        />
-                                    </TouchableOpacity>
-                                    <Text style={styles.profileFullName}>{viewingProfile.full_name}</Text>
-                                    <Text style={styles.profileUsername}>@{viewingProfile.username}</Text>
-                                    <View style={styles.profileOnlineStatus}>
-                                        {(() => {
-                                            const { useNetworkStore } = require('../../src/stores/network.store');
-                                            const isOnline = useNetworkStore.getState().isOnline;
-                                            const isSelf = viewingProfile.id === currentUser?.id;
-                                            const isProfileOnline = isOnline && (isSelf || (viewingProfile.last_active_at && (new Date().getTime() - new Date(viewingProfile.last_active_at).getTime() < 300000)));
-                                            
-                                            return (
-                                                <>
-                                                    <View style={[
-                                                        styles.profileOnlineDot, 
-                                                        { backgroundColor: isProfileOnline ? '#10B981' : '#94a3b8' }
-                                                    ]} />
-                                                    <Text style={styles.profileOnlineText}>
-                                                        {isProfileOnline ? 'Online' : 'Offline'}
-                                                    </Text>
-                                                </>
-                                            );
-                                        })()}
-                                    </View>
-                                </View>
-
-                                <View style={styles.profileInfoSection}>
-                                    <View style={styles.profileInfoCard}>
-                                        <View style={styles.profileInfoItem}>
-                                            <Ionicons name="school-outline" size={18} color="#059669" />
-                                            <View style={styles.profileInfoTextGroup}>
-                                                <Text style={styles.profileInfoLabel}>Level</Text>
-                                                <Text style={styles.profileInfoValue}>{viewingProfile.level}</Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.profileInfoDivider} />
-                                        <View style={styles.profileInfoItem}>
-                                            <Ionicons name="library-outline" size={18} color="#059669" />
-                                            <View style={styles.profileInfoTextGroup}>
-                                                <Text style={styles.profileInfoLabel}>Department</Text>
-                                                <Text style={styles.profileInfoValue}>{viewingProfile.department?.name || 'NALISS Hub'}</Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.profileInfoDivider} />
-                                        <View style={styles.profileInfoItem}>
-                                            <Ionicons name="calendar-outline" size={18} color="#059669" />
-                                            <View style={styles.profileInfoTextGroup}>
-                                                <Text style={styles.profileInfoLabel}>Joined</Text>
-                                                <Text style={styles.profileInfoValue}>
-                                                    {viewingProfile.created_at ? format(new Date(viewingProfile.created_at), 'MMM yyyy') : 'Recently'}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    </View>
-                                </View>
-
-                                <View style={styles.profileBioSection}>
-                                    <Text style={styles.profileSectionTitle}>Biography</Text>
-                                    <Text style={styles.profileBioText}>
-                                        {viewingProfile.biography || viewingProfile.bio || 'No biography provided.'}
-                                    </Text>
-                                </View>
-
-                                <View style={styles.profileBioSection}>
-                                    <Text style={styles.profileSectionTitle}>Motivation / Quote</Text>
-                                    <View style={styles.quoteCard}>
-                                        <Ionicons name="chatbubble-ellipses-outline" size={18} color="#059669" style={{ marginRight: 10, marginTop: 2 }} />
-                                        <Text style={styles.quoteText}>
-                                            {viewingProfile.motivation || 'No quote shared yet.'}
-                                        </Text>
-                                    </View>
-                                </View>
-
-                                <View style={[styles.profileBioSection, { paddingBottom: 24 }]}>
-                                    <Text style={styles.profileSectionTitle}>Hobbies</Text>
-                                    <View style={styles.hobbiesRow}>
-                                        {(typeof viewingProfile.hobbies === 'string' ? viewingProfile.hobbies.split(',').map((s: string) => s.trim()) : (viewingProfile.hobbies || [])).map((hobby: string, idx: number) => (
-                                            hobby ? (
-                                                <View key={idx} style={styles.hobbyChip}>
-                                                    <Text style={styles.hobbyChipText}>{hobby}</Text>
-                                                </View>
-                                            ) : null
-                                        ))}
-                                    </View>
-                                </View>
-                            </ScrollView>
-                        )}
-            </SafeBottomSheet>
-
 
             {/* ========== GROUP MENU MODAL ========== */}
             <SafeOverlayContainer
@@ -3392,7 +2711,7 @@ export default function ChatScreen() {
                                     <Text style={[styles.menuItemText, { color: colors.text }]}>Search Messages</Text>
                                 </TouchableOpacity>
                                 
-                                <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setShowGroupMenu(false); setShowMembersList(true); }}>
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setShowGroupMenu(false); router.push(`/chat/group_info?id=${id}`); }}>
                                     <Ionicons name="people-outline" size={20} color={colors.text} />
                                     <Text style={[styles.menuItemText, { color: colors.text }]}>Group Members</Text>
                                 </TouchableOpacity>
@@ -3538,7 +2857,10 @@ export default function ChatScreen() {
                 onViewProfile={viewerFile.isProfile && viewerFile.profileData ? () => {
                     setViewerVisible(false);
                     setTimeout(() => {
-                        setViewingProfile(viewerFile.profileData);
+                        router.push({
+                            pathname: '/chat/user_profile' as any,
+                            params: { id: viewerFile.profileData.id, initialData: JSON.stringify(viewerFile.profileData) }
+                        });
                     }, 400); // Wait for modal slide down
                 } : undefined}
             />
@@ -4416,6 +3738,24 @@ const styles = StyleSheet.create({
         width: 260,
         borderRadius: 12,
         overflow: 'hidden',
+    },
+    albumDownloadAllBtn: {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: [{ translateX: -60 }, { translateY: -20 }],
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        gap: 6,
+    },
+    albumDownloadAllText: {
+        color: '#fff',
+        fontFamily: 'Inter-Medium',
+        fontSize: 12,
     },
     albumGrid: {
         flexDirection: 'row',

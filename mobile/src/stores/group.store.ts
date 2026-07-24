@@ -283,10 +283,10 @@ export const useGroupStore = create<GroupState>()(
             },
 
             setCurrentTab: (tab: string) => {
-                const isMessagesTab = tab === 'messages' || tab.includes('messages') || tab.includes('chat') || tab === 'CHAT';
-                set({
+                const isMessages = tab === 'messages';
+                set({ 
                     currentTab: tab,
-                    ...(isMessagesTab ? { isBadgeCleared: true } : {})
+                    ...(isMessages && { isBadgeCleared: true })
                 });
             },
 

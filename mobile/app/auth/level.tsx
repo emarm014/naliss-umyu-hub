@@ -172,7 +172,7 @@ export default function RegisterLevel() {
               const response = await fetch(googleAvatarUrl);
               if (!response.ok) return null;
               const blob = await response.blob();
-              return await uploadToCloudinary(blob, 'avatars');
+              return await uploadToCloudinary(blob, 'avatars', 'image/png');
             };
             // 6s timeout — if Cloudinary is slow, fall back to Google URL
             const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), 6000));

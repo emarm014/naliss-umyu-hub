@@ -1,4 +1,4 @@
-﻿import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
@@ -49,7 +49,11 @@ export const saveMediaToDevice = async (pathOrUrl: string, mimeType: string, fil
             await MediaLibrary.saveToLibraryAsync(localPath);
             return { success: true };
         } else {
-            await Sharing.shareAsync(localPath, { mimeType: type || 'application/octet-stream', dialogTitle: 'Save File' });
+            const options: any = { dialogTitle: 'Save File' };
+            if (type && type !== 'application/octet-stream') {
+                options.mimeType = type;
+            }
+            await Sharing.shareAsync(localPath, options);
             return { success: true };
         }
     } catch (e) {
@@ -63,7 +67,15 @@ export const shareMedia = async (pathOrUrl: string, mimeType?: string, fileName?
         if (!isAvailable) return { success: false, error: 'Sharing is not supported on this device.' };
 
         const localPath = await ensureLocalFile(pathOrUrl, fileName);
-        await Sharing.shareAsync(localPath, { mimeType: mimeType || 'application/octet-stream', dialogTitle: 'Share File' });
+        const options: any = { dialogTitle: 'Share File' };
+        if (mimeType && mimeType !== 'application/octet-stream') {
+            options.mimeType = mimeType;
+            options.UTI = mimeType;
+        } else {
+            options.mimeType = '*/*';
+            options.UTI = 'public.data';
+        }
+        await Sharing.shareAsync(localPath, options);
         return { success: true };
     } catch (e) {
         return { success: false, error: String(e) };

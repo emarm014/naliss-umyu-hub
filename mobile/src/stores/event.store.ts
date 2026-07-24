@@ -1,4 +1,4 @@
-﻿import * as Notifications from 'expo-notifications';
+import * as Notifications from 'expo-notifications';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
@@ -107,8 +107,8 @@ export const useEventStore = create<EventState>()(
                     } catch { /* fall through to server fetch */ }
                 }
 
-                // Silent background refresh if we still have no data
-                if (get().events.length === 0) set({ isLoading: true });
+                // Only show full loading state if we have never fetched before
+                if (!get().lastFetch) set({ isLoading: true });
 
                 // OFFLINE GUARD: if offline, data from SQLite is already displayed
                 const { useNetworkStore } = require('./network.store');

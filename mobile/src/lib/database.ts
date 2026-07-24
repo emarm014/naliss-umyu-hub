@@ -7,6 +7,7 @@ let db: SQLite.SQLiteDatabase | null = null;
 let recoveryPromise: Promise<boolean> | null = null;
 let currentRawDb: SQLite.SQLiteDatabase | null = null;
 let isRecovering = false;
+let activeDbName = 'chat.db';
 
 function isNativeNpe(error: any): boolean {
   return String(error).includes('NullPointerException');
@@ -22,17 +23,15 @@ async function recoverDatabase(): Promise<boolean> {
       try { await (db as any)?.closeAsync?.(); } catch (_) {}
       db = null;
       currentRawDb = null;
-      const dbPath = `${FileSystem.documentDirectory}SQLite/chat.db`;
       try {
-        await SQLite.deleteDatabaseAsync('chat.db');
+        await SQLite.deleteDatabaseAsync(activeDbName);
         console.warn('SQLite deleted corrupted database using deleteDatabaseAsync');
       } catch (e) {
-        // Fallback if the file exists but SQLite can't delete it
-        const info = await FileSystem.getInfoAsync(dbPath);
-        if (info.exists) {
-            await FileSystem.deleteAsync(dbPath, { idempotent: true });
-            console.warn('SQLite deleted corrupted database using FileSystem fallback');
-        }
+        // If native deletion fails, the file is locked and cached natively.
+        // DO NOT use FileSystem.deleteAsync because it breaks the native cache and causes infinite NPEs.
+        // Instead, switch to a brand new database file!
+        console.warn('SQLite deleteDatabaseAsync failed (locked). Switching to a new db file.');
+        activeDbName = `chat_recovery_${Date.now()}.db`;
       }
       
       // Add a short delay to ensure file handles are fully released by the OS
@@ -106,8 +105,12 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
       const sql = typeof args[0] === 'string' ? args[0] : '';
 
       for (let attempt = 1; attempt <= 2; attempt++) {
+        if (isRecovering && recoveryPromise && originalDb !== currentRawDb) {
+            try { await recoveryPromise; } catch (_) {}
+        }
+
         let method: Function | undefined;
-        if (currentRawDb && currentRawDb !== originalDb && typeof (currentRawDb as any)[methodName] === 'function') {
+        if (currentRawDb && typeof (currentRawDb as any)[methodName] === 'function') {
           method = (currentRawDb as any)[methodName].bind(currentRawDb);
         } else {
           method = rawMethods[methodName];
@@ -139,7 +142,6 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
             
             if (recovered && attempt < 2) continue;
             
-            // Only log to Sentry if recovery failed
             if (sql) {
                 captureDatabaseError('DatabaseNPE_RecoveryFailed', error, { sql, args, duration });
             }
@@ -173,7 +175,7 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
 export const initDB = async () => {
     if (Platform.OS === 'web') return null;
     try {
-        const rawDb = await SQLite.openDatabaseAsync('chat.db');
+        const rawDb = await SQLite.openDatabaseAsync(activeDbName);
         currentRawDb = rawDb;
         db = wrapDatabaseWithObservability(rawDb);
         // Enforce busy timeout loop to insulate the database against thread blockages
@@ -339,49 +341,57 @@ export const initDB = async () => {
             CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON offline_download_telemetry (timestamp);
         `);
 
-        // Safely alter local_user_session table to add required profile fields
-        const sessionAlters = [
-            'ALTER TABLE local_user_session ADD COLUMN full_name TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN phone TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN avatar_url TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN local_avatar_path TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN faculty TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN department TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN programme TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN executive_role TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN membership_status TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN biography TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN notification_preferences TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN privacy_preferences TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN appearance_settings TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN permissions TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN created_at TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN last_synced_at TEXT;',
-            'ALTER TABLE local_user_session ADD COLUMN profile_version INTEGER DEFAULT 1;'
-        ];
-        for (const query of sessionAlters) {
+        // Helper to safely add columns if they don't exist
+        const ensureColumn = async (table: string, column: string, typeDef: string) => {
             try {
-                await db.execAsync(query);
-            } catch (_) {}
-        }
+                if (!currentRawDb) return;
+                const tableInfo = await (currentRawDb as any).getAllAsync(`PRAGMA table_info(${table})`);
+                const exists = tableInfo.some((info: any) => info.name === column || info.name === column.toLowerCase());
+                if (!exists) {
+                    try {
+                        await currentRawDb.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeDef};`);
+                    } catch (alterErr: any) {
+                        if (!String(alterErr).includes('duplicate column name')) {
+                            throw alterErr;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn(`Failed to verify or add column ${column} to ${table}:`, e);
+            }
+        };
 
-        // Safely alter local_media_manifest table to add reference_count, content_hash, and priority
-        try {
-            await db.execAsync('ALTER TABLE local_media_manifest ADD COLUMN reference_count INTEGER DEFAULT 1;');
-        } catch (_) {}
-        try {
-            await db.execAsync('ALTER TABLE local_media_manifest ADD COLUMN content_hash TEXT;');
-        } catch (_) {}
-        try {
-            await db.execAsync('ALTER TABLE local_media_manifest ADD COLUMN priority INTEGER DEFAULT 50;');
-        } catch (_) {}
+        // Safely alter local_user_session table
+        await ensureColumn('local_user_session', 'full_name', 'TEXT');
+        await ensureColumn('local_user_session', 'phone', 'TEXT');
+        await ensureColumn('local_user_session', 'avatar_url', 'TEXT');
+        await ensureColumn('local_user_session', 'local_avatar_path', 'TEXT');
+        await ensureColumn('local_user_session', 'faculty', 'TEXT');
+        await ensureColumn('local_user_session', 'department', 'TEXT');
+        await ensureColumn('local_user_session', 'programme', 'TEXT');
+        await ensureColumn('local_user_session', 'executive_role', 'TEXT');
+        await ensureColumn('local_user_session', 'membership_status', 'TEXT');
+        await ensureColumn('local_user_session', 'biography', 'TEXT');
+        await ensureColumn('local_user_session', 'notification_preferences', 'TEXT');
+        await ensureColumn('local_user_session', 'privacy_preferences', 'TEXT');
+        await ensureColumn('local_user_session', 'appearance_settings', 'TEXT');
+        await ensureColumn('local_user_session', 'permissions', 'TEXT');
+        await ensureColumn('local_user_session', 'created_at', 'TEXT');
+        await ensureColumn('local_user_session', 'last_synced_at', 'TEXT');
+        await ensureColumn('local_user_session', 'profile_version', 'INTEGER DEFAULT 1');
+
+        // Safely alter local_media_manifest table
+        await ensureColumn('local_media_manifest', 'reference_count', 'INTEGER DEFAULT 1');
+        await ensureColumn('local_media_manifest', 'content_hash', 'TEXT');
+        await ensureColumn('local_media_manifest', 'priority', 'INTEGER DEFAULT 50');
+        
         try {
             await db.execAsync('CREATE INDEX IF NOT EXISTS idx_manifest_content_hash ON local_media_manifest (content_hash);');
         } catch (_) {}
 
         return db;
     } catch (e) {
-        console.error('Failed to initialize SQLite DB:', e);
+        console.warn('Failed to initialize SQLite DB:', e);
         return null;
     }
 };
@@ -1159,10 +1169,16 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
 
 // â”€â”€ Local-first entity cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Stores full entity lists in content_manifest so reads are instant from SQLite.
+let cacheEntityQueue: Promise<void> = Promise.resolve();
+
 export const cacheEntityList = async (contentType: string, entities: any[], userId: string) => {
     const activeDb = db;
     if (!activeDb || !entities.length) return;
-    const now = new Date().toISOString();
+    
+    // Queue transactions to prevent "cannot start a transaction within a transaction" SQLite errors
+    return new Promise<void>((resolve, reject) => {
+        cacheEntityQueue = cacheEntityQueue.then(async () => {
+            const now = new Date().toISOString();
     try {
         const BATCH_SIZE = 50;
         for (let i = 0; i < entities.length; i += BATCH_SIZE) {
@@ -1192,12 +1208,19 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
                 }
             });
             if (i + BATCH_SIZE < entities.length) {
-                await new Promise(resolve => setTimeout(resolve, 0));
+                await new Promise(r => setTimeout(r, 0));
             }
         }
+        resolve();
     } catch (e) {
         console.error('SQLite cacheEntityList error:', e);
+        reject(e);
     }
+        }).catch(err => {
+            console.error('SQLite queue fallback error:', err);
+            reject(err);
+        });
+    });
 };
 
 export const getCachedEntityList = async (contentType: string): Promise<any[]> => {

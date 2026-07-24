@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../src/api/supabase/client';
 import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { useTheme } from '../../src/stores/theme.store';

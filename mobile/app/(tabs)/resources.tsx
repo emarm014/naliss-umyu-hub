@@ -646,7 +646,6 @@ function ResourceCard({ material, downloadedIds, onDownload, onDownloadComplete,
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 12 }}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.resTitle, { color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={2}>{material.title}</Text>
-          {material.description ? <Text style={[{ color: theme.isDark ? theme.textMuted : '#64748b', fontSize: 12, marginTop: 4, fontFamily: 'Inter-Medium' }]} numberOfLines={2}>{material.description}</Text> : null}
         </View>
         {profile?.role === 'super_admin' && (
           <TouchableOpacity
@@ -796,7 +795,7 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
       </View>
       
       <View style={[styles.resInfo, { marginLeft: 12, flex: 1 }]}>
-        <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={1}>{fileAsset.name}</Text>
+        <Text style={[{ fontFamily: 'Inter-Medium', fontSize: 13, color: theme.isDark ? theme.textMuted : '#475569' }]} numberOfLines={2}>{material.description || fileAsset.name}</Text>
         <View style={styles.resMetaRow}>
           <Text style={[styles.resMeta, { color: theme.isDark ? theme.textMuted : '#64748b' }]}>{fileSizeMB} MB</Text>
           {localDownloaded && (

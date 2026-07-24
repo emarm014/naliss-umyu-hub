@@ -70,16 +70,7 @@ export default function ProfileScreen() {
   // (from this screen or anywhere else) reflects immediately in the edit form
   React.useEffect(() => {
     if (storeProfile) {
-      // Keep editData in sync so the edit form always shows latest saved values
-      setEditData(prev => ({
-        ...prev,
-        full_name: storeProfile.full_name || prev.full_name,
-        username: (storeProfile as any).username || prev.username,
-        registration_number: (storeProfile as any).registration_number || prev.registration_number,
-        motivation: (storeProfile as any).motivation ?? prev.motivation,
-        hobbies: (storeProfile as any).hobbies ?? prev.hobbies,
-        biography: (storeProfile as any).biography ?? prev.biography,
-      }));
+
       // Sync notifSettings from store profile to keep toggles in sync
       setNotifSettings(prev => ({
         notif_announcements: (storeProfile as any)?.notif_announcements ?? prev.notif_announcements,
@@ -90,11 +81,7 @@ export default function ProfileScreen() {
     }
   }, [storeProfile]);
   const [isLoading, setIsLoading] = useState(!storeProfile); // skip spinner if store already has profile
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isSavingNotifs, setIsSavingNotifs] = useState(false);
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+
   const [showSecurityMenu, setShowSecurityMenu] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDeviceLogs, setShowDeviceLogs] = useState(false);
@@ -155,14 +142,7 @@ export default function ProfileScreen() {
     newPassword: '',
     confirmPassword: '',
   });
-  const [editData, setEditData] = useState({
-    full_name: storeProfile?.full_name || '',
-    username: storeProfile?.username || '',
-    registration_number: storeProfile?.registration_number || '',
-    motivation: (storeProfile as any)?.motivation || '',
-    hobbies: (storeProfile as any)?.hobbies || '',
-    biography: (storeProfile as any)?.biography || '',
-  });
+
   const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
   const [showAvatarConfirm, setShowAvatarConfirm] = useState(false);
   const [showPasswordVisible, setShowPasswordVisible] = useState(false);
@@ -203,14 +183,7 @@ export default function ProfileScreen() {
         });
       }
 
-      setEditData({
-        full_name: (profile as any).full_name || '',
-        username: (profile as any).username || '',
-        registration_number: (profile as any).registration_number || '',
-        motivation: (profile as any).motivation || '',
-        hobbies: (profile as any).hobbies || '',
-        biography: (profile as any).biography || '',
-      });
+
       setNotifSettings({
         notif_announcements: (profile as any).notif_announcements ?? true,
         notif_events: (profile as any).notif_events ?? true,
@@ -236,50 +209,7 @@ export default function ProfileScreen() {
   // Profile is now fetched exclusively via pull-to-refresh and App Foreground.
 
 
-  const handleUpdateProfile = async () => {
-    if (!storeProfile?.id) return;
 
-    // Validate username — only lowercase letters, numbers, underscores
-    const trimmedUsername = editData.username.trim();
-    if (trimmedUsername && !/^[a-z0-9_]{3,30}$/.test(trimmedUsername)) {
-      Alert.alert('Invalid Username', 'Username must be 3–30 characters and can only contain lowercase letters, numbers, and underscores.');
-      return;
-    }
-
-    setIsSavingProfile(true);
-    try {
-      const editableUpdates = {
-        username: trimmedUsername,
-        motivation: editData.motivation.trim(),
-        hobbies: editData.hobbies.trim(),
-        biography: editData.biography.trim(),
-      };
-
-      // Sync to DB + store + message cache
-      // updateProfile does optimistic store update first, then DB
-      // On real DB error it reverts the optimistic update and throws
-      await updateProfile(editableUpdates);
-
-      // Only close modal AFTER DB confirms
-      setIsEditing(false);
-      Alert.alert('Success', 'Profile updated successfully');
-    } catch (err: any) {
-      captureUIError('ProfileScreen.saveProfile', err);
-      // Show the actual error — most common is username already taken
-      const msg = err?.message || '';
-      if (msg.includes('unique') || msg.includes('duplicate') || msg.includes('users_username_key')) {
-        Alert.alert('Username Taken', `"${editData.username}" is already in use. Please choose a different username.`);
-      } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('connection')) {
-        // Network error — optimistic update already applied, will sync later
-        setIsEditing(false);
-        Alert.alert('Saved Locally', 'Your changes have been saved on this device and will sync when your connection is restored.');
-      } else {
-        Alert.alert('Error', `Failed to save: ${msg || 'Please try again.'}`);
-      }
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
 
   const handleLogout = async () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?\n\nYour offline data will be preserved for your next login.', [
@@ -335,7 +265,7 @@ export default function ProfileScreen() {
       if (!response.ok) throw new Error(`Failed to fetch sticker (${response.status})`);
       const blob = await response.blob();
 
-      const hostedUrl = await uploadToCloudinary(blob, 'avatars');
+      const hostedUrl = await uploadToCloudinary(blob, 'avatars', 'image/png');
 
       // Sync to DB + auth metadata + store (optimistic — never reverts on network error)
       await updateProfile({ avatar_url: hostedUrl });
@@ -860,7 +790,7 @@ export default function ProfileScreen() {
               iconColor="#0284c7" 
               iconBg={COLORS.actionBlue} 
               label="Edit Profile" 
-              onPress={() => setIsEditing(true)}
+              onPress={() => router.push('/profile/edit')}
               colors={colors}
             />
             <MenuItem 
@@ -933,115 +863,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Edit Profile Modal */}
-        <SafeBottomSheet
-            visible={isEditing}
-            onClose={() => setIsEditing(false)}
-            contentStyle={{ backgroundColor: colors.card }}
-        >
-                    <View style={styles.modalHeader}>
-                        <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile</Text>
-                        <TouchableOpacity onPress={() => setIsEditing(false)}>
-                            <Ionicons name="close" size={24} color={colors.text} />
-                        </TouchableOpacity>
-                    </View>
 
-                    <ScrollView style={styles.modalForm}>
-                        {!isOnline && (
-                            <View style={{ backgroundColor: '#FEF2F2', padding: 12, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#FCA5A5' }}>
-                                <Text style={{ color: '#DC2626', fontFamily: 'Inter-Bold', fontSize: 13 }}>⚠️ Network Connection Required</Text>
-                                <Text style={{ color: '#DC2626', fontFamily: 'Inter-Medium', fontSize: 12, marginTop: 4 }}>You must be connected to the internet to modify your institutional registration profile.</Text>
-                            </View>
-                        )}
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Full Name</Text>
-                            <Ionicons name="lock-closed" size={12} color={colors.textMuted} style={{ marginLeft: 4, marginBottom: 8 }} />
-                        </View>
-                        <TextInput
-                            style={[styles.textInput, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', color: colors.textMuted, borderColor: colors.border }]}
-                            value={editData.full_name}
-                            editable={false}
-                            placeholder="Full Name"
-                            placeholderTextColor={colors.textMuted}
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                        />
-                        <Text style={[styles.inputSubtext, { marginBottom: 16, color: colors.textMuted }]}>Official name cannot be changed. Contact Admin for corrections.</Text>
-
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Username</Text>
-                        <TextInput
-                            style={[styles.textInput, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border }]}
-                            value={editData.username}
-                            onChangeText={(text) => setEditData({ ...editData, username: text.toLowerCase().replace(/[^a-z0-9_]/g, '') })}
-                            placeholder="username (e.g. nura_abd)"
-                            placeholderTextColor={colors.textMuted}
-                            autoCapitalize="none"
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                        />
-
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Registration Number (Matric No.)</Text>
-                            <Ionicons name="lock-closed" size={12} color={colors.textMuted} style={{ marginLeft: 4, marginBottom: 8 }} />
-                        </View>
-                        <TextInput
-                            style={[styles.textInput, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', color: colors.textMuted, borderColor: colors.border }]}
-                            value={editData.registration_number}
-                            editable={false}
-                            placeholder="UMYU/LIS/XX/XXXX"
-                            placeholderTextColor={colors.textMuted}
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                        />
-                        <Text style={[styles.inputSubtext, { marginBottom: 16, color: colors.textMuted }]}>Registration number is fixed after sign-up.</Text>
-
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Motivation Quote</Text>
-                        <TextInput
-                            style={[styles.textInput, styles.textArea, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border }]}
-                            value={editData.motivation}
-                            onChangeText={(text) => setEditData({ ...editData, motivation: text })}
-                            placeholder="Your motivation..."
-                            placeholderTextColor={colors.textMuted}
-                            multiline
-                            numberOfLines={2}
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                        />
-
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Biography</Text>
-                        <TextInput
-                            style={[styles.textInput, styles.textArea, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border }]}
-                            value={editData.biography}
-                            onChangeText={(text) => setEditData({ ...editData, biography: text })}
-                            placeholder="About you..."
-                            placeholderTextColor={colors.textMuted}
-                            multiline
-                            numberOfLines={4}
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                        />
-
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Hobbies</Text>
-                        <TextInput
-                            style={[styles.textInput, styles.textArea, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', color: colors.text, borderColor: colors.border }]}
-                            value={editData.hobbies}
-                            onChangeText={(text) => setEditData({ ...editData, hobbies: text })}
-                            placeholder="Your hobbies (comma separated)..."
-                            placeholderTextColor={colors.textMuted}
-                            multiline
-                            numberOfLines={3}
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                        />
-
-                        <TouchableOpacity
-                            style={[styles.saveButton, !isOnline && { opacity: 0.5, backgroundColor: colors.textMuted }]}
-                            onPress={handleUpdateProfile}
-                            disabled={isSavingProfile || !isOnline}
-                        >
-                            {isSavingProfile ? (
-                                <ActivityIndicator color="#FFF" />
-                            ) : (
-                                <Text style={styles.saveButtonText}>Save Changes</Text>
-                            )}
-                        </TouchableOpacity>
-                        <View style={{ height: 40 }} />
-                    </ScrollView>
-        </SafeBottomSheet>
 
         {/* Security / Password Change Modal */}
         <SafeBottomSheet

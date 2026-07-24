@@ -224,7 +224,7 @@ export default function HomeScreen() {
       if (!response.ok) throw new Error(`Failed to fetch sticker (${response.status})`);
       const blob = await response.blob();
 
-      const hostedUrl = await uploadToCloudinary(blob, 'avatars');
+      const hostedUrl = await uploadToCloudinary(blob, 'avatars', 'image/png');
 
       await updateProfile({ avatar_url: hostedUrl });
 
@@ -495,7 +495,12 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={action.id}
                 style={[styles.actionItem]}
-                onPress={() => router.push(action.route as any)}
+                onPress={() => {
+                  if (action.id === 'news') useNewsStore.getState().markAsRead();
+                  if (action.id === 'archive') require('../../src/stores/archive.store').useArchiveStore.getState().markAsRead();
+                  if (action.id === 'fyb') require('../../src/stores/fyb.store').useFYBStore.getState().markAsRead();
+                  router.push(action.route as any);
+                }}
               >
                 <View style={[styles.actionIconBg, { backgroundColor: isDark ? colors.surfaceVariant : action.bg }]}>
                   <Ionicons name={action.icon as any} size={24} color={action.color} />

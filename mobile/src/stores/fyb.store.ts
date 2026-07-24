@@ -64,12 +64,14 @@ export const useFYBStore = create<FYBState>()(
       },
 
       fetchFeatured: async (force = false) => {
+        const { useNetworkStore } = require('./network.store');
         if (!force && get().entries.length > 0 && !useNetworkStore.getState().isOnline) {
           // If offline and we have cache, NEVER load/spin.
           return;
         }
 
-        if (get().entries.length === 0) set({ isLoading: true });
+        // Only show full loading state if we have never fetched before
+        if (!get().lastFetch) set({ isLoading: true });
 
         try {
           const { data, error } = await supabase

@@ -3,14 +3,14 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList, Platform, ActivityI
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useTheme } from '../../src/contexts/ThemeContext';
-import { COLORS } from '../../src/constants/theme';
-import { supabase } from '../../src/lib/supabase';
+import { useTheme } from '../../src/stores/theme.store';
+import { COLORS } from '../../src/constants/Colors';
+import { supabase } from '../../src/api/supabase/client';
 import { useGroupStore } from '../../src/stores/group.store';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { getCleanAvatarUrl } from '../../src/lib/cloudinary';
 import { CachedImage } from '../../src/components/common/CachedImage';
-import NalissLogo from '../../src/components/common/NalissLogo';
+import { NalissLogo } from '../../src/components/NalissLogo';
 import { getGroupMembers, setGroupMembers } from '../../src/lib/database';
 import { cacheUserAvatars } from '../../src/utils/mediaCache';
 

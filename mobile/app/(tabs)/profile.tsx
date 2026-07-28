@@ -107,6 +107,9 @@ export default function ProfileScreen() {
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [offlineSignoutAttempted, setOfflineSignoutAttempted] = useState(false);
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isSavingNotifs, setIsSavingNotifs] = useState(false);
 
   React.useEffect(() => {
     const loadDeviceId = async () => {
@@ -798,7 +801,7 @@ export default function ProfileScreen() {
               iconColor="#0284c7" 
               iconBg={COLORS.actionBlue} 
               label="Edit Profile" 
-              onPress={() => router.push('/profile/edit')}
+              onPress={() => router.push('/profile/edit' as any)}
               colors={colors}
             />
             <MenuItem 

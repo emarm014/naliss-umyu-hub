@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../components/NalissLogo';
 import { SplashLoadingScreen } from './SplashLoadingScreen';
 import { getOrCreateDeviceId, fetchIpAddress, getDeviceName } from '../utils/device';
-import { normalizeError } from '../utils/sentry';
+import { normalizeError, isNetworkError } from '../utils/sentry';
 const MinimalLoader = () => {
   const { colors } = useTheme();
   return (

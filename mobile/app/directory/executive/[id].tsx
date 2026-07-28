@@ -11,9 +11,9 @@ import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { format } from 'date-fns';
 import { getCleanAvatarUrl } from '../../../src/utils';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../../src/components/common/CachedImage';
-
 
 export default function ExecutiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,6 +21,7 @@ export default function ExecutiveDetailScreen() {
   const { executives } = useDirectoryStore();
   const [exec, setExec] = useState<any>(null);
   const [viewerVisible, setViewerVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const found = executives.find((e: any) => e.id === id);
@@ -29,12 +30,10 @@ export default function ExecutiveDetailScreen() {
 
   if (!exec) {
     return (
-      <View style={styles.root}>
-        <SafeAreaView>
-          <TouchableOpacity style={styles.backBtnSafe} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={22} color={COLORS.primary} />
-          </TouchableOpacity>
-        </SafeAreaView>
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        <TouchableOpacity style={styles.backBtnSafe} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={22} color={COLORS.primary} />
+        </TouchableOpacity>
       </View>
     );
   }
@@ -63,11 +62,11 @@ export default function ExecutiveDetailScreen() {
         <View style={styles.deco1} />
         <View style={styles.deco2} />
 
-        <SafeAreaView>
+        <View style={{ paddingTop: insets.top }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-        </SafeAreaView>
+        </View>
 
         {/* Avatar */}
         <ExecutiveHeroAvatar

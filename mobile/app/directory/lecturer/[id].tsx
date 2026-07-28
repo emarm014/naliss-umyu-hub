@@ -9,11 +9,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../../src/constants/Colors';
 import { useDirectoryStore } from '../../../src/stores/directory.store';
 import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
-import { getCleanAvatarUrl } from '../../../src/utils';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../../src/components/common/CachedImage';
-
-
 
 export default function LecturerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,6 +19,7 @@ export default function LecturerDetailScreen() {
   const { lecturers } = useDirectoryStore();
   const [lecturer, setLecturer] = useState<any>(null);
   const [viewerVisible, setViewerVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const found = lecturers.find(l => l.id === id);
@@ -29,11 +28,11 @@ export default function LecturerDetailScreen() {
 
   if (!lecturer) {
     return (
-      <SafeAreaView style={styles.root}>
+      <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -63,11 +62,11 @@ export default function LecturerDetailScreen() {
         <View style={styles.deco2} />
 
         {/* Back button */}
-        <SafeAreaView>
+        <View style={{ paddingTop: insets.top }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-        </SafeAreaView>
+        </View>
 
         {/* Avatar */}
         <LecturerHeroAvatar

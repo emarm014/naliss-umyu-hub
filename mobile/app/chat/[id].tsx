@@ -3370,7 +3370,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24,
         padding: 24, flexDirection: 'row', justifyContent: 'space-around',
     },
-    attachmentItem: { alignItems: 'center', gap: 8 },
+    attachmentItem: { alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
     attachmentIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
     attachmentText: { fontFamily: 'Inter-Bold', fontSize: 13, color: COLORS.text },
     // File Bubbles

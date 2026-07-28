@@ -392,10 +392,10 @@ export default function ProfileScreen() {
     try {
       
 
-      // Terminate session in DB
+      // Permanently delete session from DB
       const { error } = await (supabase as any)
         .from('user_sessions')
-        .update({ is_active: false })
+        .delete()
         .eq('id', sessionToTerminate.id);
 
       if (error) throw error;
@@ -433,6 +433,14 @@ export default function ProfileScreen() {
     setIsRevokingSessions(true);
     try {
       if (includeCurrentDevice) {
+        // Delete ALL session logs for this user
+        if (storeProfile?.id) {
+          await (supabase as any)
+            .from('user_sessions')
+            .delete()
+            .eq('user_id', storeProfile.id);
+        }
+
         // Global logout
         await supabase.auth.signOut({ scope: 'global' });
         
@@ -451,7 +459,7 @@ export default function ProfileScreen() {
         if (storeProfile?.id && currentDeviceId) {
           const { error } = await (supabase as any)
             .from('user_sessions')
-            .update({ is_active: false })
+            .delete()
             .eq('user_id', storeProfile.id)
             .neq('device_id', currentDeviceId);
             

@@ -1,5 +1,27 @@
-﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import * as Device from 'expo-device';
 import { supabase } from '../api/supabase/client';
+
+/**
+ * Returns the real device name using expo-device.
+ * e.g. "Samsung SM-S921B (android 35)" or "iPhone 15 Pro (ios 17.4)"
+ * Falls back to generic platform name if expo-device can't resolve.
+ */
+export function getDeviceName(): string {
+  const brand = Device.brand || '';
+  const modelName = Device.modelName || Device.modelId || '';
+  const osVersion = Platform.Version;
+
+  if (brand && modelName) {
+    return `${brand} ${modelName} (${Platform.OS} ${osVersion})`;
+  }
+  if (modelName) {
+    return `${modelName} (${Platform.OS} ${osVersion})`;
+  }
+  // Fallback
+  return `${Platform.OS === 'ios' ? 'iPhone' : 'Android Device'} (${Platform.OS} ${osVersion})`;
+}
 
 /**
  * Retrieves a persisted unique device ID or generates a new one.

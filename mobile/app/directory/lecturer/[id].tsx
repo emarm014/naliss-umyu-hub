@@ -12,6 +12,7 @@ import { getOptimizedCloudinaryUrl } from '../../../src/lib/cloudinary';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../../src/components/common/CachedImage';
+import { getCleanAvatarUrl } from '../../../src/utils';
 
 export default function LecturerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

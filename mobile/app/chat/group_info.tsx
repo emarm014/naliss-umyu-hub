@@ -39,7 +39,7 @@ export default function GroupInfoScreen() {
 
             // Fetch latest from network
             try {
-                const { data, error } = await supabase.from('group_members')
+                const { data, error } = await (supabase as any).from('group_members')
                     .select('*, user:users(*, department:departments(name))')
                     .eq('group_id', id as string);
 

@@ -238,7 +238,11 @@ function ConversationItem({
 
   React.useEffect(() => {
     let active = true;
+    let isChecking = false;
+
     const checkStatus = async () => {
+      if (!active || isChecking) return;
+      isChecking = true;
       try {
         const { useOfflineStorageStore } = require('../../src/stores/offlineStorage.store');
         const res = await useOfflineStorageStore.getState().getPerChatStatus(conversation.id);
@@ -246,12 +250,21 @@ function ConversationItem({
           setSyncStatus(res.status);
           setSyncProgress(res.progress);
         }
-      } catch (_) {}
+      } catch (_) {
+        // Silent fallback — don't crash on SQLite errors
+      } finally {
+        isChecking = false;
+      }
     };
-    checkStatus();
-    const interval = setInterval(checkStatus, 3000);
+
+    // Initial check with a stagger to avoid all items hitting SQLite at once
+    const initialDelay = setTimeout(checkStatus, Math.random() * 2000);
+    // Poll much less frequently (15s instead of 3s) to prevent SQLite overload on low-end devices
+    const interval = setInterval(checkStatus, 15000);
+
     return () => {
       active = false;
+      clearTimeout(initialDelay);
       clearInterval(interval);
     };
   }, [conversation.id]);

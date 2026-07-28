@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { ImageEditor } from 'expo-image-editor';
 
 const { width, height } = Dimensions.get('window');
 
@@ -34,6 +35,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     const [finalizedAssets, setFinalizedAssets] = useState<FinalizedMedia[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isCropping, setIsCropping] = useState(false);
     
     // For flatlist scroll sync
     const mainListRef = React.useRef<FlatList>(null);
@@ -126,9 +128,14 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                     
                     <View style={styles.headerActions}>
                         {activeAsset.type !== 'video' && (
-                            <TouchableOpacity onPress={handleRotate} style={styles.iconButton} disabled={isProcessing}>
-                                <Ionicons name="refresh" size={24} color="#fff" />
-                            </TouchableOpacity>
+                            <>
+                                <TouchableOpacity onPress={() => setIsCropping(true)} style={styles.iconButton} disabled={isProcessing}>
+                                    <Ionicons name="crop" size={24} color="#fff" />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={handleRotate} style={styles.iconButton} disabled={isProcessing}>
+                                    <Ionicons name="refresh" size={24} color="#fff" />
+                                </TouchableOpacity>
+                            </>
                         )}
                         <TouchableOpacity onPress={() => {
                             // Delete current image
@@ -217,6 +224,22 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                     </View>
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Cropper Modal */}
+            <ImageEditor
+                visible={isCropping}
+                onCloseEditor={() => setIsCropping(false)}
+                imageUri={activeAsset?.uri || ''}
+                fixedCropAspectRatio={16 / 9}
+                lockAspectRatio={false}
+                minimumCropDimensions={{
+                    width: 100,
+                    height: 100,
+                }}
+                onEditingComplete={(result) => {
+                    setFinalizedAssets(prev => prev.map((asset, i) => i === activeIndex ? { ...asset, uri: result.uri } : asset));
+                }}
+            />
         </Modal>
     );
 };

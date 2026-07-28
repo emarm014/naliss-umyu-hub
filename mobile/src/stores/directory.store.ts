@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -55,7 +55,7 @@ export const useDirectoryStore = create<DirectoryState>()(
                     const { data, error } = await (supabase as any).from('lecturers')
                         .select('*')
                         .eq('is_active', true)
-                        .order('display_order');
+                        .order('display_order', { ascending: true, nullsFirst: false });
 
                     if (error) throw error;
                     const { cacheEntityList } = require('../lib/database');
@@ -91,7 +91,7 @@ export const useDirectoryStore = create<DirectoryState>()(
                     const { data, error } = await (supabase as any).from('executives')
                         .select(`*, user:users(full_name, avatar_url)`)
                         .eq('is_active', true)
-                        .order('display_order');
+                        .order('display_order', { ascending: true, nullsFirst: false });
 
                     if (error) throw error;
                     const { cacheEntityList } = require('../lib/database');

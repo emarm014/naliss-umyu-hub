@@ -319,7 +319,11 @@ export default function ResourcesScreen() {
       l.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (l.position?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
       (l.title?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-    );
+    ).sort((a, b) => {
+       const orderA = typeof a.display_order === 'number' ? a.display_order : 999;
+       const orderB = typeof b.display_order === 'number' ? b.display_order : 999;
+       return orderA - orderB;
+    });
   }, [lecturers, searchQuery]);
 
   const filteredExecutives = useMemo(() => {
@@ -328,6 +332,10 @@ export default function ResourcesScreen() {
       const position = e.position || '';
       return name.toLowerCase().includes(searchQuery.toLowerCase()) ||
              position.toLowerCase().includes(searchQuery.toLowerCase());
+    }).sort((a, b) => {
+       const orderA = typeof a.display_order === 'number' ? a.display_order : 999;
+       const orderB = typeof b.display_order === 'number' ? b.display_order : 999;
+       return orderA - orderB;
     });
   }, [executives, searchQuery]);
 

@@ -149,16 +149,17 @@ export const SafeBottomSheet = ({ size = 'fullscreen', contentStyle, children, .
     const maxWidth = SIZE_MAP[size];
 
     return (
-        <SafeOverlayContainer {...props} animationType={props.animationType || 'slide-up'} overlayStyle={{ justifyContent: 'flex-start' }}>
+        <SafeOverlayContainer {...props} animationType={props.animationType || 'slide-up'} overlayStyle={{ justifyContent: 'flex-end' }}>
             <View style={[
                 { 
                     backgroundColor: isDark ? '#1e293b' : '#ffffff',
                     width: '100%',
-                    flex: 1,
                     maxWidth,
                     alignSelf: 'center',
-                    paddingTop: insets.top,
-                    paddingBottom: Math.max(insets.bottom, 16)
+                    paddingBottom: Math.max(insets.bottom, 16),
+                    borderTopLeftRadius: 24,
+                    borderTopRightRadius: 24,
+                    overflow: 'hidden'
                 },
                 contentStyle
             ]}>

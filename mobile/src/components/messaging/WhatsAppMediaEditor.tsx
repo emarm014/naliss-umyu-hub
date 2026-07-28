@@ -26,18 +26,31 @@ interface WhatsAppMediaEditorProps {
     assets: MediaAsset[];
     onSend: (finalizedAssets: FinalizedMedia[]) => void;
     onCancel: () => void;
+    onAddMore?: () => void;
 }
 
-export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visible, assets, onSend, onCancel }) => {
+export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visible, assets, onSend, onCancel, onAddMore }) => {
     const insets = useSafeAreaInsets();
     const [finalizedAssets, setFinalizedAssets] = useState<FinalizedMedia[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     const [isProcessing, setIsProcessing] = useState(false);
+    
+    // For flatlist scroll sync
+    const mainListRef = React.useRef<FlatList>(null);
 
     useEffect(() => {
-        if (visible && assets.length > 0) {
-            setFinalizedAssets(assets.map(asset => ({ ...asset, caption: '' })));
+        if (!visible) {
+            setFinalizedAssets([]);
             setActiveIndex(0);
+            return;
+        }
+        if (visible && assets.length > 0) {
+            setFinalizedAssets(prev => {
+                if (prev.length === 0) return assets.map(asset => ({ ...asset, caption: '' }));
+                const existingUris = prev.map(p => p.uri);
+                const newAssets = assets.filter(a => !existingUris.includes(a.uri)).map(a => ({ ...a, caption: '' }));
+                return [...prev, ...newAssets];
+            });
         }
     }, [visible, assets]);
 
@@ -81,12 +94,23 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
         return (
             <TouchableOpacity 
                 style={[styles.thumbnailWrapper, isActive && styles.thumbnailActive]} 
-                onPress={() => setActiveIndex(index)}
+                onPress={() => {
+                    setActiveIndex(index);
+                    mainListRef.current?.scrollToIndex({ index, animated: true });
+                }}
             >
                 <Image source={{ uri: item.uri }} style={styles.thumbnail} />
             </TouchableOpacity>
         );
     };
+
+    const handleViewableItemsChanged = React.useRef(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            setActiveIndex(viewableItems[0].index);
+        }
+    }).current;
+
+    const viewabilityConfig = React.useRef({ itemVisiblePercentThreshold: 50 }).current;
 
     return (
         <Modal visible={visible} transparent={false} animationType="slide">
@@ -106,7 +130,12 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                                 <Ionicons name="refresh" size={24} color="#fff" />
                             </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={onCancel} style={styles.iconButton}>
+                        <TouchableOpacity onPress={() => {
+                            // Delete current image
+                            const newAssets = finalizedAssets.filter((_, i) => i !== activeIndex);
+                            if (newAssets.length === 0) onCancel();
+                            else setFinalizedAssets(newAssets);
+                        }} style={styles.iconButton}>
                             <Ionicons name="trash" size={24} color="#fff" />
                         </TouchableOpacity>
                     </View>
@@ -119,10 +148,25 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                             <ActivityIndicator size="large" color={COLORS.primary} />
                         </View>
                     )}
-                    <Image 
-                        source={{ uri: activeAsset.uri }} 
-                        style={styles.previewImage} 
-                        resizeMode="contain" 
+                    <FlatList
+                        ref={mainListRef}
+                        data={finalizedAssets}
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        keyExtractor={(item, index) => `main-${item.uri}-${index}`}
+                        onViewableItemsChanged={handleViewableItemsChanged}
+                        viewabilityConfig={viewabilityConfig}
+                        renderItem={({ item }) => (
+                            <View style={{ width, flex: 1 }}>
+                                <Image 
+                                    source={{ uri: item.uri }} 
+                                    style={styles.previewImage} 
+                                    resizeMode="contain" 
+                                />
+                            </View>
+                        )}
+                        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
                     />
                 </View>
 
@@ -130,7 +174,9 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                 <View style={styles.bottomControls}>
                     {/* Caption Input */}
                     <View style={styles.captionContainer}>
-                        <Ionicons name="add-circle-outline" size={28} color="#fff" style={styles.addIcon} />
+                        <TouchableOpacity onPress={onAddMore}>
+                            <Ionicons name="add-circle-outline" size={28} color="#fff" style={styles.addIcon} />
+                        </TouchableOpacity>
                         <TextInput
                             style={styles.captionInput}
                             placeholder="Add a caption..."

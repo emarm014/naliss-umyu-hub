@@ -1117,7 +1117,7 @@ export default function ChatScreen() {
 
         if (result.canceled || !result.assets || result.assets.length === 0) return;
 
-        setUnprocessedImages(result.assets);
+        setUnprocessedImages(prev => [...prev, ...result.assets]);
     };
 
     const handleDelete = async (messageId: string) => {
@@ -2668,6 +2668,7 @@ export default function ChatScreen() {
                 assets={unprocessedImages}
                 onCancel={() => setUnprocessedImages([])}
                 onSend={handleMediaSend}
+                onAddMore={handlePickAndCropImage}
             />
 
             {/* Attachment Menu Modal */}

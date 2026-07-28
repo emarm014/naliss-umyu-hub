@@ -1736,7 +1736,7 @@ export default function ChatScreen() {
                                             return (
                                                 <Text style={[
                                                     styles.mediaCaptionText, 
-                                                    { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A'), marginTop: 4, paddingHorizontal: 4 },
+                                                    { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text, marginTop: 4, paddingHorizontal: 4 },
                                                 ]}>
                                                     {captionItem.caption}
                                                 </Text>
@@ -1803,7 +1803,7 @@ export default function ChatScreen() {
                                     )}
 
                                     {(item.caption || item.metadata?.caption) ? (
-                                        <Text style={[styles.mediaCaptionText, { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') }]}>
+                                        <Text style={[styles.mediaCaptionText, { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text }]}>
                                             {item.caption || item.metadata?.caption}
                                         </Text>
                                     ) : null}
@@ -1881,7 +1881,7 @@ export default function ChatScreen() {
                                         )}
 
                                         {(item.caption || item.metadata?.caption) ? (
-                                            <Text style={[styles.mediaCaptionText, { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A') }]}>
+                                            <Text style={[styles.mediaCaptionText, { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text }]}>
                                                 {item.caption || item.metadata?.caption}
                                             </Text>
                                         ) : null}
@@ -1964,7 +1964,7 @@ export default function ChatScreen() {
                                     {(item.caption || item.metadata?.caption) ? (
                                         <Text style={[
                                             styles.mediaCaptionText, 
-                                            { color: isMe ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1A1A1A'), marginTop: 4 },
+                                            { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text, marginTop: 4 },
                                             item.reply_to_id && { color: isDark ? '#cbd5e1' : '#374151', opacity: 0.9 }
                                         ]}>
                                             {item.caption || item.metadata?.caption}

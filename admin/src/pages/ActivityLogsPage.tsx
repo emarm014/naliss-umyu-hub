@@ -80,7 +80,7 @@ export default function ActivityLogsPage() {
       // 3. Role filter (Moderator actions vs Super Admin vs Student)
       let matchesRole = true;
       const actorRole = log.user?.role || log.metadata?.actor?.role;
-      const isExternal = log.user?.is_external || log.metadata?.actor?.is_external;
+      const isExternal = Boolean(log.user?.is_external || log.metadata?.actor?.is_external);
 
       if (filterRole === 'moderator_all') {
         matchesRole = actorRole === 'moderator';
@@ -354,7 +354,7 @@ export default function ActivityLogsPage() {
                 const actorName = log.user?.full_name || log.metadata?.actor?.full_name || 'System Auto';
                 const actorEmail = log.user?.email || log.metadata?.actor?.email || '';
                 const actorRole = log.user?.role || log.metadata?.actor?.role || 'admin';
-                const isExternal = log.user?.is_external || log.metadata?.actor?.is_external;
+                const isExternal = Boolean(log.user?.is_external || log.metadata?.actor?.is_external);
 
                 return (
                   <tr 

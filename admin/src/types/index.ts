@@ -236,6 +236,14 @@ export interface Announcement {
   author?: { full_name: string; email: string } | null;
 }
 
+export interface ActivityLogActor {
+  id?: string;
+  full_name?: string;
+  email?: string;
+  role?: string;
+  is_external?: boolean;
+}
+
 // Activity Log Interface
 export interface ActivityLog {
   id: string;
@@ -246,7 +254,10 @@ export interface ActivityLog {
   entity_type: string | null;
   entity_id: string | null;
   description: string;
-  metadata: Record<string, unknown>;
+  metadata: {
+    actor?: ActivityLogActor | null;
+    [key: string]: any;
+  };
   ip_address: string | null;
   user_agent?: string | null;   // added via migration
   request_path?: string | null; // added via migration

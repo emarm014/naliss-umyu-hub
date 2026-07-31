@@ -1,8 +1,9 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
+import { uploadLocalFileToCloudinary } from '../lib/cloudinary';
 
 export interface LocalNote {
     id: string;
@@ -28,10 +29,40 @@ interface NoteState {
     fetchCloudNotes: () => Promise<void>;
 }
 
-const syncNoteToSupabase = async (note: LocalNote) => {
+const syncNoteToSupabase = async (note: LocalNote, updateLocalMediaPaths?: (id: string, updatedMedia: string[]) => void) => {
     try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
+
+        // Process mediaPaths: Upload any local device file paths to Cloudinary
+        let hasNewUploads = false;
+        const uploadedMediaPaths: string[] = [];
+
+        for (let i = 0; i < (note.mediaPaths || []).length; i++) {
+            const uri = note.mediaPaths[i];
+            if (uri && (uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('ph://') || !uri.startsWith('http'))) {
+                try {
+                    const uploadName = `note_${note.id}_${Date.now()}_${i}.jpg`;
+                    const remoteUrl = await uploadLocalFileToCloudinary(
+                        uri,
+                        uploadName,
+                        'notepad-attachments',
+                        'image/jpeg'
+                    );
+                    uploadedMediaPaths.push(remoteUrl);
+                    hasNewUploads = true;
+                } catch (err) {
+                    // Keep original path if upload failed
+                    uploadedMediaPaths.push(uri);
+                }
+            } else {
+                uploadedMediaPaths.push(uri);
+            }
+        }
+
+        if (hasNewUploads && updateLocalMediaPaths) {
+            updateLocalMediaPaths(note.id, uploadedMediaPaths);
+        }
 
         await (supabase as any).from('user_notes').upsert({
             id: note.id,
@@ -40,13 +71,13 @@ const syncNoteToSupabase = async (note: LocalNote) => {
             course_code: note.courseCode || null,
             course_level: note.courseLevel || null,
             content: note.content,
-            media_paths: JSON.stringify(note.mediaPaths),
+            media_paths: JSON.stringify(uploadedMediaPaths),
             linked_materials: JSON.stringify(note.linkedMaterials || []),
             created_at: note.createdAt,
             updated_at: note.updatedAt,
         }, { onConflict: 'id,user_id' });
-    } catch {
-        // Fire-and-forget sync
+    } catch (err) {
+        Logger.warn('note.store', 'Failed to sync note to Supabase', { error: String(err) });
     }
 };
 
@@ -77,7 +108,13 @@ export const useNoteStore = create<NoteState>()(
                     updatedAt: new Date().toISOString(),
                 };
                 set({ notes: [newNote, ...get().notes] });
-                syncNoteToSupabase(newNote);
+                
+                const updateLocalMediaPaths = (id: string, mediaPaths: string[]) => {
+                    set(state => ({
+                        notes: state.notes.map(n => n.id === id ? { ...n, mediaPaths } : n)
+                    }));
+                };
+                syncNoteToSupabase(newNote, updateLocalMediaPaths);
             },
 
             updateNote: (id, updates) => {
@@ -88,7 +125,14 @@ export const useNoteStore = create<NoteState>()(
                             : note
                     );
                     const changed = updated.find(n => n.id === id);
-                    if (changed) syncNoteToSupabase(changed);
+                    if (changed) {
+                        const updateLocalMediaPaths = (noteId: string, mediaPaths: string[]) => {
+                            set(st => ({
+                                notes: st.notes.map(n => n.id === noteId ? { ...n, mediaPaths } : n)
+                            }));
+                        };
+                        syncNoteToSupabase(changed, updateLocalMediaPaths);
+                    }
                     return { notes: updated };
                 });
             },
@@ -108,14 +152,15 @@ export const useNoteStore = create<NoteState>()(
 
             syncNotesToCloud: async () => {
                 const notes = get().notes;
-                await Promise.allSettled(notes.map(n => syncNoteToSupabase(n)));
+                const updateLocalMediaPaths = (noteId: string, mediaPaths: string[]) => {
+                    set(st => ({
+                        notes: st.notes.map(n => n.id === noteId ? { ...n, mediaPaths } : n)
+                    }));
+                };
+                await Promise.allSettled(notes.map(n => syncNoteToSupabase(n, updateLocalMediaPaths)));
             },
 
             fetchCloudNotes: async () => {
-                const localNotes = get().notes;
-                // Only restore if local is empty (new device)
-                if (localNotes.length > 0) return;
-
                 try {
                     const { data: { user } } = await supabase.auth.getUser();
                     if (!user) return;
@@ -149,7 +194,7 @@ export const useNoteStore = create<NoteState>()(
             },
         }),
         {
-            name: 'naliss-notepad-storage',
+            name: 'note-storage',
             storage: createJSONStorage(() => mmkvStorage),
         }
     )

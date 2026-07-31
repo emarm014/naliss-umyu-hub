@@ -113,7 +113,14 @@ export const Logger = {
     if (error instanceof Error) {
       normalizedError = error;
     } else if (error && typeof error === 'object') {
-      const msg = error.message || error.error_description || error.msg || JSON.stringify(error);
+      let msg = (error as any).message || (error as any).error_description || (error as any).msg;
+      if (!msg) {
+        try {
+          msg = JSON.stringify(error);
+        } catch (_) {
+          msg = String(error);
+        }
+      }
       normalizedError = new Error(msg);
       (normalizedError as any).originalError = error;
     } else {

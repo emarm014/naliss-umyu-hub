@@ -17,6 +17,7 @@ interface ArchiveState {
   fetchArchives: (pageIndex?: number, force?: boolean) => Promise<void>;
   fetchUnreadCount: () => Promise<void>;
   markAsRead: () => void;
+  clearCache: () => void;
 }
 
 export const useArchiveStore = create<ArchiveState>()(
@@ -31,14 +32,18 @@ export const useArchiveStore = create<ArchiveState>()(
       unreadCount: 0,
       lastOpenedAt: null,
 
+      clearCache: () => set({ archives: [], lastFetch: null, unreadCount: 0, page: 0, hasMore: true }),
+
       fetchUnreadCount: async () => {
         try {
           const lastOpened = get().lastOpenedAt;
-          let query = supabase.from('archives').select('id', { count: 'exact', head: true });
-          if (lastOpened) {
-            query = query.gt('created_at', lastOpened);
+          if (!lastOpened) {
+            set({ lastOpenedAt: new Date().toISOString(), unreadCount: 0 });
+            return;
           }
-          const { count, error } = await query;
+          const { count, error } = await supabase.from('archives')
+            .select('id', { count: 'exact', head: true })
+            .gt('created_at', lastOpened);
           if (!error && count !== null) {
             set({ unreadCount: count });
           }
@@ -54,6 +59,17 @@ export const useArchiveStore = create<ArchiveState>()(
         
         if (pageIndex > 0 && (!hasMore || isFetchingMore)) return;
         
+        // LOCAL-FIRST: read from SQLite cache immediately (always works — even on new device)
+        if (!force && pageIndex === 0 && archives.length === 0) {
+          try {
+            const { getCachedEntityList } = require('../lib/database');
+            const cached = await getCachedEntityList('archives');
+            if (cached.length > 0) {
+              set({ archives: cached as any[], isLoading: false });
+            }
+          } catch { /* fall through to server fetch */ }
+        }
+
         if (!force && pageIndex === 0 && archives.length > 0 && !useNetworkStore.getState().isOnline) {
           // Strictly offline reliable, never load
           return;
@@ -71,6 +87,11 @@ export const useArchiveStore = create<ArchiveState>()(
 
           if (error) throw error;
           const items = (data || []) as any[];
+
+          if (pageIndex === 0 && items.length > 0) {
+            const { cacheEntityList } = require('../lib/database');
+            cacheEntityList('archives', items, '').catch(() => {});
+          }
           
           set((state) => ({
             archives: pageIndex === 0 ? items : [...state.archives, ...items],

@@ -34,7 +34,7 @@ const NewsCard = ({
   item: any; 
   isDark: boolean; 
   colors: any; 
-  onImagePress: (url: string, title: string) => void;
+  onImagePress: (url: string, title: string, mediaList?: any[], initialIndex?: number) => void;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -110,7 +110,15 @@ const NewsCard = ({
                   key={index} 
                   style={itemStyle}
                   activeOpacity={0.88}
-                  onPress={() => onImagePress(url, item.title)}
+                  onPress={() => {
+                    const mediaList = imageUrls.map((imgUrl, i) => ({
+                      id: `${item.id}_${i}`,
+                      uri: imgUrl,
+                      type: 'image' as const,
+                      title: `${item.title} (${i + 1}/${imageUrls.length})`
+                    }));
+                    onImagePress(url, item.title, mediaList, index);
+                  }}
                 >
                   <CachedImage 
                     remoteUrl={url} 
@@ -175,6 +183,8 @@ export default function NewsScreen() {
     isVisible: boolean;
     fileUri: string;
     fileName: string;
+    mediaList?: any[];
+    initialIndex?: number;
   }>({
     isVisible: false,
     fileUri: '',
@@ -197,12 +207,14 @@ export default function NewsScreen() {
     // Future update could support infinite scroll if needed.
   };
 
-  const handleOpenImage = (url: string, title: string) => {
+  const handleOpenImage = (url: string, title: string, mediaList?: any[], initialIndex?: number) => {
     const cleanName = title ? `${title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)}.jpg` : 'campus_news.jpg';
     setViewerState({
       isVisible: true,
       fileUri: url,
       fileName: cleanName,
+      mediaList,
+      initialIndex,
     });
   };
 
@@ -259,6 +271,8 @@ export default function NewsScreen() {
         fileUri={viewerState.fileUri}
         fileType="image"
         fileName={viewerState.fileName}
+        mediaList={viewerState.mediaList}
+        initialIndex={viewerState.initialIndex}
         showDownload={true}
         showShare={true}
       />

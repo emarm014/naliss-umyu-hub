@@ -34,6 +34,7 @@ interface EventPoolState {
   
   fetchPools: (force?: boolean) => Promise<void>;
   fetchServerTimeOffset: () => Promise<void>;
+  clearCache: () => void;
 }
 
 export const useEventPoolStore = create<EventPoolState>()(
@@ -43,6 +44,8 @@ export const useEventPoolStore = create<EventPoolState>()(
       isLoading: false,
       lastFetch: null,
       serverTimeOffset: 0,
+
+      clearCache: () => set({ pools: [], lastFetch: null }),
 
       fetchServerTimeOffset: async () => {
         try {
@@ -56,6 +59,19 @@ export const useEventPoolStore = create<EventPoolState>()(
       },
 
       fetchPools: async (force = false) => {
+        const { pools } = get();
+
+        // LOCAL-FIRST: read from SQLite cache immediately (always works — even on new device)
+        if (!force && pools.length === 0) {
+          try {
+            const { getCachedEntityList } = require('../lib/database');
+            const cached = await getCachedEntityList('event_pools');
+            if (cached.length > 0) {
+              set({ pools: cached as any[], isLoading: false });
+            }
+          } catch { /* fall through to server fetch */ }
+        }
+
         if (!force && get().pools.length > 0 && !useNetworkStore.getState().isOnline) {
           // Strictly offline reliable, never load
           return;
@@ -83,6 +99,11 @@ export const useEventPoolStore = create<EventPoolState>()(
             ...pool,
             featured_students: pool.featured_students?.filter((fs: any) => fs.type === 'event_winner' || fs.title?.includes('Winner')) || []
           }));
+
+          if (typedData.length > 0) {
+            const { cacheEntityList } = require('../lib/database');
+            cacheEntityList('event_pools', typedData, '').catch(() => {});
+          }
           
           set({ 
             pools: typedData, 

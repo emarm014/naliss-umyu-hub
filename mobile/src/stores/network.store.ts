@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import * as Network from 'expo-network';
 import { trackNetworkChange, setSentryNetworkContext } from '../utils/sentry';
 import { useMutationQueueStore } from './mutationQueue.store';
@@ -125,6 +125,12 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       wasOffline: get().wasOffline || !get().isOnline,
     });
     setSentryNetworkContext(true, get().networkType);
+    try {
+      useMutationQueueStore.getState().processQueue();
+      useMessageStore.getState().flushUnsentMessageQueue();
+    } catch {
+      // silent
+    }
   },
 
   setOffline: () => {

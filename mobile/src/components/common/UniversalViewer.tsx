@@ -12,6 +12,7 @@ import {
   ScrollView,
   useWindowDimensions,
   TouchableWithoutFeedback,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
@@ -25,6 +26,7 @@ import * as Sentry from '@sentry/react-native';
 import { SafeOverlayContainer, showToast } from './overlays';
 import {  saveMediaToDevice, shareMedia } from '../../utils/mediaSaver';
 import Pdf from 'react-native-pdf';
+import { CustomVideoPlayer } from './CustomVideoPlayer';
 
 const { width, height } = Dimensions.get('window');
 
@@ -80,13 +82,22 @@ function getCloudinaryPageUrl(url: string, page: number): string | null {
   return `https://res.cloudinary.com/${cloud}/image/upload/pg_${page},w_1200,c_limit,f_jpg,q_auto:best/${pathNoExt}.jpg`;
 }
 
-interface UniversalViewerProps {
+export interface ViewerMediaItem {
+  uri: string;
+  type: 'image' | 'video' | 'pdf' | 'audio' | 'document';
+  name: string;
+  fileId?: string;
+}
+
+export interface UniversalViewerProps {
   isVisible: boolean;
   onClose: () => void;
   fileUri: string;           // remote Cloudinary URL
   fileType: 'image' | 'video' | 'pdf' | 'audio' | 'document';
   fileName: string;
   fileId?: string;           // material/past_question id â€” used to find vault file
+  mediaList?: ViewerMediaItem[];
+  initialIndex?: number;
   showDownload?: boolean;
   showShare?: boolean;
   isHalfScreen?: boolean;
@@ -236,12 +247,148 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
  *  2. Check viewer cache (naliss_viewer/) â€” file was previously previewed
  *  3. Download to viewer cache if not found
  *  4. Render from local URI â€” works 100% offline after first open
- *
- * Rendering:
- *  - PDF/Document: iOS native WebView, Android base64 embed
- *  - Video: expo-av Video (local or remote)
- *  - Image: React Native Image (local or remote)
- *  - Audio: expo-av Audio with progress bar
+ */
+function ViewerItemSlide({
+  item,
+  isVisible,
+  pdfEngine,
+  isHalfScreen,
+  onSingleTap,
+}: {
+  item: ViewerMediaItem;
+  isVisible: boolean;
+  pdfEngine: 'local' | 'local_hd' | 'google' | 'microsoft';
+  isHalfScreen?: boolean;
+  onSingleTap?: () => void;
+}) {
+  const [localUri, setLocalUri] = React.useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = React.useState(false);
+  const [downloadProgress, setDownloadProgress] = React.useState(0);
+  const [downloadError, setDownloadError] = React.useState<string | null>(null);
+  const [isOffline, setIsOffline] = React.useState(false);
+  const [retryKey, setRetryKey] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!isVisible) return;
+
+    if (item.uri.startsWith('file://') || item.uri.startsWith('/')) {
+      setLocalUri(item.uri.startsWith('file://') ? item.uri : `file://${item.uri}`);
+      setIsOffline(true);
+      setIsDownloading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsDownloading(true);
+    setDownloadError(null);
+    setLocalUri(null);
+    setDownloadProgress(0);
+
+    const resolve = async () => {
+      try {
+        if (item.fileId) {
+          const vaultPath = getVaultFilePath(item.fileId, item.name, item.uri);
+          const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
+          if (vaultInfo.exists && (vaultInfo as any).size > 0) {
+            if (!cancelled) {
+              setLocalUri(vaultPath);
+              setIsOffline(true);
+              setIsDownloading(false);
+            }
+            return;
+          }
+        }
+
+        const viewerUrl = getViewerUrl(item.uri);
+        const destinationPath = item.fileId
+          ? getVaultFilePath(item.fileId, item.name, item.uri)
+          : (() => {
+              const realName = extractFileNameFromUrl(viewerUrl, item.name);
+              let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
+              const lowerName = safeName.toLowerCase();
+              if (item.type === 'video' && !lowerName.match(/\.(mp4|mkv|webm|avi|mov|flv|3gp|wmv)$/)) safeName += '.mp4';
+              else if (item.type === 'audio' && !lowerName.match(/\.(mp3|wav|m4a|aac|ogg|wma)$/)) safeName += '.mp3';
+              else if (item.type === 'pdf' && !lowerName.endsWith('.pdf')) safeName += '.pdf';
+              else if (item.type === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) safeName += '.jpg';
+              return `${VIEWER_CACHE}${safeName}`;
+            })();
+
+        if (!viewerUrl.startsWith('http://') && !viewerUrl.startsWith('https://')) {
+          if (!cancelled) {
+            setLocalUri(viewerUrl.startsWith('file://') ? viewerUrl : `file://${viewerUrl}`);
+            setIsOffline(true);
+            setIsDownloading(false);
+          }
+          return;
+        }
+
+        const destDir = destinationPath.substring(0, destinationPath.lastIndexOf('/') + 1);
+        const dirInfo = await FileSystem.getInfoAsync(destDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
+        }
+
+        const cachedInfo = await FileSystem.getInfoAsync(destinationPath);
+        if (cachedInfo.exists && (cachedInfo as any).size > 0) {
+          if (!cancelled) {
+            setLocalUri(destinationPath);
+            setIsOffline(true);
+            setIsDownloading(false);
+          }
+          return;
+        }
+
+        const callback = (p: FileSystem.DownloadProgressData) => {
+          if (!cancelled && p.totalBytesExpectedToWrite > 0) {
+            setDownloadProgress(Math.round((p.totalBytesWritten / p.totalBytesExpectedToWrite) * 100));
+          }
+        };
+
+        const downloadResumed = FileSystem.createDownloadResumable(viewerUrl, destinationPath, {}, callback);
+        const result = await downloadResumed.downloadAsync();
+
+        if (!cancelled) {
+          if (result && result.status === 200) {
+            setLocalUri(result.uri);
+            setIsOffline(false);
+          } else {
+            setDownloadError('Could not load file. Tap retry.');
+          }
+          setIsDownloading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLocalUri(item.uri);
+          setIsDownloading(false);
+        }
+      }
+    };
+
+    resolve();
+    return () => { cancelled = true; };
+  }, [item.uri, isVisible, retryKey]);
+
+  return (
+    <ViewerContent
+      isDownloading={isDownloading}
+      downloadProgress={downloadProgress}
+      downloadError={downloadError}
+      localUri={localUri}
+      fileType={item.type}
+      fileUri={item.uri}
+      fileName={item.name}
+      onRetry={() => setRetryKey(k => k + 1)}
+      onImageError={() => setDownloadError('Image could not be displayed.')}
+      pdfEngine={pdfEngine}
+      isOffline={isOffline}
+      onSingleTap={onSingleTap}
+      isHalfScreen={isHalfScreen}
+    />
+  );
+}
+
+/**
+ * Universal In-App Viewer V3.0 — Full Offline Support
  */
 export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   isVisible,
@@ -250,6 +397,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   fileType,
   fileName,
   fileId,
+  mediaList,
+  initialIndex = 0,
   showDownload = true,
   showShare = true,
   isHalfScreen = false,
@@ -269,152 +418,24 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   const shouldShowControls = !isLandscape || showControls;
 
-  const [localUri, setLocalUri] = React.useState<string | null>(null);
-  const [isDownloading, setIsDownloading] = React.useState(false);
-  const [downloadProgress, setDownloadProgress] = React.useState(0);
-  const [downloadError, setDownloadError] = React.useState<string | null>(null);
-  const [isOffline, setIsOffline] = React.useState(false);
-  const [retryKey, setRetryKey] = React.useState(0);
+  const activeMediaList = mediaList && mediaList.length > 1 ? mediaList : [{
+    uri: fileUri,
+    type: fileType,
+    name: fileName,
+    fileId: fileId,
+  }];
+  const isMultiItem = activeMediaList.length > 1;
+
+  const [currentIndex, setCurrentIndex] = React.useState(initialIndex);
+
+  React.useEffect(() => {
+    if (isVisible) {
+      setCurrentIndex(initialIndex && initialIndex < activeMediaList.length ? initialIndex : 0);
+    }
+  }, [isVisible, initialIndex, mediaList]);
+
+  const activeItem = activeMediaList[currentIndex] || activeMediaList[0];
   const [pdfEngine, setPdfEngine] = React.useState<'local' | 'local_hd' | 'google' | 'microsoft'>('local');
-
-  // Resolve local URI for any file type
-  React.useEffect(() => {
-    if (!isVisible) return;
-
-    // Already a local file â€” open instantly, no download needed
-    // Handles both file:// URIs and bare absolute paths (/data/user/0/...)
-    if (fileUri.startsWith('file://') || fileUri.startsWith('/')) {
-      setLocalUri(fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`);
-      setIsOffline(true);
-      setIsDownloading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setIsDownloading(true);
-    setDownloadError(null);
-    setLocalUri(null);
-    setDownloadProgress(0);
-
-    const resolve = async () => {
-      try {
-        // 1. Check vault first (user explicitly downloaded it)
-        if (fileId) {
-          const vaultPath = getVaultFilePath(fileId, fileName, fileUri);
-          const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
-          if (vaultInfo.exists && (vaultInfo as any).size > 0) {
-            if (!cancelled) {
-              setLocalUri(vaultPath);
-              setIsOffline(true);
-              setIsDownloading(false);
-            }
-            return;
-          }
-        }
-
-        // Use viewer URL (applies fl_attachment for non-image files)
-        const viewerUrl = getViewerUrl(fileUri);
-
-        // 3. Download file â€” to vault path when fileId is available (eliminates dual cache),
-        //    otherwise to viewer cache
-        const destinationPath = fileId
-          ? getVaultFilePath(fileId, fileName, fileUri)
-          : (() => {
-              const realName = extractFileNameFromUrl(viewerUrl, fileName);
-              let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
-              const lowerName = safeName.toLowerCase();
-              if (fileType === 'video' && !lowerName.match(/\.(mp4|mkv|webm|avi|mov|flv|3gp|wmv)$/)) safeName += '.mp4';
-              else if (fileType === 'audio' && !lowerName.match(/\.(mp3|wav|m4a|aac|ogg|wma)$/)) safeName += '.mp3';
-              else if (fileType === 'pdf' && !lowerName.endsWith('.pdf')) safeName += '.pdf';
-              else if (fileType === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) safeName += '.jpg';
-              return `${VIEWER_CACHE}${safeName}`;
-            })();
-
-        // If the URL is already a local file path, skip downloading
-        if (!viewerUrl.startsWith('http://') && !viewerUrl.startsWith('https://')) {
-          if (!cancelled) {
-            setLocalUri(viewerUrl.startsWith('file://') ? viewerUrl : `file://${viewerUrl}`);
-            setIsOffline(true);
-            setIsDownloading(false);
-          }
-          return;
-        }
-
-        const destDir = destinationPath.substring(0, destinationPath.lastIndexOf('/') + 1);
-        const dirInfo = await FileSystem.getInfoAsync(destDir);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
-        }
-
-        // Check if file already exists at destination
-        const existingInfo = await FileSystem.getInfoAsync(destinationPath);
-        if (existingInfo.exists && (existingInfo as any).size > 0) {
-          if (!cancelled) {
-            setLocalUri(destinationPath);
-            setIsOffline(true);
-            setIsDownloading(false);
-          }
-          return;
-        }
-        if (existingInfo.exists) {
-          await FileSystem.deleteAsync(destinationPath, { idempotent: true });
-        }
-
-        const downloadResumable = FileSystem.createDownloadResumable(
-          viewerUrl,
-          destinationPath,
-        {
-          headers: {
-            'Accept': '*/*',
-            'User-Agent': 'NALISS-Hub/1.0',
-          },
-        },
-        (progress) => {
-          const pct = progress.totalBytesExpectedToWrite > 0
-            ? Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100)
-            : 0;
-          if (!cancelled) setDownloadProgress(pct);
-        }
-      );
-
-      const result = await downloadResumable.downloadAsync();
-      if (!cancelled) {
-        if (result && result.status === 200) {
-          // File downloaded successfully â€” use it directly
-          setLocalUri(result.uri);
-            setIsOffline(false);
-          } else {
-            setDownloadError('Could not load file. Tap retry.');
-          }
-          setIsDownloading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          Sentry.captureException(err, {
-            tags: { location: 'UniversalViewer.resolve', fileType },
-            extra: { fileUri, fileName, fileId },
-          });
-          setDownloadError('Could not load file. Tap retry.');
-          setIsDownloading(false);
-        }
-      }
-    };
-
-    resolve();
-    return () => { cancelled = true; };
-  }, [isVisible, fileUri, fileType, fileName, fileId, retryKey]);
-
-  // Reset when closed
-  React.useEffect(() => {
-    if (!isVisible) {
-      setLocalUri(null);
-      setIsDownloading(false);
-      setDownloadError(null);
-      setDownloadProgress(0);
-      setIsOffline(false);
-      setPdfEngine('local');
-    }
-  }, [isVisible]);
 
   const [isSaved, setIsSaved] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -431,55 +452,19 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   const saveToDevice = async () => {
     try {
-      let fileToSave = localUri;
-
-      // If not cached locally, download first, then save
-      if (!fileToSave || (!fileToSave.startsWith('file://') && !fileToSave.startsWith('/'))) {
-        setIsSaving(true);
-        const viewerUrl = getViewerUrl(fileUri);
-        const destPath = fileId
-          ? getVaultFilePath(fileId, fileName, fileUri)
-          : `${FileSystem.cacheDirectory}temp_save_${Date.now()}_${fileName}`;
-
-        const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
-        const dirInfo = await FileSystem.getInfoAsync(destDir);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
-        }
-
-        // If the URL is already a local file path, just copy it to the destination
-        if (!viewerUrl.startsWith('http://') && !viewerUrl.startsWith('https://')) {
-          const localSrc = viewerUrl.startsWith('file://') ? viewerUrl : `file://${viewerUrl}`;
-          await FileSystem.copyAsync({ from: localSrc, to: destPath });
-          fileToSave = destPath;
-          setIsSaving(false);
-        } else {
-          const resumable = FileSystem.createDownloadResumable(viewerUrl, destPath);
-          const result = await resumable.downloadAsync();
-          if (!result || result.status !== 200) {
-            Alert.alert('Save Failed', 'Could not download the file before saving.');
-            setIsSaving(false);
-            return;
-          }
-          fileToSave = result.uri;
-          setIsSaving(false);
-        }
-      }
-
-      const fileUriNorm = fileToSave.startsWith('file://') ? fileToSave : `file://${fileToSave}`;
-      const mimeType = mimeMap[fileType] || 'application/octet-stream';
-      const result = await saveMediaToDevice(fileUriNorm, mimeType, fileName);
-
+      setIsSaving(true);
+      const uriToSave = activeItem.uri.startsWith('file://') ? activeItem.uri : `file://${activeItem.uri}`;
+      const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
+      const result = await saveMediaToDevice(uriToSave, mimeType, activeItem.name);
       if (result.success) {
         setIsSaved(true);
-        showToast('âœ“ Saved to Device');
+        showToast('✓ Saved to Device');
         setTimeout(() => setIsSaved(false), 3000);
       } else {
-        Alert.alert('Save Failed', result.error || 'Could not save the file to your device.');
+        Alert.alert('Save Failed', result.error || 'Could not save the file.');
       }
     } catch (err: any) {
-      Sentry.captureException(err, { tags: { location: 'UniversalViewer.saveToDevice' }, extra: { fileType, fileName } });
-      Alert.alert('Error', 'Could not save the file to public storage. Please try again.');
+      Alert.alert('Error', 'Could not save file.');
     } finally {
       setIsSaving(false);
     }
@@ -487,16 +472,10 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   const shareFile = async () => {
     try {
-      const uriToShare = localUri
-        ? (localUri.startsWith('file://') ? localUri : `file://${localUri}`)
-        : fileUri;
-      const mimeType = mimeMap[fileType] || 'application/octet-stream';
-      const result = await shareMedia(uriToShare, mimeType, fileName);
-      if (!result.success) {
-        Alert.alert('Unavailable', result.error || 'Could not share this file.');
-      }
+      const uriToShare = activeItem.uri.startsWith('file://') ? activeItem.uri : `file://${activeItem.uri}`;
+      const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
+      await shareMedia(uriToShare, mimeType, activeItem.name);
     } catch (err: any) {
-      Sentry.captureException(err, { tags: { location: 'UniversalViewer.shareFile' }, extra: { fileType, fileName } });
       Alert.alert('Error', 'Could not share this file.');
     }
   };
@@ -518,31 +497,25 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           {/* Header */}
           {shouldShowControls && (
             <View style={[styles.header, isLandscape && styles.landscapeOverlayHeader]}>
-            {/* Left: Cancel (X) */}
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color={COLORS.black} />
-            </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color={COLORS.black} />
+              </TouchableOpacity>
 
-            <View style={styles.titleContainer}>
-              <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
-              <View style={styles.badgeRow}>
-                <Text style={styles.subtitle}>IN-APP VIEWER</Text>
-                {isOffline && (
-                  <View style={styles.offlineBadge}>
-                    <Ionicons name="cloud-offline" size={10} color="#fff" />
-                    <Text style={styles.offlineBadgeText}>OFFLINE READY</Text>
-                  </View>
-                )}
+              <View style={styles.titleContainer}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {isMultiItem ? `${currentIndex + 1} of ${activeMediaList.length}` : activeItem.name}
+                </Text>
+                <View style={styles.badgeRow}>
+                  <Text style={styles.subtitle}>IN-APP VIEWER</Text>
+                </View>
               </View>
-            </View>
 
-            {/* Right: Balance placeholder (removed redundant back arrow) */}
-            <View style={{ width: 40 }} />
+              <View style={{ width: 40 }} />
             </View>
           )}
 
           {/* PDF Engine Switcher Bar */}
-          {shouldShowControls && (fileType === 'pdf' || fileType === 'document') && (
+          {shouldShowControls && (activeItem.type === 'pdf' || activeItem.type === 'document') && (
             <View style={[engineStyles.bar, isLandscape && styles.landscapeOverlayTabs]}>
               <ScrollView
                 horizontal
@@ -569,7 +542,6 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   style={[
                     engineStyles.btn,
                     pdfEngine === 'google' && engineStyles.btnActive,
-                    isOffline && { opacity: 0.5 }
                   ]}
                   onPress={() => setPdfEngine('google')}
                 >
@@ -581,7 +553,6 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   style={[
                     engineStyles.btn,
                     pdfEngine === 'microsoft' && engineStyles.btnActive,
-                    isOffline && { opacity: 0.5 }
                   ]}
                   onPress={() => setPdfEngine('microsoft')}
                 >
@@ -592,55 +563,73 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             </View>
           )}
 
-          {/* Content */}
+          {/* Main Content Area */}
           <TouchableWithoutFeedback onPress={() => setShowControls(!showControls)}>
             <View style={[styles.content, isLandscape && { position: 'absolute', top: 0, left: 0, width, height, zIndex: 1 }]}>
-              <ViewerContent
-                isDownloading={isDownloading}
-                downloadProgress={downloadProgress}
-                downloadError={downloadError}
-                localUri={localUri}
-                fileType={fileType}
-                fileUri={fileUri}
-                fileName={fileName}
-                onRetry={() => {
-                  setDownloadError(null);
-                  setLocalUri(null);
-                  setIsDownloading(true);
-                  setDownloadProgress(0);
-                  setRetryKey(k => k + 1);
-                }}
-                onImageError={() => setDownloadError('Image could not be displayed.')}
-                pdfEngine={pdfEngine}
-                isOffline={isOffline}
-                onSingleTap={() => setShowControls(!showControls)}
-                isHalfScreen={isHalfScreen}
-              />
+              {isMultiItem ? (
+                <FlatList
+                  data={activeMediaList}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={width}
+                  snapToAlignment="center"
+                  decelerationRate="fast"
+                  initialScrollIndex={initialIndex && initialIndex < activeMediaList.length ? initialIndex : 0}
+                  getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+                  onMomentumScrollEnd={(e) => {
+                    const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+                    if (idx >= 0 && idx < activeMediaList.length) {
+                      setCurrentIndex(idx);
+                    }
+                  }}
+                  keyExtractor={(item, index) => `viewer-${item.fileId || item.uri}-${index}`}
+                  renderItem={({ item }) => (
+                    <View style={{ width, height: '100%' }}>
+                      <ViewerItemSlide
+                        item={item}
+                        isVisible={isVisible}
+                        pdfEngine={pdfEngine}
+                        isHalfScreen={isHalfScreen}
+                        onSingleTap={() => setShowControls(!showControls)}
+                      />
+                    </View>
+                  )}
+                />
+              ) : (
+                <ViewerItemSlide
+                  item={activeMediaList[0]}
+                  isVisible={isVisible}
+                  pdfEngine={pdfEngine}
+                  isHalfScreen={isHalfScreen}
+                  onSingleTap={() => setShowControls(!showControls)}
+                />
+              )}
             </View>
           </TouchableWithoutFeedback>
 
-          {/* Footer â€” shown when download/share is enabled OR onViewProfile exists */}
+          {/* Footer */}
           {shouldShowControls && (showDownload || showShare || onViewProfile) && (
             <View style={[styles.footer, !showShare && !showDownload && { justifyContent: 'center' }, isLandscape && styles.landscapeOverlayFooter]}>
               {showDownload && (
-              <TouchableOpacity
-                style={[styles.footerAction, ((!localUri && isDownloading) || isSaving) && { opacity: 0.5 }]}
-                onPress={saveToDevice}
-                disabled={(isDownloading && !localUri) || isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                ) : (
-                  <Ionicons
-                    name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
-                    size={20}
-                    color={isSaved ? '#10b981' : COLORS.primary}
-                  />
-                )}
-                <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
-                  {isSaving ? 'Savingâ€¦' : isSaved ? 'Saved!' : 'Save to Device'}
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.footerAction, isSaving && { opacity: 0.5 }]}
+                  onPress={saveToDevice}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <Ionicons
+                      name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
+                      size={20}
+                      color={isSaved ? '#10b981' : COLORS.primary}
+                    />
+                  )}
+                  <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
+                    {isSaving ? 'Saving…' : isSaved ? 'Saved!' : 'Save to Device'}
+                  </Text>
+                </TouchableOpacity>
               )}
               {showShare && (
                 <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
@@ -662,7 +651,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   );
 };
 
-// â”€â”€ Video Player â€” expo-av native player â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ——— Video Player — expo-av native player ————————————————————————
 function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
   const rawSrc = localUri || remoteUrl;
   const videoSrc = rawSrc && !rawSrc.startsWith('http') && !rawSrc.startsWith('file://')
@@ -671,22 +660,11 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
 
   return (
     <View style={styles.videoContainer}>
-      <Video
-        source={{ uri: videoSrc } as any}
-        rate={1.0}
-        volume={1.0}
-        isMuted={false}
+      <CustomVideoPlayer
+        source={{ uri: videoSrc }}
         resizeMode={ResizeMode.CONTAIN}
-        shouldPlay={false}
-        useNativeControls={true}
-        style={styles.video}
-        onError={(err) => {
-          Sentry.captureException(new Error(`expo-av Video error: ${JSON.stringify(err)}`), {
-            tags: { location: 'UniversalViewer.VideoPlayer' },
-            extra: { videoSrc },
-          });
-          Alert.alert('Playback Error', 'Could not play this video. The file may be corrupted or in an unsupported format.');
-        }}
+        autoPlay={true}
+        showControls={true}
       />
     </View>
   );

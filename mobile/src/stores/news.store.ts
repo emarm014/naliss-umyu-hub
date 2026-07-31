@@ -31,13 +31,14 @@ export const useNewsStore = create<NewsState>()(
       fetchUnreadCount: async () => {
         try {
           const lastOpened = get().lastOpenedAt;
-          let query = supabase.from('news').select('id', { count: 'exact', head: true });
-          
-          if (lastOpened) {
-            query = query.gt('created_at', lastOpened);
+          if (!lastOpened) {
+            set({ lastOpenedAt: new Date().toISOString(), unreadCount: 0 });
+            return;
           }
+          const { count, error } = await supabase.from('news')
+            .select('id', { count: 'exact', head: true })
+            .gt('created_at', lastOpened);
           
-          const { count, error } = await query;
           if (!error && count !== null) {
             set({ unreadCount: count });
           }

@@ -13,31 +13,10 @@ import { mmkvStorage } from '../src/stores/mmkv.storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CachedImage } from '../src/components/common/CachedImage';
-
-const { width } = Dimensions.get('window');
-const CACHE_KEY = 'fyb_featured_students_cache';
-
-type FeaturedStudentEntry = {
-  id: string;
-  user_id: string;
-  type: string;
-  title: string;
-  subtitle: string | null;
-  description: string | null;
-  custom_image_url: string | null;
-  is_active: boolean;
-  published_at: string;
-  expires_at: string | null;
-  total_congratulations: number;
-  created_at: string;
-  users: {
-    full_name: string;
-    username: string;
-    avatar_url: string | null;
-  };
-};
-
+import { UniversalViewer } from '../src/components/common/UniversalViewer';
 import { useFYBStore } from '../src/stores/fyb.store';
+
+type FeaturedStudentEntry = any;
 
 export default function FYBScreen() {
   useSentryScreen('FYBScreen');
@@ -49,6 +28,8 @@ export default function FYBScreen() {
   const fetchFeatured = useFYBStore(s => s.fetchFeatured);
   
   const [isRefetching, setIsRefetching] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerFile, setViewerFile] = useState({ uri: '', name: '' });
 
   const markAsRead = useFYBStore(s => s.markAsRead);
 
@@ -80,45 +61,67 @@ export default function FYBScreen() {
   const subtextColor = colors.textMuted;
   const borderColor = colors.border;
 
-  const renderActiveCard = (item: FeaturedStudentEntry) => (
-    <View key={item.id} style={[styles.activeCard, { borderColor }]}>
-      {item.custom_image_url ? (
-        <Image source={{ uri: item.custom_image_url }} style={styles.flyerImage} resizeMode="cover" />
-      ) : (
-        <LinearGradient colors={['#d97706', '#ea580c']} style={styles.flyerImage}>
-          <Ionicons name="star" size={48} color="rgba(255,255,255,0.3)" />
-        </LinearGradient>
-      )}
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.flyerOverlay}>
-        <View style={styles.flyerContent}>
-          <View style={styles.activeBadge}>
-            <View style={styles.activeDot} />
-            <Text style={styles.activeBadgeText}>ACTIVE</Text>
-          </View>
-          <Text style={styles.flyerTitle} numberOfLines={2}>{item.title}</Text>
-          <View style={styles.flyerMeta}>
-            <CachedImage remoteUrl={item.users.avatar_url} style={styles.flyerAvatar} entityId={item.user_id} assetType="user" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.flyerName} numberOfLines={1}>{item.users?.full_name}</Text>
-              {item.subtitle && <Text style={styles.flyerDept} numberOfLines={1}>{item.subtitle}</Text>}
+  const renderActiveCard = (item: FeaturedStudentEntry) => {
+    const mediaUri = item.custom_image_url || item.users?.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(item.users?.full_name || 'student')}&size=200`;
+    return (
+      <TouchableOpacity
+        key={item.id}
+        style={[styles.activeCard, { borderColor }]}
+        activeOpacity={0.9}
+        onPress={() => {
+          setViewerFile({ uri: mediaUri, name: item.title });
+          setViewerVisible(true);
+        }}
+      >
+        {item.custom_image_url ? (
+          <Image source={{ uri: item.custom_image_url }} style={styles.flyerImage} resizeMode="cover" />
+        ) : (
+          <LinearGradient colors={['#d97706', '#ea580c']} style={styles.flyerImage}>
+            <Ionicons name="star" size={48} color="rgba(255,255,255,0.3)" />
+          </LinearGradient>
+        )}
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.flyerOverlay}>
+          <View style={styles.flyerContent}>
+            <View style={styles.activeBadge}>
+              <View style={styles.activeDot} />
+              <Text style={styles.activeBadgeText}>ACTIVE</Text>
             </View>
+            <Text style={styles.flyerTitle} numberOfLines={2}>{item.title}</Text>
+            <View style={styles.flyerMeta}>
+              <CachedImage remoteUrl={item.users.avatar_url} style={styles.flyerAvatar} entityId={item.user_id} assetType="user" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.flyerName} numberOfLines={1}>{item.users?.full_name}</Text>
+                {item.subtitle && <Text style={styles.flyerDept} numberOfLines={1}>{item.subtitle}</Text>}
+              </View>
+            </View>
+            {item.description && <Text style={styles.flyerDesc} numberOfLines={3}>{item.description}</Text>}
           </View>
-          {item.description && <Text style={styles.flyerDesc} numberOfLines={3}>{item.description}</Text>}
-        </View>
-      </LinearGradient>
-    </View>
-  );
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  };
 
-  const renderHistoryCard = (item: FeaturedStudentEntry) => (
-    <View key={item.id} style={[styles.historyCard, { backgroundColor: cardBg, borderColor }]}>
-      <CachedImage remoteUrl={item.users.avatar_url} style={styles.historyAvatar} entityId={item.user_id} assetType="user" />
-      <View style={styles.historyInfo}>
-        <Text style={[styles.historyTitle, { color: textColor }]} numberOfLines={1}>{item.title}</Text>
-        <Text style={[styles.historyName, { color: subtextColor }]} numberOfLines={1}>{item.users?.full_name}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={subtextColor} />
-    </View>
-  );
+  const renderHistoryCard = (item: FeaturedStudentEntry) => {
+    const avatarUri = item.users?.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(item.users?.full_name || 'student')}&size=200`;
+    return (
+      <TouchableOpacity
+        key={item.id}
+        style={[styles.historyCard, { backgroundColor: cardBg, borderColor }]}
+        activeOpacity={0.8}
+        onPress={() => {
+          setViewerFile({ uri: item.custom_image_url || avatarUri, name: item.title });
+          setViewerVisible(true);
+        }}
+      >
+        <CachedImage remoteUrl={item.users.avatar_url} style={styles.historyAvatar} entityId={item.user_id} assetType="user" />
+        <View style={styles.historyInfo}>
+          <Text style={[styles.historyTitle, { color: textColor }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.historyName, { color: subtextColor }]} numberOfLines={1}>{item.users?.full_name}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={subtextColor} />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -176,6 +179,16 @@ export default function FYBScreen() {
           )}
         </ScrollView>
       )}
+
+      <UniversalViewer
+        isVisible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        fileUri={viewerFile.uri}
+        fileType="image"
+        fileName={viewerFile.name}
+        showDownload={true}
+        showShare={true}
+      />
     </View>
   );
 }

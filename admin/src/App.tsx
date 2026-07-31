@@ -134,9 +134,13 @@ function App() {
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
                   <Route path="/logs" element={<ActivityLogsPage />} />
+                  <Route path="/featured-students" element={<FeaturedStudentsPage />} />
+                </Route>
+
+                {/* Events & Event Pools — gated by can_manage_events */}
+                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_events" />}>
                   <Route path="/events" element={<EventsPage />} />
                   <Route path="/event-pools" element={<EventPoolManagementPage />} />
-                  <Route path="/featured-students" element={<FeaturedStudentsPage />} />
                 </Route>
 
                 {/* Students — gated by can_manage_students */}
@@ -184,7 +188,7 @@ function App() {
                 <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_messaging" />}>
                   <Route path="/gallery" element={<GalleryPage />} />
                 </Route>
-                <Route element={<RoleProtectedRoute minRole="moderator" permission="can_manage_security" />}>
+                <Route element={<RoleProtectedRoute minRole="super_admin" />}>
                   <Route path="/security" element={<SecurityPage />} />
                 </Route>
 

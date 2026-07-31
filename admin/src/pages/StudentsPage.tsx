@@ -108,9 +108,9 @@ export default function StudentsPage() {
     setTimeout(() => setSuccessMessage(null), 5000);
   };
   // Page UI depends on global sync
-  // Client-side filtering
+  // Client-side filtering (excludes external moderators completely)
   const filteredUsers = useMemo(() => {
-    let result = [...(allStudents as UserWithDepartment[])];
+    let result = [...(allStudents as UserWithDepartment[])].filter(u => u.is_external !== true);
 
     // Moderators are hard-locked to their assigned level — enforced here regardless of filter state
     if (assignedLevel) {

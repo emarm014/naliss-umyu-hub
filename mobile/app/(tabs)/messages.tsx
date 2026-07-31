@@ -32,7 +32,11 @@ export default function MessagesScreen() {
   const groups = useGroupStore(s => s.groups);
   const isLoading = useGroupStore(s => s.isLoading);
   const fetchGroups = useGroupStore(s => s.fetchGroups);
-  const { colors, isDark: storeIsDark } = useTheme();
+  const { colors } = useTheme();
+  useEffect(() => {
+    useGroupStore.getState().clearBadge();
+    useGroupStore.getState().setCurrentTab('messages');
+  }, []);
 
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -172,9 +176,27 @@ export default function MessagesScreen() {
  * Convert raw Cloudinary URLs in last_message to friendly labels.
  * Handles legacy cached data where the URL was stored instead of the label.
  */
-function sanitizeLastMessage(msg: string | null | undefined, lastMsgObj?: any): string {
+function sanitizeLastMessage(msg: string | null | undefined, lastMsgObj?: any, currentProfile?: any): string {
+  const currentUserId = currentProfile?.id;
+  const currentUsername = currentProfile?.username ? String(currentProfile.username).trim().toLowerCase() : null;
+  const currentFullName = currentProfile?.full_name ? String(currentProfile.full_name).trim().toLowerCase() : null;
+
   if (lastMsgObj) {
-    const senderName = lastMsgObj.sender?.username || lastMsgObj.sender?.full_name || 'Member';
+    const senderId = lastMsgObj.sender_id || lastMsgObj.sender?.id;
+    const senderUsername = (lastMsgObj.sender?.username || lastMsgObj.sender_username || '').trim().toLowerCase();
+    const senderFullName = (lastMsgObj.sender?.full_name || lastMsgObj.sender_name || '').trim().toLowerCase();
+
+    let isSelf = false;
+    if (
+      (senderId && currentUserId && senderId === currentUserId) ||
+      (currentUsername && senderUsername && senderUsername === currentUsername) ||
+      (currentFullName && senderFullName && senderFullName === currentFullName)
+    ) {
+      isSelf = true;
+    }
+
+    const rawSenderName = lastMsgObj.sender?.username || lastMsgObj.sender?.full_name || 'Member';
+    const senderName = isSelf ? 'You' : rawSenderName;
     const msgType = lastMsgObj.content_type || lastMsgObj.message_type || 'text';
     const content = lastMsgObj.content || '';
 
@@ -198,30 +220,39 @@ function sanitizeLastMessage(msg: string | null | undefined, lastMsgObj?: any): 
 
   if (!msg) return 'No messages yet';
   
-  let senderPrefix = '';
+  let formattedMsg = msg;
   const colonIndex = msg.indexOf(': ');
   if (colonIndex !== -1 && colonIndex < 30) {
-    senderPrefix = msg.substring(0, colonIndex + 2);
+    const rawPrefix = msg.substring(0, colonIndex).trim().toLowerCase();
+    if (
+      rawPrefix === 'you' ||
+      (currentUsername && rawPrefix === currentUsername) ||
+      (currentFullName && rawPrefix === currentFullName)
+    ) {
+      formattedMsg = `You: ${msg.substring(colonIndex + 2)}`;
+    }
   }
 
   // If it's a Cloudinary URL, convert to friendly label
-  if (msg.includes('cloudinary.com') || msg.includes('res.cloudinary')) {
-    const lower = msg.toLowerCase();
+  if (formattedMsg.includes('cloudinary.com') || formattedMsg.includes('res.cloudinary')) {
+    const colonIdx = formattedMsg.indexOf(': ');
+    const prefix = colonIdx !== -1 ? formattedMsg.substring(0, colonIdx + 2) : '';
+    const lower = formattedMsg.toLowerCase();
     if (lower.includes('/video/upload/') || lower.includes('chat-videos') || lower.match(/\.(mp4|mov|avi|webm|mkv)$/)) {
-      return `${senderPrefix}🎥 Video`;
+      return `${prefix}🎥 Video`;
     }
     if (lower.includes('/image/upload/') || lower.includes('chat-images') || lower.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
-      return `${senderPrefix}📷 Photo`;
+      return `${prefix}📷 Photo`;
     }
     if (lower.includes('chat-docs') || lower.match(/\.(pdf|doc|docx|ppt|pptx)$/)) {
-      return `${senderPrefix}📎 Document`;
+      return `${prefix}📎 Document`;
     }
     if (lower.includes('chat-audios') || lower.match(/\.(mp3|wav|ogg|aac|m4a)$/)) {
-      return `${senderPrefix}🎵 Audio`;
+      return `${prefix}🎵 Audio`;
     }
-    return `${senderPrefix}📎 Media`;
+    return `${prefix}📎 Media`;
   }
-  return msg;
+  return formattedMsg;
 }
 
 function ConversationItem({
@@ -233,6 +264,7 @@ function ConversationItem({
   onPress: () => void;
   colors: any;
 }) {
+  const profile = useAuthStore(s => s.profile);
   const [syncStatus, setSyncStatus] = React.useState<'ready' | 'syncing' | 'waiting' | 'partial'>('ready');
   const [syncProgress, setSyncProgress] = React.useState<number>(100);
 
@@ -326,7 +358,7 @@ function ConversationItem({
 
         <View style={styles.lastMessageRow}>
           <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>
-            {sanitizeLastMessage(conversation.last_message, conversation.last_message_obj)}
+            {sanitizeLastMessage(conversation.last_message, conversation.last_message_obj, profile)}
           </Text>
           {(conversation.unread_count || 0) > 0 && (
             <View style={styles.unreadBadge}>

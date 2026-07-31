@@ -43,11 +43,22 @@ Sentry.init({
 // ── Global console.error interception ──────────────────────────────────────
 // Force all manual console.error() calls to be reported to Sentry as exceptions
 const originalConsoleError = console.error;
+const safeStringifyArg = (a: any) => {
+  if (typeof a === 'object' && a !== null) {
+    try {
+      return JSON.stringify(a);
+    } catch (_) {
+      return String(a);
+    }
+  }
+  return String(a);
+};
+
 console.error = (...args) => {
   originalConsoleError(...args); // Keep logging to terminal/bundler
   
   // Skip transient network errors to prevent false crash reports
-  const strArgs = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ').toLowerCase();
+  const strArgs = args.map(safeStringifyArg).join(' ').toLowerCase();
   if (strArgs.includes('network request failed') || 
       strArgs.includes('failed to fetch') || 
       strArgs.includes('timeout') ||
@@ -62,7 +73,7 @@ console.error = (...args) => {
     Sentry.captureException(err, { tags: { source: 'console.error' } });
   } else {
     // Stringify everything else
-    Sentry.captureMessage(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '), 'error');
+    Sentry.captureMessage(args.map(safeStringifyArg).join(' '), 'error');
   }
 };
 
@@ -288,28 +299,22 @@ function RootLayoutNav() {
   useEffect(() => {
     async function prepareAppLifecycle() {
       try {
-        // Keep the Splash Screen active while we read local data from the phone's chip
-        await Promise.all([
-          (async () => {
-             // Load local font vectors in the background
-             await Font.loadAsync({
-               'Inter-Regular': Inter_400Regular,
-               'Inter-Medium': Inter_500Medium,
-               'Inter-SemiBold': Inter_600SemiBold,
-               'Inter-Bold': Inter_700Bold,
-             });
-             
-             // Mount local MMKV states synchronously
-             useThemeStore.getState();
-             useSignupStore.getState();
-             useNetworkStore.getState();
+        // Load local font vectors in the background
+        await Font.loadAsync({
+          'Inter-Regular': Inter_400Regular,
+          'Inter-Medium': Inter_500Medium,
+          'Inter-SemiBold': Inter_600SemiBold,
+          'Inter-Bold': Inter_700Bold,
+        });
+        
+        // Mount local MMKV states synchronously
+        useThemeStore.getState();
+        useSignupStore.getState();
+        useNetworkStore.getState();
 
-             // Initialize Local Database and Hydrate Profile Cache BEFORE Supabase Session
-             await initDB();
-             await useAuthStore.getState().hydrateFromSQLite();
-          })(),
-          new Promise(resolve => setTimeout(resolve, 1200)) // Explicit intentional branding beat
-        ]);
+        // Initialize Local Database and Hydrate Profile Cache BEFORE Supabase Session
+        await initDB();
+        await useAuthStore.getState().hydrateFromSQLite();
       } catch (error) {
         console.warn("Silent Boot Warning: Isolated local configuration anomaly.", error);
       } finally {

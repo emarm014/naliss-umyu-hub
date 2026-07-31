@@ -10,6 +10,7 @@ import { supabase } from '../../src/api/supabase/client';
 import { getCleanAvatarUrl } from '../../src/utils/avatar';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { NalissLogo } from '../../src/components/NalissLogo';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 export default function UserProfileScreen() {
     const { id, initialData } = useLocalSearchParams();
@@ -20,19 +21,51 @@ export default function UserProfileScreen() {
     let parsedInitial = null;
     try {
         if (initialData && typeof initialData === 'string') {
-            parsedInitial = JSON.parse(initialData);
+            const raw = initialData.includes('%') ? decodeURIComponent(initialData) : initialData;
+            parsedInitial = JSON.parse(raw);
         }
     } catch {}
 
     const [profile, setProfile] = useState<any>(parsedInitial);
     const [isLoading, setIsLoading] = useState(!parsedInitial);
-    const [isOnline, setIsOnline] = useState(false);
+    const [isOnline, setIsOnline] = useState<boolean>(() => {
+        if (!parsedInitial?.last_active_at) return false;
+        return new Date().getTime() - new Date(parsedInitial.last_active_at).getTime() < 300000;
+    });
+    const [viewerVisible, setViewerVisible] = useState(false);
 
     useEffect(() => {
         let mounted = true;
         
         const fetchProfile = async () => {
             if (!id || typeof id !== 'string') return;
+
+            // Fast path 1: use initialData or already loaded profile
+            let currentProf = profile || parsedInitial;
+
+            // Fast path 2: SQLite local-first lookup if no profile available yet
+            if (!currentProf) {
+                try {
+                    const { getCachedEntityList } = require('../../src/lib/database');
+                    const cached = await getCachedEntityList(`user_profile_${id}`);
+                    if (cached && cached.length > 0 && mounted) {
+                        currentProf = cached[0];
+                        setProfile(cached[0]);
+                        const lastActive = cached[0]?.last_active_at;
+                        setIsOnline(!!(lastActive && (new Date().getTime() - new Date(lastActive).getTime() < 300000)));
+                        setIsLoading(false);
+                    }
+                } catch {}
+            } else if (mounted) {
+                setIsLoading(false);
+            }
+
+            // Offline guard — cached profile stays visible
+            const { useNetworkStore } = require('../../src/stores/network.store');
+            if (!useNetworkStore.getState().isOnline) {
+                if (mounted) setIsLoading(false);
+                return;
+            }
             
             try {
                 const { data, error } = await (supabase as any).from('users')
@@ -48,9 +81,19 @@ export default function UserProfileScreen() {
                     const lastActive = (data as any).last_active_at;
                     const isUserOnline = lastActive && (new Date().getTime() - new Date(lastActive).getTime() < 300000);
                     setIsOnline(!!isUserOnline);
+
+                    // Cache to SQLite for future offline viewing
+                    try {
+                        const { cacheEntityList } = require('../../src/lib/database');
+                        const { preloadAndCacheAvatar } = require('../../src/utils/avatar');
+                        cacheEntityList(`user_profile_${data.id}`, [data], '').catch(() => {});
+                        if (data.avatar_url) {
+                            preloadAndCacheAvatar(data.id, data.avatar_url).catch(() => {});
+                        }
+                    } catch {}
                 }
             } catch (error) {
-                // handle error
+                // handle error silently — cached data remains displayed
             } finally {
                 if (mounted) setIsLoading(false);
             }
@@ -107,18 +150,23 @@ export default function UserProfileScreen() {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
                 <View style={[styles.profileHeaderContainer, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-                    <View style={[styles.avatarContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <TouchableOpacity 
+                        style={[styles.avatarContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setViewerVisible(true)}
+                        activeOpacity={0.8}
+                    >
                         {cleanAvatarUrl ? (
                             <CachedImage
                                 remoteUrl={cleanAvatarUrl}
                                 style={styles.avatar}
-                                entityId={`user_avatar_${profile.id}`}
-                                assetType="avatar"
+                                entityId={`user_${profile.id}`}
+                                assetType="user"
+                                fallbackName={profile.full_name || profile.username}
                             />
                         ) : (
                             <NalissLogo size={80} />
                         )}
-                    </View>
+                    </TouchableOpacity>
                     <Text style={[styles.profileName, { color: colors.text }]}>
                         {profile.full_name || profile.username || 'User'}
                     </Text>
@@ -199,6 +247,17 @@ export default function UserProfileScreen() {
                 ) : null}
 
             </ScrollView>
+
+            <UniversalViewer
+                isVisible={viewerVisible}
+                onClose={() => setViewerVisible(false)}
+                fileUri={cleanAvatarUrl || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(profile?.full_name || 'user')}&size=200`}
+                fileType="image"
+                fileName={`${profile?.full_name || 'User'}'s Profile`}
+                showDownload={false}
+                showShare={false}
+                isHalfScreen={true}
+            />
         </SafeAreaView>
     );
 }

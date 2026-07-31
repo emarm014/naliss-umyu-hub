@@ -16,6 +16,7 @@ interface GroupState {
     fetchGroups: (force?: boolean) => Promise<void>;
     markGroupAsRead: (groupId: string) => Promise<void>;
     incrementUnread: (groupId: string, lastMessage?: string, lastMessageAt?: string, lastMessageObj?: any) => void;
+    updateGroupLastMessage: (groupId: string, lastMessage: string, lastMessageAt?: string, lastMessageObj?: any) => void;
     clearGroups: () => void;
     setGroupMembers: (groupId: string, members: any[]) => void;
     getGroupMembers: (groupId: string) => any[];
@@ -229,6 +230,19 @@ export const useGroupStore = create<GroupState>()(
                         [groupId]: members,
                     },
                 }));
+                try {
+                    const { cacheEntityList } = require('../lib/database');
+                    const { preloadAndCacheAvatar } = require('../utils/avatar');
+                    cacheEntityList(`group_members_${groupId}`, members, '').catch(() => {});
+                    members.forEach((m: any) => {
+                        if (m?.id) {
+                            cacheEntityList(`user_profile_${m.id}`, [m], '').catch(() => {});
+                            if (m?.avatar_url) {
+                                preloadAndCacheAvatar(m.id, m.avatar_url).catch(() => {});
+                            }
+                        }
+                    });
+                } catch {}
             },
 
             getGroupMembers: (groupId: string) => {
@@ -282,6 +296,23 @@ export const useGroupStore = create<GroupState>()(
                 });
             },
 
+            updateGroupLastMessage: (groupId: string, lastMessage: string, lastMessageAt?: string, lastMessageObj?: any) => {
+                set((state) => {
+                    const now = lastMessageAt || new Date().toISOString();
+                    const updated = state.groups.map(g =>
+                        g.id === groupId
+                            ? {
+                                ...g,
+                                last_message: lastMessage,
+                                last_message_at: now,
+                                ...(lastMessageObj ? { last_message_obj: lastMessageObj } : {}),
+                              }
+                            : g
+                    );
+                    return { groups: updated };
+                });
+            },
+
             setCurrentTab: (tab: string) => {
                 const isMessages = tab === 'messages';
                 set({ 
@@ -290,14 +321,18 @@ export const useGroupStore = create<GroupState>()(
                 });
             },
 
-            clearBadge: () => set({ isBadgeCleared: true }),
+            clearBadge: () => set((state) => ({ 
+                isBadgeCleared: true, 
+                groups: state.groups.map(g => ({ ...g, unread_count: 0 })) 
+            })),
         }),
         {
             name: 'group-store',
             storage: createJSONStorage(() => mmkvStorage),
             partialize: (state) => ({
-                // Persist groups so they load instantly on boot without waiting for SQLite
+                // Persist groups & membersCache so they load instantly on boot without waiting for network/SQLite
                 groups: state.groups,
+                membersCache: state.membersCache,
                 lastFetched: state.lastFetched,
                 isBadgeCleared: state.isBadgeCleared
             }),

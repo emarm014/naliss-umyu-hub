@@ -197,6 +197,10 @@ export default function RegisterOptions() {
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 5: Validating institutional email', level: 'info', data: { email: user.email } });
       if (!user.email || !INSTITUTIONAL_EMAIL_REGEX.test(user.email)) {
         store.setIsGoogleDelaying(false);
+        // Purge invalid Google account from Supabase so it does not pollute users list
+        try {
+          await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email || '' });
+        } catch {}
         await supabase.auth.signOut();
         store.reset();
         if (isMounted.current) {
@@ -208,8 +212,10 @@ export default function RegisterOptions() {
 
       if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
 
-      // ── STEP 6: Check account status ──────────────────────────────────────
+      // ── STEP 6: Check account status & profile completion ──────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 6: Checking account status', level: 'info' });
+      let isFullyRegistered = false;
+
       try {
         const { data: accountStatus } = await (supabase as any).rpc('check_existing_account', { email_addr: user.email });
 
@@ -224,25 +230,37 @@ export default function RegisterOptions() {
           store.setIsGoogleDelaying(false);
           await supabase.auth.signOut();
           store.reset();
-          if (isMounted.current) { setIsGoogleLoading(false); Alert.alert('Account Exists', 'This email is already registered. Please sign in instead.'); }
+          if (isMounted.current) { setIsGoogleLoading(false); Alert.alert('Account Exists', 'This email is already registered via Email & Password. Please sign in with your password.'); }
           return;
         }
-        if (accountStatus === 'google') {
-          Sentry.addBreadcrumb({ category: 'signup.google', message: 'Existing Google account — redirecting to tabs', level: 'info' });
-          await useAuthStore.getState().fetchProfile(true);
-          await useAuthStore.getState().checkProfileComplete(user.id);
-          store.setIsGoogleDelaying(false);
-          if (isMounted.current) setIsGoogleLoading(false);
-          return;
+
+        // Verify if public profile is fully created (registration_number and level are present)
+        const { data: publicProfile } = await (supabase as any)
+          .from('users')
+          .select('id, level, registration_number')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (publicProfile?.level && publicProfile?.registration_number) {
+          isFullyRegistered = true;
         }
       } catch (rpcErr) {
-        // RPC failed — proceed anyway, server enforces rules at profile creation
-        Sentry.addBreadcrumb({ category: 'signup.google', message: 'check_existing_account RPC failed — proceeding', level: 'warning', data: { error: (rpcErr as any)?.message } });
+        Sentry.addBreadcrumb({ category: 'signup.google', message: 'check_existing_account RPC failed — proceeding to identity', level: 'warning', data: { error: (rpcErr as any)?.message } });
+      }
+
+      if (isFullyRegistered) {
+        Sentry.addBreadcrumb({ category: 'signup.google', message: 'Existing complete Google account — redirecting to app', level: 'info' });
+        await useAuthStore.getState().fetchProfile(true);
+        useAuthStore.getState().setIsProfileComplete(true);
+        store.setIsGoogleDelaying(false);
+        if (isMounted.current) setIsGoogleLoading(false);
+        router.replace('/(tabs)' as any);
+        return;
       }
 
       if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
 
-      // ── STEP 7: Navigate to identity ──────────────────────────────────────
+      // ── STEP 7: Navigate to identity screen (Step 2 of registration) ───────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 7: Navigating to identity screen', level: 'info' });
       store.setProvider('google');
       store.setCredentials(user.email!, undefined);

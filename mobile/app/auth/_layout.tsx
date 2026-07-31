@@ -72,6 +72,7 @@ export default function AuthLayout() {
         <Stack.Screen name="level" />
         <Stack.Screen name="reset-password" />
         <Stack.Screen name="update-password" />
+        <Stack.Screen name="data-restore" options={{ gestureEnabled: false }} />
       </Stack>
       <AuthOfflineBanner />
     </View>

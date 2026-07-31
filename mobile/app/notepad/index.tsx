@@ -19,6 +19,10 @@ export default function NotepadDashboard() {
 
     const insets = useSafeAreaInsets();
 
+    React.useEffect(() => {
+        useNoteStore.getState().fetchCloudNotes();
+    }, []);
+
     // O(1) performance lookup mapping (Memoized)
     const filteredNotes = useMemo(() => {
         if (!searchQuery.trim()) return notes;

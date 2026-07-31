@@ -36,8 +36,8 @@ const navigation = [
   { name: 'Students', href: '/students', icon: Users, minRole: 'moderator' as const, permission: 'can_manage_students' as const },
   { name: 'Groups', href: '/groups', icon: UsersRound, minRole: 'moderator' as const, permission: 'can_manage_groups' as const },
   { name: 'Announcements', href: '/announcements', icon: FileText, minRole: 'moderator' as const, permission: 'can_manage_announcements' as const },
-  { name: 'Events', href: '/events', icon: Calendar, minRole: 'super_admin' as const },
-  { name: 'Event Pools', href: '/event-pools', icon: Trophy, minRole: 'super_admin' as const },
+  { name: 'Events', href: '/events', icon: Calendar, minRole: 'moderator' as const, permission: 'can_manage_events' as const },
+  { name: 'Event Pools', href: '/event-pools', icon: Trophy, minRole: 'moderator' as const, permission: 'can_manage_events' as const },
   { name: 'Featured Students', href: '/featured-students', icon: Crown, minRole: 'super_admin' as const },
   { name: 'News', href: '/news', icon: Newspaper, minRole: 'moderator' as const, permission: 'can_manage_news' as const },
   { name: 'Archive', href: '/archive', icon: FolderOpen, minRole: 'moderator' as const, permission: 'can_manage_archives' as const },
@@ -53,7 +53,7 @@ const navigation = [
   { name: 'Graduates', href: '/graduates', icon: Archive, minRole: 'super_admin' as const },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, minRole: 'super_admin' as const },
   { name: 'Activity Logs', href: '/logs', icon: History, minRole: 'super_admin' as const },
-  { name: 'Security Settings', href: '/security', icon: ShieldCheck, minRole: 'moderator' as const, permission: 'can_manage_security' as const },
+  { name: 'Security Settings', href: '/security', icon: ShieldCheck, minRole: 'super_admin' as const },
   { name: 'Settings', href: '/settings', icon: Wrench, minRole: 'super_admin' as const },
 ];
 

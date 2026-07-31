@@ -6,6 +6,7 @@ import type { Announcement } from '../types';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 import ErrorState from '../components/ui/ErrorState';
+import { logAdminActivity } from '../lib/activityLogger';
 import {
   Plus,
   Search,
@@ -183,6 +184,13 @@ export default function AnnouncementsPage() {
       if (error) throw error;
       setSuccessMessage(`Announcement ${newPinned ? 'pinned' : 'unpinned'} successfully`);
       setTimeout(() => setSuccessMessage(null), 5000);
+      logAdminActivity({
+        action: newPinned ? 'announcement.pin' : 'announcement.unpin',
+        entity_type: 'announcement',
+        entity_id: announcement.id,
+        description: `${newPinned ? 'Pinned' : 'Unpinned'} announcement: "${announcement.title}"`,
+        metadata: { title: announcement.title, is_pinned: newPinned }
+      });
     } catch (err: unknown) {
       // Revert
       useAdminDataStore.getState().updateAnnouncement(announcement as any);
@@ -206,6 +214,14 @@ export default function AnnouncementsPage() {
     removeAnnouncement(id);
     setSuccessMessage('Announcement deleted successfully');
     setTimeout(() => setSuccessMessage(null), 5000);
+
+    logAdminActivity({
+      action: 'announcement.delete',
+      entity_type: 'announcement',
+      entity_id: id,
+      description: `Deleted announcement: "${announcement?.title || id}"`,
+      metadata: { title: announcement?.title, category: announcement?.category }
+    });
 
     try {
       const { error } = await supabase.from('announcements').delete().eq('id', id);

@@ -650,12 +650,12 @@ function ResourceCard({ material, downloadedIds, onDownload, onDownloadComplete,
   if (files.length === 0) return null;
 
   return (
-    <View style={[styles.resourceCard, { backgroundColor: theme.isDark ? theme.cardBg : '#FFFFFF', borderColor: theme.border, flexDirection: 'column', alignItems: 'stretch' }]}>
+    <View style={[{ borderWidth: 1, borderRadius: 16, padding: 16, marginBottom: 16, flexDirection: 'column', alignItems: 'stretch', backgroundColor: theme.isDark ? theme.cardBg : '#FFFFFF', borderColor: theme.border }]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.resTitle, { color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={2}>{material.title}</Text>
+          <Text style={[{ fontFamily: 'Inter-Bold', fontSize: 16, marginBottom: 4, color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={2}>{material.title}</Text>
           {material.description && material.description.trim().toLowerCase() !== material.title.trim().toLowerCase() ? (
-            <Text style={{ fontSize: 13, fontFamily: 'Inter-Regular', lineHeight: 20, color: theme.isDark ? theme.textMuted : '#64748b' }} numberOfLines={2}>{material.description}</Text>
+            <Text style={{ fontFamily: 'Inter-Medium', fontSize: 13, color: theme.isDark ? theme.textMuted : '#64748b' }} numberOfLines={2}>{material.description}</Text>
           ) : null}
         </View>
         {profile?.role === 'super_admin' && (
@@ -737,29 +737,72 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
 
   const fileSizeMB = ((fileAsset.size || 0) / 1024 / 1024).toFixed(1);
 
+  const openExternalDocument = async (vaultPath: string, rawMime: string, fileName: string) => {
+    try {
+      const fileUri = vaultPath.startsWith('file://') ? vaultPath : `file://${vaultPath}`;
+      const nameLower = (fileName || vaultPath).toLowerCase();
+
+      // Deduce precise MIME type for Android ACTION_VIEW intent so only supported viewer apps are presented
+      let mimeType = rawMime || 'application/octet-stream';
+      if (nameLower.endsWith('.pdf')) mimeType = 'application/pdf';
+      else if (nameLower.endsWith('.doc')) mimeType = 'application/msword';
+      else if (nameLower.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      else if (nameLower.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
+      else if (nameLower.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      else if (nameLower.endsWith('.ppt')) mimeType = 'application/vnd.ms-powerpoint';
+      else if (nameLower.endsWith('.pptx')) mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      else if (nameLower.endsWith('.txt')) mimeType = 'text/plain';
+      else if (nameLower.endsWith('.csv')) mimeType = 'text/csv';
+
+      if (Platform.OS === 'android') {
+        const IntentLauncher = require('expo-intent-launcher');
+        const FileSystem = require('expo-file-system');
+
+        // Convert file:// URI to content:// URI so target app is granted read permissions
+        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+          type: mimeType,
+        });
+      } else {
+        const Sharing = require('expo-sharing');
+        const isAvail = await Sharing.isAvailableAsync();
+        if (!isAvail) {
+          Alert.alert(
+            'No App Available',
+            'No app available on your device supports opening this file format. Please use the In-App Viewer.'
+          );
+          return;
+        }
+        await Sharing.shareAsync(fileUri, { mimeType });
+      }
+    } catch (err: any) {
+      console.warn('Failed to open with external app:', err);
+      Alert.alert(
+        'No App Available',
+        'No app available on your device supports opening this file format. Please use the In-App Viewer.'
+      );
+    }
+  };
+
   const handleBookPress = async () => {
-    if (!localDownloaded) {
+    // Images and Videos MUST open directly in the in-app viewer with no external app option
+    if (isImage || isVideo || !localDownloaded) {
       onRead();
       return;
     }
+
+    // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
     const displayName = fileAsset.name || extractFileNameFromUrl(fileAsset.url, material.id);
     const vaultPath = getVaultFilePath(material.id, displayName, fileAsset.url);
-    Alert.alert('Open file', displayName, [
+    
+    Alert.alert('Open File', displayName, [
       { text: 'Open in App', onPress: onRead },
       {
-        text: 'Open with...',
-        onPress: async () => {
-          try {
-            const isAvail = await Sharing.isAvailableAsync();
-            if (!isAvail) {
-              Alert.alert('Unavailable', 'No apps available to open this file.');
-              return;
-            }
-            await Sharing.shareAsync(vaultPath.startsWith('file://') ? vaultPath : `file://${vaultPath}`);
-          } catch (err) {
-            Alert.alert('Error', 'Could not open file with external app.');
-          }
-        },
+        text: 'Open with Other App',
+        onPress: () => openExternalDocument(vaultPath, mime, displayName),
       },
       { text: 'Cancel', style: 'cancel' },
     ]);
@@ -800,49 +843,52 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
   };
 
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? '#2D3748' : '#F8FAFC', padding: 12, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: theme.isDark ? '#4A5568' : '#E2E8F0' }, localDownloaded && { borderColor: theme.brandGreen, backgroundColor: theme.isDark ? '#1C4532' : '#F0FDF4' }]}>
-      <View style={[styles.resIconBox, { backgroundColor: fileTypeConfig.bg, width: 44, height: 44, borderRadius: 12 }]}>
+    <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? '#2D3748' : '#F8FAFC', padding: 12, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: theme.isDark ? '#4A5568' : '#E2E8F0' }, localDownloaded && { borderColor: '#005A36', backgroundColor: theme.isDark ? '#1C4532' : '#F0FDF4' }]}>
+      <View style={[{ backgroundColor: fileTypeConfig.bg, width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }]}>
         <Ionicons name={fileTypeConfig.icon as any} size={20} color={fileTypeConfig.color} />
       </View>
       
-      <View style={[styles.resInfo, { marginLeft: 12, flex: 1 }]}>
+      <View style={[{ marginLeft: 12, flex: 1 }]}>
         <Text style={[{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: theme.isDark ? theme.textPrimary : '#0f172a' }]} numberOfLines={1}>{extractFileNameFromUrl(fileAsset.url, fileAsset.name || material.title)}</Text>
-        <View style={styles.resMetaRow}>
-          <Text style={[styles.resMeta, { color: theme.isDark ? theme.textMuted : '#64748b' }]}>{fileSizeMB} MB</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+          <Text style={[{ fontFamily: 'Inter-Medium', fontSize: 12, color: theme.isDark ? theme.textMuted : '#64748b' }]}>{fileSizeMB} MB</Text>
           {localDownloaded && (
-            <View style={[styles.offlinePill, { marginLeft: 6 }]}>
+            <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, gap: 2, marginLeft: 6 }]}>
               <Ionicons name="checkmark-circle" size={10} color="#166534" />
-              <Text style={styles.offlinePillText}>Saved offline</Text>
+              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 9, color: '#166534' }}>Saved</Text>
             </View>
           )}
         </View>
         
+        {/* Download Progress Bar */}
         {downloadProgress !== null && (
-          <View style={styles.progressBarOuter}>
-            <View style={[styles.progressBarInner, { width: `${downloadProgress}%` as any }]} />
-            <Text style={styles.progressText}>{downloadProgress}%</Text>
+          <View style={{ marginTop: 6 }}>
+            <View style={{ height: 4, backgroundColor: theme.isDark ? '#374151' : '#E2E8F0', borderRadius: 2, overflow: 'hidden' }}>
+              <View style={{ height: '100%', width: `${downloadProgress}%`, backgroundColor: '#10B981', borderRadius: 2 }} />
+            </View>
+            <Text style={{ fontFamily: 'Inter-Bold', fontSize: 10, color: '#10B981', marginTop: 2 }}>{downloadProgress}%</Text>
           </View>
         )}
       </View>
 
-      <View style={[styles.resActions, { marginLeft: 8 }]}>
-        <TouchableOpacity onPress={handleBookPress} style={[styles.resActionBtn, { backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : (theme.isDark ? '#0c4a6e' : '#F0F9FF') }]}>
-          <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? '#166534' : (theme.isDark ? COLORS.primary : '#005A36')} />
+      <View style={[{ flexDirection: 'row', alignItems: 'center', marginLeft: 8 }]}>
+        <TouchableOpacity onPress={handleBookPress} style={[{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : (theme.isDark ? '#0284c7' : '#f1f5f9') }]}>
+          <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? '#166534' : (theme.isDark ? '#ffffff' : '#475569')} />
         </TouchableOpacity>
         
         <TouchableOpacity
           onPress={handleDownloadPress}
-          disabled={downloadProgress !== null}
-          style={[styles.resDownloadBtn, localDownloaded && styles.resDownloadBtnDone, downloadProgress !== null && styles.resDownloadBtnActive]}
+          disabled={downloadProgress !== null || localDownloaded}
+          style={[{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }, downloadProgress !== null ? { backgroundColor: '#D1FAE5' } : localDownloaded ? { backgroundColor: theme.isDark ? '#22543D' : '#DCFCE7' } : { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
         >
           {downloadProgress !== null ? (
-            <View style={styles.downloadCircle}>
-              <Text style={styles.downloadCircleText}>{downloadProgress}%</Text>
-            </View>
-          ) : localDownloaded ? (
-            <Ionicons name="checkmark-circle" size={18} color="#166534" />
+            <ActivityIndicator size="small" color="#10B981" />
           ) : (
-            <Ionicons name="cloud-download-outline" size={18} color="#fff" />
+            <Ionicons 
+              name={localDownloaded ? 'checkmark-circle' : 'cloud-download'} 
+              size={16} 
+              color={localDownloaded ? '#166534' : '#10B981'}
+            />
           )}
         </TouchableOpacity>
       </View>

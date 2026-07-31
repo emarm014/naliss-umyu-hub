@@ -34,6 +34,7 @@ import { trackFeature, captureUIError } from '../../src/utils/sentry';
 import { getOrCreateDeviceId } from '../../src/utils/device';
 
 import { CachedImage } from '../../src/components/common/CachedImage';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 const { width } = Dimensions.get('window');
 
@@ -110,6 +111,8 @@ export default function ProfileScreen() {
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isSavingNotifs, setIsSavingNotifs] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerFile, setViewerFile] = useState<{ uri: string; type: any; name: string }>({ uri: '', type: 'image', name: '' });
 
   React.useEffect(() => {
     const loadDeviceId = async () => {
@@ -358,6 +361,7 @@ export default function ProfileScreen() {
         .from('user_sessions')
         .select('*')
         .eq('user_id', storeProfile.id)
+        .eq('is_active', true)
         .order('last_active_at', { ascending: false });
       if (error) throw error;
       setDeviceSessions(data || []);
@@ -394,6 +398,12 @@ export default function ProfileScreen() {
     setIsVerifyingPassword(true);
     try {
       
+
+      // Logically deactivate session first (in case RLS blocks delete)
+      await (supabase as any)
+        .from('user_sessions')
+        .update({ is_active: false })
+        .eq('id', sessionToTerminate.id);
 
       // Permanently delete session from DB
       const { error } = await (supabase as any)
@@ -436,6 +446,14 @@ export default function ProfileScreen() {
     setIsRevokingSessions(true);
     try {
       if (includeCurrentDevice) {
+        // Logically deactivate all sessions
+        if (storeProfile?.id) {
+          await (supabase as any)
+            .from('user_sessions')
+            .update({ is_active: false })
+            .eq('user_id', storeProfile.id);
+        }
+
         // Delete ALL session logs for this user
         if (storeProfile?.id) {
           await (supabase as any)
@@ -460,6 +478,13 @@ export default function ProfileScreen() {
         await supabase.auth.signOut({ scope: 'others' });
         
         if (storeProfile?.id && currentDeviceId) {
+          // Logically deactivate first
+          await (supabase as any)
+            .from('user_sessions')
+            .update({ is_active: false })
+            .eq('user_id', storeProfile.id)
+            .neq('device_id', currentDeviceId);
+
           const { error } = await (supabase as any)
             .from('user_sessions')
             .delete()
@@ -640,10 +665,12 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 onPress={() => {
                   if (avatarUri) {
-                    router.push({
-                      pathname: '/viewer' as any,
-                      params: { uri: avatarUri, name: `${storeProfile?.full_name || 'Profile'}'s Avatar`, type: 'image' }
+                    setViewerFile({
+                      uri: avatarUri,
+                      type: 'image',
+                      name: `${storeProfile?.full_name || 'Profile'}'s Avatar`,
                     });
+                    setViewerVisible(true);
                   }
                 }}
                 activeOpacity={0.8}
@@ -1524,6 +1551,15 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
       </SafeModal>
+
+      <UniversalViewer
+        isVisible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        fileUri={viewerFile.uri}
+        fileType={viewerFile.type}
+        fileName={viewerFile.name}
+        isHalfScreen={true}
+      />
     </ScrollView>
   );
 }

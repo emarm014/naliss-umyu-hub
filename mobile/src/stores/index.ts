@@ -1,4 +1,4 @@
-﻿export * from './announcement.store';
+export * from './announcement.store';
 export * from './event.store';
 export * from './resource.store';
 export * from './network.store';
@@ -16,5 +16,6 @@ export * from './mutationQueue.store';
 export * from './crossDeviceSync.store';
 export * from './offlineStorage.store';
 export * from './offlineSearch.store';
+export * from './data-restore.store';
 
 

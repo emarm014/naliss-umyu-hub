@@ -1,4 +1,4 @@
-﻿export const INSTITUTIONAL_EMAIL_REGEX = /^(lis|blis)\d{6}@students\.umyu\.edu\.ng$/i;
+export const INSTITUTIONAL_EMAIL_REGEX = /^(lis|blis)\d{6}@students\.umyu\.edu\.ng$/i;
 
 /**
  * Validates that the registration number matches the expected UMYU format
@@ -9,8 +9,8 @@
  */
 export const validateRegistrationNumberMatch = (email: string, regNo: string): boolean => {
   // Strictly support Format A: U[12]/YY/DEPT/NNNN
-  // YY is 22-29 as requested
-  const formatRegex = /^U[12]\/2[2-9]\/(BLIS|LIS)\/\d{4}$/i;
+  // YY is 20-29 (including 21, 22, etc.)
+  const formatRegex = /^U[12]\/2[0-9]\/(BLIS|LIS)\/\d{4}$/i;
   if (!formatRegex.test(regNo.trim())) return false;
 
   const emailDigitsMatch = email.match(/\d{6}/);

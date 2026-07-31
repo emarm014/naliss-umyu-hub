@@ -23,6 +23,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
 
 import { CachedImage } from '../../src/components/common/CachedImage';
+import { FeaturedStudentCongratsCard } from '../../src/components/FeaturedStudentCongratsCard';
+import { FeaturedStudentCard } from '../../src/components/FeaturedStudentCard';
 
 const { width } = Dimensions.get('window');
 
@@ -525,6 +527,9 @@ export default function HomeScreen() {
             ))}
           </View>
 
+          {/* ─── Featured Student Realtime Congratulations Notification Card ── */}
+          {user?.id && <FeaturedStudentCongratsCard userId={user.id} />}
+
           {/* ─── Pinned Featured Students (FYB) ─────────────── */}
           {activePinnedFeatured.length > 0 && (
             <View style={{ marginBottom: 20 }}>
@@ -535,35 +540,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
               {activePinnedFeatured.map((item: any) => (
-                <TouchableOpacity
-                  key={`fyb-${item.id}`}
-                  style={[styles.posterCard, { marginBottom: 12 }]}
-                  onPress={() => router.push('/fyb' as any)}
-                  activeOpacity={0.85}
-                >
-                  <CachedImage
-                    remoteUrl={item.custom_image_url ? getOptimizedCloudinaryUrl(item.custom_image_url, 600, 400) : null}
-                    style={styles.posterImage}
-                    entityId={item.id}
-                    assetType="fyb_poster"
-                    resizeMode="cover"
-                  />
-                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.posterGradient} />
-                  <View style={styles.posterContent}>
-                    <View style={styles.posterTagRow}>
-                      <View style={[styles.posterTag, { backgroundColor: '#d97706' }]}>
-                        <Text style={styles.posterTagText}>FEATURED</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                      {item.users?.avatar_url ? (
-                        <CachedImage remoteUrl={item.users.avatar_url} style={{ width: 20, height: 20, borderRadius: 10 }} entityId={`poster_avatar_${item.id}`} assetType="user" />
-                      ) : null}
-                      <Text style={styles.posterMeta} numberOfLines={1}>{item.users?.full_name || 'Student'}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                <FeaturedStudentCard key={`fyb-${item.id}`} item={item} />
               ))}
             </View>
           )}

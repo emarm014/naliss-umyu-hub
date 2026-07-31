@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../api/supabase/client';
 import * as Sentry from '@sentry/react-native';
@@ -23,6 +23,7 @@ interface GlobalSyncState {
   terminate: () => void;
   resubscribe: () => void;
   syncAll: (force?: boolean) => Promise<void>;
+  restoreAllData: (onProgress: (progress: number, step: string) => void) => Promise<void>;
   _openChannels: () => void;
   _startBackgroundSync: () => void;
   _stopBackgroundSync: () => void;
@@ -114,6 +115,86 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
       useDirectoryStore.getState().fetchLecturers(force),
       useDirectoryStore.getState().fetchExecutives(force),
     ]);
+  },
+
+  /**
+   * Full data restore for new device login — reports progress via callback.
+   * Downloads all user data step-by-step with percentage updates.
+   */
+  restoreAllData: async (onProgress: (progress: number, step: string) => void) => {
+    const authStore = useAuthStore.getState();
+    if (!authStore.user) return;
+
+    const level = authStore.profile?.level;
+
+    try {
+      // Step 1: Profile & settings (0–10%)
+      onProgress(2, 'Syncing your profile...');
+      await authStore.fetchProfile(true);
+      onProgress(10, 'Profile synced');
+
+      // Step 2: Announcements (10–25%)
+      onProgress(12, 'Loading announcements...');
+      await useAnnouncementStore.getState().fetchAnnouncements(level, true);
+      onProgress(25, 'Announcements loaded');
+
+      // Step 3: Groups & messages (25–40%)
+      onProgress(27, 'Syncing groups & messages...');
+      await useGroupStore.getState().fetchGroups(true);
+      onProgress(40, 'Groups synced');
+
+      // Step 4: News, Archive, FYB (40–55%)
+      onProgress(42, 'Loading news...');
+      try {
+        const { useNewsStore } = require('./news.store');
+        await useNewsStore.getState().fetchNews(true);
+      } catch {}
+      onProgress(46, 'Loading archive...');
+      try {
+        const { useArchiveStore } = require('./archive.store');
+        await useArchiveStore.getState().fetchArchives(0, true);
+      } catch {}
+      onProgress(50, 'Loading featured students...');
+      try {
+        const { useFYBStore } = require('./fyb.store');
+        await useFYBStore.getState().fetchFeatured(true);
+      } catch {}
+      onProgress(55, 'Content loaded');
+
+      // Step 5: Events, resources, directory (55–70%)
+      onProgress(57, 'Syncing events & resources...');
+      await Promise.allSettled([
+        useEventStore.getState().fetchUpcomingEvents(level, true),
+        useResourceStore.getState().fetchMaterials({ level: level as any }, true),
+        useResourceStore.getState().fetchPastQuestions({ level: level as any }, true),
+        useResourceStore.getState().fetchCourses(level as any, true),
+      ]);
+      onProgress(65, 'Loading directory...');
+      await Promise.allSettled([
+        useDirectoryStore.getState().fetchLecturers(true),
+        useDirectoryStore.getState().fetchExecutives(true),
+      ]);
+      onProgress(70, 'Events & resources synced');
+
+      // Step 6: Notes from cloud (70–85%)
+      onProgress(72, 'Restoring your notes...');
+      try {
+        await useNoteStore.getState().fetchCloudNotes();
+      } catch {}
+      onProgress(85, 'Notes restored');
+
+      // Step 7: Downloaded files (85–100%)
+      onProgress(87, 'Restoring downloaded files...');
+      try {
+        const { DownloadTracker } = require('../services/downloadTracker.service');
+        await DownloadTracker.restoreUserDownloads();
+      } catch {}
+      onProgress(100, 'All done!');
+
+    } catch (err) {
+      // If any critical step fails, still report progress so far
+      throw err;
+    }
   },
 
   // â”€â”€ Background periodic sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

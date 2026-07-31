@@ -319,7 +319,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
           }),
           async () => ({
             activityLogs: await safeFetch('activityLogs', async () => {
-              const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)').order('created_at', { ascending: false }).limit(50);
+              const { data, error } = await supabase.from('activity_logs').select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role, is_external, avatar_url)').order('created_at', { ascending: false }).limit(200);
               if (error) throw error;
               return data || [];
             }, get().activityLogs, 30000)
@@ -497,9 +497,9 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
   fetchActivityLogs: async () => {
     const { data, error } = await supabase
       .from('activity_logs')
-      .select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role)')
+      .select('*, user:users!activity_logs_user_id_fkey(id, full_name, email, role, is_external, avatar_url)')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(500);
     if (!error) set({ activityLogs: data || [] });
   },
 

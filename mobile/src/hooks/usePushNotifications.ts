@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
@@ -176,9 +176,12 @@ export function usePushNotifications() {
       }
       
       const cachedData = await cacheMediaForNotification(data);
+      const effectiveNotifId = notifType === 'fyb_congratulation'
+        ? `fyb_congratulations_${data?.featured_student_id || 'active'}`
+        : notifId;
 
       useNotificationStore.getState().addNotification({
-        id: notifId,
+        id: effectiveNotifId,
         type: notifType,
         title: title || 'New Notification',
         message: body || '',
@@ -201,9 +204,12 @@ export function usePushNotifications() {
       const notifType = (data?.type as string) || 'general';
       
       const cachedData = await cacheMediaForNotification(data);
+      const effectiveNotifId = notifType === 'fyb_congratulation'
+        ? `fyb_congratulations_${data?.featured_student_id || 'active'}`
+        : notifId;
 
       useNotificationStore.getState().addNotification({
-        id: notifId,
+        id: effectiveNotifId,
         type: notifType,
         title: title || 'New Notification',
         message: body || '',

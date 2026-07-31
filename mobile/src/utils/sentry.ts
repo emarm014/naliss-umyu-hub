@@ -308,10 +308,26 @@ export function trackSqlTransaction(op: string, sql: string, durationMs: number,
 }
 
 export function captureDatabaseError(op: string, error: unknown, extra?: Record<string, any>) {
-  Sentry.captureException(normalizeError(error), {
-    tags: { location: 'db.sqlite', op },
-    extra: { ...extra, originalError: error },
-  });
+  try {
+    const safeExtra: Record<string, any> = {};
+    if (extra) {
+      for (const [key, value] of Object.entries(extra)) {
+        if (typeof value === 'function') continue;
+        if (key === 'args' && Array.isArray(value)) {
+          safeExtra.args = value.map(arg => typeof arg === 'function' ? '[Function]' : (arg && typeof arg === 'object') ? String(arg) : arg);
+        } else if (typeof value === 'object' && value !== null) {
+          safeExtra[key] = String(value);
+        } else {
+          safeExtra[key] = value;
+        }
+      }
+    }
+
+    Sentry.captureException(normalizeError(error), {
+      tags: { location: 'db.sqlite', op },
+      extra: safeExtra,
+    });
+  } catch (_) {}
 }
 
 export function trackOfflineSync(

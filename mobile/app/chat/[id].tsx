@@ -18,6 +18,7 @@ import {
     ActivityIndicator,
     PanResponder,
     Linking,
+    Modal,
 } from 'react-native';
 import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -36,6 +37,7 @@ import { useSettingsStore, useAuthStore, useMessageStore, useMutationQueueStore,
 import { useGroupStore } from '../../src/stores/group.store';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../src/components/common/CachedImage';
+import { Video, ResizeMode } from 'expo-av';
 import { Message } from '../../src/types';
 import { FileService } from '../../src/services/file.service';
 import { saveMediaToDevice, shareMedia } from '../../src/utils/mediaSaver';
@@ -180,6 +182,8 @@ export default function ChatScreen() {
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [longPressedMessage, setLongPressedMessage] = useState<any>(null);
     const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerMediaList, setViewerMediaList] = useState<any[] | undefined>(undefined);
+    const [viewerInitialIndex, setViewerInitialIndex] = useState<number>(0);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
     const [viewerFile, setViewerFile] = useState<{ uri: string, type: any, name: string, isProfile?: boolean, profileData?: any }>({ uri: '', type: 'document', name: '' });
     const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
@@ -442,18 +446,25 @@ export default function ChatScreen() {
                 isOnline: msg.user?.last_active_at ? (new Date().getTime() - new Date(msg.user.last_active_at).getTime() < 60000) : false
             })).reverse(); // Reverse because we fetched descending to get the latest 300
 
-            // CRITICAL: Only update the persistent cache for full (unfiltered) fetches.
-            // Filtered/search results must NEVER overwrite the full message cache —
-            // that would permanently delete all non-matching messages from offline storage.
-            if (isFiltered) {
-                // Search mode: only update the UI, leave the cache untouched
-                setMessages(formattedMessages);
-            } else {
-                // Full fetch: update both UI and persistent cache
-                setMessages(formattedMessages);
-                messageStore.setMessages(id, formattedMessages);
-            }
-            // Await download state check so UI shows correct state on first render
+            // Preserve unsent local media & text messages so offline queue items are NEVER wiped out
+            setMessages(prev => {
+                const pendingLocal = prev.filter(m => 
+                    (m.id && String(m.id).startsWith('temp-')) || 
+                    ['unsent', 'sending', 'failed', 'error'].includes(m.status)
+                );
+                const serverTempIds = new Set(formattedMessages.map(s => s.metadata?.tempId || s.id));
+                const unconfirmedLocal = pendingLocal.filter(p => !serverTempIds.has(p.id) && !serverTempIds.has(p.metadata?.tempId));
+                const mergedMessages = [...formattedMessages, ...unconfirmedLocal].sort(
+                    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+
+                if (isFiltered) {
+                    return formattedMessages;
+                } else {
+                    messageStore.setMessages(id, mergedMessages);
+                    return mergedMessages;
+                }
+            });
             await checkDownloadedState(formattedMessages);
         } catch {
             // silent — keep existing messages on error
@@ -1650,11 +1661,7 @@ export default function ChatScreen() {
                                                     style={[itemStyle, { position: 'relative' }]}
                                                     activeOpacity={0.8}
                                                     onPress={() => {
-                                                        if (!isMe && !isDownloaded && !isDownloading) {
-                                                            handleDownloadMedia(child.id, child.content, child.metadata?.name || `${child.message_type}_${child.id}.jpg`);
-                                                        } else {
-                                                            handleOpenSwipeableMedia(child.id);
-                                                        }
+                                                        handleOpenSwipeableMedia(child.id, item.albumItems);
                                                     }}
                                                 >
                                                     <CachedImage 
@@ -1734,21 +1741,24 @@ export default function ChatScreen() {
                                         const captionItem = item.albumItems.find((m: any) => m.caption);
                                         if (captionItem) {
                                             return (
-                                                <Text style={[
-                                                    styles.mediaCaptionText, 
-                                                    { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text, marginTop: 4, paddingHorizontal: 4 },
-                                                ]}>
-                                                    {captionItem.caption}
-                                                </Text>
+                                                    <Text style={[
+                                                        styles.mediaCaptionText,
+                                                        isMe ? [styles.messageTextMe, { color: isDark ? '#e2e8f0' : '#0f172a' }]
+                                                             : [styles.messageTextOther, { color: colors.text }],
+                                                        { marginTop: 4, paddingHorizontal: 4 }
+                                                    ]}>
+                                                        {captionItem.caption}
+                                                    </Text>
                                             );
                                         }
                                         return null;
                                     })()}
                                     
-                                    <View style={styles.timeEditRow}>
+                                    <View style={[styles.timeEditRow, { paddingHorizontal: 6, paddingTop: 4, paddingBottom: 4 }]}>
                                         <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
                                             {item.created_at ? format(new Date(item.created_at), 'p') : ''}
                                         </Text>
+                                        {isMe && <StatusIcon status={item.status || item.albumItems?.[item.albumItems.length - 1]?.status} uploadProgress={uploadingIds[item.id]} messageId={item.id} />}
                                     </View>
                                 </View>
                             </View>
@@ -1803,7 +1813,11 @@ export default function ChatScreen() {
                                     )}
 
                                     {(item.caption || item.metadata?.caption) ? (
-                                        <Text style={[styles.mediaCaptionText, { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text }]}>
+                                        <Text style={[
+                                            styles.mediaCaptionText,
+                                            isMe ? [styles.messageTextMe, { color: isDark ? '#e2e8f0' : '#0f172a' }]
+                                                 : [styles.messageTextOther, { color: colors.text }]
+                                        ]}>
                                             {item.caption || item.metadata?.caption}
                                         </Text>
                                     ) : null}
@@ -1816,8 +1830,8 @@ export default function ChatScreen() {
                                     </View>
                                 </View>
                             </TouchableOpacity>
-                        ) : (
-                            <View style={[
+                            ) : (
+                                <View style={[
                                 item.message_type === 'video' ? styles.imageMessageContainer : styles.messageBubble,
                                 isMe ? (item.message_type === 'video' ? styles.imageBubbleMe : [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }])
                                      : (item.message_type === 'video' ? styles.imageBubbleOther : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }]),
@@ -1836,21 +1850,40 @@ export default function ChatScreen() {
                                             } else {
                                                 handleOpenSwipeableMedia(item.id);
                                             }
-                                        })}                                    >
-                                        {/* Cloudinary video thumbnail — generated automatically */}
-                                        {item.content?.startsWith('http') || downloadedIds[item.id] || item.fileUri ? (
-                                            <CachedImage
-                                                remoteUrl={downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/') : (item.fileUri || item.content)))}
-                                                style={styles.videoThumb}
-                                                resizeMode="cover"
-                                                entityId={`chat_media_${item.id}`}
-                                                assetType="chat_media"
-                                            />
-                                        ) : (
-                                            <View style={[styles.videoThumb, { backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center' }]}>
-                                                <Ionicons name="videocam" size={32} color="#64748b" />
-                                            </View>
-                                        )}
+                                        })}
+                                    >
+                                        {/* Video thumbnail frame */}
+                                        {(() => {
+                                            const localUri = downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || item.fileUri);
+                                            if (localUri) {
+                                                return (
+                                                    <Video
+                                                        source={{ uri: localUri }}
+                                                        style={styles.videoThumb}
+                                                        resizeMode={ResizeMode.COVER}
+                                                        shouldPlay={false}
+                                                        useNativeControls={false}
+                                                    />
+                                                );
+                                            }
+                                            if (item.content?.startsWith('http')) {
+                                                const posterUrl = item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/').replace(/\.(mp4|mov|avi|webm|mkv|m4v)$/i, '.jpg');
+                                                return (
+                                                    <CachedImage
+                                                        remoteUrl={posterUrl}
+                                                        style={styles.videoThumb}
+                                                        resizeMode="cover"
+                                                        entityId={`chat_media_${item.id}`}
+                                                        assetType="chat_media"
+                                                    />
+                                                );
+                                            }
+                                            return (
+                                                <View style={[styles.videoThumb, { backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' }]}>
+                                                    <Ionicons name="videocam" size={36} color="#64748b" />
+                                                </View>
+                                            );
+                                        })()}
 
                                         {/* Dark overlay */}
                                         <View style={styles.videoThumbOverlay} />
@@ -1881,9 +1914,13 @@ export default function ChatScreen() {
                                         )}
 
                                         {(item.caption || item.metadata?.caption) ? (
-                                            <Text style={[styles.mediaCaptionText, { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text }]}>
-                                                {item.caption || item.metadata?.caption}
-                                            </Text>
+                                        <Text style={[
+                                            styles.mediaCaptionText,
+                                            isMe ? [styles.messageTextMe, { color: isDark ? '#e2e8f0' : '#0f172a' }]
+                                                 : [styles.messageTextOther, { color: colors.text }]
+                                        ]}>
+                                            {item.caption || item.metadata?.caption}
+                                        </Text>
                                         ) : null}
 
                                         <View style={styles.timeEditRow}>
@@ -1902,17 +1939,15 @@ export default function ChatScreen() {
                                         delayLongPress={400}
                                         onLongPress={() => setLongPressedMessage(item)}
                                         onPress={() => handleDoubleTapReply(item, () => {
-                                            if (isMe) {
-                                                const fileName = item.metadata?.name || `document_${item.id}.pdf`;
-                                                setViewerFile({ uri: item.local_media_path || item.content, type: item.message_type, name: fileName });
-                                                setViewerVisible(true);
-                                                return;
-                                            }
                                             const fileName = item.metadata?.name || (
                                                 item.message_type === 'audio' ? `audio_${item.id}.mp3` : `document_${item.id}.pdf`
                                             );
+                                            if (isMe && (item.local_media_path || item.content)) {
+                                                handleOpenMedia(item.id, item.local_media_path || item.content, item.message_type, fileName);
+                                                return;
+                                            }
                                             if (downloadedIds[item.id]) {
-                                                handleOpenMedia(item.id, item.content, item.message_type);
+                                                handleOpenMedia(item.id, item.content, item.message_type, fileName);
                                             } else if (downloadingIds[item.id] === undefined) {
                                                 handleDownloadMedia(item.id, item.content, fileName);
                                             }
@@ -1963,8 +1998,10 @@ export default function ChatScreen() {
                                     </TouchableOpacity>
                                     {(item.caption || item.metadata?.caption) ? (
                                         <Text style={[
-                                            styles.mediaCaptionText, 
-                                            { color: isMe ? (isDark ? '#e2e8f0' : '#0f172a') : colors.text, marginTop: 4 },
+                                            styles.mediaCaptionText,
+                                            isMe ? [styles.messageTextMe, { color: isDark ? '#e2e8f0' : '#0f172a' }]
+                                                 : [styles.messageTextOther, { color: colors.text }],
+                                            { marginTop: 4 },
                                             item.reply_to_id && { color: isDark ? '#cbd5e1' : '#374151', opacity: 0.9 }
                                         ]}>
                                             {item.caption || item.metadata?.caption}
@@ -2262,7 +2299,7 @@ export default function ChatScreen() {
     const handleDownloadAndOpen = async (messageId: string, url: string, name: string, type: string) => {
         if (downloadingIds[messageId] !== undefined) return;
         if (downloadedIds[messageId]) {
-            handleOpenMedia(messageId, name, type);
+            handleOpenMedia(messageId, url, type, name);
             return;
         }
 
@@ -2278,12 +2315,7 @@ export default function ChatScreen() {
                     if (!isMounted.current) return;
                     setDownloadingIds(prev => { const next = { ...prev }; delete next[messageId]; return next; });
                     setDownloadedIds(prev => ({ ...prev, [messageId]: true }));
-                    const viewerType = type === 'document' ? 'document'
-                        : type === 'video' ? 'video'
-                        : type === 'audio' ? 'audio'
-                        : 'image';
-                    setViewerFile({ uri: localUri, type: viewerType, name });
-                    setViewerVisible(true);
+                    handleOpenMedia(messageId, localUri, type, name);
                 }, 300);
             } else {
                 setDownloadingIds(prev => { const next = { ...prev }; delete next[messageId]; return next; });
@@ -2295,17 +2327,89 @@ export default function ChatScreen() {
         }
     };
 
+    const openExternalDocumentInChat = async (localUri: string, rawMime: string, fileName: string) => {
+        try {
+            const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
+            const nameLower = (fileName || localUri).toLowerCase();
+
+            let mimeType = rawMime || 'application/octet-stream';
+            if (nameLower.endsWith('.pdf')) mimeType = 'application/pdf';
+            else if (nameLower.endsWith('.doc')) mimeType = 'application/msword';
+            else if (nameLower.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            else if (nameLower.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
+            else if (nameLower.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            else if (nameLower.endsWith('.ppt')) mimeType = 'application/vnd.ms-powerpoint';
+            else if (nameLower.endsWith('.pptx')) mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            else if (nameLower.endsWith('.txt')) mimeType = 'text/plain';
+            else if (nameLower.endsWith('.csv')) mimeType = 'text/csv';
+
+            if (Platform.OS === 'android') {
+                const IntentLauncher = require('expo-intent-launcher');
+                const FileSystem = require('expo-file-system');
+
+                const contentUri = await FileSystem.getContentUriAsync(fileUri);
+
+                await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+                    data: contentUri,
+                    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+                    type: mimeType,
+                });
+            } else {
+                const Sharing = require('expo-sharing');
+                const isAvail = await Sharing.isAvailableAsync();
+                if (!isAvail) {
+                    Alert.alert(
+                        'No App Available',
+                        'No app available on your device supports opening this file format. Please use the In-App Viewer.'
+                    );
+                    return;
+                }
+                await Sharing.shareAsync(fileUri, { mimeType });
+            }
+        } catch (err: any) {
+            console.warn('Failed to open document with external app:', err);
+            Alert.alert(
+                'No App Available',
+                'No app available on your device supports opening this file format. Please use the In-App Viewer.'
+            );
+        }
+    };
+
     // Open media — only from local vault, never from remote URL
-    const handleOpenMedia = async (messageId: string, url: string, type: any) => {
+    const handleOpenMedia = async (messageId: string, url: string, type: any, customName?: string) => {
         const isLocal = await FileService.isDownloaded(messageId, url);
-        if (!isLocal) return;
-        const localUri = FileService.getLocalUri(messageId, url);
+        if (!isLocal && !url.startsWith('file://')) return;
+        const localUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
+        const name = customName || url.split('/').pop() || 'media';
+
         const viewerType = type === 'document' ? 'document'
             : type === 'video' ? 'video'
             : type === 'audio' ? 'audio'
             : 'image';
-        setViewerFile({ uri: localUri, type: viewerType, name: url.split('/').pop() || 'media' });
-        setViewerVisible(true);
+
+        // Images, Videos, and Audio MUST open directly in the in-app viewer with no external app option
+        if (viewerType === 'image' || viewerType === 'video' || viewerType === 'audio') {
+            setViewerMediaList(undefined);
+            setViewerFile({ uri: localUri, type: viewerType, name });
+            setViewerVisible(true);
+            return;
+        }
+
+        // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
+        Alert.alert('Open File', name, [
+            {
+                text: 'Open in App',
+                onPress: () => {
+                    setViewerFile({ uri: localUri, type: 'document', name });
+                    setViewerVisible(true);
+                },
+            },
+            {
+                text: 'Open with Other App',
+                onPress: () => openExternalDocumentInChat(localUri, type, name),
+            },
+            { text: 'Cancel', style: 'cancel' },
+        ]);
     };
 
     const handleSaveMessageMedia = async (msg: any) => {
@@ -2380,36 +2484,61 @@ export default function ChatScreen() {
         }
     };
 
-    const handleOpenSwipeableMedia = (targetMessageId: string) => {
-        const mediaMessages = messages.filter(m => !m.is_deleted && (m.message_type === 'image' || m.message_type === 'video'));
-        const mediaArray = mediaMessages.map(m => {
-            const isDownloaded = downloadedIds[m.id];
-            const isMe = m.sender_id === currentUser?.id;
-            let mediaUrl = m.content;
+    const handleOpenSwipeableMedia = (targetMessageId: string, albumItems?: any[]) => {
+        if (albumItems && albumItems.length > 1) {
+            const mediaList = albumItems.map((child: any) => {
+                const isDownloaded = downloadedIds[child.id];
+                const isMe = child.sender_id === currentUser?.id;
+                let uri = child.content;
+                if (isDownloaded) {
+                    uri = FileService.getLocalUri(child.id, child.content);
+                } else if (isMe && child.fileUri) {
+                    uri = child.fileUri?.startsWith('file://') ? child.fileUri : `file://${child.fileUri}`;
+                } else if (child.local_media_path) {
+                    uri = child.local_media_path;
+                }
+                return {
+                    uri: uri || child.content,
+                    type: child.message_type || 'image',
+                    name: child.metadata?.name || `${child.message_type}_${child.id}.jpg`,
+                    fileId: child.id,
+                };
+            });
+
+            const targetIdx = albumItems.findIndex((c: any) => c.id === targetMessageId);
+            const safeIdx = Math.max(0, targetIdx);
+            setViewerMediaList(mediaList);
+            setViewerInitialIndex(safeIdx);
+            setViewerFile({
+                uri: mediaList[safeIdx]?.uri || '',
+                type: mediaList[safeIdx]?.type || 'image',
+                name: mediaList[safeIdx]?.name || 'Media',
+            });
+            setViewerVisible(true);
+        } else {
+            const targetMsg = messages.find(m => m.id === targetMessageId);
+            if (!targetMsg) return;
+
+            const isDownloaded = downloadedIds[targetMsg.id];
+            const isMe = targetMsg.sender_id === currentUser?.id;
+            let uri = targetMsg.content;
             if (isDownloaded) {
-                const ext = m.message_type === 'video' ? 'mp4' : m.message_type === 'audio' ? 'mp3' : m.message_type === 'document' ? 'pdf' : 'jpg';
-                mediaUrl = FileService.getLocalUri(m.id, m.content);
-            } else if (isMe) {
-                mediaUrl = m.content?.startsWith('http') ? m.content : (m.fileUri?.startsWith('file://') ? m.fileUri : `file://${m.fileUri}`);
+                uri = FileService.getLocalUri(targetMsg.id, targetMsg.content);
+            } else if (isMe && targetMsg.fileUri) {
+                uri = targetMsg.fileUri?.startsWith('file://') ? targetMsg.fileUri : `file://${targetMsg.fileUri}`;
+            } else if (targetMsg.local_media_path) {
+                uri = targetMsg.local_media_path;
             }
 
-            return {
-                id: m.id,
-                media_url: mediaUrl,
-                content_type: m.message_type,
-                name: m.metadata?.name || `${m.message_type}_${m.id}.${m.message_type === 'video' ? 'mp4' : m.message_type === 'audio' ? 'mp3' : m.message_type === 'document' ? 'pdf' : 'jpg'}`,
-            };
-        });
-
-        const selectedIndex = mediaArray.findIndex(m => m.id === targetMessageId);
-        
-        router.push({
-            pathname: '/viewer' as any,
-            params: {
-                mediaArray: JSON.stringify(mediaArray),
-                selectedIndex: Math.max(0, selectedIndex).toString()
-            }
-        });
+            setViewerMediaList(undefined);
+            setViewerInitialIndex(0);
+            setViewerFile({
+                uri: uri || targetMsg.content,
+                type: targetMsg.message_type || 'image',
+                name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
+            });
+            setViewerVisible(true);
+        }
     };
 
     const [activeVideo, setActiveVideo] = useState<string | null>(null);
@@ -2672,31 +2801,35 @@ export default function ChatScreen() {
             />
 
             {/* Attachment Menu Modal */}
-            <SafeBottomSheet
+            <Modal
+                transparent
                 visible={showAttachmentMenu}
-                onClose={() => setShowAttachmentMenu(false)}
-                contentStyle={[styles.attachmentMenu, { paddingBottom: Math.max(insets.bottom + 16, 24), backgroundColor: colors.card }]}
                 animationType="fade"
+                onRequestClose={() => setShowAttachmentMenu(false)}
             >
-                            <TouchableOpacity style={styles.attachmentItem} onPress={() => { setShowAttachmentMenu(false); handlePickAndCropImage(); }}>
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#3b82f6' }]}>
-                                    <Ionicons name="image" size={22} color="#FFF" />
-                                </View>
-                                <Text style={styles.attachmentText}>Photo</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.attachmentItem} onPress={handlePickDocument}>
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#10b981' }]}>
-                                    <Ionicons name="document" size={22} color="#FFF" />
-                                </View>
-                                <Text style={styles.attachmentText}>Document</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.attachmentItem} onPress={handlePickAudioVideo}>
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#f59e0b' }]}>
-                                    <Ionicons name="play" size={22} color="#FFF" />
-                                </View>
-                                <Text style={styles.attachmentText}>Audio/Video</Text>
-                            </TouchableOpacity>
-            </SafeBottomSheet>
+                <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowAttachmentMenu(false)}>
+                    <View style={[styles.attachmentMenu, { paddingBottom: Math.max(insets.bottom + 16, 24), backgroundColor: colors.card }]} >
+                        <TouchableOpacity style={styles.attachmentItem} onPress={() => { setShowAttachmentMenu(false); handlePickAndCropImage(); }}>
+                            <View style={[styles.attachmentIcon, { backgroundColor: '#3b82f6' }]}>
+                                <Ionicons name="image" size={22} color="#FFF" />
+                            </View>
+                            <Text style={styles.attachmentText}>Photo</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachmentItem} onPress={handlePickDocument}>
+                            <View style={[styles.attachmentIcon, { backgroundColor: '#10b981' }]}>
+                                <Ionicons name="document" size={22} color="#FFF" />
+                            </View>
+                            <Text style={styles.attachmentText}>Document</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachmentItem} onPress={handlePickAudioVideo}>
+                            <View style={[styles.attachmentIcon, { backgroundColor: '#f59e0b' }]}>
+                                <Ionicons name="play" size={22} color="#FFF" />
+                            </View>
+                            <Text style={styles.attachmentText}>Audio/Video</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
 
 
             {/* ========== GROUP MENU MODAL ========== */}
@@ -2852,6 +2985,8 @@ export default function ChatScreen() {
                 fileUri={viewerFile.uri}
                 fileType={viewerFile.type}
                 fileName={viewerFile.name}
+                mediaList={viewerMediaList}
+                initialIndex={viewerInitialIndex}
                 showDownload={!viewerFile.isProfile}
                 showShare={!viewerFile.isProfile}
                 isHalfScreen={viewerFile.isProfile}

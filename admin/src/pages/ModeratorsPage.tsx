@@ -80,6 +80,7 @@ export default function ModeratorsPage() {
   // Moderators are locked to their assigned level — they cannot see other levels
   const assignedLevel = profile?.role === 'moderator' ? (permissions?.assigned_level || null) : null;
   
+  const [activeTab, setActiveTab] = useState<'student_moderators' | 'external_moderators'>('student_moderators');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AccountStatus | 'all'>('all');
   // Moderators start with their level pre-selected and cannot change it
@@ -97,10 +98,28 @@ export default function ModeratorsPage() {
     setSuccessMessage(message);
     setTimeout(() => setSuccessMessage(null), 5000);
   };
-  // Page UI depends on global sync
-  // Client-side filtering
+
+  // Student Moderators (Promoted from student account) vs External Moderators (Created manually by admin)
+  const isExternalModerator = (u: UserWithDepartment) =>
+    u.is_external === true || (u.role === 'moderator' && (!u.registration_number || !u.level));
+
+  const studentModsList = useMemo(() => {
+    return (allStudents as UserWithDepartment[]).filter(u => u.role === 'moderator' && !isExternalModerator(u));
+  }, [allStudents]);
+
+  const externalModsList = useMemo(() => {
+    return (allStudents as UserWithDepartment[]).filter(u => u.role === 'moderator' && isExternalModerator(u));
+  }, [allStudents]);
+
+  // Client-side filtering based on active tab
   const filteredUsers = useMemo(() => {
-    let result = [...(allStudents as UserWithDepartment[])].filter(u => ['moderator', 'super_admin'].includes(u.role));
+    let result = (allStudents as UserWithDepartment[]).filter(u => ['moderator', 'super_admin'].includes(u.role));
+
+    if (activeTab === 'student_moderators') {
+      result = result.filter(u => !isExternalModerator(u));
+    } else {
+      result = result.filter(u => isExternalModerator(u));
+    }
 
     // Moderators are hard-locked to their assigned level — enforced here regardless of filter state
     if (assignedLevel) {
@@ -128,12 +147,12 @@ export default function ModeratorsPage() {
     }
 
     return result;
-  }, [allStudents, assignedLevel, statusFilter, levelFilter, roleFilter, searchQuery]);
+  }, [allStudents, activeTab, assignedLevel, statusFilter, levelFilter, roleFilter, searchQuery]);
 
-  // Reset page when filters change
+  // Reset page when filters or tab changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, levelFilter, roleFilter, searchQuery]);
+  }, [activeTab, statusFilter, levelFilter, roleFilter, searchQuery]);
 
   const totalCount = filteredUsers.length;
   const from = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -141,10 +160,12 @@ export default function ModeratorsPage() {
   const users = filteredUsers.slice(from, to);
 
   const stats = {
-    total: (allStudents as UserWithDepartment[]).filter(u => u.role === 'moderator').length,
-    active: (allStudents as UserWithDepartment[]).filter(u => u.status === 'active' && u.role === 'moderator').length,
-    pending: (allStudents as UserWithDepartment[]).filter(u => u.status === 'pending_verification' && u.role === 'moderator').length,
-    risk: (allStudents as UserWithDepartment[]).filter(u => ['suspended', 'banned'].includes(u.status) && u.role === 'moderator').length
+    total: filteredUsers.length,
+    studentModsCount: studentModsList.length,
+    externalModsCount: externalModsList.length,
+    active: filteredUsers.filter(u => u.status === 'active').length,
+    pending: filteredUsers.filter(u => u.status === 'pending_verification').length,
+    risk: filteredUsers.filter(u => ['suspended', 'banned'].includes(u.status)).length
   };
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
@@ -643,7 +664,7 @@ export default function ModeratorsPage() {
             <div className="w-1.5 h-8 bg-primary-950 rounded-full" />
             <h1 className="text-3xl font-black text-gray-900 tracking-tight uppercase">Moderator Manager</h1>
           </div>
-          <p className="text-gray-500 font-medium">Manage moderator accounts, verify registrations, and handle moderation.</p>
+          <p className="text-gray-500 font-medium">Manage student moderators (promoted from app) and external moderators (web-only).</p>
         </div>
 
         <div className="flex items-center flex-wrap gap-4">
@@ -657,13 +678,39 @@ export default function ModeratorsPage() {
            {profile?.role === 'super_admin' && (
              <button
                onClick={() => setShowModal('add')}
-               className="inline-flex items-center justify-center px-8 py-3.5 bg-primary-950 text-white text-sm font-bold rounded-2xl hover:bg-primary-800 active:scale-95 transition-all shadow-xl shadow-primary-950/20"
+               className="flex items-center gap-2 px-6 py-3.5 bg-amber-600 text-white rounded-2xl text-xs font-black uppercase tracking-wider hover:bg-amber-700 transition-all shadow-lg shadow-amber-600/20"
              >
-               <UserPlus className="w-5 h-5 mr-2" />
-               Add Moderator
+               <UserPlus className="w-4 h-4" />
+               + Add External Moderator
              </button>
            )}
         </div>
+      </div>
+
+      {/* Moderator Category Navigation Tabs */}
+      <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-3xl w-fit border border-slate-200/80 shadow-inner">
+        <button
+          onClick={() => setActiveTab('student_moderators')}
+          className={`px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2.5 ${
+            activeTab === 'student_moderators'
+              ? 'bg-white text-emerald-950 shadow-md shadow-slate-200/60 border border-slate-200'
+              : 'text-slate-500 hover:text-slate-900 hover:bg-white/50'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4 text-emerald-600" />
+          Student Moderators ({stats.studentModsCount})
+        </button>
+        <button
+          onClick={() => setActiveTab('external_moderators')}
+          className={`px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2.5 ${
+            activeTab === 'external_moderators'
+              ? 'bg-white text-amber-950 shadow-md shadow-slate-200/60 border border-slate-200'
+              : 'text-slate-500 hover:text-slate-900 hover:bg-white/50'
+          }`}
+        >
+          <Shield className="w-4 h-4 text-amber-600" />
+          External Moderators ({stats.externalModsCount})
+        </button>
       </div>
 
       {/* Filters & Search */}
@@ -1657,7 +1704,8 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
             username: formData.username.toLowerCase().replace(/\s+/g, ''),
             registration_number: formData.registration_number,
             level: formData.level,
-            role: formData.role
+            role: 'moderator',
+            is_external: true
           })
         }
       );
@@ -1665,6 +1713,18 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Edge Function Error: ${errorText}`);
+      }
+
+      const resJson = await response.json().catch(() => ({}));
+      const createdUserId = resJson?.user?.id || resJson?.id;
+
+      // Explicitly mark user as external moderator in public.users
+      if (createdUserId || formData.email) {
+        if (createdUserId) {
+          await supabase.from('users').update({ is_external: true, role: 'moderator' }).eq('id', createdUserId);
+        } else {
+          await supabase.from('users').update({ is_external: true, role: 'moderator' }).eq('email', formData.email);
+        }
       }
 
       onSave();

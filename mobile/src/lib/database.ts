@@ -10,7 +10,17 @@ let isRecovering = false;
 let activeDbName = 'chat.db';
 
 function isNativeNpe(error: any): boolean {
-  return String(error).includes('NullPointerException');
+  if (!error) return false;
+  try {
+    const msg = typeof error === 'string'
+      ? error
+      : (error && typeof error === 'object' && typeof error.message === 'string')
+        ? error.message
+        : String(error);
+    return typeof msg === 'string' && msg.includes('NullPointerException');
+  } catch (_) {
+    return false;
+  }
 }
 
 async function recoverDatabase(): Promise<boolean> {
@@ -91,6 +101,10 @@ function wrapStatementMethods(stmt: any): void {
 }
 
 function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLite.SQLiteDatabase {
+  if ((originalDb as any)._isWrapped) {
+    return originalDb;
+  }
+
   const rawMethods: Record<string, Function> = {};
   const methodNames = ['execAsync', 'runAsync', 'getAllAsync', 'getFirstAsync', 'prepareAsync', 'withTransactionAsync'];
 
@@ -99,6 +113,9 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
       rawMethods[name] = (originalDb as any)[name].bind(originalDb);
     }
   }
+
+  (originalDb as any)._rawMethods = rawMethods;
+  (originalDb as any)._isWrapped = true;
 
   const wrap = (methodName: string) => {
     return async (...args: any[]): Promise<any> => {
@@ -110,8 +127,8 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
         }
 
         let method: Function | undefined;
-        if (currentRawDb && typeof (currentRawDb as any)[methodName] === 'function') {
-          method = (currentRawDb as any)[methodName].bind(currentRawDb);
+        if (currentRawDb && (currentRawDb as any)._rawMethods && typeof (currentRawDb as any)._rawMethods[methodName] === 'function') {
+          method = (currentRawDb as any)._rawMethods[methodName];
         } else {
           method = rawMethods[methodName];
         }
@@ -426,11 +443,32 @@ export const upsertAssetCache = async (entityId: string, remoteUrl: string, loca
     }
 };
 
+export function safeJsonStringify(obj: any): string | null {
+    if (obj === undefined || obj === null) return null;
+    try {
+        return JSON.stringify(obj);
+    } catch (_) {
+        try {
+            const seen = new WeakSet();
+            return JSON.stringify(obj, (key, value) => {
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) return undefined;
+                    seen.add(value);
+                }
+                return value;
+            });
+        } catch (err) {
+            return String(obj);
+        }
+    }
+}
+
 export const saveLocalUserSession = async (profile: any) => {
     if (!db || !profile?.id) return;
     try {
         const updatedAt = profile.updated_at || new Date().toISOString();
         const lastSyncedAt = profile.last_synced_at || new Date().toISOString();
+        const profileJson = safeJsonStringify(profile);
         
         await db.runAsync(
             `INSERT OR REPLACE INTO local_user_session (
@@ -442,7 +480,7 @@ export const saveLocalUserSession = async (profile: any) => {
                 profile.email || null,
                 profile.level || null,
                 profile.department_id || profile.department || null,
-                JSON.stringify(profile),
+                profileJson,
                 updatedAt,
                 lastSyncedAt
             ]
@@ -539,7 +577,7 @@ export const getMessagesByGroup = async (groupId: string, limit = 100000) => {
 export const insertOrReplaceMessage = async (msg: any, groupId: string) => {
     if (!db) return;
     try {
-        const rawData = JSON.stringify(msg);
+        const rawData = safeJsonStringify(msg);
         const createdAt = msg.created_at || new Date().toISOString();
         const localMediaPath = msg.local_media_path || null;
         
@@ -567,7 +605,7 @@ export const batchInsertMessages = async (messages: any[], groupId: string) => {
                 );
                 try {
                     for (const msg of chunk) {
-                        const rawData = JSON.stringify(msg);
+                        const rawData = safeJsonStringify(msg);
                         const createdAt = msg.created_at || new Date().toISOString();
                         const localMediaPath = msg.local_media_path || null;
                         await statement.executeAsync({
@@ -600,10 +638,11 @@ export const updateLocalMessage = async (id: string, updates: any) => {
             const merged = { ...parsed, ...updates };
             // Allow ID changes (temp -> real)
             const newId = updates.id || id;
+            const safeMerged = safeJsonStringify(merged);
             if (newId !== id) {
-                await db.runAsync('UPDATE local_messages SET id = ?, raw_data = ? WHERE id = ?', [newId, JSON.stringify(merged), id]);
+                await db.runAsync('UPDATE local_messages SET id = ?, raw_data = ? WHERE id = ?', [newId, safeMerged, id]);
             } else {
-                await db.runAsync('UPDATE local_messages SET raw_data = ? WHERE id = ?', [JSON.stringify(merged), id]);
+                await db.runAsync('UPDATE local_messages SET raw_data = ? WHERE id = ?', [safeMerged, id]);
             }
         }
     } catch (e) {
@@ -901,7 +940,7 @@ export const upsertContentManifest = async (entry: any) => {
                 entry.content_type,
                 entry.content_id,
                 entry.user_id || null,
-                entry.raw_data ? JSON.stringify(entry.raw_data) : null,
+                entry.raw_data ? safeJsonStringify(entry.raw_data) : null,
                 entry.server_updated_at || null,
                 entry.local_updated_at || now
             ]
@@ -1198,7 +1237,7 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
                             contentType,
                             id,
                             userId,
-                            JSON.stringify(entity),
+                            safeJsonStringify(entity),
                             entity.updated_at || entity.created_at || now,
                             now
                         ]);

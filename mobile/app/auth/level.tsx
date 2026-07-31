@@ -280,8 +280,6 @@ export default function RegisterLevel() {
 
       // ── STEP 8: Finalise ──────────────────────────────────────────────────
       advanceTo(8); // 95% — "Finalising setup…"
-      useSignupStore.getState().setIsGoogleDelaying(false);
-      signupStore.reset();
 
       // Brief hold at 95% so the user sees it before the final jump
       await new Promise(r => setTimeout(r, 400));
@@ -292,6 +290,13 @@ export default function RegisterLevel() {
 
       // Hold at 100% for 800ms so the user reads the success message
       await new Promise(r => setTimeout(r, 800));
+
+      // Only NOW release the gate — after the user has seen the full completion UX.
+      // This prevents ProtectedRoute from redirecting to /(tabs) before the
+      // "Welcome" message is shown, and prevents overlays like FeaturedStudentPopup
+      // from firing during the registration finish animation.
+      useSignupStore.getState().setIsGoogleDelaying(false);
+      signupStore.reset();
 
       finishTransaction('ok');
       if (!isMounted.current) return;

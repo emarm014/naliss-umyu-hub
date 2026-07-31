@@ -1,4 +1,4 @@
-﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * AuthGuardian - Local Rate Limiting and Security Utility
@@ -7,15 +7,15 @@
  * using device-local storage.
  */
 
-const BAN_DURATION_HOURS = 4;
-const MAX_ATTEMPTS = 10;
+const BAN_DURATION_MINUTES = 30;
+const MAX_ATTEMPTS = 5;
 const MAX_DAILY_RESETS = 10;
 const RESET_WINDOW_HOURS = 24;
 
 export const AuthGuardian = {
   /**
    * Checks if an email is currently blocked on this device.
-   * Returns remaining hours if banned, null otherwise.
+   * Returns remaining minutes if banned, null otherwise.
    */
   async checkBanStatus(email: string): Promise<number | null> {
     try {
@@ -27,8 +27,8 @@ export const AuthGuardian = {
       
       if (now < expires) {
         const diffMs = expires - now;
-        // Return rounded up hours
-        return Math.ceil(diffMs / (1000 * 60 * 60));
+        // Return rounded up minutes
+        return Math.max(1, Math.ceil(diffMs / (1000 * 60)));
       } else {
         // Ban expired, clean up
         await AsyncStorage.removeItem(`ban_${email}`);
@@ -47,7 +47,7 @@ export const AuthGuardian = {
       const nextFailures = currentFailures + 1;
       await AsyncStorage.setItem(`fail_${email}`, nextFailures.toString());
       if (nextFailures >= MAX_ATTEMPTS) {
-        const banExpires = Date.now() + (BAN_DURATION_HOURS * 60 * 60 * 1000);
+        const banExpires = Date.now() + (BAN_DURATION_MINUTES * 60 * 1000);
         await AsyncStorage.setItem(`ban_${email}`, banExpires.toString());
       }
       return nextFailures;

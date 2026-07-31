@@ -51,19 +51,19 @@ export default function LoginScreen() {
       return;
     }
 
-    const banHours = await AuthGuardian.checkBanStatus(email);
-    if (banHours) {
-      Alert.alert('Access Denied', `Too many invalid attempts. Try again in ${banHours} hours.`);
+    const banMinutes = await AuthGuardian.checkBanStatus(email.trim().toLowerCase());
+    if (banMinutes) {
+      Alert.alert('Account Locked', `Too many invalid attempts. Try again in ${banMinutes} minute${banMinutes > 1 ? 's' : ''}.`);
       return;
     }
 
     if (!INSTITUTIONAL_EMAIL_REGEX.test(email)) {
-      const attempts = await AuthGuardian.recordFailure(email);
-      const remaining = 10 - attempts;
+      const attempts = await AuthGuardian.recordFailure(email.trim().toLowerCase());
+      const remaining = Math.max(0, 5 - attempts);
       if (remaining <= 0) {
-        Alert.alert('Lockout', 'Device locked for 4 hours due to multiple invalid attempts.');
+        Alert.alert('Lockout', 'Device locked for 30 minutes due to multiple invalid attempts.');
       } else {
-        Alert.alert('Invalid Email', `Please use your institutional student email.\n(${remaining} attempts left)`);
+        Alert.alert('Invalid Email', `Please use your institutional student email.\n(${remaining} attempt${remaining > 1 ? 's' : ''} left)`);
       }
       return;
     }
@@ -157,8 +157,14 @@ export default function LoginScreen() {
       // Log failed login attempt server-side (best-effort, fire-and-forget)
       (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), reason: msg, method: 'email' } }); } catch (_) {} })();
 
-      if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials')) {
-        Alert.alert('Wrong Password', 'The password you entered is incorrect. Please try again.');
+      if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials') || msg.includes('Invalid password') || msg.includes('invalid password')) {
+        const attempts = await AuthGuardian.recordFailure(email.trim().toLowerCase());
+        const remaining = Math.max(0, 5 - attempts);
+        if (remaining <= 0) {
+          Alert.alert('Account Locked', 'Too many invalid login attempts. Device locked for 30 minutes.');
+        } else {
+          Alert.alert('Wrong Password', `The password you entered is incorrect.\n(${remaining} attempt${remaining > 1 ? 's' : ''} left before 30-min lockout)`);
+        }
       } else if (msg.includes('Email not confirmed')) {
         Alert.alert('Email Not Verified', 'Please check your email and verify your account before signing in.');
       } else {
@@ -226,7 +232,11 @@ export default function LoginScreen() {
 
           if (user?.email && !INSTITUTIONAL_EMAIL_REGEX.test(user.email)) {
             await AuthGuardian.recordFailure(user.email);
-            Alert.alert('Access Denied', 'Only institutional student emails are allowed.');
+            // Purge invalid non-institutional Google account from Supabase
+            try {
+              await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email });
+            } catch {}
+            Alert.alert('Access Denied', 'Only institutional student emails (@students.umyu.edu.ng) are allowed.');
             await supabase.auth.signOut();
             useSignupStore.getState().setIsGoogleDelaying(false);
             return;
@@ -244,12 +254,26 @@ export default function LoginScreen() {
             return;
           }
 
-          // Check if this Google account belongs to a graduated student
+          // Check if this Google account belongs to a graduated student, external moderator, or is incomplete
           if (user?.id) {
             const { data: profileCheck } = await (supabase as any).from('users')
-              .select('status, level')
+              .select('status, level, registration_number, role, is_external')
               .eq('id', user.id)
               .maybeSingle();
+
+            if (
+              profileCheck?.is_external === true ||
+              (profileCheck?.role === 'moderator' && !profileCheck?.registration_number && !profileCheck?.level)
+            ) {
+              Alert.alert(
+                'Access Denied',
+                'External moderators are restricted to the Web Admin Portal only and cannot log into the mobile app.',
+                [{ text: 'OK', style: 'default' }]
+              );
+              await supabase.auth.signOut();
+              useSignupStore.getState().setIsGoogleDelaying(false);
+              return;
+            }
 
             if (profileCheck?.status === 'graduated') {
               Alert.alert(
@@ -262,17 +286,18 @@ export default function LoginScreen() {
               return;
             }
 
-            if (!profileCheck || !profileCheck.level) {
-              Alert.alert(
-                'Registration Incomplete',
-                'Your account registration was not completed. Please create an account to finish setting up your profile.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Create Account', onPress: () => router.push('/auth/eligibility' as any) },
-                ]
-              );
-              await supabase.auth.signOut();
-              useSignupStore.getState().setIsGoogleDelaying(false);
+            // Incomplete Google registration — seamlessly route to Identity Screen (Step 2)
+            if (!profileCheck || !profileCheck.level || !profileCheck.registration_number) {
+              const store = useSignupStore.getState();
+              store.setProvider('google');
+              store.setCredentials(user.email!, undefined);
+              store.setGoogleTokens(user.email!, accessToken, refreshToken);
+              store.setCurrentStep(2);
+              store.touchActivity();
+              useAuthStore.getState().setIsProfileComplete(false);
+              store.setIsGoogleDelaying(false);
+              setIsGoogleLoading(false);
+              router.replace('/auth/identity' as any);
               return;
             }
           }

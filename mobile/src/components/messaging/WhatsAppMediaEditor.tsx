@@ -5,6 +5,8 @@ import { COLORS } from '../../constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { ImageEditor } from 'expo-image-editor';
+import { Video, ResizeMode } from 'expo-av';
+import { CustomVideoPlayer } from '../common/CustomVideoPlayer';
 
 const { width, height } = Dimensions.get('window');
 
@@ -37,6 +39,8 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     const [isProcessing, setIsProcessing] = useState(false);
     const [isCropping, setIsCropping] = useState(false);
     
+    const [playingVideoIndex, setPlayingVideoIndex] = useState<number | null>(null);
+    
     // For flatlist scroll sync
     const mainListRef = React.useRef<FlatList>(null);
 
@@ -44,6 +48,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
         if (!visible) {
             setFinalizedAssets([]);
             setActiveIndex(0);
+            setPlayingVideoIndex(null);
             return;
         }
         if (visible && assets.length > 0) {
@@ -60,6 +65,10 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
 
     const activeAsset = finalizedAssets[activeIndex];
 
+    const isVideoAsset = (asset: MediaAsset) => {
+        return asset.type === 'video' || asset.mimeType?.startsWith('video/') || (asset.uri && asset.uri.match(/\.(mp4|mov|avi|webm|mkv|m4v)$/i) !== null);
+    };
+
     const handleCaptionChange = (text: string) => {
         const newAssets = [...finalizedAssets];
         newAssets[activeIndex].caption = text;
@@ -67,7 +76,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     };
 
     const handleRotate = async () => {
-        if (!activeAsset || activeAsset.type === 'video') return;
+        if (!activeAsset || isVideoAsset(activeAsset)) return;
         setIsProcessing(true);
         try {
             const result = await manipulateAsync(
@@ -93,15 +102,22 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
 
     const renderThumbnail = ({ item, index }: { item: FinalizedMedia, index: number }) => {
         const isActive = index === activeIndex;
+        const isVid = isVideoAsset(item);
         return (
             <TouchableOpacity 
                 style={[styles.thumbnailWrapper, isActive && styles.thumbnailActive]} 
                 onPress={() => {
                     setActiveIndex(index);
+                    setPlayingVideoIndex(null);
                     mainListRef.current?.scrollToIndex({ index, animated: true });
                 }}
             >
                 <Image source={{ uri: item.uri }} style={styles.thumbnail} />
+                {isVid && (
+                    <View style={styles.thumbVideoBadge}>
+                        <Ionicons name="play" size={14} color="#ffffff" />
+                    </View>
+                )}
             </TouchableOpacity>
         );
     };
@@ -109,6 +125,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     const handleViewableItemsChanged = React.useRef(({ viewableItems }: any) => {
         if (viewableItems.length > 0) {
             setActiveIndex(viewableItems[0].index);
+            setPlayingVideoIndex(null);
         }
     }).current;
 
@@ -127,7 +144,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                     </TouchableOpacity>
                     
                     <View style={styles.headerActions}>
-                        {activeAsset.type !== 'video' && (
+                        {!isVideoAsset(activeAsset) && (
                             <>
                                 <TouchableOpacity onPress={() => setIsCropping(true)} style={styles.iconButton} disabled={isProcessing}>
                                     <Ionicons name="crop" size={24} color="#fff" />
@@ -160,19 +177,53 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                         data={finalizedAssets}
                         horizontal
                         pagingEnabled
+                        snapToInterval={width}
+                        snapToAlignment="center"
+                        decelerationRate="fast"
                         showsHorizontalScrollIndicator={false}
                         keyExtractor={(item, index) => `main-${item.uri}-${index}`}
                         onViewableItemsChanged={handleViewableItemsChanged}
                         viewabilityConfig={viewabilityConfig}
-                        renderItem={({ item }) => (
-                            <View style={{ width, flex: 1 }}>
-                                <Image 
-                                    source={{ uri: item.uri }} 
-                                    style={styles.previewImage} 
-                                    resizeMode="contain" 
-                                />
-                            </View>
-                        )}
+                        renderItem={({ item, index }) => {
+                            const isVid = isVideoAsset(item);
+                            return (
+                                <View style={{ width, flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                                    {isVid && playingVideoIndex === index ? (
+                                        <View style={{ width: width * 0.95, height: height * 0.55, borderRadius: 12, overflow: 'hidden' }}>
+                                            <CustomVideoPlayer
+                                                source={{ uri: item.uri }}
+                                                resizeMode={ResizeMode.CONTAIN}
+                                                autoPlay={true}
+                                                showControls={true}
+                                                onPlaybackStatusUpdate={(status: any) => {
+                                                    if (status.isLoaded && status.didJustFinish) setPlayingVideoIndex(null);
+                                                }}
+                                            />
+                                        </View>
+                                    ) : (
+                                        <TouchableOpacity 
+                                            activeOpacity={isVid ? 0.85 : 1}
+                                            onPress={() => isVid && setPlayingVideoIndex(index)}
+                                            style={{ width, flex: 1, justifyContent: 'center', alignItems: 'center' }}
+                                        >
+                                            <Image 
+                                                source={{ uri: item.uri }} 
+                                                style={styles.previewImage} 
+                                                resizeMode="contain" 
+                                            />
+                                            {isVid && (
+                                                <View style={styles.editorPlayOverlay}>
+                                                    <View style={styles.editorPlayCircle}>
+                                                        <Ionicons name="play" size={42} color="#ffffff" style={{ marginLeft: 4 }} />
+                                                    </View>
+                                                    <Text style={styles.editorPlayText}>Tap to preview video</Text>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            );
+                        }}
                         getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
                     />
                 </View>
@@ -181,8 +232,8 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                 <View style={styles.bottomControls}>
                     {/* Caption Input */}
                     <View style={styles.captionContainer}>
-                        <TouchableOpacity onPress={onAddMore}>
-                            <Ionicons name="add-circle-outline" size={28} color="#fff" style={styles.addIcon} />
+                        <TouchableOpacity onPress={onAddMore} style={{ padding: 8, marginHorizontal: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                            <Ionicons name="add-circle-outline" size={28} color="#fff" />
                         </TouchableOpacity>
                         <TextInput
                             style={styles.captionInput}
@@ -225,21 +276,27 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                 </View>
             </KeyboardAvoidingView>
 
-            {/* Cropper Modal */}
-            <ImageEditor
-                visible={isCropping}
-                onCloseEditor={() => setIsCropping(false)}
-                imageUri={activeAsset?.uri || ''}
-                fixedCropAspectRatio={16 / 9}
-                lockAspectRatio={false}
-                minimumCropDimensions={{
-                    width: 100,
-                    height: 100,
-                }}
-                onEditingComplete={(result) => {
-                    setFinalizedAssets(prev => prev.map((asset, i) => i === activeIndex ? { ...asset, uri: result.uri } : asset));
-                }}
-            />
+            {/* Cropper - using asView to avoid nested Modal issues on Android */}
+            {isCropping && (
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', zIndex: 100 }]}>
+                    <ImageEditor
+                        visible={true}
+                        asView={true}
+                        onCloseEditor={() => setIsCropping(false)}
+                        imageUri={activeAsset?.uri || ''}
+                        fixedCropAspectRatio={16 / 9}
+                        lockAspectRatio={false}
+                        minimumCropDimensions={{
+                            width: 100,
+                            height: 100,
+                        }}
+                        onEditingComplete={(result) => {
+                            setFinalizedAssets(prev => prev.map((asset, i) => i === activeIndex ? { ...asset, uri: result.uri } : asset));
+                            setIsCropping(false);
+                        }}
+                    />
+                </View>
+            )}
         </Modal>
     );
 };
@@ -360,5 +417,39 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.25,
         shadowRadius: 3.84,
+    },
+    editorPlayOverlay: {
+        position: 'absolute',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    editorPlayCircle: {
+        width: 76,
+        height: 76,
+        borderRadius: 38,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2.5,
+        borderColor: '#ffffff',
+        elevation: 6,
+    },
+    editorPlayText: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: '600',
+        marginTop: 8,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    thumbVideoBadge: {
+        position: 'absolute',
+        top: 2,
+        right: 2,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderRadius: 10,
+        padding: 2,
     },
 });

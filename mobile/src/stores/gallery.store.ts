@@ -36,6 +36,7 @@ interface GalleryState {
   fetchTopics: (force?: boolean) => Promise<void>;
   fetchTopicDetails: (topicId: string) => Promise<GalleryTopic | null>;
   fetchMedia: (topicId: string, force?: boolean) => Promise<void>;
+  clearCache: () => void;
 }
 
 export const useGalleryStore = create<GalleryState>()(
@@ -50,7 +51,22 @@ export const useGalleryStore = create<GalleryState>()(
       mediaByTopic: {},
       isLoadingMedia: {},
 
+      clearCache: () => set({ topics: [], lastFetchTopics: null, topicDetails: {}, mediaByTopic: {}, isLoadingMedia: {} }),
+
       fetchTopics: async (force = false) => {
+        const { topics } = get();
+
+        // LOCAL-FIRST: read from SQLite cache immediately (always works — even on new device)
+        if (!force && topics.length === 0) {
+          try {
+            const { getCachedEntityList } = require('../lib/database');
+            const cached = await getCachedEntityList('gallery_topics');
+            if (cached.length > 0) {
+              set({ topics: cached as any[], isLoadingTopics: false });
+            }
+          } catch { /* fall through to server fetch */ }
+        }
+
         if (!force && get().topics.length > 0 && !useNetworkStore.getState().isOnline) {
           return;
         }
@@ -64,9 +80,15 @@ export const useGalleryStore = create<GalleryState>()(
             .order('created_at', { ascending: false });
 
           if (error) throw error;
+
+          const items = (data || []) as unknown as GalleryTopic[];
+          if (items.length > 0) {
+            const { cacheEntityList } = require('../lib/database');
+            cacheEntityList('gallery_topics', items, '').catch(() => {});
+          }
           
           set({ 
-            topics: (data || []) as unknown as GalleryTopic[], 
+            topics: items, 
             isLoadingTopics: false, 
             lastFetchTopics: Date.now() 
           });

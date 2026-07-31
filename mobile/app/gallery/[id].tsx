@@ -15,6 +15,7 @@ import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { useTheme } from '../../src/stores/theme.store';
 import { Header } from '../../src/components/common/Header';
 import { CachedImage } from '../../src/components/common/CachedImage';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ResizeMode, Video } from 'expo-av';
@@ -210,78 +211,29 @@ export default function GalleryTopicScreen() {
         />
       )}
 
-      <Modal
-        visible={selectedMediaIndex !== null}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setSelectedMediaIndex(null)}
-      >
-        <View style={styles.modalContainer}>
-          <SafeAreaView style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={() => setSelectedMediaIndex(null)}
-            >
-              <Ionicons name="close" size={28} color="white" />
-            </TouchableOpacity>
-            
-            <View style={styles.headerActions}>
-              {isSaving ? (
-                <ActivityIndicator size="small" color="white" style={{ marginRight: 16 }} />
-              ) : (
-                <>
-                  <Text style={[styles.counterText, { color: colors.textSecondary }]}>
-                    {topic?.total_media || media.length} Items
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.iconButton}
-                    onPress={() => handleSaveToDevice(media[selectedMediaIndex!])}
-                  >
-                    <Ionicons name="download-outline" size={24} color="white" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.iconButton}
-                    onPress={() => handleShare(media[selectedMediaIndex!])}
-                  >
-                    <Ionicons name="share-social-outline" size={24} color="white" />
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </SafeAreaView>
-
-          <FlatList
-            ref={flatListRef}
-            data={media}
-            keyExtractor={item => item.id}
-            renderItem={renderFullScreenItem}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            removeClippedSubviews={false}
-            initialScrollIndex={selectedMediaIndex || 0}
-            getItemLayout={(data, index) => ({ length: width, offset: width * index, index })}
-            onScrollToIndexFailed={info => {
-              const wait = new Promise(resolve => setTimeout(resolve, 100));
-              wait.then(() => {
-                flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
-              });
-            }}
-            onMomentumScrollEnd={(e) => {
-              const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
-              if (newIndex !== selectedMediaIndex) {
-                setSelectedMediaIndex(newIndex);
-              }
-            }}
+      {(() => {
+        const viewerMediaList = media.map((m: any, idx: number) => ({
+          id: m.id || `gallery_${idx}`,
+          uri: m.media_url,
+          type: (m.media_type === 'video' ? 'video' : 'image') as any,
+          name: `${topic?.title || 'Gallery'} (${idx + 1}/${media.length})`,
+          title: `${topic?.title || 'Gallery'} (${idx + 1}/${media.length})`
+        }));
+        const currentMedia = selectedMediaIndex !== null && media[selectedMediaIndex] ? media[selectedMediaIndex] : null;
+        return (
+          <UniversalViewer
+            isVisible={selectedMediaIndex !== null}
+            onClose={() => setSelectedMediaIndex(null)}
+            fileUri={currentMedia?.media_url || ''}
+            fileType={currentMedia?.media_type === 'video' ? 'video' : 'image'}
+            fileName={topic?.title || 'Gallery Item'}
+            mediaList={viewerMediaList}
+            initialIndex={selectedMediaIndex || 0}
+            showDownload={true}
+            showShare={true}
           />
-
-          <SafeAreaView style={styles.modalFooter}>
-            <Text style={styles.counterText}>
-              {selectedMediaIndex !== null ? selectedMediaIndex + 1 : 0} / {media.length}
-            </Text>
-          </SafeAreaView>
-        </View>
-      </Modal>
+        );
+      })()}
     </View>
   );
 }

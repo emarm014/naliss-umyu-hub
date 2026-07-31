@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -560,8 +560,14 @@ export const useAuthStore = create<AuthState>()(
         try { require('./event.store').useEventStore.getState().clearCache(); } catch {}
         try { require('./resource.store').useResourceStore.getState().clearCache(); } catch {}
         try { require('./directory.store').useDirectoryStore.getState().clearCache(); } catch {}
+        try { require('./news.store').useNewsStore.getState().clearCache(); } catch {}
+        try { require('./archive.store').useArchiveStore.getState().clearCache(); } catch {}
+        try { require('./fyb.store').useFYBStore.getState().clearCache(); } catch {}
+        try { require('./gallery.store').useGalleryStore.getState().clearCache(); } catch {}
+        try { require('./event-pool.store').useEventPoolStore.getState().clearCache(); } catch {}
         try { require('./signup.store').useSignupStore.getState().reset(); } catch {}
         try { require('./notification.store').useNotificationStore.getState().clearNotifications(); } catch {}
+        try { require('./data-restore.store').useDataRestoreStore.getState().reset(); } catch {}
       },
 
       setError: (error) => set({ error }),

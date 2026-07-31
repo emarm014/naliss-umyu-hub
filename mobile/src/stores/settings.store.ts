@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -81,31 +81,60 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       initializeListener: () => {
-        // â”€â”€ Scale optimisation: poll every 5 minutes instead of holding a
-        // permanent WebSocket per user. system_settings almost never changes
-        // (only when admin toggles maintenance/read-only mode).
-        // This saves 1 realtime connection slot per active user â€” at 200 users
-        // that's 200 freed slots on the free tier (limit: 200 total).
-        //
-        // The realtime channel is still used as an instant-update path for
-        // admins who need to see changes immediately, but regular users get
-        // updates within 5 minutes which is perfectly acceptable.
-        const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
         // Initial fetch on mount
         useSettingsStore.getState().fetchSettings();
 
-        // Poll every 5 minutes
+        // 1. Instant Realtime Subscription for system_settings updates (<100ms response)
+        const channel = supabase
+          .channel('system_settings_live_global')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'system_settings',
+            },
+            (payload: any) => {
+              const record = payload.new || payload.old;
+              if (!record || !record.key) return;
+
+              const key = record.key;
+              const val = record.value;
+
+              if (key === 'maintenance_mode') {
+                set({ maintenanceMode: parseBool(val, false) });
+              } else if (key === 'read_only_mode') {
+                set({ readOnlyMode: parseBool(val, false) });
+              } else if (key === 'allow_registration') {
+                set({ allowRegistration: parseBool(val, true) });
+              } else if (key === 'maintenance_message') {
+                set({ maintenanceMessage: val ?? '' });
+              } else if (key === 'maintenance_estimated_end') {
+                set({ maintenanceEstimatedEnd: val ?? '' });
+              }
+
+              // Sync all settings cleanly
+              useSettingsStore.getState().fetchSettings();
+            }
+          )
+          .subscribe();
+
+        // 2. AppState listener — instant fetch when returning to foreground
+        const appStateSub = require('react-native').AppState.addEventListener('change', (nextState: string) => {
+          if (nextState === 'active') {
+            useSettingsStore.getState().fetchSettings();
+          }
+        });
+
+        // 3. Fallback poll every 30 seconds
         const pollInterval = setInterval(() => {
           useSettingsStore.getState().fetchSettings();
-        }, POLL_INTERVAL_MS);
+        }, 30000);
 
-        // Removed system_settings_live WebSocket per emergency optimization
-        // to protect the 200 concurrent connection limit on Supabase Free Tier.
-        // We now rely purely on the 5-minute REST polling interval above, which
-        // is more than sufficient for global app settings.
         return () => {
           clearInterval(pollInterval);
+          supabase.removeChannel(channel);
+          appStateSub.remove();
         };
       },
     }),

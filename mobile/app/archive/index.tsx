@@ -65,6 +65,56 @@ export default function ArchiveScreen() {
     fetchArchives(page + 1);
   };
 
+  const openExternalDocument = async (vaultPath: string, rawMime: string, fileName: string) => {
+    try {
+      const fileUri = vaultPath.startsWith('file://') ? vaultPath : `file://${vaultPath}`;
+      const nameLower = (fileName || vaultPath).toLowerCase();
+
+      // Deduce precise MIME type for Android ACTION_VIEW intent so only supported viewer apps are presented
+      let mimeType = rawMime || 'application/octet-stream';
+      if (nameLower.endsWith('.pdf')) mimeType = 'application/pdf';
+      else if (nameLower.endsWith('.doc')) mimeType = 'application/msword';
+      else if (nameLower.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      else if (nameLower.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
+      else if (nameLower.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      else if (nameLower.endsWith('.ppt')) mimeType = 'application/vnd.ms-powerpoint';
+      else if (nameLower.endsWith('.pptx')) mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      else if (nameLower.endsWith('.txt')) mimeType = 'text/plain';
+      else if (nameLower.endsWith('.csv')) mimeType = 'text/csv';
+
+      if (Platform.OS === 'android') {
+        const IntentLauncher = require('expo-intent-launcher');
+        const FileSystem = require('expo-file-system');
+
+        // Convert file:// URI to content:// URI so target app is granted read permissions
+        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+          type: mimeType,
+        });
+      } else {
+        const Sharing = require('expo-sharing');
+        const isAvail = await Sharing.isAvailableAsync();
+        if (!isAvail) {
+          Alert.alert(
+            'No App Available',
+            'No app available on your device supports opening this file format. Please use the In-App Viewer.'
+          );
+          return;
+        }
+        await Sharing.shareAsync(fileUri, { mimeType });
+      }
+    } catch (err: any) {
+      console.warn('Failed to open archive with external app:', err);
+      Alert.alert(
+        'No App Available',
+        'No app available on your device supports opening this file format. Please use the In-App Viewer.'
+      );
+    }
+  };
+
   const handleRead = async (item: any) => {
     if (!item.file_url) return;
     try {
@@ -88,10 +138,40 @@ export default function ArchiveScreen() {
         fileUri = getVaultFilePath(item.id, displayName, item.file_url);
       }
 
-      setReaderUrl(fileUri);
-      setReaderFileType(fileType);
-      setReaderTitle(displayName);
-      setViewerVisible(true);
+      const url = (item.file_url || '').toLowerCase();
+      const type = (item.file_type || '').toLowerCase();
+      const name = (displayName || item.title || '').toLowerCase();
+
+      const isImage = type === 'image' || url.match(/\.(jpg|jpeg|png|webp|gif|svg|bmp|tiff|heic)$/) !== null || name.match(/\.(jpg|jpeg|png|webp|gif|svg)$/) !== null;
+      const isVideo = type === 'video' || url.match(/\.(mp4|mov|avi|webm|mkv|m4v)$/) !== null || name.match(/\.(mp4|mov|avi|webm)$/) !== null;
+
+      // Images and Videos MUST open directly in the in-app viewer with no external app option
+      if (isImage || isVideo || !isInVault) {
+        setReaderUrl(fileUri);
+        setReaderFileType(fileType);
+        setReaderTitle(displayName);
+        setViewerVisible(true);
+        return;
+      }
+
+      // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
+      const vaultPath = getVaultFilePath(item.id, displayName, item.file_url);
+      Alert.alert('Open File', displayName, [
+        {
+          text: 'Open in App',
+          onPress: () => {
+            setReaderUrl(fileUri);
+            setReaderFileType(fileType);
+            setReaderTitle(displayName);
+            setViewerVisible(true);
+          },
+        },
+        {
+          text: 'Open with Other App',
+          onPress: () => openExternalDocument(vaultPath, item.file_type, displayName),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
     } catch (err) {
       Alert.alert('Error', 'Could not open the viewer.');
     }

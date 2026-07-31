@@ -11,6 +11,7 @@ import { useAuthStore } from '../../src/stores/auth.store';
 import { getCleanAvatarUrl } from '../../src/utils/avatar';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { NalissLogo } from '../../src/components/NalissLogo';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 export default function GroupInfoScreen() {
     const { id } = useLocalSearchParams();
@@ -23,6 +24,8 @@ export default function GroupInfoScreen() {
     
     const [members, setMembers] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerFile, setViewerFile] = useState({ uri: '', name: '' });
 
     useEffect(() => {
         let mounted = true;
@@ -30,14 +33,34 @@ export default function GroupInfoScreen() {
         const fetchMembers = async () => {
             if (!id || typeof id !== 'string') return;
             
-            // Fast path: cached members
-            const cached = useGroupStore.getState().getGroupMembers(id as string);
+            // Fast path 1: cached members from MMKV
+            let cached = useGroupStore.getState().getGroupMembers(id as string);
+
+            // Fast path 2: SQLite local-first fallback if MMKV was empty
+            if (!cached || cached.length === 0) {
+                try {
+                    const { getCachedEntityList } = require('../../src/lib/database');
+                    const sqliteCached = await getCachedEntityList(`group_members_${id}`);
+                    if (sqliteCached && sqliteCached.length > 0) {
+                        cached = sqliteCached;
+                        useGroupStore.getState().setGroupMembers(id as string, sqliteCached);
+                    }
+                } catch {}
+            }
+
             if (cached && cached.length > 0 && mounted) {
                 setMembers(cached);
                 setIsLoading(false);
             }
 
-            // Fetch latest from network
+            // Offline guard — cached data stays visible
+            const { useNetworkStore } = require('../../src/stores/network.store');
+            if (!useNetworkStore.getState().isOnline) {
+                setIsLoading(false);
+                return;
+            }
+
+            // Fetch latest from network when online
             try {
                 const { data, error } = await (supabase as any).from('group_members')
                     .select('*, user:users(*, department:departments(name))')
@@ -70,8 +93,9 @@ export default function GroupInfoScreen() {
             <TouchableOpacity
                 style={[styles.memberItem, { borderBottomColor: colors.border }]}
                 onPress={() => {
-                    // Navigate to full-screen user profile
-                    router.push(`/chat/user_profile?id=${member.id}`);
+                    // Navigate to full-screen user profile with serialized initial member data for instant offline rendering
+                    const stringified = encodeURIComponent(JSON.stringify(member));
+                    router.push(`/chat/user_profile?id=${member.id}&initialData=${stringified}`);
                 }}
             >
                 <CachedImage 
@@ -87,10 +111,6 @@ export default function GroupInfoScreen() {
                             {isYou ? `${member.full_name} (You)` : member.full_name}
                         </Text>
                         {(() => {
-                            const { useNetworkStore } = require('../../src/stores/network.store');
-                            const isOnline = useNetworkStore.getState().isOnline;
-                            if (!isOnline) return null;
-                            
                             const isUserOnline = isYou || (member.last_active_at && (new Date().getTime() - new Date(member.last_active_at).getTime() < 300000));
                             if (isUserOnline) {
                                 return <View style={styles.memberOnlineDot} />;
@@ -127,7 +147,16 @@ export default function GroupInfoScreen() {
                 renderItem={renderMemberItem}
                 ListHeaderComponent={() => (
                     <View style={styles.groupHeaderContainer}>
-                        <View style={[styles.groupAvatarContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <TouchableOpacity 
+                            style={[styles.groupAvatarContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            onPress={() => {
+                                const cleanUrl = getCleanAvatarUrl(group?.avatar_url);
+                                const effectiveUrl = cleanUrl || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(group?.name || 'group')}&size=200`;
+                                setViewerFile({ uri: effectiveUrl, name: group?.name || 'Group' });
+                                setViewerVisible(true);
+                            }}
+                            activeOpacity={0.8}
+                        >
                             {(() => {
                                 const cleanUrl = getCleanAvatarUrl(group?.avatar_url);
                                 return cleanUrl ? (
@@ -141,7 +170,7 @@ export default function GroupInfoScreen() {
                                     <NalissLogo size={80} />
                                 );
                             })()}
-                        </View>
+                        </TouchableOpacity>
                         <Text style={[styles.groupName, { color: colors.text }]}>{group?.name || 'Group Chat'}</Text>
                         {group?.description ? (
                             <Text style={styles.groupDescription}>{group.description}</Text>
@@ -161,6 +190,17 @@ export default function GroupInfoScreen() {
                     <ActivityIndicator size="large" color="#10b981" />
                 </View>
             )}
+
+            <UniversalViewer
+                isVisible={viewerVisible}
+                onClose={() => setViewerVisible(false)}
+                fileUri={viewerFile.uri}
+                fileType="image"
+                fileName={viewerFile.name}
+                showDownload={false}
+                showShare={false}
+                isHalfScreen={true}
+            />
         </SafeAreaView>
     );
 }

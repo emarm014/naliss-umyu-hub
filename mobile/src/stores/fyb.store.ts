@@ -34,6 +34,7 @@ interface FYBState {
   fetchFeatured: (force?: boolean) => Promise<void>;
   fetchUnreadCount: () => Promise<void>;
   markAsRead: () => void;
+  clearCache: () => void;
 }
 
 export const useFYBStore = create<FYBState>()(
@@ -45,14 +46,18 @@ export const useFYBStore = create<FYBState>()(
       unreadCount: 0,
       lastOpenedAt: null,
 
+      clearCache: () => set({ entries: [], lastFetch: null, unreadCount: 0 }),
+
       fetchUnreadCount: async () => {
         try {
           const lastOpened = get().lastOpenedAt;
-          let query = supabase.from('featured_students').select('id', { count: 'exact', head: true });
-          if (lastOpened) {
-            query = query.gt('created_at', lastOpened);
+          if (!lastOpened) {
+            set({ lastOpenedAt: new Date().toISOString(), unreadCount: 0 });
+            return;
           }
-          const { count, error } = await query;
+          const { count, error } = await supabase.from('featured_students')
+            .select('id', { count: 'exact', head: true })
+            .gt('created_at', lastOpened);
           if (!error && count !== null) {
             set({ unreadCount: count });
           }
@@ -64,6 +69,19 @@ export const useFYBStore = create<FYBState>()(
       },
 
       fetchFeatured: async (force = false) => {
+        const { entries } = get();
+
+        // LOCAL-FIRST: read from SQLite cache immediately (always works — even on new device)
+        if (!force && entries.length === 0) {
+          try {
+            const { getCachedEntityList } = require('../lib/database');
+            const cached = await getCachedEntityList('featured_students');
+            if (cached.length > 0) {
+              set({ entries: cached as any[], isLoading: false });
+            }
+          } catch { /* fall through to server fetch */ }
+        }
+
         const { useNetworkStore } = require('./network.store');
         if (!force && get().entries.length > 0 && !useNetworkStore.getState().isOnline) {
           // If offline and we have cache, NEVER load/spin.
@@ -71,7 +89,7 @@ export const useFYBStore = create<FYBState>()(
         }
 
         // Only show full loading state if we have never fetched before
-        if (!get().lastFetch) set({ isLoading: true });
+        if (!get().lastFetch && get().entries.length === 0) set({ isLoading: true });
 
         try {
           const { data, error } = await supabase
@@ -86,9 +104,15 @@ export const useFYBStore = create<FYBState>()(
             .order('published_at', { ascending: false });
 
           if (error) throw error;
+
+          const items = (data || []) as unknown as FeaturedStudentEntry[];
+          if (items.length > 0) {
+            const { cacheEntityList } = require('../lib/database');
+            cacheEntityList('featured_students', items, '').catch(() => {});
+          }
           
           set({ 
-            entries: (data || []) as unknown as FeaturedStudentEntry[], 
+            entries: items, 
             isLoading: false, 
             lastFetch: Date.now() 
           });

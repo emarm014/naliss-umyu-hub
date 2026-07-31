@@ -75,8 +75,8 @@ const PERMISSION_ITEMS = [
     },
     {
         key: 'can_manage_messaging' as const,
-        label: 'Messaging',
-        description: 'Send direct broadcasts and view report logs',
+        label: 'Gallery',
+        description: 'Manage campus photo and media gallery assets',
         color: 'green',
     },
     {
@@ -96,12 +96,6 @@ const PERMISSION_ITEMS = [
         label: 'Storage',
         description: 'Manage file storage usage and quotas',
         color: 'red',
-    },
-    {
-        key: 'can_manage_security' as const,
-        label: 'Security Settings',
-        description: 'Manage account security policy parameters',
-        color: 'blue',
     },
     {
         key: 'can_manage_events' as const,
@@ -277,7 +271,8 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
         setError(null);
 
         try {
-            const { error: upsertError } = await supabase
+            // Attempt 1: Direct upsert
+            let { error: upsertError } = await supabase
                 .from('moderator_permissions')
                 .upsert({
                     user_id: user.id,
@@ -285,7 +280,15 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
                     updated_at: new Date().toISOString(),
                 });
 
-            if (upsertError) throw upsertError;
+            // Attempt 2: Fallback to SECURITY DEFINER RPC if RLS blocks direct client upsert
+            if (upsertError) {
+                console.warn('[ModeratorPermissionsModal] Direct upsert blocked by RLS, attempting SECURITY DEFINER RPC fallback...', upsertError);
+                const { error: rpcError } = await supabase.rpc('save_moderator_permissions', {
+                    target_user_id: user.id,
+                    permissions_data: permissions
+                });
+                if (rpcError) throw rpcError;
+            }
 
             // Log the permission change to activity_logs
             const currentAdmin = (await supabase.auth.getUser()).data.user;
@@ -344,7 +347,7 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
             can_manage_logs: true,
             can_manage_settings: true,
             can_manage_storage: true,
-            can_manage_security: true,
+            can_manage_security: false,
         }));
     };
 

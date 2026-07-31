@@ -1,4 +1,4 @@
-﻿// User Role Types
+// User Role Types
 export type UserRole = 'student' | 'moderator' | 'super_admin';
 
 // Account Status Types
@@ -60,6 +60,7 @@ export interface User {
   username: string;
   role: UserRole;
   status: AccountStatus;
+  is_external?: boolean;
   department_id: string | null;
   level: AcademicLevel | null;
   email_verified_at: string | null;

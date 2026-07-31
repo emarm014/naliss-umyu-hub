@@ -200,13 +200,14 @@ import { useOfflineImage } from '../../src/hooks/useOfflineImage';
 
 function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (uri: string, name: string) => void }) {
     const cleanAvatar = getCleanAvatarUrl(staff.avatar_url);
+    const effectiveAvatar = cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(staff.full_name)}&size=200`;
     const cachedUri = useOfflineImage(cleanAvatar);
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cleanAvatar ? onPressAvatar(cleanAvatar, staff.full_name) : null}
+                    onPress={() => onPressAvatar(effectiveAvatar, staff.full_name)}
                     activeOpacity={0.8}
                 >
                     {cachedUri ? (
@@ -260,6 +261,7 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
     const fullName = executive.full_name || executive.user?.full_name || 'NALISS Executive';
     const rawAvatarUrl = executive.avatar_url || executive.user?.avatar_url;
     const cleanAvatar = getCleanAvatarUrl(rawAvatarUrl);
+    const effectiveAvatar = cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(fullName)}&size=200`;
     const cachedUri = useOfflineImage(cleanAvatar);
 
     return (
@@ -267,7 +269,7 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => cleanAvatar ? onPressAvatar(cleanAvatar, fullName) : null}
+                    onPress={() => onPressAvatar(effectiveAvatar, fullName)}
                     activeOpacity={0.8}
                 >
                     {cachedUri ? (

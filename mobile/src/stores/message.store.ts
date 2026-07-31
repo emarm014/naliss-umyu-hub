@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { Logger } from '../utils/logger';
@@ -135,6 +135,38 @@ export const useMessageStore = create<MessageState>()(
                         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
 
                     const isConfirmed = message.id && !String(message.id).startsWith('temp-');
+
+                    // Update group last message preview instantly (online or offline or pending)
+                    try {
+                        const { useGroupStore } = require('./group.store');
+                        const { useAuthStore } = require('./auth.store');
+                        const profile = useAuthStore.getState().profile;
+                        
+                        const senderId = message.sender_id || message.sender?.id;
+                        const isSelf = (senderId && profile?.id && senderId === profile.id) || !senderId;
+                        const senderName = isSelf ? 'You' : (message.sender?.username || message.sender?.full_name || 'Member');
+                        
+                        const msgType = message.content_type || message.message_type || 'text';
+                        const content = message.content || '';
+                        let previewText = `${senderName}: ${content}`;
+
+                        if (msgType === 'image') previewText = `${senderName}: 📷 Photo`;
+                        else if (msgType === 'document') previewText = `${senderName}: 📎 Document`;
+                        else if (msgType === 'video') previewText = `${senderName}: 🎥 Video`;
+                        else if (msgType === 'audio') previewText = `${senderName}: 🎵 Audio`;
+                        else if (msgType === 'sticker') previewText = `${senderName}: 😊 Sticker`;
+                        else if (content.includes('cloudinary.com') || content.includes('res.cloudinary')) {
+                            const lower = content.toLowerCase();
+                            if (lower.includes('/video/upload/') || lower.includes('chat-videos')) previewText = `${senderName}: 🎥 Video`;
+                            else if (lower.includes('/image/upload/') || lower.includes('chat-images')) previewText = `${senderName}: 📷 Photo`;
+                            else if (lower.includes('chat-docs')) previewText = `${senderName}: 📎 Document`;
+                            else if (lower.includes('chat-audios')) previewText = `${senderName}: 🎵 Audio`;
+                        }
+
+                        useGroupStore.getState().updateGroupLastMessage(groupId, previewText, message.created_at, message);
+                    } catch {
+                        // silent
+                    }
 
                     return {
                         cache: { ...state.cache, [groupId]: updated },

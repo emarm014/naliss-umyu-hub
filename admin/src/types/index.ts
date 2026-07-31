@@ -48,6 +48,7 @@ export interface User {
   bio: string | null;
   role: UserRole;
   status: AccountStatus;
+  is_external?: boolean;
   department_id: string | null;
   level: AcademicLevel | null;
   email_verified_at: string | null;
@@ -252,8 +253,12 @@ export interface ActivityLog {
   request_method?: string | null; // added via migration
   created_at: string;
   user?: {
+    id?: string;
     full_name?: string;
     email?: string;
+    role?: UserRole | string;
+    is_external?: boolean;
+    avatar_url?: string | null;
   } | null;
 }
 

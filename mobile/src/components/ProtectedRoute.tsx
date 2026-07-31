@@ -13,7 +13,6 @@ import { COLORS } from '../constants/Colors';
 import { User as Profile } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../components/NalissLogo';
-import { SplashLoadingScreen } from './SplashLoadingScreen';
 import { getOrCreateDeviceId, fetchIpAddress, getDeviceName } from '../utils/device';
 import { normalizeError, isNetworkError } from '../utils/sentry';
 const MinimalLoader = () => {
@@ -401,7 +400,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
         try {
           const { data: profileData, error: profileError } = await (supabase as any).from('users')
-            .select('registration_number, level, status, banned_reason, suspended_until, suspension_reason, role')
+            .select('registration_number, level, status, banned_reason, suspended_until, suspension_reason, role, is_external')
             .eq('id', currentSession.user.id)
             .maybeSingle() as any;
 
@@ -428,6 +427,23 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               },
               level: 'info',
             });
+
+            // BLOCK: External Moderators are restricted to Web Admin Portal only
+            if (
+              profileData.is_external === true ||
+              (profileData.role === 'moderator' && !profileData.registration_number && !profileData.level)
+            ) {
+              Alert.alert(
+                'Access Denied',
+                'External moderators are restricted to the Web Admin Portal only and cannot log into the mobile app.'
+              );
+              useAuthStore.getState().setSession(null);
+              useAuthStore.getState().setUser(null);
+              useAuthStore.getState().setIsProfileComplete(null);
+              useAuthStore.getState().setProfile(null);
+              supabase.auth.signOut().catch(() => {});
+              return;
+            }
 
             // BLOCK: Account status check (Ban / Suspend / Graduate)
             if (profileData.status === 'graduated') {
@@ -590,10 +606,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [restrictionInfo]);
 
-  // â”€â”€ HEARTBEAT: Jittered REST Polling (Replaces Realtime WebSockets) â”€â”€â”€â”€â”€â”€â”€
-  // We use standard REST polling with a randomized 55s-65s jitter to check both
-  // ban/suspension status and session eviction. This completely bypasses the
-  // Supabase Free Tier 200 concurrent Realtime connection limit.
+  // ── IMMEDIATE ACCOUNT STATUS & EVICTION MONITORING ──────────────────────────────
+  // Uses Supabase Realtime (<100ms response) + AppState foreground listener + 15s fallback poll.
+  // Responds IMMEDIATELY when an admin bans, suspends, restores, or evicts a user.
   useEffect(() => {
     const userId = session?.user?.id;
     if (!userId || !deviceSessionChecked || sessionError) return;
@@ -616,7 +631,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         // 1. Process Status Restriction
         if (userRes.data) {
           const u = userRes.data;
-          useAuthStore.getState().fetchProfile(true); // Optional light refresh
           
           if (u.status === 'banned') {
             setRestrictionInfo({ type: 'banned', reason: u.banned_reason || null, until: null });
@@ -624,9 +638,19 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             const suspendedUntil = u.suspended_until ? new Date(u.suspended_until) : null;
             if (!suspendedUntil || suspendedUntil > new Date()) {
               setRestrictionInfo({ type: 'suspended', reason: u.suspension_reason || null, until: suspendedUntil });
+            } else {
+              setRestrictionInfo(null);
             }
           } else if (u.status === 'active') {
             setRestrictionInfo(null);
+          } else if (u.status === 'graduated') {
+            Alert.alert('Access Denied', 'This account has been graduated.');
+            await supabase.auth.signOut();
+            useAuthStore.getState().setSession(null);
+            useAuthStore.getState().setUser(null);
+            useAuthStore.getState().setIsProfileComplete(null);
+            useAuthStore.getState().setProfile(null);
+            return;
           }
         }
 
@@ -638,25 +662,88 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           useAuthStore.getState().setUser(null);
           useAuthStore.getState().setIsProfileComplete(null);
           useAuthStore.getState().setProfile(null);
-          return; // Stop polling if logged out
+          return;
         }
       } catch (err) {
-        console.warn('Heartbeat check failed:', err);
+        console.warn('Status check failed:', err);
       }
 
-      // Schedule next tick with 55s-65s jitter
+      // Schedule next fallback check (every 15 seconds)
       if (isSubscribed) {
-        const nextJitter = 55000 + Math.floor(Math.random() * 10000);
-        timer = setTimeout(performHeartbeatCheck, nextJitter);
+        timer = setTimeout(performHeartbeatCheck, 15000);
       }
     };
 
-    // Kick off first heartbeat with immediate small jitter (1s - 5s)
-    timer = setTimeout(performHeartbeatCheck, 1000 + Math.floor(Math.random() * 4000));
+    // 1. Instant check on mount
+    performHeartbeatCheck();
+
+    // 2. Instant Realtime Subscription on users table for ban/suspend/restoration
+    const statusChannel = supabase
+      .channel(`live_user_status_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users',
+          filter: `id=eq.${userId}`,
+        },
+        (payload: any) => {
+          if (!isSubscribed) return;
+          const u = payload.new;
+          if (u) {
+            useAuthStore.getState().fetchProfile(true);
+            if (u.status === 'banned') {
+              setRestrictionInfo({ type: 'banned', reason: u.banned_reason || null, until: null });
+            } else if (u.status === 'suspended') {
+              const suspendedUntil = u.suspended_until ? new Date(u.suspended_until) : null;
+              if (!suspendedUntil || suspendedUntil > new Date()) {
+                setRestrictionInfo({ type: 'suspended', reason: u.suspension_reason || null, until: suspendedUntil });
+              } else {
+                setRestrictionInfo(null);
+              }
+            } else if (u.status === 'active') {
+              setRestrictionInfo(null);
+            } else if (u.status === 'graduated') {
+              Alert.alert('Access Denied', 'This account has been graduated.');
+              supabase.auth.signOut();
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // 3. Instant Realtime Subscription on moderator_permissions for moderator restrictions/grants
+    const moderatorChannel = supabase
+      .channel(`live_mod_permissions_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'moderator_permissions',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          if (!isSubscribed) return;
+          useAuthStore.getState().fetchProfile(true);
+        }
+      )
+      .subscribe();
+
+    // 4. AppState listener — perform instant check when returning to foreground
+    const appStateSub = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        performHeartbeatCheck();
+      }
+    });
 
     return () => {
       isSubscribed = false;
       clearTimeout(timer);
+      supabase.removeChannel(statusChannel);
+      supabase.removeChannel(moderatorChannel);
+      appStateSub.remove();
     };
   }, [session?.user?.id, deviceSessionChecked, sessionError]);
 
@@ -776,7 +863,19 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       if (signupState.isGoogleDelaying) return;
 
       if (isProfileComplete === false) {
-        if (signupState.hasTimedOut() && signupState.lastActivityTime) {
+        const storeProvider = signupState.provider;
+        const authProviders: string[] = session.user?.app_metadata?.providers || [];
+        const isGoogleProvider = storeProvider === 'google' ||
+          session.user?.app_metadata?.provider === 'google' ||
+          authProviders.includes('google');
+
+        // Google users are already authenticated with Supabase — refresh activity & resume at identity screen
+        if (isGoogleProvider) {
+          signupState.touchActivity();
+          if (!signupState.provider) signupState.setProvider('google');
+          if (!signupState.email && session.user?.email) signupState.setCredentials(session.user.email);
+          if (!signupState.currentStep) signupState.setCurrentStep(2);
+        } else if (signupState.hasTimedOut() && signupState.lastActivityTime) {
           signupState.reset();
           cleanupIncompleteSignup();
           safeNavigate.current('/auth/login');
@@ -784,12 +883,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         }
 
         const step = signupState.currentStep;
-        const storeProvider = signupState.provider;
-        const authProviders: string[] = session.user?.app_metadata?.providers || [];
-        const isGoogleProvider = storeProvider === 'google' ||
-          session.user?.app_metadata?.provider === 'google' ||
-          authProviders.includes('google');
-
         const resumeRoutes: Record<number, string> = isGoogleProvider
           ? { 1: '/auth/register-options', 2: '/auth/identity', 3: '/auth/level' }
           : { 1: '/auth/register-email', 2: '/auth/register-otp', 3: '/auth/register-password', 4: '/auth/identity', 5: '/auth/level' };
@@ -806,6 +899,24 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           if (signupState.isGoogleDelaying) return;
           // Prevent navigating to Home until we've checked the 5-device limit
           if (!deviceSessionChecked || sessionError === 'device_limit_exceeded') return;
+
+          // ── New Device Data Restore Gate ──────────────────────────────
+          // If on data-restore screen, don't redirect away from it
+          if (segments[1] === 'data-restore') return;
+
+          const { useDataRestoreStore } = require('../stores/data-restore.store');
+          const restoreStore = useDataRestoreStore.getState();
+
+          // Only detect once per login session
+          if (!restoreStore.restoreCompleted && !restoreStore.wasSkipped) {
+            restoreStore.detectNewDevice();
+            if (restoreStore.isNewDevice) {
+              safeNavigate.current('/auth/data-restore');
+              return;
+            }
+          }
+          // ── End New Device Gate ───────────────────────────────────────
+
           safeNavigate.current('/(tabs)');
         }
       } else if (isProfileComplete === null && offlineUnblocked) {
@@ -943,25 +1054,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Still waiting for profile check AND not yet unblocked by offline timeout
-  // (only reaches here if hydration is done but network hasn't responded yet)
   if (session && isProfileComplete === null && !offlineUnblocked) {
-    // CRITICAL: Never show the spinner when the user is on a signup screen.
-    // Signup screens manage their own loading state. Showing the spinner here
-    // unmounts the signup screen, which kills isMounted refs and drops navigations.
-    const currentScreen = segments[1] as string;
-    const signupScreens = ['register-email', 'register-otp', 'register-password', 'identity', 'level', 'register-options', 'eligibility'];
-    if (signupScreens.includes(currentScreen)) {
-      return <>{children}</>;
-    }
-    // Also skip spinner if a signup transition is actively in progress
-    const signupState = useSignupStore.getState();
-    if (signupState.isGoogleDelaying) return <>{children}</>;
-    return <MinimalLoader />;
+    return <>{children}</>;
   }
 
   // BLOCK: Wait for device session check to complete
   if (session && isProfileComplete === true && !deviceSessionChecked) {
-    return <SplashLoadingScreen />;
+    return <>{children}</>;
   }
 
   // BLOCK: 5-Device limit exceeded screen
@@ -977,6 +1076,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     const handleSignOutEntirely = async () => {
       try {
+        // Logically deactivate all sessions
+        await (supabase as any)
+          .from('user_sessions')
+          .update({ is_active: false })
+          .eq('user_id', session!.user.id);
+
         // Delete ALL device session logs for this user
         await (supabase as any)
           .from('user_sessions')
@@ -998,6 +1103,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const handleRemoveDevice = async (deviceIdToRemove: string) => {
       try {
         setIsRemovingDevice(deviceIdToRemove);
+        
+        // Logically deactivate session first (in case RLS blocks delete)
+        await (supabase as any)
+          .from('user_sessions')
+          .update({ is_active: false })
+          .eq('user_id', session!.user.id)
+          .eq('device_id', deviceIdToRemove);
+
         // Permanently DELETE the device session row
         const { error } = await (supabase as any)
           .from('user_sessions')

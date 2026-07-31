@@ -1,9 +1,48 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus } from 'lucide-react';
+import { useAuthStore } from '../store/auth.store';
+import FileUpload from '../lib/FileUpload';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, Award, MessageSquare, Sparkles } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import Modal from '../components/ui/Modal';
+
+export type VotingCandidate = {
+  id: string;
+  user_id: string;
+  full_name: string;
+  username: string;
+  avatar_url?: string;
+  level?: string;
+  position_title: string;
+  photo_url?: string;
+  manifesto?: string;
+};
+
+export type DebateTopic = {
+  id: string;
+  topic_title: string;
+  description: string;
+  sides: string[];
+  time_per_speaker_sec: number;
+};
+
+export type TalentAct = {
+  id: string;
+  performer_user_id?: string;
+  performer_name: string;
+  act_title: string;
+  act_type?: string;
+  description?: string;
+  media_url?: string;
+};
+
+export type CustomContentBlock = {
+  id: string;
+  title: string;
+  body: string;
+  media_url?: string;
+};
 
 type EventPool = {
  id: string;
@@ -42,7 +81,19 @@ type QuizQuestion = {
 };
 
 export default function EventPoolManagementPage() {
- const [pools, setPools] = useState<EventPool[]>([]);
+  const { profile, permissions } = useAuthStore();
+  const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
+
+  const [pools, setPools] = useState<EventPool[]>([]);
+
+  const displayedPools = useMemo(() => {
+    if (!assignedLevel) return pools;
+    return pools.filter(pool => {
+      const allowed = pool.target_constraints?.allowed_levels;
+      if (!allowed || allowed.length === 0 || allowed.includes('all')) return true;
+      return allowed.includes(assignedLevel);
+    });
+  }, [pools, assignedLevel]);
  const [selectedPool, setSelectedPool] = useState<EventPool | null>(null);
  const [submissions, setSubmissions] = useState<Submission[]>([]);
  const [applications, setApplications] = useState<any[]>([]);
@@ -66,19 +117,52 @@ export default function EventPoolManagementPage() {
  // Participation Rule State
  const [activeParticipationRule, setActiveParticipationRule] = useState('open');
 
- // Invite-Only State
- const [inviteSearchQuery, setInviteSearchQuery] = useState('');
- const [inviteFilterLevel, setInviteFilterLevel] = useState('all');
- const [inviteSearchResults, setInviteSearchResults] = useState<any[]>([]);
- const [invitedUsers, setInvitedUsers] = useState<any[]>([]);
- const [isInviteSearching, setIsInviteSearching] = useState(false);
+  // Invite-Only State
+  const [inviteSearchQuery, setInviteSearchQuery] = useState('');
+  const [inviteFilterLevel, setInviteFilterLevel] = useState('all');
+  const [inviteSearchResults, setInviteSearchResults] = useState<any[]>([]);
+  const [invitedUsers, setInvitedUsers] = useState<any[]>([]);
+  const [isInviteSearching, setIsInviteSearching] = useState(false);
 
- const [showCreateModal, setShowCreateModal] = useState<'create' | 'edit' | false>(false);
- const [editingPoolId, setEditingPoolId] = useState<string | null>(null);
- const [newPoolTitle, setNewPoolTitle] = useState('');
- const [newPoolType, setNewPoolType] = useState('quiz');
- const [events, setEvents] = useState<any[]>([]);
- const [selectedEventId, setSelectedEventId] = useState('');
+  // Voting Content Builder State
+  const [candidatesList, setCandidatesList] = useState<VotingCandidate[]>([]);
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
+  const [candidateFilterLevel, setCandidateFilterLevel] = useState('all');
+  const [candidateSearchResults, setCandidateSearchResults] = useState<any[]>([]);
+  const [isCandidateSearching, setIsCandidateSearching] = useState(false);
+  const [selectedStudentForCandidate, setSelectedStudentForCandidate] = useState<any | null>(null);
+  const [candidatePositionTitle, setCandidatePositionTitle] = useState('');
+  const [candidatePhotoUrl, setCandidatePhotoUrl] = useState('');
+  const [candidateManifesto, setCandidateManifesto] = useState('');
+
+  // Debate State
+  const [debateTopics, setDebateTopics] = useState<DebateTopic[]>([]);
+  
+  // Talent State
+  const [talentActs, setTalentActs] = useState<TalentAct[]>([]);
+
+  // Essay State
+  const [essayMinWords, setEssayMinWords] = useState('');
+  const [essayMaxWords, setEssayMaxWords] = useState('');
+  const [essayRubric, setEssayRubric] = useState<string[]>([]);
+
+  // Challenge State
+  const [challengeObjectives, setChallengeObjectives] = useState<string[]>([]);
+  const [challengeSubmissionFormat, setChallengeSubmissionFormat] = useState('text');
+
+  // Academic State
+  const [academicReferences, setAcademicReferences] = useState<Array<{ title: string; url: string }>>([]);
+  const [academicMarkingScheme, setAcademicMarkingScheme] = useState('');
+
+  // Custom Blocks State
+  const [customBlocks, setCustomBlocks] = useState<CustomContentBlock[]>([]);
+
+  const [showCreateModal, setShowCreateModal] = useState<'create' | 'edit' | false>(false);
+  const [editingPoolId, setEditingPoolId] = useState<string | null>(null);
+  const [newPoolTitle, setNewPoolTitle] = useState('');
+  const [newPoolType, setNewPoolType] = useState('quiz');
+  const [events, setEvents] = useState<any[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState('');
 
  useEffect(() => {
  fetchPools();
@@ -121,16 +205,252 @@ export default function EventPoolManagementPage() {
  }
  }, [activeParticipationRule]);
 
- const addInvitedUser = (user: any) => {
- setInvitedUsers(prev => [...prev, user]);
- setInviteSearchResults(prev => prev.filter(u => u.id !== user.id));
- };
+  const addInvitedUser = (user: any) => {
+  setInvitedUsers(prev => [...prev, user]);
+  setInviteSearchResults(prev => prev.filter(u => u.id !== user.id));
+  };
 
- const removeInvitedUser = (userId: string) => {
- setInvitedUsers(prev => prev.filter(u => u.id !== userId));
- // optionally refresh the list to re-add the user to the browser
- fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
- };
+  const removeInvitedUser = (userId: string) => {
+  setInvitedUsers(prev => prev.filter(u => u.id !== userId));
+  // optionally refresh the list to re-add the user to the browser
+  fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
+  };
+
+  // Voting Candidate Search Logic
+  const fetchCandidateSearchUsers = async (query: string, level: string) => {
+    setIsCandidateSearching(true);
+    try {
+      let req = supabase.from('users').select('id, full_name, username, avatar_url, level').eq('role', 'student');
+      if (query.trim().length >= 2) {
+        req = req.or(`full_name.ilike.%${query}%,username.ilike.%${query}%`);
+      }
+      if (level !== 'all') {
+        req = req.eq('level', level);
+      }
+      const { data } = await req.limit(50);
+      const existingCandidateUserIds = candidatesList.map(c => c.user_id);
+      setCandidateSearchResults((data || []).filter(u => !existingCandidateUserIds.includes(u.id)));
+    } catch {
+      setCandidateSearchResults([]);
+    } finally {
+      setIsCandidateSearching(false);
+    }
+  };
+
+  const handleCandidateSearch = (query: string) => {
+    setCandidateSearchQuery(query);
+    fetchCandidateSearchUsers(query, candidateFilterLevel);
+  };
+
+  const handleCandidateFilterChange = (level: string) => {
+    setCandidateFilterLevel(level);
+    fetchCandidateSearchUsers(candidateSearchQuery, level);
+  };
+
+  useEffect(() => {
+    if (selectedPool?.type === 'voting' && activeView === 'content') {
+      fetchCandidateSearchUsers(candidateSearchQuery, candidateFilterLevel);
+    }
+  }, [selectedPool?.type, activeView]);
+
+  const handleAddCandidate = (user: any) => {
+    setSelectedStudentForCandidate(user);
+    setCandidatePositionTitle('');
+    setCandidatePhotoUrl(user.avatar_url || '');
+    setCandidateManifesto('');
+  };
+
+  const handleConfirmCandidateAdd = () => {
+    if (!selectedStudentForCandidate) return;
+    const newCand: VotingCandidate = {
+      id: crypto.randomUUID(),
+      user_id: selectedStudentForCandidate.id,
+      full_name: selectedStudentForCandidate.full_name,
+      username: selectedStudentForCandidate.username,
+      avatar_url: selectedStudentForCandidate.avatar_url,
+      level: selectedStudentForCandidate.level,
+      position_title: candidatePositionTitle.trim() || 'Candidate',
+      photo_url: candidatePhotoUrl || selectedStudentForCandidate.avatar_url || '',
+      manifesto: candidateManifesto.trim()
+    };
+    setCandidatesList(prev => [...prev, newCand]);
+    setSelectedStudentForCandidate(null);
+    setCandidatePositionTitle('');
+    setCandidatePhotoUrl('');
+    setCandidateManifesto('');
+    setCandidateSearchResults(prev => prev.filter(u => u.id !== selectedStudentForCandidate.id));
+  };
+
+  const handleRemoveCandidate = (candidateId: string) => {
+    setCandidatesList(prev => prev.filter(c => c.id !== candidateId));
+  };
+
+  const handleSaveVotingCandidates = async () => {
+    if (!selectedPool) return;
+    try {
+      const updates = {
+        target_constraints: {
+          ...selectedPool.target_constraints,
+          candidates: candidatesList
+        }
+      };
+      const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+      if (error) throw error;
+      setSelectedPool({ ...selectedPool, ...updates });
+      fetchPools();
+      alert('Voting Candidates saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save candidates: ' + e.message);
+    }
+  };
+
+  const handleSaveDebateTopics = async () => {
+    if (!selectedPool) return;
+    try {
+      const updates = {
+        target_constraints: {
+          ...selectedPool.target_constraints,
+          debate_topics: debateTopics
+        }
+      };
+      const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+      if (error) throw error;
+      setSelectedPool({ ...selectedPool, ...updates });
+      fetchPools();
+      alert('Debate Topics saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save debate topics: ' + e.message);
+    }
+  };
+
+  const handleSaveTalentActs = async () => {
+    if (!selectedPool) return;
+    try {
+      const updates = {
+        target_constraints: {
+          ...selectedPool.target_constraints,
+          talent_acts: talentActs
+        }
+      };
+      const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+      if (error) throw error;
+      setSelectedPool({ ...selectedPool, ...updates });
+      fetchPools();
+      alert('Talent Acts saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save talent acts: ' + e.message);
+    }
+  };
+
+  const handleSaveEssaySetup = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedPool) return;
+    const fd = new FormData(e.currentTarget);
+    const instructions = fd.get('instructions') as string;
+    const media_url = fd.get('media_url') as string;
+    const minWords = parseInt(essayMinWords || '0', 10);
+    const maxWords = parseInt(essayMaxWords || '0', 10);
+
+    try {
+      const updates = {
+        target_constraints: {
+          ...selectedPool.target_constraints,
+          instructions,
+          media_url,
+          word_limit_min: minWords || null,
+          word_limit_max: maxWords || null,
+          rubric_criteria: essayRubric
+        }
+      };
+      const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+      if (error) throw error;
+      setSelectedPool({ ...selectedPool, ...updates });
+      fetchPools();
+      alert('Essay Configuration saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save essay config: ' + e.message);
+    }
+  };
+
+  const handleSaveChallengeSetup = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedPool) return;
+    const fd = new FormData(e.currentTarget);
+    const instructions = fd.get('instructions') as string;
+    const media_url = fd.get('media_url') as string;
+
+    try {
+      const updates = {
+        target_constraints: {
+          ...selectedPool.target_constraints,
+          instructions,
+          media_url,
+          objectives: challengeObjectives,
+          submission_format: challengeSubmissionFormat
+        }
+      };
+      const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+      if (error) throw error;
+      setSelectedPool({ ...selectedPool, ...updates });
+      fetchPools();
+      alert('Challenge Configuration saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save challenge config: ' + e.message);
+    }
+  };
+
+  const handleSaveAcademicSetup = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedPool) return;
+    const fd = new FormData(e.currentTarget);
+    const instructions = fd.get('instructions') as string;
+    const media_url = fd.get('media_url') as string;
+
+    try {
+      const updates = {
+        target_constraints: {
+          ...selectedPool.target_constraints,
+          instructions,
+          media_url,
+          reference_materials: academicReferences,
+          marking_scheme: academicMarkingScheme
+        }
+      };
+      const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+      if (error) throw error;
+      setSelectedPool({ ...selectedPool, ...updates });
+      fetchPools();
+      alert('Academic Configuration saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save academic config: ' + e.message);
+    }
+  };
+
+  const handleSaveCustomBlocks = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedPool) return;
+    const fd = new FormData(e.currentTarget);
+    const instructions = fd.get('instructions') as string;
+    const media_url = fd.get('media_url') as string;
+
+    try {
+      const updates = {
+        target_constraints: {
+          ...selectedPool.target_constraints,
+          instructions,
+          media_url,
+          custom_blocks: customBlocks
+        }
+      };
+      const { error } = await supabase.from('event_pools').update(updates).eq('id', selectedPool.id);
+      if (error) throw error;
+      setSelectedPool({ ...selectedPool, ...updates });
+      fetchPools();
+      alert('Custom Content saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save custom content: ' + e.message);
+    }
+  };
 
  const fetchEvents = async () => {
  const { data } = await supabase.from('events').select('id, title').in('status', ['published', 'ongoing']);
@@ -153,15 +473,19 @@ export default function EventPoolManagementPage() {
  const handleCreatePool = async (e: React.FormEvent) => {
  e.preventDefault();
  try {
- if (showCreateModal === 'create') {
- const { error } = await supabase.from('event_pools').insert({
- title: newPoolTitle,
- type: newPoolType,
- status: 'draft',
- participation_rule: 'open',
- event_id: selectedEventId || null
- });
- if (error) throw error;
+  if (showCreateModal === 'create') {
+  const { error } = await supabase.from('event_pools').insert({
+  title: newPoolTitle,
+  type: newPoolType,
+  status: 'draft',
+  participation_rule: assignedLevel ? 'level_based' : 'open',
+  target_constraints: {
+    allowed_levels: assignedLevel ? [assignedLevel] : ['100', '200', '300', '400'],
+    enable_registration: true
+  },
+  event_id: selectedEventId || null
+  });
+  if (error) throw error;
  } else if (showCreateModal === 'edit' && editingPoolId) {
  const { error } = await supabase.from('event_pools').update({
  title: newPoolTitle,
@@ -233,6 +557,20 @@ export default function EventPoolManagementPage() {
  } else {
  setQuizQuestions([]);
  }
+
+  // Load type-specific structured content from target_constraints
+  const tc = pool.target_constraints || {};
+  setCandidatesList(tc.candidates || []);
+  setDebateTopics(tc.debate_topics || []);
+  setTalentActs(tc.talent_acts || []);
+  setEssayMinWords(tc.word_limit_min ? String(tc.word_limit_min) : '');
+  setEssayMaxWords(tc.word_limit_max ? String(tc.word_limit_max) : '');
+  setEssayRubric(tc.rubric_criteria || []);
+  setChallengeObjectives(tc.objectives || []);
+  setChallengeSubmissionFormat(tc.submission_format || 'text');
+  setAcademicReferences(tc.reference_materials || []);
+  setAcademicMarkingScheme(tc.marking_scheme || '');
+  setCustomBlocks(tc.custom_blocks || []);
  } catch (e) {
  console.error(e);
  }
@@ -269,7 +607,7 @@ export default function EventPoolManagementPage() {
  const strict_once_off_selection = fd.get('strict_once_off_selection') === 'on';
  const instant_feedback = fd.get('instant_feedback') === 'on';
  
- const allowed_levels = fd.getAll('allowed_levels') as string[];
+ const allowed_levels = assignedLevel ? [assignedLevel] : (fd.getAll('allowed_levels') as string[]);
 
  try {
  const updates = {
@@ -624,8 +962,17 @@ export default function EventPoolManagementPage() {
  </button>
  </div>
 
- <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
- {pools.map(pool => (
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+  {displayedPools.length === 0 ? (
+    <div className="col-span-full py-16 text-center bg-white rounded-2xl border border-slate-200 p-8">
+      <Trophy className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+      <p className="text-base font-bold text-slate-700">No event pools found</p>
+      <p className="text-xs text-slate-400 mt-1">
+        {assignedLevel ? `No event pools assigned to Level ${assignedLevel}.` : 'Create a new event pool to get started.'}
+      </p>
+    </div>
+  ) : (
+    displayedPools.map(pool => (
  <div key={pool.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 hover:border-primary-200 transition-colors">
  <div className="flex justify-between items-start mb-4">
  <h3 className="font-bold text-lg text-gray-900 line-clamp-1 pr-2">{pool.title}</h3>
@@ -652,11 +999,7 @@ export default function EventPoolManagementPage() {
  Manage Pool Rules & Setup
  </button>
  </div>
- ))}
- {pools.length === 0 && (
- <div className="col-span-full py-12 text-center text-gray-500 ">
- No Event Pools found. Create one from the database first.
- </div>
+ ))
  )}
  </div>
 
@@ -741,14 +1084,29 @@ export default function EventPoolManagementPage() {
   </div>
 
   {activeParticipationRule === 'level_based' && (
-      <div className="mt-4 p-3 bg-white border rounded-lg border-slate-200">
-          <label className="block text-xs font-semibold text-slate-500 mb-2">Allowed Levels</label>
+      <div className="mt-4 p-4 bg-white border rounded-xl border-slate-200">
+          <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-slate-700">Allowed Levels</label>
+              {assignedLevel && (
+                  <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      🔒 Restricted to Level {assignedLevel}
+                  </span>
+              )}
+          </div>
           <div className="flex flex-wrap gap-3">
               {['100', '200', '300', '400'].map(level => {
-                  const isChecked = selectedPool.target_constraints?.allowed_levels?.includes(level);
+                  const isChecked = assignedLevel ? level === assignedLevel : selectedPool.target_constraints?.allowed_levels?.includes(level);
+                  const isDisabled = !!assignedLevel;
                   return (
-                      <label key={level} className="flex items-center gap-1.5 text-sm text-gray-700">
-                          <input type="checkbox" name="allowed_levels" value={level} defaultChecked={isChecked} className="rounded text-primary-600 focus:ring-primary-500" />
+                      <label key={level} className={`flex items-center gap-1.5 text-sm ${isDisabled && level !== assignedLevel ? 'text-gray-400 opacity-50' : 'text-gray-800 font-medium'}`}>
+                          <input
+                              type="checkbox"
+                              name="allowed_levels"
+                              value={level}
+                              defaultChecked={isChecked}
+                              disabled={isDisabled}
+                              className="rounded text-primary-600 focus:ring-primary-500"
+                          />
                           Level {level}
                       </label>
                   );
@@ -1069,34 +1427,622 @@ export default function EventPoolManagementPage() {
  </form>
  )}
  </div>
- ) : (
- <form onSubmit={handleSaveInstructions} className="space-y-4 max-w-3xl">
- <div>
- <label className="block text-sm font-semibold text-gray-700 mb-2">Prompt / Instructions for Participants</label>
- <p className="text-sm text-gray-500 mb-3">These instructions will be displayed to the participant when they start the event.</p>
- <textarea 
- name="instructions" 
- rows={10} 
- defaultValue={selectedPool.target_constraints?.instructions || ''} 
- className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
- placeholder="e.g. Write a 500-word essay about..."
- />
- </div>
- <div>
- <label className="block text-sm font-semibold text-gray-700 mb-2">Attachment / Media URL (Optional)</label>
- <input 
- name="media_url" 
- type="url"
- defaultValue={selectedPool.target_constraints?.media_url || ''} 
- className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
- placeholder="e.g. https://example.com/image.png"
- />
- </div>
- <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 flex items-center gap-2">
- <Save className="h-4 w-4" /> Save Instructions
- </button>
- </form>
- )}
+ ) : selectedPool.type === 'voting' ? (
+  /* VOTING CONTENT BUILDER */
+  <div className="space-y-6">
+    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="bg-emerald-100 p-2.5 rounded-lg text-emerald-700">
+          <Award className="h-5 w-5" />
+        </div>
+        <div>
+          <h4 className="font-bold text-emerald-900 text-sm">Voting Candidate Nominees ({candidatesList.length})</h4>
+          <p className="text-xs text-emerald-700">Nominate department students as candidates, set their election position, posters, and manifesto.</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleSaveVotingCandidates}
+        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+      >
+        <Save className="h-3.5 w-3.5" /> Save Voting Candidates
+      </button>
+    </div>
+
+    {/* Candidate Nomination Interface */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Left Column: Student Picker */}
+      <div className="lg:col-span-5 space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+          <UserPlus className="h-4 w-4 text-primary-600" /> Nominate Student Candidate
+        </h4>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={candidateSearchQuery}
+              onChange={(e) => handleCandidateSearch(e.target.value)}
+              placeholder="Search student by name..."
+              className="w-full pl-9 pr-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+          </div>
+          <select
+            value={candidateFilterLevel}
+            onChange={(e) => handleCandidateFilterChange(e.target.value)}
+            className="px-2 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+          >
+            <option value="all">All Levels</option>
+            <option value="100">Level 100</option>
+            <option value="200">Level 200</option>
+            <option value="300">Level 300</option>
+            <option value="400">Level 400</option>
+          </select>
+        </div>
+
+        {/* Student Browser List */}
+        <div className="border rounded-lg h-[240px] overflow-y-auto divide-y bg-white relative">
+          {isCandidateSearching && (
+            <div className="absolute inset-0 bg-white/50 flex items-center justify-center backdrop-blur-sm z-10">
+              <LoadingSpinner size="sm" />
+            </div>
+          )}
+          {candidateSearchResults.length === 0 && !isCandidateSearching ? (
+            <div className="p-8 text-center text-gray-400 text-xs">
+              No unnominated students found matching search.
+            </div>
+          ) : (
+            candidateSearchResults.map(user => (
+              <div key={user.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors">
+                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-bold text-xs shrink-0 overflow-hidden">
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt={user.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    user.full_name?.[0] || '?'
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-900 truncate">{user.full_name}</p>
+                  <p className="text-[10px] text-slate-500">@{user.username} • L{user.level || '?'}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAddCandidate(user)}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-primary-50 text-primary-700 hover:bg-primary-100 rounded-md text-xs font-semibold transition-colors"
+                >
+                  <Plus className="h-3 w-3" /> Select
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Selected Candidate Customization Form Box */}
+        {selectedStudentForCandidate && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 shadow-sm">
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center font-bold text-amber-900 text-xs">
+                  {selectedStudentForCandidate.full_name?.[0] || '?'}
+                </div>
+                <div>
+                  <h5 className="font-bold text-slate-900 text-xs">{selectedStudentForCandidate.full_name}</h5>
+                  <p className="text-[10px] text-slate-500">@{selectedStudentForCandidate.username}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedStudentForCandidate(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">Position / Contest Title *</label>
+              <input
+                type="text"
+                value={candidatePositionTitle}
+                onChange={(e) => setCandidatePositionTitle(e.target.value)}
+                placeholder="e.g. Department President, Best Dressed, etc."
+                className="w-full px-3 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">Candidate Campaign Photo Poster</label>
+              <FileUpload
+                accept="image/*"
+                isImage={true}
+                folder="candidate_posters"
+                onUploadComplete={(url) => setCandidatePhotoUrl(url)}
+                currentFileUrl={candidatePhotoUrl}
+                label="Candidate Photo"
+                description="Upload custom poster/photo"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">Manifesto / Short Bio</label>
+              <textarea
+                value={candidateManifesto}
+                onChange={(e) => setCandidateManifesto(e.target.value)}
+                rows={2}
+                placeholder="Candidate's message to voters..."
+                className="w-full px-3 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleConfirmCandidateAdd}
+              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
+            >
+              <CheckCircle className="h-3.5 w-3.5" /> Confirm Candidate Nomination
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Right Column: Nominated Candidates Grid */}
+      <div className="lg:col-span-7 space-y-3">
+        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+          <span>Active Nominees</span>
+          <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px]">
+            {candidatesList.length} Nominees
+          </span>
+        </h4>
+
+        {candidatesList.length === 0 ? (
+          <div className="p-12 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+            <Award className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-slate-600">No Candidates Nominated Yet</p>
+            <p className="text-xs text-slate-400 mt-1">Use the student search on the left to nominate candidates for this election/voting event.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
+            {candidatesList.map(cand => (
+              <div key={cand.id} className="p-3 bg-white border border-slate-200 rounded-xl space-y-2 hover:border-emerald-300 transition-colors shadow-sm relative group">
+                <button
+                  type="button"
+                  onClick={() => handleRemoveCandidate(cand.id)}
+                  className="absolute top-2 right-2 p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                  title="Remove Candidate"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
+                    {cand.photo_url || cand.avatar_url ? (
+                      <img src={cand.photo_url || cand.avatar_url} alt={cand.full_name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center font-bold text-slate-400 text-sm">
+                        {cand.full_name?.[0] || '?'}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 pr-6">
+                    <span className="inline-block px-1.5 py-0.5 bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider rounded border border-emerald-200 mb-0.5">
+                      {cand.position_title}
+                    </span>
+                    <h5 className="font-bold text-slate-900 text-xs truncate">{cand.full_name}</h5>
+                    <p className="text-[10px] text-slate-400 truncate">@{cand.username} • Level {cand.level || '?'}</p>
+                  </div>
+                </div>
+                {cand.manifesto && (
+                  <p className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg italic line-clamp-2">
+                    "{cand.manifesto}"
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+  ) : selectedPool.type === 'debate' ? (
+  /* DEBATE CONTENT BUILDER */
+  <div className="space-y-6 max-w-3xl">
+    <div className="bg-purple-50 border border-purple-200 p-4 rounded-xl flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="bg-purple-100 p-2.5 rounded-lg text-purple-700">
+          <MessageSquare className="h-5 w-5" />
+        </div>
+        <div>
+          <h4 className="font-bold text-purple-900 text-sm">Debate Motions & Topics Builder</h4>
+          <p className="text-xs text-purple-700">Configure debate motions, speaker time limits, and arguments.</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleSaveDebateTopics}
+        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+      >
+        <Save className="h-3.5 w-3.5" /> Save Debate Setup
+      </button>
+    </div>
+
+    <div className="space-y-4">
+      {debateTopics.map((topic, idx) => (
+        <div key={topic.id} className="p-4 bg-white border border-slate-200 rounded-xl space-y-3 shadow-sm">
+          <div className="flex justify-between items-center">
+            <h5 className="font-bold text-xs uppercase tracking-wider text-purple-800">Debate Motion #{idx + 1}</h5>
+            <button
+              onClick={() => setDebateTopics(prev => prev.filter(t => t.id !== topic.id))}
+              className="text-slate-400 hover:text-red-600 p-1"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          <input
+            type="text"
+            value={topic.topic_title}
+            onChange={(e) => {
+              const val = e.target.value;
+              setDebateTopics(prev => prev.map(t => t.id === topic.id ? { ...t, topic_title: val } : t));
+            }}
+            placeholder="Motion Title e.g. Artificial Intelligence will benefit higher education..."
+            className="w-full px-3 py-2 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-purple-500"
+          />
+          <textarea
+            value={topic.description}
+            onChange={(e) => {
+              const val = e.target.value;
+              setDebateTopics(prev => prev.map(t => t.id === topic.id ? { ...t, description: val } : t));
+            }}
+            rows={2}
+            placeholder="Motion background & rules..."
+            className="w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={() => setDebateTopics(prev => [...prev, { id: crypto.randomUUID(), topic_title: '', description: '', sides: ['For', 'Against'], time_per_speaker_sec: 180 }])}
+        className="w-full py-3 border-2 border-dashed border-purple-200 hover:border-purple-400 text-purple-700 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors"
+      >
+        <Plus className="h-4 w-4" /> Add Debate Motion
+      </button>
+    </div>
+  </div>
+  ) : selectedPool.type === 'talent' ? (
+  /* TALENT SHOW CONTENT BUILDER */
+  <div className="space-y-6 max-w-3xl">
+    <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="bg-amber-100 p-2.5 rounded-lg text-amber-700">
+          <Sparkles className="h-5 w-5" />
+        </div>
+        <div>
+          <h4 className="font-bold text-amber-900 text-sm">Talent Show Performance Slots</h4>
+          <p className="text-xs text-amber-700">Register performance acts, contestants, and showcase video media.</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleSaveTalentActs}
+        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+      >
+        <Save className="h-3.5 w-3.5" /> Save Talent Acts
+      </button>
+    </div>
+
+    <div className="space-y-4">
+      {talentActs.map((act, idx) => (
+        <div key={act.id} className="p-4 bg-white border border-slate-200 rounded-xl space-y-3 shadow-sm">
+          <div className="flex justify-between items-center">
+            <h5 className="font-bold text-xs uppercase tracking-wider text-amber-800">Performance Act #{idx + 1}</h5>
+            <button
+              onClick={() => setTalentActs(prev => prev.filter(a => a.id !== act.id))}
+              className="text-slate-400 hover:text-red-600 p-1"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={act.act_title}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTalentActs(prev => prev.map(a => a.id === act.id ? { ...a, act_title: val } : a));
+              }}
+              placeholder="Act Title e.g. Musical Solo, Standup Comedy..."
+              className="px-3 py-2 border rounded-lg text-xs font-semibold focus:ring-2 focus:ring-amber-500"
+            />
+            <input
+              type="text"
+              value={act.performer_name}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTalentActs(prev => prev.map(a => a.id === act.id ? { ...a, performer_name: val } : a));
+              }}
+              placeholder="Performer / Group Name..."
+              className="px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <input
+            type="url"
+            value={act.media_url || ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              setTalentActs(prev => prev.map(a => a.id === act.id ? { ...a, media_url: val } : a));
+            }}
+            placeholder="Sample Media / Video URL (Optional)"
+            className="w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={() => setTalentActs(prev => [...prev, { id: crypto.randomUUID(), performer_name: '', act_title: '', act_type: 'General' }])}
+        className="w-full py-3 border-2 border-dashed border-amber-200 hover:border-amber-400 text-amber-700 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors"
+      >
+        <Plus className="h-4 w-4" /> Add Performance Act
+      </button>
+    </div>
+  </div>
+  ) : selectedPool.type === 'essay' ? (
+  /* ESSAY CONTENT BUILDER */
+  <form onSubmit={handleSaveEssaySetup} className="space-y-6 max-w-3xl">
+    <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="bg-blue-100 p-2.5 rounded-lg text-blue-700">
+          <FileText className="h-5 w-5" />
+        </div>
+        <div>
+          <h4 className="font-bold text-blue-900 text-sm">Essay Prompt & Rubric Configuration</h4>
+          <p className="text-xs text-blue-700">Set word limits, essay prompt instructions, and evaluation criteria.</p>
+        </div>
+      </div>
+      <button
+        type="submit"
+        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+      >
+        <Save className="h-3.5 w-3.5" /> Save Essay Setup
+      </button>
+    </div>
+
+    <div className="space-y-4">
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Essay Prompt & Topic Instructions *</label>
+        <textarea
+          name="instructions"
+          required
+          rows={6}
+          defaultValue={selectedPool.target_constraints?.instructions || ''}
+          placeholder="Detailed prompt for the essay competition..."
+          className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1">Min Word Count</label>
+          <input
+            type="number"
+            value={essayMinWords}
+            onChange={(e) => setEssayMinWords(e.target.value)}
+            placeholder="e.g. 300"
+            className="w-full px-3 py-2 border rounded-lg text-xs"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1">Max Word Count</label>
+          <input
+            type="number"
+            value={essayMaxWords}
+            onChange={(e) => setEssayMaxWords(e.target.value)}
+            placeholder="e.g. 1000"
+            className="w-full px-3 py-2 border rounded-lg text-xs"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Attachment / Reference URL (Optional)</label>
+        <input
+          name="media_url"
+          type="url"
+          defaultValue={selectedPool.target_constraints?.media_url || ''}
+          placeholder="https://example.com/essay_guidelines.pdf"
+          className="w-full px-3 py-2 border rounded-lg text-xs"
+        />
+      </div>
+    </div>
+  </form>
+  ) : selectedPool.type === 'challenge' ? (
+  /* CHALLENGE CONTENT BUILDER */
+  <form onSubmit={handleSaveChallengeSetup} className="space-y-6 max-w-3xl">
+    <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="bg-orange-100 p-2.5 rounded-lg text-orange-700">
+          <Trophy className="h-5 w-5" />
+        </div>
+        <div>
+          <h4 className="font-bold text-orange-900 text-sm">Challenge Brief & Objectives Setup</h4>
+          <p className="text-xs text-orange-700">Configure challenge instructions, target objectives, and submission rules.</p>
+        </div>
+      </div>
+      <button
+        type="submit"
+        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+      >
+        <Save className="h-3.5 w-3.5" /> Save Challenge Setup
+      </button>
+    </div>
+
+    <div className="space-y-4">
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Challenge Brief & Rules *</label>
+        <textarea
+          name="instructions"
+          required
+          rows={6}
+          defaultValue={selectedPool.target_constraints?.instructions || ''}
+          placeholder="Detailed challenge problem statement and submission instructions..."
+          className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-orange-500"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-700 mb-1">Submission Format</label>
+        <select
+          value={challengeSubmissionFormat}
+          onChange={(e) => setChallengeSubmissionFormat(e.target.value)}
+          className="w-full px-3 py-2 border rounded-lg text-xs bg-white"
+        >
+          <option value="text">Text Response / Written Answer</option>
+          <option value="link">Repository / External URL Link</option>
+          <option value="file">File Upload Attachment</option>
+          <option value="code">Source Code Snippet</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Attachment / Reference Media URL (Optional)</label>
+        <input
+          name="media_url"
+          type="url"
+          defaultValue={selectedPool.target_constraints?.media_url || ''}
+          placeholder="https://example.com/challenge_dataset.zip"
+          className="w-full px-3 py-2 border rounded-lg text-xs"
+        />
+      </div>
+    </div>
+  </form>
+  ) : selectedPool.type === 'academic' ? (
+  /* ACADEMIC CONTENT BUILDER */
+  <form onSubmit={handleSaveAcademicSetup} className="space-y-6 max-w-3xl">
+    <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="bg-indigo-100 p-2.5 rounded-lg text-indigo-700">
+          <BookOpen className="h-5 w-5" />
+        </div>
+        <div>
+          <h4 className="font-bold text-indigo-900 text-sm">Academic Project / Research Setup</h4>
+          <p className="text-xs text-indigo-700">Configure academic assignment guidelines, syllabus references, and marking schemes.</p>
+        </div>
+      </div>
+      <button
+        type="submit"
+        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+      >
+        <Save className="h-3.5 w-3.5" /> Save Academic Setup
+      </button>
+    </div>
+
+    <div className="space-y-4">
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Academic Prompt & Course Work Instructions *</label>
+        <textarea
+          name="instructions"
+          required
+          rows={6}
+          defaultValue={selectedPool.target_constraints?.instructions || ''}
+          placeholder="Academic assignment question or research topic..."
+          className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-700 mb-1">Marking Scheme / Grading Breakdown</label>
+        <textarea
+          value={academicMarkingScheme}
+          onChange={(e) => setAcademicMarkingScheme(e.target.value)}
+          rows={3}
+          placeholder="e.g., 40% Methodology, 30% Analysis, 30% Presentation..."
+          className="w-full px-3 py-2 border rounded-lg text-xs"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Lecture Slides / Syllabus Attachment URL (Optional)</label>
+        <input
+          name="media_url"
+          type="url"
+          defaultValue={selectedPool.target_constraints?.media_url || ''}
+          placeholder="https://example.com/lecture_material.pdf"
+          className="w-full px-3 py-2 border rounded-lg text-xs"
+        />
+      </div>
+    </div>
+  </form>
+  ) : selectedPool.type === 'custom' ? (
+  /* CUSTOM CONTENT BUILDER */
+  <form onSubmit={handleSaveCustomBlocks} className="space-y-6 max-w-3xl">
+    <div className="bg-slate-100 border border-slate-200 p-4 rounded-xl flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="bg-slate-200 p-2.5 rounded-lg text-slate-700">
+          <Settings className="h-5 w-5" />
+        </div>
+        <div>
+          <h4 className="font-bold text-slate-900 text-sm">Custom Event Configuration</h4>
+          <p className="text-xs text-slate-600">Configure bespoke instructions and flexible parameters for custom programs.</p>
+        </div>
+      </div>
+      <button
+        type="submit"
+        className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+      >
+        <Save className="h-3.5 w-3.5" /> Save Custom Setup
+      </button>
+    </div>
+
+    <div className="space-y-4">
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Custom Event Guidelines & Description *</label>
+        <textarea
+          name="instructions"
+          required
+          rows={6}
+          defaultValue={selectedPool.target_constraints?.instructions || ''}
+          placeholder="General rules, details, and prompts for participants..."
+          className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-slate-500"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Media / Attachment URL (Optional)</label>
+        <input
+          name="media_url"
+          type="url"
+          defaultValue={selectedPool.target_constraints?.media_url || ''}
+          placeholder="https://example.com/resource.png"
+          className="w-full px-3 py-2 border rounded-lg text-xs"
+        />
+      </div>
+    </div>
+  </form>
+  ) : (
+  /* GENERIC FALLBACK BUILDER */
+  <form onSubmit={handleSaveInstructions} className="space-y-4 max-w-3xl">
+    <div>
+      <label className="block text-sm font-semibold text-gray-700 mb-2">Prompt / Instructions for Participants</label>
+      <p className="text-sm text-gray-500 mb-3">These instructions will be displayed to the participant when they start the event.</p>
+      <textarea
+        name="instructions"
+        rows={10}
+        defaultValue={selectedPool.target_constraints?.instructions || ''}
+        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+        placeholder="Instructions & rules for this event..."
+      />
+    </div>
+    <div>
+      <label className="block text-sm font-semibold text-gray-700 mb-2">Attachment / Media URL (Optional)</label>
+      <input
+        name="media_url"
+        type="url"
+        defaultValue={selectedPool.target_constraints?.media_url || ''}
+        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+        placeholder="e.g. https://example.com/image.png"
+      />
+    </div>
+    <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 flex items-center gap-2">
+      <Save className="h-4 w-4" /> Save Instructions
+    </button>
+  </form>
+  )}
  </div>
  )}
 

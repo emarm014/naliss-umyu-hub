@@ -10,6 +10,8 @@ import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { differenceInSeconds } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CachedImage } from '../../../src/components/common/CachedImage';
+import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
+
 type Candidate = {
     id: string;
     user_id: string;
@@ -44,6 +46,8 @@ export default function VotingEngineScreen() {
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [serverTimeOffset, setServerTimeOffset] = useState(0);
     const [selectedCandidateId, setSelectedCandidateId] = useState<string>(getVoteDraft(id || ''));
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerFile, setViewerFile] = useState({ uri: '', name: '' });
 
     // Handle back button protection
     useEffect(() => {
@@ -108,14 +112,32 @@ export default function VotingEngineScreen() {
                     return;
                 }
 
-                // 4. Fetch Candidates (other pool participants who submitted work to be voted on)
-                const { data: submissionData, error: submissionErr } = await (supabase as any)
-                    .from('pool_submissions')
-                    .select('id, user_id, answers, users:user_id(full_name, username, avatar_url)')
-                    .eq('pool_id', id);
+                // 4. Fetch Candidates (support admin-nominated candidates in target_constraints or pool_submissions fallback)
+                const adminCandidates = poolData.target_constraints?.candidates || [];
+                if (Array.isArray(adminCandidates) && adminCandidates.length > 0) {
+                    const formattedCandidates = adminCandidates.map((c: any) => ({
+                        id: c.id || c.user_id,
+                        user_id: c.user_id,
+                        answers: {
+                            text: c.manifesto ? `Manifesto: ${c.manifesto}` : (c.position_title ? `Position: ${c.position_title}` : undefined),
+                            file_url: c.photo_url || null
+                        },
+                        users: {
+                            full_name: c.position_title ? `${c.full_name} — ${c.position_title}` : c.full_name,
+                            username: c.username,
+                            avatar_url: c.photo_url || c.avatar_url
+                        }
+                    }));
+                    setCandidates(formattedCandidates as Candidate[]);
+                } else {
+                    const { data: submissionData, error: submissionErr } = await (supabase as any)
+                        .from('pool_submissions')
+                        .select('id, user_id, answers, users:user_id(full_name, username, avatar_url)')
+                        .eq('pool_id', id);
 
-                if (submissionErr) throw submissionErr;
-                setCandidates((submissionData || []) as Candidate[]);
+                    if (submissionErr) throw submissionErr;
+                    setCandidates((submissionData || []) as Candidate[]);
+                }
 
             } catch (err: any) {
                 console.error('Init Voting Error:', err);
@@ -241,13 +263,22 @@ export default function VotingEngineScreen() {
                                 ]}
                             >
                                 <View style={styles.cardHeader}>
-                                    <View style={styles.avatarContainer}>
+                                    <TouchableOpacity
+                                        style={styles.avatarContainer}
+                                        onPress={(e) => {
+                                            e.stopPropagation();
+                                            const avatarUri = c.users?.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(c.users?.full_name || 'candidate')}&size=200`;
+                                            setViewerFile({ uri: avatarUri, name: `${c.users?.full_name || 'Candidate'}'s Photo` });
+                                            setViewerVisible(true);
+                                        }}
+                                        activeOpacity={0.8}
+                                    >
                                         <CachedImage remoteUrl={c.users?.avatar_url} style={styles.avatar} entityId={`candidate_${c.user_id}`} assetType="user" fallbackName={c.users?.full_name} />
                                         <View style={styles.nameDetails}>
                                             <Text style={[styles.fullName, { color: colors.text }]}>{c.users?.full_name || 'Anonymous'}</Text>
                                             <Text style={[styles.username, { color: colors.textMuted }]}>@{c.users?.username || 'user'}</Text>
                                         </View>
-                                    </View>
+                                    </TouchableOpacity>
                                     <View style={[styles.selectionCircle, { borderColor: isSelected ? '#059669' : colors.textMuted }]}>
                                         {isSelected && <View style={[styles.selectionFill, { backgroundColor: '#059669' }]} />}
                                     </View>
@@ -262,12 +293,20 @@ export default function VotingEngineScreen() {
                                 )}
 
                                 {c.answers?.file_url && (
-                                    <View style={styles.fileLinkContainer}>
+                                    <TouchableOpacity 
+                                        style={styles.fileLinkContainer}
+                                        onPress={(e) => {
+                                            e.stopPropagation();
+                                            setViewerFile({ uri: c.answers.file_url!, name: `${c.users?.full_name || 'Candidate'}'s Entry File` });
+                                            setViewerVisible(true);
+                                        }}
+                                        activeOpacity={0.8}
+                                    >
                                         <Ionicons name="document-attach-outline" size={16} color="#059669" />
                                         <Text style={[styles.fileLinkText, { color: '#059669' }]} numberOfLines={1}>
                                             View attached entry file
                                         </Text>
-                                    </View>
+                                    </TouchableOpacity>
                                 )}
                             </TouchableOpacity>
                         );
@@ -290,6 +329,17 @@ export default function VotingEngineScreen() {
                     </Text>
                 </TouchableOpacity>
             </View>
+
+            <UniversalViewer
+                isVisible={viewerVisible}
+                onClose={() => setViewerVisible(false)}
+                fileUri={viewerFile.uri}
+                fileType="image"
+                fileName={viewerFile.name}
+                showDownload={true}
+                showShare={true}
+                isHalfScreen={true}
+            />
         </SafeAreaView>
     );
 }

@@ -9,12 +9,13 @@ import { useNoteStore } from '../../src/stores/note.store';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { useResourceStore } from '../../src/stores/resource.store';
 import { SafeOverlayContainer } from '../../src/components/common/overlays';
+import { CachedImage } from '../../src/components/common/CachedImage';
 
 export default function CreateNoteScreen() {
     const router = useRouter();
     const params = useLocalSearchParams();
     const isDark = useColorScheme() === 'dark';
-    const { top } = useSafeAreaInsets();
+    const { top, bottom } = useSafeAreaInsets();
     
     const { notes, addNote, updateNote, deleteNote } = useNoteStore();
     const profile = useAuthStore((state) => state.profile);
@@ -271,7 +272,9 @@ export default function CreateNoteScreen() {
         },
         toolbar: {
             flexDirection: 'row',
-            padding: 12,
+            paddingTop: 12,
+            paddingHorizontal: 16,
+            paddingBottom: Math.max(bottom + 8, 16),
             backgroundColor: isDark ? '#1E1E1E' : '#FFFFFF',
             borderTopWidth: 1,
             borderTopColor: isDark ? '#2D2D2D' : '#E2E8F0',
@@ -338,12 +341,12 @@ export default function CreateNoteScreen() {
             bottom: 0,
             left: 0,
             right: 0,
-            height: 140,
+            paddingTop: 16,
+            paddingBottom: Math.max(bottom + 16, 24),
             backgroundColor: 'rgba(0,0,0,0.4)',
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-around',
-            paddingBottom: 20,
         },
         captureBtnOuter: {
             width: 72,
@@ -588,7 +591,7 @@ export default function CreateNoteScreen() {
                             {mediaPaths.map((uri, idx) => (
                                 <View key={idx} style={styles.mediaItemContainer}>
                                     <TouchableOpacity activeOpacity={0.8} onPress={() => { setSelectedImageIndex(idx); setIsImageModalVisible(true); }}>
-                                        <Image source={{ uri }} style={styles.mediaItem} />
+                                        <CachedImage remoteUrl={uri} style={styles.mediaItem} entityId={`note_att_${idx}`} assetType="note_image" />
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.removeMediaBtn} onPress={() => removeMedia(idx)}>
                                         <Ionicons name="close" size={16} color="#FFFFFF" />
@@ -667,9 +670,9 @@ export default function CreateNoteScreen() {
                         showsHorizontalScrollIndicator={false}
                         initialScrollIndex={selectedImageIndex}
                         getItemLayout={(_, index) => ({ length: windowWidth, offset: windowWidth * index, index })}
-                        renderItem={({ item }) => (
+                        renderItem={({ item, index }) => (
                             <View style={{ width: windowWidth, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                                <Image source={{ uri: item }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
+                                <CachedImage remoteUrl={item} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} entityId={`note_modal_${index}`} assetType="note_image" />
                             </View>
                         )}
                     />

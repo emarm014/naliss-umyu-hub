@@ -5,6 +5,7 @@ import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import FileUpload from '../lib/FileUpload';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useFormDraft } from '../hooks/useFormDraft';
+import { useAuthStore } from '../store/auth.store';
 
 type NewsItem = {
   id: string;
@@ -18,6 +19,9 @@ type NewsItem = {
 const ITEMS_PER_PAGE = 10;
 
 export default function NewsManagementPage() {
+  const { profile } = useAuthStore();
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const canManageNews = (item: NewsItem) => isSuperAdmin || (profile?.role === 'moderator' && (item as any).author_id === profile?.id);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -376,20 +380,22 @@ export default function NewsManagementPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleOpenEdit(item)}
-                    className="p-2.5 hover:bg-primary-50 text-gray-300 hover:text-primary-600 rounded-xl transition-all"
-                  >
-                    <Edit className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id, item.title)}
-                    className="p-2.5 hover:bg-red-50 text-gray-300 hover:text-red-600 rounded-xl transition-all"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
-                </div>
+                {canManageNews(item) && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenEdit(item)}
+                      className="p-2.5 hover:bg-primary-50 text-gray-300 hover:text-primary-600 rounded-xl transition-all"
+                    >
+                      <Edit className="h-5 w-5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item.id, item.title)}
+                      className="p-2.5 hover:bg-red-50 text-gray-300 hover:text-red-600 rounded-xl transition-all"
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </button>
+                  </div>
+                )}
               </div>
               {/* Embedded Files List */}
               {(((item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 0) || item.image_url) && (
@@ -403,7 +409,9 @@ export default function NewsManagementPage() {
                          </div>
                          <div className="flex items-center gap-1 shrink-0">
                            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(file.url, '_blank'); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
-                           <button onClick={(e) => handleDeleteIndividualFile(item, idx, e)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                           {canManageNews(item) && (
+                             <button onClick={(e) => handleDeleteIndividualFile(item, idx, e)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                           )}
                          </div>
                        </div>
                     ))

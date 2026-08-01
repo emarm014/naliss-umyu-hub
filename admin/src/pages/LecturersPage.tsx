@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Department } from '../types';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
+import { useAuthStore } from '../store/auth.store';
 import {
   Plus,
   Search,
@@ -64,6 +65,10 @@ interface Lecturer {
 const ITEMS_PER_PAGE = 12;
 
 export default function LecturersPage() {
+  const { profile } = useAuthStore();
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const canManageLecturer = (lecturer: Lecturer) => isSuperAdmin || (profile?.role === 'moderator' && (lecturer as any).created_by === profile?.id);
+
   const { lecturers: allLecturers, isSyncing, lastSync, syncAll, removeLecturer, error, refreshAnalytics } = useAdminDataStore();
   
   useEffect(() => {
@@ -545,39 +550,41 @@ export default function LecturersPage() {
                 )}
 
                 {/* Actions */}
-                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleActive(lecturer)}
-                      className={`btn-institutional-sm ${lecturer.is_active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
-                    >
-                      {lecturer.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
+                {canManageLecturer(lecturer) && (
+                  <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleActive(lecturer)}
+                        className={`btn-institutional-sm ${lecturer.is_active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                      >
+                        {lecturer.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => openPhotosModal(lecturer)}
+                        className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors"
+                        title="Manage Gallery"
+                      >
+                        <ImageIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => openEditModal(lecturer)}
+                        className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
+                        title="Edit Profile"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(lecturer.id)}
+                        className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
+                        title="Purge Profile"
+                      >
+                        <Trash2 className="w-4 h-4" /> Delete Profile
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => openPhotosModal(lecturer)}
-                      className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors"
-                      title="Manage Gallery"
-                    >
-                      <ImageIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => openEditModal(lecturer)}
-                      className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
-                      title="Edit Profile"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(lecturer.id)}
-                      className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
-                      title="Purge Profile"
-                    >
-                      <Trash2 className="w-4 h-4" /> Delete Profile
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           ))}

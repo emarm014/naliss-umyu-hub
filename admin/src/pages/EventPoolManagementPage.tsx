@@ -86,6 +86,9 @@ export default function EventPoolManagementPage() {
 
   const [pools, setPools] = useState<EventPool[]>([]);
 
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const canManagePool = (pool: EventPool) => isSuperAdmin || (profile?.role === 'moderator' && (pool as any).created_by === profile?.id);
+
   const displayedPools = useMemo(() => {
     if (!assignedLevel) return pools;
     return pools.filter(pool => {
@@ -980,12 +983,16 @@ export default function EventPoolManagementPage() {
  <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium capitalize">
  {pool.type}
  </span>
- <button onClick={() => handleOpenEditModal(pool)} className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors" title="Edit Pool Info">
- <Edit className="h-4 w-4" />
- </button>
- <button onClick={() => handleDeletePool(pool.id, pool.title)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Delete Pool">
- <Trash2 className="h-4 w-4" />
- </button>
+ {canManagePool(pool) && (
+   <>
+     <button onClick={() => handleOpenEditModal(pool)} className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors" title="Edit Pool Info">
+     <Edit className="h-4 w-4" />
+     </button>
+     <button onClick={() => handleDeletePool(pool.id, pool.title)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Delete Pool">
+     <Trash2 className="h-4 w-4" />
+     </button>
+   </>
+ )}
  </div>
  </div>
  <p className="text-sm text-gray-500 mb-6 capitalize font-medium flex items-center gap-1.5">

@@ -6,8 +6,12 @@ import ErrorState from '../components/ui/ErrorState';
 import FileUpload from '../lib/FileUpload';
 
 import { useFormDraft } from '../hooks/useFormDraft';
+import { useAuthStore } from '../store/auth.store';
 
 export default function GalleryPage() {
+  const { profile } = useAuthStore();
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const canManageTopic = (topic: any) => isSuperAdmin || (profile?.role === 'moderator' && topic.created_by === profile?.id);
   const [topics, setTopics] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -295,20 +299,22 @@ export default function GalleryPage() {
                            Mobile Published
                         </span>
                         
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleOpenEditModal(topic); }}
-                                className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-colors"
-                            >
-                                <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteTopic(topic.id); }}
-                                className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </button>
-                        </div>
+                        {canManageTopic(topic) && (
+                          <div className="flex items-center gap-2">
+                              <button
+                                  onClick={(e) => { e.stopPropagation(); handleOpenEditModal(topic); }}
+                                  className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-colors"
+                              >
+                                  <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteTopic(topic.id); }}
+                                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                              >
+                                  <Trash2 className="w-4 h-4" />
+                              </button>
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>

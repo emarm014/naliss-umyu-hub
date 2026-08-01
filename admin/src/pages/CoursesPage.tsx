@@ -56,6 +56,8 @@ export default function CoursesPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const { profile, permissions } = useAuthStore();
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const canManageCourse = (course: Course) => isSuperAdmin || (profile?.role === 'moderator' && (course as any).created_by === profile?.id);
   const assignedLevel = profile?.role === 'moderator' ? permissions?.assigned_level : null;
   
   // State initialization: Default to assigned level if moderator, else 'all'
@@ -413,20 +415,22 @@ export default function CoursesPage() {
                     {course.is_core ? 'Core' : 'Elective'}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => openEditModal(course)}
-                    className="p-2 text-slate-400 hover:text-primary-900 hover:bg-primary-50 rounded-xl transition-colors"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(course)}
-                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                {canManageCourse(course) && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => openEditModal(course)}
+                      className="p-2 text-slate-400 hover:text-primary-900 hover:bg-primary-50 rounded-xl transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(course)}
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               <h3 className="text-lg font-black text-slate-900 leading-tight mb-2 group-hover:text-primary-950 transition-colors line-clamp-2 min-h-[3.5rem]">
@@ -454,19 +458,25 @@ export default function CoursesPage() {
                   </div>
                   <span className="text-[10px] font-bold text-primary-600/70">{course.credit_units} Units</span>
                 </div>
-                <button
-                  onClick={() => handleToggleActive(course)}
-                  className={`flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-full transition-all uppercase tracking-widest ${course.is_active
-                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                >
-                  {course.is_active ? (
-                    <><CheckCircle2 className="w-3 h-3" /> Active</>
-                  ) : (
-                    <><AlertCircle className="w-3 h-3" /> Hidden</>
-                  )}
-                </button>
+                {canManageCourse(course) ? (
+                  <button
+                    onClick={() => handleToggleActive(course)}
+                    className={`flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-full transition-all uppercase tracking-widest ${course.is_active
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                  >
+                    {course.is_active ? (
+                      <><CheckCircle2 className="w-3 h-3" /> Active</>
+                    ) : (
+                      <><AlertCircle className="w-3 h-3" /> Hidden</>
+                    )}
+                  </button>
+                ) : (
+                  <span className={`text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest ${course.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {course.is_active ? 'Active' : 'Hidden'}
+                  </span>
+                )}
               </div>
             </div>
           ))}

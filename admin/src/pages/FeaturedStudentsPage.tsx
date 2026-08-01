@@ -8,6 +8,7 @@ import {
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import FileUpload from '../lib/FileUpload';
 import { useFormDraft } from '../hooks/useFormDraft';
+import { useAuthStore } from '../store/auth.store';
 
 // ─── Types ────────────────────────────────────────────────────────
 type FeaturedStudent = {
@@ -52,6 +53,10 @@ const SCOPE_OPTIONS = [
 const ITEMS_PER_PAGE = 8;
 
 export default function FeaturedStudentsPage() {
+  const { profile } = useAuthStore();
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const canManageFeatured = (item: FeaturedStudent) => isSuperAdmin || (profile?.role === 'moderator' && (item as any).created_by === profile?.id);
+
   // ─── State ──────────────────────────────────────────────────
   const [featured, setFeatured] = useState<FeaturedStudent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -458,31 +463,33 @@ export default function FeaturedStudentsPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 pt-4 border-t border-gray-50">
-                    <button
-                      onClick={() => toggleActive(item)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        item.is_active
-                          ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
-                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                      }`}
-                    >
-                      {item.is_active ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      {item.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
-                    <button
-                      onClick={() => openEdit(item)}
-                      className="flex items-center gap-2 px-4 py-2 bg-gray-50 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-all"
-                    >
-                      <Edit className="w-3.5 h-3.5" /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item)}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-bold hover:bg-red-100 transition-all ml-auto"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" /> Delete
-                    </button>
-                  </div>
+                  {canManageFeatured(item) && (
+                    <div className="flex items-center gap-2 pt-4 border-t border-gray-50">
+                      <button
+                        onClick={() => toggleActive(item)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                          item.is_active
+                            ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                            : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                        }`}
+                      >
+                        {item.is_active ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {item.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        onClick={() => openEdit(item)}
+                        className="flex items-center gap-2 px-4 py-2 bg-gray-50 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-all"
+                      >
+                        <Edit className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item)}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-bold hover:bg-red-100 transition-all ml-auto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );

@@ -12,6 +12,7 @@ import {
   ShieldAlert, Loader2
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
+import { useAuthStore } from '../store/auth.store';
 
 const ITEMS_PER_PAGE = 12;
 
@@ -27,10 +28,12 @@ const positionLabels: Record<string, string> = {
   sport_director: 'Sport Director',
   welfare_director: 'Welfare Director',
   academic_director: 'Academic Director',
-  pro: 'PRO',
 };
 
 export default function ExecutivesPage() {
+  const { profile } = useAuthStore();
+  const isSuperAdmin = profile?.role === 'super_admin';
+  const canManageExec = (executive: Executive) => isSuperAdmin || (profile?.role === 'moderator' && (executive as any).created_by === profile?.id);
   const [searchQuery, setSearchQuery] = useState('');
   const [sessionFilter, setSessionFilter] = useState<string>('all');
   const [currentFilter, setCurrentFilter] = useState<'all' | 'current' | 'past'>('current');
@@ -417,27 +420,29 @@ export default function ExecutivesPage() {
                      })}
                   </div>
 
-                  <div className="mt-4 flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <button onClick={() => handleToggleCurrent(executive)} className={`btn-institutional-sm ${executive.is_current ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
-                        {executive.is_current ? 'Archive Profile' : 'Restore'}
-                      </button>
-                      <div className="flex gap-1.5">
-                        <button onClick={() => openEditModal(executive)} className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200"><Edit className="h-4 w-4" /></button>
-                        <button onClick={() => handleDelete(executive.id)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                  {canManageExec(executive) && (
+                    <div className="mt-4 flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <button onClick={() => handleToggleCurrent(executive)} className={`btn-institutional-sm ${executive.is_current ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                          {executive.is_current ? 'Archive Profile' : 'Restore'}
+                        </button>
+                        <div className="flex gap-1.5">
+                          <button onClick={() => openEditModal(executive)} className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200"><Edit className="h-4 w-4" /></button>
+                          <button onClick={() => handleDelete(executive.id)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                        </div>
                       </div>
+                      {executive.is_current && !executive.is_alumni && (
+                        <button onClick={() => handleArchiveTenure(executive)} className="w-full py-2 bg-primary-100 text-primary-700 hover:bg-primary-200 rounded-lg text-xs font-bold transition-colors">
+                          End Tenure / Shift to Alumni
+                        </button>
+                      )}
+                      {executive.is_alumni && (
+                        <div className="w-full py-1.5 bg-slate-100 text-slate-500 rounded-lg text-xs font-bold text-center">
+                          Alumni Member
+                        </div>
+                      )}
                     </div>
-                    {executive.is_current && !executive.is_alumni && (
-                      <button onClick={() => handleArchiveTenure(executive)} className="w-full py-2 bg-primary-100 text-primary-700 hover:bg-primary-200 rounded-lg text-xs font-bold transition-colors">
-                        End Tenure / Shift to Alumni
-                      </button>
-                    )}
-                    {executive.is_alumni && (
-                      <div className="w-full py-1.5 bg-slate-100 text-slate-500 rounded-lg text-xs font-bold text-center">
-                        Alumni Member
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
             );

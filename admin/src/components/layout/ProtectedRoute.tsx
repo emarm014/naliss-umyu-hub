@@ -100,7 +100,12 @@ export default function ProtectedRoute() {
       } catch (err: any) {
         // Ignore RLS/Auth errors caused by expired sessions during component unmount
         if (err?.code === '42501' || err?.status === 401 || !isSubscribed) return;
-        console.error('Failed to verify/register session:', err);
+        // Lock contention (AbortError) is expected during StrictMode double-mount — downgrade to warn
+        if (err?.name === 'AbortError' || err?.message?.includes('Lock broken') || err?.details?.includes?.('AbortError')) {
+          console.warn('Failed to verify/register session:', err);
+        } else {
+          console.error('Failed to verify/register session:', err);
+        }
       }
     };
 

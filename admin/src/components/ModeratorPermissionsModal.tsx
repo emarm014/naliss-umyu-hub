@@ -271,24 +271,12 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
         setError(null);
 
         try {
-            // Attempt 1: Direct upsert
-            let { error: upsertError } = await supabase
-                .from('moderator_permissions')
-                .upsert({
-                    user_id: user.id,
-                    ...permissions,
-                    updated_at: new Date().toISOString(),
-                });
-
-            // Attempt 2: Fallback to SECURITY DEFINER RPC if RLS blocks direct client upsert
-            if (upsertError) {
-                console.warn('[ModeratorPermissionsModal] Direct upsert blocked by RLS, attempting SECURITY DEFINER RPC fallback...', upsertError);
-                const { error: rpcError } = await supabase.rpc('save_moderator_permissions', {
-                    target_user_id: user.id,
-                    permissions_data: permissions
-                });
-                if (rpcError) throw rpcError;
-            }
+            // Use SECURITY DEFINER RPC directly — direct upsert is always blocked by RLS (409)
+            const { error: rpcError } = await supabase.rpc('save_moderator_permissions', {
+                target_user_id: user.id,
+                permissions_data: permissions
+            });
+            if (rpcError) throw rpcError;
 
             // Log the permission change to activity_logs
             const currentAdmin = (await supabase.auth.getUser()).data.user;

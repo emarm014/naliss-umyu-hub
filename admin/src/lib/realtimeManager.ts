@@ -139,23 +139,27 @@ class RealtimeManager {
   }
 
   /**
-   * Exponential backoff reconnect: 1s, 2s, 4s, 8s, ... max 30s
+   * Exponential backoff reconnect: 1s, 2s, 4s, 8s, ... max 30s.
+   * After MAX_RECONNECT_ATTEMPTS, enters slow-retry mode (every 60s)
+   * instead of permanently giving up — REST API may still be healthy.
    */
   private scheduleReconnect() {
     if (!this.isSubscribed) return;
     if (this.reconnectTimer) return; // already scheduled
 
-    // Cap reconnect attempts to prevent infinite spiral
+    let delay: number;
+
     if (this.reconnectAttempts >= RealtimeManager.MAX_RECONNECT_ATTEMPTS) {
-      console.error(`[RealtimeManager] Max reconnect attempts (${RealtimeManager.MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
-      this.setStatus('DISCONNECTED');
-      return;
+      // Slow-retry mode: keep trying every 60s instead of dying permanently
+      console.warn(`[RealtimeManager] Max reconnect attempts (${RealtimeManager.MAX_RECONNECT_ATTEMPTS}) reached. Entering slow-retry mode (60s).`);
+      delay = 60000;
+    } else {
+      delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     }
 
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
 
-    console.log(`[RealtimeManager] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${RealtimeManager.MAX_RECONNECT_ATTEMPTS})`);
+    console.log(`[RealtimeManager] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

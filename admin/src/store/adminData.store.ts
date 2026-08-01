@@ -376,8 +376,14 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
           error: null,
         });
       } catch (err: unknown) {
-        console.error('[Sync Engine] Critical unhandled sync error:', err);
-        set({ error: (err as Error).message });
+        // "Unauthorized" is expected when lock contention returns a null session — downgrade to warn
+        const errMsg = (err as Error)?.message || '';
+        if (errMsg === 'Unauthorized') {
+          console.warn('[Sync Engine] Session unavailable during sync (auth race), will retry on next cycle.');
+        } else {
+          console.error('[Sync Engine] Critical unhandled sync error:', err);
+        }
+        set({ error: errMsg });
       } finally {
         clearTimeout(safetyTimeout);
         set({ isSyncing: false });

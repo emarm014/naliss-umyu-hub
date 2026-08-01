@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { X, Shield, Save, Loader2, CheckCircle2, AlertTriangle, Lock, Unlock } from 'lucide-react';
 import type { User, AcademicLevel } from '../types';
-import { LEVEL_LABELS } from '../types';
 
 interface ModeratorPermissionsModalProps {
     user: User;
@@ -380,6 +379,19 @@ export default function ModeratorPermissionsModal({ user, onClose, onSave }: Mod
                     >
                         <X className="w-5 h-5" />
                     </button>
+                    <div className="mt-5 flex items-center justify-between">
+                        <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">
+                            {activeCount} / {PERMISSION_ITEMS.length} Active
+                        </span>
+                        <button
+                            type="button"
+                            onClick={grantAll}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-300 text-[10px] font-black rounded-lg transition-all border border-green-500/20"
+                        >
+                            <Unlock className="w-3 h-3" />
+                            GRANT ALL
+                        </button>
+                    </div>
                 </div>
 
                 <form id="moderator-permissions-form" onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[60vh] overflow-y-auto">

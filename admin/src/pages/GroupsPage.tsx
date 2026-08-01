@@ -22,13 +22,7 @@ interface GroupWithDetails extends Group {
 const LEVEL_OPTIONS: AcademicLevel[] = ['100', '200', '300', '400'];
 
 export default function GroupsPage() {
-  const { storeGroups, syncAll, refreshAnalytics } = useAdminDataStore(
-    useShallow(state => ({
-      storeGroups: state.groups,
-      syncAll: state.syncAll,
-      refreshAnalytics: state.refreshAnalytics,
-    }))
-  );
+  const { groups: storeGroups, students: storeStudents, isSyncing, error: syncError, syncAll, fetchGroups, refreshAnalytics } = useAdminDataStore();
   const { profile, permissions } = useAuthStore();
 
   // Moderators only see the group they are assigned to moderate
@@ -87,7 +81,7 @@ export default function GroupsPage() {
       if (searchQuery && !g.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
-  }, [storeGroups, isModerator, assignedLevel, profile?.id, typeFilter, searchQuery]);
+  }, [storeGroups, isModerator, assignedLevels, profile?.id, typeFilter, searchQuery]);
 
   // ── Open members modal — fetch fresh members ──────────────────────────────
   const openMembersModal = async (group: GroupWithDetails) => {
@@ -631,8 +625,8 @@ export default function GroupsPage() {
       if (s.status !== 'active') return false;
       // Only show students NOT already in the group
       if (memberIds.has(s.id)) return false;
-      // Moderators can only add students from their assigned level
-      if (isModerator && assignedLevel && s.level !== assignedLevel) return false;
+      // Moderators can only add students from their assigned levels
+      if (isModerator && assignedLevels && (!s.level || !assignedLevels.includes(s.level as AcademicLevel))) return false;
       if (!isModerator && addMemberLevelFilter !== 'all' && s.level !== addMemberLevelFilter) return false;
       if (memberSearchQuery) {
         const q = memberSearchQuery.toLowerCase();
@@ -643,7 +637,7 @@ export default function GroupsPage() {
       }
       return true;
     });
-  }, [storeStudents, isModerator, assignedLevel, addMemberLevelFilter, memberSearchQuery, memberIds]);
+  }, [storeStudents, isModerator, assignedLevels, addMemberLevelFilter, memberSearchQuery, memberIds]);
 
   const eligibleModerators = useMemo(() => {
     return (storeStudents as User[]).filter(s => {
@@ -1020,9 +1014,9 @@ export default function GroupsPage() {
                     Level {lvl}
                   </button>
                 ))}
-                {isModerator && assignedLevel && (
+                {isModerator && assignedLevels && (
                   <span className="px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest bg-primary-950 text-white">
-                    Level {assignedLevel} Students Only
+                    Assigned Level Students Only
                   </span>
                 )}
               </div>

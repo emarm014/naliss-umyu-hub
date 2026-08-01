@@ -278,7 +278,7 @@ export default function PastQuestionsPage() {
         is_public: true,
         is_downloadable: true,
         is_featured: false,
-        level: assignedLevel || '',
+        level: assignedLevels?.[0] || '',
         semester: '',
         file_size: 0,
         files: [],
@@ -621,10 +621,10 @@ export default function PastQuestionsPage() {
                 <select
                   value={levelFilter}
                   onChange={(e) => { setLevelFilter(e.target.value); setCourseFilter('all'); }}
-                  disabled={!!assignedLevel}
+                  disabled={!!assignedLevels && assignedLevels.length === 1}
                   className="pl-11 pr-10 py-4 bg-slate-800/50 border border-slate-700 rounded-2xl focus:ring-2 focus:ring-primary-500 appearance-none text-slate-200 font-bold text-sm min-w-[160px] cursor-pointer hover:bg-slate-800 transition-colors disabled:opacity-50"
                 >
-                  {!assignedLevel && <option value="all">All Levels</option>}
+                  {(!assignedLevels || assignedLevels.length > 1) && <option value="all">All Levels</option>}
                   <option value="100">Level 100</option>
                   <option value="200">Level 200</option>
                   <option value="300">Level 300</option>
@@ -913,10 +913,10 @@ export default function PastQuestionsPage() {
                         <select
                           value={formData.level}
                           onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                          disabled={!!assignedLevel}
+                          disabled={!!assignedLevels && assignedLevels.length === 1}
                           className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-primary-500 font-bold text-slate-800 appearance-none disabled:opacity-50"
                         >
-                          {!assignedLevel && <option value="">Select Level</option>}
+                          {(!assignedLevels || assignedLevels.length > 1) && <option value="">Select Level</option>}
                           <option value="100">Level 100</option>
                           <option value="200">Level 200</option>
                           <option value="300">Level 300</option>

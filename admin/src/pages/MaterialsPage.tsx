@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 import { useAuthStore } from '../store/auth.store';
+import type { AcademicLevel } from '../types';
 import { 
   Plus, 
   Search, 
@@ -150,7 +151,7 @@ export default function MaterialsPage() {
 
     setFilteredMaterials(result as MaterialWithDetails[]);
     setCurrentPage(1);
-  }, [allMaterials, typeFilter, courseFilter, levelFilter, semesterFilter, searchQuery, assignedLevel]);
+  }, [allMaterials, typeFilter, courseFilter, levelFilter, semesterFilter, searchQuery, assignedLevels]);
 
   const totalCount = filteredMaterials.length;
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
@@ -283,7 +284,7 @@ export default function MaterialsPage() {
       file_size: 0,
       file_mime_type: null,
       files: [],
-      level: assignedLevel || '',
+      level: assignedLevels?.[0] || '',
       semester: '',
       is_public: true,
       is_downloadable: false,
@@ -594,10 +595,10 @@ export default function MaterialsPage() {
                     setLevelFilter(e.target.value);
                     setCourseFilter('all');
                   }}
-                  disabled={!!assignedLevel}
+                  disabled={!!assignedLevels && assignedLevels.length === 1}
                   className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-950 appearance-none bg-white text-sm font-medium hover:border-gray-300 transition-colors disabled:opacity-50"
                 >
-                  {!assignedLevel && <option value="all">All Levels</option>}
+                  {(!assignedLevels || assignedLevels.length > 1) && <option value="all">All Levels</option>}
                   <option value="100">Level 100</option>
                   <option value="200">Level 200</option>
                   <option value="300">Level 300</option>
@@ -854,10 +855,10 @@ export default function MaterialsPage() {
                       <select
                         value={formData.level}
                         onChange={(e) => setFormData({ ...formData, level: e.target.value, course_id: '' })}
-                        disabled={!!assignedLevel}
+                        disabled={!!assignedLevels && assignedLevels.length === 1}
                         className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900 appearance-none disabled:opacity-50"
                       >
-                        {!assignedLevel && <option value="">Select Level</option>}
+                        {(!assignedLevels || assignedLevels.length > 1) && <option value="">Select Level</option>}
                         <option value="100">Level 100</option>
                         <option value="200">Level 200</option>
                         <option value="300">Level 300</option>

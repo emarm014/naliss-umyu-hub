@@ -51,11 +51,11 @@ const priorityConfig = {
 };
 
 export default function AnnouncementsPage() {
-  const { user, profile, permissions } = useAuthStore();
+  const { profile, permissions } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusOption>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryOption>('all');
-  const [priorityFilter, setPriorityFilter] = useState<PriorityOption>('all');
+  const [priorityFilter] = useState<Announcement['priority'] | 'all'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
 
@@ -114,8 +114,9 @@ export default function AnnouncementsPage() {
     const matchesCategory = categoryFilter === 'all' || announcement.category === categoryFilter;
     const matchesLevel = levelFilter === 'all' || announcement.target_level === levelFilter;
     const matchesPriority = priorityFilter === 'all' || announcement.priority === priorityFilter;
-    const matchesAssignedLevel = !assignedLevels || announcement.target_level === 'all' || (announcement.target_level && assignedLevels.includes(announcement.target_level as any));
-    const matchesLevelPermission = profile?.role !== 'moderator' || hasLevelPermission(permissions, 'can_manage_announcements', announcement.target_level === 'all' ? null : announcement.target_level);
+    const targetLevelStr = (announcement.target_level as string) || null;
+    const matchesAssignedLevel = !assignedLevels || targetLevelStr === 'all' || (!!targetLevelStr && assignedLevels.includes(targetLevelStr as any));
+    const matchesLevelPermission = profile?.role !== 'moderator' || hasLevelPermission(permissions, 'can_manage_announcements', targetLevelStr === 'all' ? null : targetLevelStr);
 
     return matchesSearch && matchesStatus && matchesCategory && matchesLevel && matchesPriority && matchesAssignedLevel && matchesLevelPermission;
   });
@@ -396,10 +397,10 @@ export default function AnnouncementsPage() {
           <select
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value as LevelOption)}
-            disabled={!!assignedLevel}
+            disabled={!!assignedLevels && assignedLevels.length === 1}
             className="flex-1 md:w-40 px-6 py-5 bg-gray-50 border-none rounded-[2rem] focus:ring-2 focus:ring-primary-950 font-black text-[10px] uppercase tracking-widest text-gray-600 disabled:opacity-50 appearance-none text-center shadow-inner cursor-pointer"
           >
-            {!assignedLevel && <option value="all">Global Tier</option>}
+            {(!assignedLevels || assignedLevels.length > 1) && <option value="all">Global Tier</option>}
             <option value="100">Level 100</option>
             <option value="200">Level 200</option>
             <option value="300">Level 300</option>
@@ -639,7 +640,7 @@ export default function AnnouncementsPage() {
         <AnnouncementFormModal
           announcement={selectedAnnouncement}
           predefinedAsset={predefinedAsset}
-          assignedLevel={assignedLevel}
+          assignedLevels={assignedLevels}
           formData={formData}
           setFormData={setFormData}
           onClose={() => {
@@ -664,7 +665,7 @@ export default function AnnouncementsPage() {
 interface AnnouncementFormModalProps {
   announcement: AnnouncementWithAuthor | null;
   predefinedAsset?: any;
-  assignedLevel: LevelOption | null;
+  assignedLevels: LevelOption[] | null;
   formData: any;
   setFormData: (data: any) => void;
   onClose: () => void;
@@ -674,7 +675,7 @@ interface AnnouncementFormModalProps {
 function AnnouncementFormModal({
   announcement,
   predefinedAsset,
-  assignedLevel,
+  assignedLevels,
   formData,
   setFormData,
   onClose,
@@ -686,7 +687,7 @@ function AnnouncementFormModal({
     content: announcement?.content || '',
     category: announcement?.category || 'general',
     priority: announcement?.priority || 'normal',
-    target_level: (announcement?.target_level as LevelOption) || assignedLevel || 'all',
+    target_level: (announcement?.target_level as LevelOption) || assignedLevels?.[0] || 'all',
     is_published: announcement?.is_published || false,
     is_pinned: announcement?.is_pinned || false,
     cover_image_url: announcement?.cover_image_url || predefinedAsset?.url || '',
@@ -910,9 +911,9 @@ function AnnouncementFormModal({
                     value={currentFormData.target_level}
                     onChange={(e) => setCurrentFormData({ ...currentFormData, target_level: e.target.value as LevelOption })}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-700 transition-all disabled:opacity-50 appearance-none cursor-pointer"
-                    disabled={!!assignedLevel}
+                    disabled={!!assignedLevels && assignedLevels.length === 1}
                   >
-                    {!assignedLevel && <option value="all">Global Tier</option>}
+                    {(!assignedLevels || assignedLevels.length > 1) && <option value="all">Global Tier</option>}
                     <option value="100">Level 100</option>
                     <option value="200">Level 200</option>
                     <option value="300">Level 300</option>

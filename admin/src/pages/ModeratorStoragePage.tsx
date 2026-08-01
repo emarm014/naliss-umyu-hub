@@ -67,8 +67,6 @@ export default function ModeratorStoragePage() {
   const isSuperAdmin = profile?.role === 'super_admin';
   const isModerator = profile?.role === 'moderator';
   const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
-  // Moderators only see files they personally uploaded — not admin-uploaded content
-  const moderatorUserId = isModerator ? profile?.id : null;
 
   const [items, setItems] = useState<StorageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -94,8 +92,6 @@ export default function ModeratorStoragePage() {
         .select('id, title, file_url, file_size, created_at, level, uploaded_by')
         .not('file_url', 'is', null);
       if (assignedLevels && !isSuperAdmin) matQ = matQ.in('level', assignedLevels);
-      // Moderators only see files they uploaded — not admin-uploaded content
-      if (moderatorUserId) matQ = matQ.eq('uploaded_by', moderatorUserId);
       const { data: mats } = await matQ;
 
       // Fetch past questions
@@ -103,8 +99,6 @@ export default function ModeratorStoragePage() {
         .from('past_questions')
         .select('id, title, file_url, file_size, created_at, level, uploaded_by');
       if (assignedLevels && !isSuperAdmin) pqQ = pqQ.in('level', assignedLevels);
-      // Moderators only see files they uploaded
-      if (moderatorUserId) pqQ = pqQ.eq('uploaded_by', moderatorUserId);
       const { data: pqs } = await pqQ;
 
       // Fetch announcements (cover images with size)
@@ -113,8 +107,6 @@ export default function ModeratorStoragePage() {
         .select('id, title, cover_image_url, cover_image_size, created_at, target_level, author_id')
         .not('cover_image_url', 'is', null);
       if (assignedLevels && !isSuperAdmin) annQ = annQ.in('target_level', assignedLevels);
-      // Moderators only see announcements they authored
-      if (moderatorUserId) annQ = (annQ as any).eq('author_id', moderatorUserId);
       const { data: anns } = await annQ;
 
       // Fetch events (cover images with size)
@@ -122,8 +114,6 @@ export default function ModeratorStoragePage() {
         .from('events')
         .select('id, title, cover_image_url, cover_image_size, created_at, target_level, created_by');
       if (assignedLevels && !isSuperAdmin) evQ = evQ.in('target_level', assignedLevels);
-      // Moderators only see events they created
-      if (moderatorUserId) evQ = (evQ as any).eq('created_by', moderatorUserId);
       const { data: evs } = await evQ;
 
       // Fetch chat media messages (images, videos, audio, documents sent in groups)
@@ -258,7 +248,7 @@ export default function ModeratorStoragePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [assignedLevels, isSuperAdmin, moderatorUserId]);
+  }, [assignedLevels, isSuperAdmin]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 

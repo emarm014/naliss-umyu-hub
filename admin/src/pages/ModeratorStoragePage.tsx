@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { useAuthStore } from '../store/auth.store';
+import { getAssignedLevels } from '../utils/access';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import {
   HardDrive, BookOpen, FileText, Megaphone, Calendar,
@@ -65,7 +66,7 @@ export default function ModeratorStoragePage() {
   const { profile, permissions } = useAuthStore();
   const isSuperAdmin = profile?.role === 'super_admin';
   const isModerator = profile?.role === 'moderator';
-  const assignedLevel = permissions?.assigned_level ?? null;
+  const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
   // Moderators only see files they personally uploaded — not admin-uploaded content
   const moderatorUserId = isModerator ? profile?.id : null;
 
@@ -87,14 +88,12 @@ export default function ModeratorStoragePage() {
     setIsLoading(true);
     setError(null);
     try {
-      const level = assignedLevel;
-
       // Fetch materials
       let matQ = supabase
         .from('materials')
         .select('id, title, file_url, file_size, created_at, level, uploaded_by')
         .not('file_url', 'is', null);
-      if (level && !isSuperAdmin) matQ = matQ.eq('level', level);
+      if (assignedLevels && !isSuperAdmin) matQ = matQ.in('level', assignedLevels);
       // Moderators only see files they uploaded — not admin-uploaded content
       if (moderatorUserId) matQ = matQ.eq('uploaded_by', moderatorUserId);
       const { data: mats } = await matQ;
@@ -103,7 +102,7 @@ export default function ModeratorStoragePage() {
       let pqQ = supabase
         .from('past_questions')
         .select('id, title, file_url, file_size, created_at, level, uploaded_by');
-      if (level && !isSuperAdmin) pqQ = pqQ.eq('level', level);
+      if (assignedLevels && !isSuperAdmin) pqQ = pqQ.in('level', assignedLevels);
       // Moderators only see files they uploaded
       if (moderatorUserId) pqQ = pqQ.eq('uploaded_by', moderatorUserId);
       const { data: pqs } = await pqQ;
@@ -113,7 +112,7 @@ export default function ModeratorStoragePage() {
         .from('announcements')
         .select('id, title, cover_image_url, cover_image_size, created_at, target_level, author_id')
         .not('cover_image_url', 'is', null);
-      if (level && !isSuperAdmin) annQ = annQ.eq('target_level', level);
+      if (assignedLevels && !isSuperAdmin) annQ = annQ.in('target_level', assignedLevels);
       // Moderators only see announcements they authored
       if (moderatorUserId) annQ = (annQ as any).eq('author_id', moderatorUserId);
       const { data: anns } = await annQ;
@@ -122,7 +121,7 @@ export default function ModeratorStoragePage() {
       let evQ = supabase
         .from('events')
         .select('id, title, cover_image_url, cover_image_size, created_at, target_level, created_by');
-      if (level && !isSuperAdmin) evQ = evQ.eq('target_level', level);
+      if (assignedLevels && !isSuperAdmin) evQ = evQ.in('target_level', assignedLevels);
       // Moderators only see events they created
       if (moderatorUserId) evQ = (evQ as any).eq('created_by', moderatorUserId);
       const { data: evs } = await evQ;
@@ -137,12 +136,14 @@ export default function ModeratorStoragePage() {
         .order('created_at', { ascending: false })
         .limit(500);
 
-      // Fetch user avatars — show all users with any avatar (Cloudinary or DiceBear default)
-      const { data: avatarUsers } = await supabase
+      // Fetch user avatars — filter by assigned levels for moderators
+      let avatarQ = supabase
         .from('users')
-        .select('id, full_name, avatar_url, created_at')
+        .select('id, full_name, avatar_url, created_at, level')
         .not('avatar_url', 'is', null)
         .neq('avatar_url', '');
+      if (assignedLevels && !isSuperAdmin) avatarQ = avatarQ.in('level', assignedLevels);
+      const { data: avatarUsers } = await avatarQ;
 
       // Fetch news
       const { data: newsData } = await supabase
@@ -257,7 +258,7 @@ export default function ModeratorStoragePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [assignedLevel, isSuperAdmin, moderatorUserId]);
+  }, [assignedLevels, isSuperAdmin, moderatorUserId]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -267,82 +268,107 @@ export default function ModeratorStoragePage() {
     const channels = tables.map(table =>
       supabase
         .channel(`storage-watch:${table}:${Date.now()}`)
-        .on('postgres_changes', { event: 'DELETE', schema: 'public', table }, (payload) => {
-          const id = (payload.old as { id?: string })?.id;
-          if (id) setItems(prev => prev.filter(i => i.id !== id));
-        })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table }, () => {
-          // Re-fetch on insert so new files appear with correct metadata
-          fetchItems();
-        })
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => { fetchItems(); })
         .subscribe()
     );
-    return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
-  }, [fetchItems]); // fetchItems is stable (defined outside component)
 
+    return () => {
+      channels.forEach(ch => supabase.removeChannel(ch));
+    };
+  }, [fetchItems]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleDelete = async (item: StorageItem) => {
-    if (!window.confirm(
-      `Delete "${item.title}"?\n\nThis will:\n• Remove the file from Cloudinary (storage freed)\n• Delete the record from the app\n\nThis cannot be undone.`
-    )) return;
+    if (!window.confirm(`Delete "${item.title}"? This permanently removes the file from Cloudinary.`)) return;
 
     setDeletingId(item.id);
-    try {
-      // 1. Delete from DB first — if this fails, Cloudinary file is preserved
-      const table = TABLE_MAP[item.type];
-      const { error: err } = await supabase.from(table).delete().eq('id', item.id);
-      if (err) throw err;
+    setDeleteError(null);
 
-      // 2. Only delete from Cloudinary after DB confirms deletion
-      if (item.file_url) await deleteFromCloudinary([item.file_url]);
+    try {
+      if (item.file_url) {
+        await deleteFromCloudinary([item.file_url]);
+      }
+
+      const table = TABLE_MAP[item.type];
+      if (table === 'messages') {
+        await supabase
+          .from('messages')
+          .update({ is_deleted: true, content: 'Attachment deleted by moderator' })
+          .eq('id', item.id);
+      } else if (table === 'users') {
+        await supabase
+          .from('users')
+          .update({ avatar_url: null })
+          .eq('id', item.id);
+      } else if (table === 'announcements' || table === 'events') {
+        await supabase
+          .from(table)
+          .update({ cover_image_url: null, cover_image_size: null })
+          .eq('id', item.id);
+      } else if (table === 'news') {
+        await supabase
+          .from('news')
+          .update({ image_url: null })
+          .eq('id', item.id);
+      } else if (table) {
+        await supabase
+          .from(table)
+          .delete()
+          .eq('id', item.id);
+      }
 
       setItems(prev => prev.filter(i => i.id !== item.id));
-      showSuccess(`"${item.title}" deleted. Storage freed.`);
-    } catch (e: any) {
-      setDeleteError('Delete failed: ' + (e?.message || 'Unknown error'));
-      setTimeout(() => setDeleteError(null), 5000);
+      showSuccess(`"${item.title}" deleted.`);
+    } catch (e: unknown) {
+      setDeleteError((e as Error)?.message || 'Failed to delete item.');
     } finally {
       setDeletingId(null);
     }
   };
 
+  // ── Derived state ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    const list = typeFilter === 'all' ? items : items.filter(i => i.type === typeFilter);
-    return [...list].sort((a, b) =>
-      sortBy === 'size'
-        ? (b.file_size || 0) - (a.file_size || 0)
-        : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    let list = items;
+    if (typeFilter !== 'all') list = list.filter(i => i.type === typeFilter);
+    return list.sort((a, b) => {
+      if (sortBy === 'size') return (b.file_size || 0) - (a.file_size || 0);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
   }, [items, typeFilter, sortBy]);
 
   const stats = useMemo(() => {
-    const totalBytes = items.reduce((s, i) => s + (i.file_size || 0), 0);
-    const byType = Object.keys(TYPE_CONFIG).reduce((acc, t) => {
-      const typeItems = items.filter(i => i.type === t);
-      acc[t] = {
-        count: typeItems.length,
-        bytes: typeItems.reduce((s, i) => s + (i.file_size || 0), 0),
-      };
-      return acc;
-    }, {} as Record<string, { count: number; bytes: number }>);
-    return { totalBytes, byType };
+    const totalBytes = items.reduce((acc, i) => acc + (i.file_size || 0), 0);
+    const byType: Record<string, { count: number; bytes: number }> = {};
+    items.forEach(i => {
+      if (!byType[i.type]) byType[i.type] = { count: 0, bytes: 0 };
+      byType[i.type].count++;
+      byType[i.type].bytes += i.file_size || 0;
+    });
+    return { totalBytes, totalCount: items.length, byType };
   }, [items]);
 
-  return (
-    <div className="space-y-6 max-w-[1400px] mx-auto pb-12 animate-in fade-in duration-500">
+  if (isLoading) return <LoadingSpinner size="lg" />;
 
-      {/* Success toast */}
+  return (
+    <div className="space-y-8 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-500">
+
+      {/* Toast Messages */}
       {successMessage && (
         <div className="fixed bottom-10 right-10 z-[200] bg-primary-950 border border-primary-800 text-white px-8 py-5 rounded-[2rem] shadow-2xl flex items-center gap-5 animate-in slide-in-from-bottom-8 duration-400">
-          <CheckCircle2 className="w-6 h-6 text-green-400 shrink-0" />
-          <p className="text-sm font-bold">{successMessage}</p>
+          <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
+          <div>
+            <p className="text-[10px] font-black tracking-[0.25em] text-primary-400 uppercase">Storage Action</p>
+            <p className="text-sm font-bold">{successMessage}</p>
+          </div>
         </div>
       )}
-
-      {/* Error toast */}
       {deleteError && (
         <div className="fixed bottom-10 right-10 z-[200] bg-red-600 border border-red-500 text-white px-8 py-5 rounded-[2rem] shadow-2xl flex items-center gap-5 animate-in slide-in-from-bottom-8 duration-400">
-          <AlertTriangle className="w-6 h-6 text-white shrink-0" />
-          <p className="text-sm font-bold">{deleteError}</p>
+          <AlertTriangle className="w-6 h-6 shrink-0" />
+          <div>
+            <p className="text-[10px] font-black tracking-[0.25em] text-red-200 uppercase">Error</p>
+            <p className="text-sm font-bold">{deleteError}</p>
+          </div>
         </div>
       )}
 
@@ -353,11 +379,13 @@ export default function ModeratorStoragePage() {
             <div className="w-1.5 h-8 bg-primary-950 rounded-full" />
             <h1 className="text-3xl font-black text-gray-900 tracking-tight uppercase">Storage Manager</h1>
           </div>
-          {!isSuperAdmin && assignedLevel ? (
+          {!isSuperAdmin && assignedLevels ? (
             <div className="flex items-center gap-3 mt-1">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl">
                 <Lock className="w-3.5 h-3.5 text-amber-600" />
-                <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Level {assignedLevel} only</span>
+                <span className="text-xs font-black text-amber-700 uppercase tracking-widest">
+                  {assignedLevels.length === 1 ? `Level ${assignedLevels[0]} only` : `Managing Levels ${assignedLevels.join(', ')}`}
+                </span>
               </div>
               <p className="text-gray-500 font-medium text-sm">
                 View and delete files you manage. Deleting removes from Cloudinary and frees storage.

@@ -859,10 +859,11 @@ export default function MaterialsPage() {
                         className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900 appearance-none disabled:opacity-50"
                       >
                         {(!assignedLevels || assignedLevels.length > 1) && <option value="">Select Level</option>}
-                        <option value="100">Level 100</option>
-                        <option value="200">Level 200</option>
-                        <option value="300">Level 300</option>
-                        <option value="400">Level 400</option>
+                        {(['100', '200', '300', '400'] as AcademicLevel[])
+                          .filter(lvl => !assignedLevels || assignedLevels.includes(lvl))
+                          .map(lvl => (
+                            <option key={lvl} value={lvl}>Level {lvl}</option>
+                          ))}
                       </select>
                     </div>
                     <div>

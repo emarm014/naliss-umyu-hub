@@ -650,13 +650,18 @@ export default function GroupsPage() {
     });
   }, [storeStudents, selectedGroup]);
 
+  const levelScopedGroups = useMemo(() => {
+    if (!assignedLevels) return storeGroups;
+    return storeGroups.filter(g => g.group_type !== 'level' || (g.level && assignedLevels.includes(g.level as AcademicLevel)));
+  }, [storeGroups, assignedLevels]);
+
   // ── Stats ─────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
-    total: storeGroups.length,
-    level: storeGroups.filter(g => g.group_type === 'level').length,
-    department: storeGroups.filter(g => g.group_type === 'department').length,
-    withModerator: storeGroups.filter(g => g.moderator_id).length,
-  }), [storeGroups]);
+    total: levelScopedGroups.length,
+    level: levelScopedGroups.filter(g => g.group_type === 'level').length,
+    department: levelScopedGroups.filter(g => g.group_type === 'department').length,
+    withModerator: levelScopedGroups.filter(g => g.moderator_id).length,
+  }), [levelScopedGroups]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-500">

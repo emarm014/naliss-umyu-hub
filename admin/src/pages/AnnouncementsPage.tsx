@@ -914,10 +914,11 @@ function AnnouncementFormModal({
                     disabled={!!assignedLevels && assignedLevels.length === 1}
                   >
                     {(!assignedLevels || assignedLevels.length > 1) && <option value="all">Global Tier</option>}
-                    <option value="100">Level 100</option>
-                    <option value="200">Level 200</option>
-                    <option value="300">Level 300</option>
-                    <option value="400">Level 400</option>
+                    {(['100', '200', '300', '400'] as LevelOption[])
+                      .filter(lvl => !assignedLevels || assignedLevels.includes(lvl as any))
+                      .map(lvl => (
+                        <option key={lvl} value={lvl}>Level {lvl}</option>
+                      ))}
                   </select>
                 </div>
               </div>

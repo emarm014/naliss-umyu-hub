@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
-import type { PastQuestion } from '../types';
+import type { PastQuestion, AcademicLevel } from '../types';
 import ErrorState from '../components/ui/ErrorState';
 import {
   Plus,
@@ -144,15 +144,20 @@ export default function PastQuestionsPage() {
     });
   }, [storePastQuestions, searchQuery, levelFilter, courseFilter, semesterFilter, assignedLevels, permissions, profile?.role]);
 
+  const levelScopedPastQuestions = useMemo(() => {
+    if (!assignedLevels) return storePastQuestions;
+    return storePastQuestions.filter(pq => pq.level && assignedLevels.includes(pq.level as AcademicLevel));
+  }, [storePastQuestions, assignedLevels]);
+
   // Derived Stats
   const stats = useMemo<ArchiveStats>(() => {
     return {
-      totalRecords: storePastQuestions.length,
-      featuredCount: storePastQuestions.filter(pq => pq.is_featured).length,
-      storageUsage: storePastQuestions.reduce((sum, pq) => sum + (pq.file_size || 0), 0),
+      totalRecords: levelScopedPastQuestions.length,
+      featuredCount: levelScopedPastQuestions.filter(pq => pq.is_featured).length,
+      storageUsage: levelScopedPastQuestions.reduce((sum, pq) => sum + (pq.file_size || 0), 0),
       lastUpdate: new Date()
     };
-  }, [storePastQuestions]);
+  }, [levelScopedPastQuestions]);
 
   const totalCount = filteredPastQuestions.length;
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
@@ -917,10 +922,11 @@ export default function PastQuestionsPage() {
                           className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-primary-500 font-bold text-slate-800 appearance-none disabled:opacity-50"
                         >
                           {(!assignedLevels || assignedLevels.length > 1) && <option value="">Select Level</option>}
-                          <option value="100">Level 100</option>
-                          <option value="200">Level 200</option>
-                          <option value="300">Level 300</option>
-                          <option value="400">Level 400</option>
+                          {(['100', '200', '300', '400'] as AcademicLevel[])
+                            .filter(lvl => !assignedLevels || assignedLevels.includes(lvl))
+                            .map(lvl => (
+                              <option key={lvl} value={lvl}>Level {lvl}</option>
+                            ))}
                         </select>
                       </div>
 

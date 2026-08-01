@@ -154,14 +154,14 @@ export default function StudentsPage() {
   const users = filteredUsers.slice(from, to);
 
   const stats = useMemo(() => {
-    const studentsOnly = (allStudents as UserWithDepartment[]).filter(u => u.role === 'student');
+    const studentsOnly = (allStudents as UserWithDepartment[]).filter(u => u.role === 'student' && (!assignedLevels || (u.level && assignedLevels.includes(u.level as AcademicLevel))));
     return {
       total: studentsOnly.length,
       active: studentsOnly.filter(u => u.status === 'active').length,
       pending: studentsOnly.filter(u => u.status === 'pending_verification').length,
       risk: studentsOnly.filter(u => ['suspended', 'banned'].includes(u.status)).length
     };
-  }, [allStudents]);
+  }, [allStudents, assignedLevels]);
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 

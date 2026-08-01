@@ -1671,9 +1671,7 @@ function EditUserModal({ user, onClose, onSave }: { user: UserWithDepartment; on
 function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
   const [formData, setFormData] = useState({
     full_name: '',
-    username: '',
     email: '',
-    registration_number: '',
     role: 'moderator' as UserRole,
     level: '' as any,
     password: '',
@@ -1701,8 +1699,6 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
             email: formData.email,
             password: formData.password,
             full_name: formData.full_name,
-            username: formData.username.toLowerCase().replace(/\s+/g, ''),
-            registration_number: formData.registration_number,
             level: formData.level,
             role: 'moderator',
             is_external: true
@@ -1770,20 +1766,6 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
                    />
                 </div>
                 <div className="space-y-2">
-                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Username (@handle)</label>
-                   <input
-                     type="text"
-                     required={formData.role !== 'moderator'}
-                     value={formData.username}
-                     onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
-                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 transition-all placeholder:text-slate-400"
-                     placeholder={formData.role === 'moderator' ? "Optional for moderators" : "abuyusuf"}
-                   />
-                </div>
-             </div>
-
-             <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Email Address</label>
                    <input
                      type="email"
@@ -1794,24 +1776,11 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
                      placeholder="moderator@naliss.edu"
                    />
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Reg Number</label>
-                   <input
-                     type="text"
-                     required={formData.role !== 'moderator'}
-                     value={formData.registration_number}
-                     onChange={(e) => setFormData({ ...formData, registration_number: e.target.value })}
-                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 transition-all placeholder:text-slate-400"
-                     placeholder={formData.role === 'moderator' ? "Optional for moderators" : "U1/23/BLIS/0000"}
-                   />
-                </div>
              </div>
 
              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">
-                     {formData.role === 'moderator' ? 'Assigned Level' : 'Current Level'}
-                   </label>
+                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Assigned Level</label>
                    <select
                      value={formData.level}
                      required
@@ -1831,7 +1800,7 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
                      onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 appearance-none transition-all"
                    >
-                     {['moderator', 'moderator'].map(role => (
+                     {['moderator'].map(role => (
                        <option key={role} value={role}>{role.toUpperCase()}</option>
                      ))}
                    </select>

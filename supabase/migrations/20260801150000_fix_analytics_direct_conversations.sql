@@ -80,7 +80,7 @@ BEGIN
   -- 4. Engagement Metrics
   SELECT COALESCE(sum(view_count), 0) INTO engagement_material_views FROM public.materials;
   SELECT COALESCE(sum(download_count), 0) INTO engagement_material_downloads FROM public.materials;
-  SELECT COALESCE(sum(views_count), 0) INTO engagement_announcement_views FROM public.announcements;
+  SELECT COALESCE(sum(view_count), 0) INTO engagement_announcement_views FROM public.announcements;
 
   -- 5. Storage Metrics
   SELECT COALESCE(sum(file_size), 0) INTO storage_resources FROM public.cloud_archive;

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
+import { getAssignedLevels } from '../utils/access';
 import { useAdminDataStore } from '../store/adminData.store';
 import type { AcademicLevel, Group, GroupMember, User } from '../types';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -21,12 +22,18 @@ interface GroupWithDetails extends Group {
 const LEVEL_OPTIONS: AcademicLevel[] = ['100', '200', '300', '400'];
 
 export default function GroupsPage() {
-  const { groups: storeGroups, students: storeStudents, isSyncing, syncAll, error: syncError, fetchGroups, refreshAnalytics } = useAdminDataStore();
+  const { storeGroups, syncAll, refreshAnalytics } = useAdminDataStore(
+    useShallow(state => ({
+      storeGroups: state.groups,
+      syncAll: state.syncAll,
+      refreshAnalytics: state.refreshAnalytics,
+    }))
+  );
   const { profile, permissions } = useAuthStore();
 
   // Moderators only see the group they are assigned to moderate
   const isModerator = profile?.role === 'moderator';
-  const assignedLevel = isModerator ? (permissions?.assigned_level || null) : null;
+  const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,13 +76,11 @@ export default function GroupsPage() {
   // ── Filtered groups ───────────────────────────────────────────────────────
   const filteredGroups = useMemo(() => {
     return storeGroups.filter(g => {
-      // Moderators only see the group they are assigned to moderate
+      // Moderators only see the groups matching their assigned levels or where assigned as moderator
       if (isModerator) {
-        if (assignedLevel) {
-          // Show only the level group matching their assigned level
-          return g.group_type === 'level' && g.level === assignedLevel;
+        if (assignedLevels && assignedLevels.length > 0) {
+          return g.group_type === 'level' && g.level && assignedLevels.includes(g.level as AcademicLevel);
         }
-        // If no assigned level, show only groups where they are the moderator
         return g.moderator_id === profile?.id;
       }
       if (typeFilter !== 'all' && g.group_type !== typeFilter) return false;

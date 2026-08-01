@@ -87,8 +87,9 @@ export interface User {
     can_manage_cloud_archive: boolean;
     can_manage_messaging: boolean;
     can_manage_event_pools: boolean;
-    can_manage_featured_students: boolean;
     assigned_level: AcademicLevel | null;
+    assigned_levels?: AcademicLevel[] | null;
+    level_permissions?: Record<string, Record<string, boolean>> | null;
     is_restricted?: boolean;
   } | null;
 }

@@ -53,10 +53,12 @@ const materialTypeConfig = {
   document: { color: 'bg-slate-100 text-slate-700', label: 'Document', icon: File }
 };
 
+import { getAssignedLevels, hasLevelPermission } from '../utils/access';
+
 export default function MaterialsPage() {
-  const { materials: allMaterials, courses, syncAll, removeMaterial, refreshAnalytics } = useAdminDataStore(
+  const { allMaterials, courses, syncAll, removeMaterial, refreshAnalytics } = useAdminDataStore(
     useShallow((state) => ({
-      materials: state.materials,
+      allMaterials: state.materials,
       courses: state.courses,
       syncAll: state.syncAll,
       removeMaterial: state.removeMaterial,
@@ -64,7 +66,7 @@ export default function MaterialsPage() {
     }))
   );
   const { user, profile, permissions } = useAuthStore();
-  const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
+  const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
 
   useEffect(() => {
     syncAll();
@@ -78,7 +80,7 @@ export default function MaterialsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [courseFilter, setCourseFilter] = useState('all');
-  const [levelFilter, setLevelFilter] = useState(assignedLevel || 'all');
+  const [levelFilter, setLevelFilter] = useState('all');
   const [semesterFilter, setSemesterFilter] = useState<'all' | 'first' | 'second'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [showPreview, setShowPreview] = useState<string | null>(null);
@@ -95,16 +97,13 @@ export default function MaterialsPage() {
     file_size: 0,
     file_mime_type: null as string | null,
     files: [] as Array<{url: string, name: string, size: number, type?: string}>,
-    level: assignedLevel || '',
+    level: assignedLevels?.[0] || '',
     semester: '',
     is_public: true,
     is_downloadable: false,
     is_featured: false,
     is_active: true
   });
-
-  // Ensure setTypeFilter is used or remove the unused state if filtering is not needed
-  // Since the code uses typeFilter, we should keep it.
 
   const availableCourses = useMemo(() => {
     if (!formData.level || !formData.semester) return [];
@@ -116,8 +115,12 @@ export default function MaterialsPage() {
   useEffect(() => {
     let result = [...allMaterials];
 
-    if (assignedLevel) {
-      result = result.filter(m => m.level === assignedLevel);
+    if (assignedLevels) {
+      result = result.filter(m => m.level && assignedLevels.includes(m.level as AcademicLevel));
+    }
+
+    if (profile?.role === 'moderator' && permissions) {
+      result = result.filter(m => hasLevelPermission(permissions, 'can_manage_materials', m.level));
     }
 
     if (typeFilter !== 'all') {

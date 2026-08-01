@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
+import { getAssignedLevels, hasLevelPermission } from '../utils/access';
 import type { Announcement } from '../types';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
@@ -50,18 +51,20 @@ const priorityConfig = {
 };
 
 export default function AnnouncementsPage() {
+  const { user, profile, permissions } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
-  const [priorityFilter] = useState<Announcement['priority'] | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusOption>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryOption>('all');
+  const [priorityFilter, setPriorityFilter] = useState<PriorityOption>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const { profile, permissions } = useAuthStore();
+  const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
+
   const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('announcements_draft', {
     title: '',
     content: '',
     category: 'general',
     priority: 'normal',
-    target_level: (profile?.role === 'moderator' ? permissions?.assigned_level : null) || 'all',
+    target_level: assignedLevels?.[0] || 'all',
     is_published: false,
     is_pinned: false,
     cover_image_url: '',
@@ -87,8 +90,6 @@ export default function AnnouncementsPage() {
     syncAll();
   }, [syncAll]);
 
-  const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
-
   const location = useLocation();
   const [predefinedAsset, setPredefinedAsset] = useState<any>(null);
 
@@ -113,9 +114,10 @@ export default function AnnouncementsPage() {
     const matchesCategory = categoryFilter === 'all' || announcement.category === categoryFilter;
     const matchesLevel = levelFilter === 'all' || announcement.target_level === levelFilter;
     const matchesPriority = priorityFilter === 'all' || announcement.priority === priorityFilter;
-    const matchesAssignedLevel = !assignedLevel || announcement.target_level === assignedLevel;
+    const matchesAssignedLevel = !assignedLevels || announcement.target_level === 'all' || (announcement.target_level && assignedLevels.includes(announcement.target_level as any));
+    const matchesLevelPermission = profile?.role !== 'moderator' || hasLevelPermission(permissions, 'can_manage_announcements', announcement.target_level === 'all' ? null : announcement.target_level);
 
-    return matchesSearch && matchesStatus && matchesCategory && matchesLevel && matchesPriority && matchesAssignedLevel;
+    return matchesSearch && matchesStatus && matchesCategory && matchesLevel && matchesPriority && matchesAssignedLevel && matchesLevelPermission;
   });
 
   const totalCount = filteredAnnouncements.length;

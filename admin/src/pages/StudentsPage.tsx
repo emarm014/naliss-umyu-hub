@@ -87,13 +87,12 @@ export default function StudentsPage() {
     syncAll();
   }, [syncAll]);
 
-  // Moderators are locked to their assigned level — they cannot see other levels
-  const assignedLevel = isModerator ? (permissions?.assigned_level || null) : null;
+  // Moderators are locked to their assigned levels — if null, can see all levels
+  const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AccountStatus | 'all'>('all');
-  // Moderators start with their level pre-selected and cannot change it
-  const [levelFilter, setLevelFilter] = useState<AcademicLevel | 'all'>(assignedLevel as AcademicLevel || 'all');
+  const [levelFilter, setLevelFilter] = useState<AcademicLevel | 'all'>('all');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<UserWithDepartment | null>(null);
@@ -112,10 +111,11 @@ export default function StudentsPage() {
   const filteredUsers = useMemo(() => {
     let result = [...(allStudents as UserWithDepartment[])].filter(u => u.is_external !== true);
 
-    // Moderators are hard-locked to their assigned level — enforced here regardless of filter state
-    if (assignedLevel) {
-      result = result.filter(u => u.level === assignedLevel);
-    } else if (levelFilter !== 'all') {
+    if (assignedLevels) {
+      result = result.filter(u => u.level && assignedLevels.includes(u.level as AcademicLevel));
+    }
+    
+    if (levelFilter !== 'all') {
       result = result.filter(u => u.level === levelFilter);
     }
 

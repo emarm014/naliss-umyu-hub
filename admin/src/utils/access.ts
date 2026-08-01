@@ -1,3 +1,5 @@
+import type { AcademicLevel } from '../types';
+
 export function getFirstAccessibleRoute(permissions: any): string {
   if (!permissions) return '/login';
   if (permissions.can_manage_announcements) return '/announcements';
@@ -13,4 +15,46 @@ export function getFirstAccessibleRoute(permissions: any): string {
   if (permissions.can_manage_news) return '/news';
   if (permissions.can_manage_events) return '/events';
   return '/login';
+}
+
+/**
+ * Returns array of assigned levels for a moderator, or null if managing ALL levels.
+ */
+export function getAssignedLevels(permissions: any): AcademicLevel[] | null {
+  if (!permissions) return null;
+  if (Array.isArray(permissions.assigned_levels) && permissions.assigned_levels.length > 0) {
+    return permissions.assigned_levels as AcademicLevel[];
+  }
+  if (permissions.assigned_level) {
+    return [permissions.assigned_level as AcademicLevel];
+  }
+  return null; // All levels
+}
+
+/**
+ * Checks if a moderator manages a specific academic level.
+ */
+export function hasLevelAccess(permissions: any, level: string | null | undefined): boolean {
+  if (!permissions || !level) return true;
+  const assigned = getAssignedLevels(permissions);
+  if (!assigned) return true; // null means manages all levels
+  return assigned.includes(level as AcademicLevel);
+}
+
+/**
+ * Checks if a moderator has permission for a specific action/page on a specific level.
+ */
+export function hasLevelPermission(permissions: any, permissionKey: string, level: string | null | undefined): boolean {
+  if (!permissions) return false;
+  if (!permissions[permissionKey]) return false;
+  if (level) {
+    if (!hasLevelAccess(permissions, level)) return false;
+    if (permissions.level_permissions && permissions.level_permissions[level]) {
+      const levelOverride = permissions.level_permissions[level][permissionKey];
+      if (typeof levelOverride === 'boolean') {
+        return levelOverride;
+      }
+    }
+  }
+  return true;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
+import { getAssignedLevels, hasLevelPermission } from '../utils/access';
 
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
@@ -89,7 +90,7 @@ export default function PastQuestionsPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const { permissions, profile } = useAuthStore();
-  const assignedLevel = permissions?.assigned_level || null;
+  const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
   const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('past_questions_draft', {
     title: '',
     description: '',
@@ -136,11 +137,12 @@ export default function PastQuestionsPage() {
       const matchesLevel = levelFilter === 'all' ? true : pq.level === levelFilter;
       const matchesCourse = courseFilter === 'all' || pq.course_id === courseFilter;
       const matchesSemester = semesterFilter === 'all' || pq.semester === semesterFilter;
-      const matchesAssignedLevel = !assignedLevel || pq.level === assignedLevel;
+      const matchesAssignedLevel = !assignedLevels || (pq.level && assignedLevels.includes(pq.level as any));
+      const matchesLevelPermission = profile?.role !== 'moderator' || hasLevelPermission(permissions, 'can_manage_past_questions', pq.level);
 
-      return matchesSearch && matchesLevel && matchesCourse && matchesSemester && matchesAssignedLevel;
+      return matchesSearch && matchesLevel && matchesCourse && matchesSemester && matchesAssignedLevel && matchesLevelPermission;
     });
-  }, [storePastQuestions, searchQuery, levelFilter, courseFilter, semesterFilter, assignedLevel]);
+  }, [storePastQuestions, searchQuery, levelFilter, courseFilter, semesterFilter, assignedLevels, permissions, profile?.role]);
 
   // Derived Stats
   const stats = useMemo<ArchiveStats>(() => {

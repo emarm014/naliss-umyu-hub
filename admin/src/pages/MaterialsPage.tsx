@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
 import { useAuthStore } from '../store/auth.store';
 import type { AcademicLevel } from '../types';
+import { getAssignedLevels, hasLevelPermission, getAllowedLevelsForPermission } from '../utils/access';
 import { 
   Plus, 
   Search, 
@@ -54,8 +55,6 @@ const materialTypeConfig = {
   document: { color: 'bg-slate-100 text-slate-700', label: 'Document', icon: File }
 };
 
-import { getAssignedLevels, hasLevelPermission } from '../utils/access';
-
 export default function MaterialsPage() {
   const { allMaterials, courses, syncAll, removeMaterial, refreshAnalytics } = useAdminDataStore(
     useShallow((state) => ({
@@ -68,6 +67,7 @@ export default function MaterialsPage() {
   );
   const { user, profile, permissions } = useAuthStore();
   const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
+  const allowedLevels = profile?.role === 'moderator' ? getAllowedLevelsForPermission(permissions, 'can_manage_materials') : null;
 
   useEffect(() => {
     syncAll();
@@ -98,7 +98,7 @@ export default function MaterialsPage() {
     file_size: 0,
     file_mime_type: null as string | null,
     files: [] as Array<{url: string, name: string, size: number, type?: string}>,
-    level: assignedLevels?.[0] || '',
+    level: allowedLevels?.[0] || '',
     semester: '',
     is_public: true,
     is_downloadable: false,
@@ -116,8 +116,8 @@ export default function MaterialsPage() {
   useEffect(() => {
     let result = [...allMaterials];
 
-    if (assignedLevels) {
-      result = result.filter(m => !m.level || (m.level as string) === 'all' || assignedLevels.includes(m.level as AcademicLevel));
+    if (allowedLevels) {
+      result = result.filter(m => !m.level || (m.level as string) === 'all' || (m.level as string) === 'general' || allowedLevels.includes(m.level as AcademicLevel));
     }
 
     if (profile?.role === 'moderator' && permissions) {
@@ -868,12 +868,12 @@ export default function MaterialsPage() {
                       <select
                         value={formData.level}
                         onChange={(e) => setFormData({ ...formData, level: e.target.value, course_id: '' })}
-                        disabled={!!assignedLevels && assignedLevels.length === 1}
+                        disabled={!!allowedLevels && allowedLevels.length === 1}
                         className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900 appearance-none disabled:opacity-50"
                       >
-                        {(!assignedLevels || assignedLevels.length > 1) && <option value="">Select Level</option>}
+                        {(!allowedLevels || allowedLevels.length > 1) && <option value="">Select Level</option>}
                         {(['100', '200', '300', '400'] as AcademicLevel[])
-                          .filter(lvl => !assignedLevels || assignedLevels.includes(lvl))
+                          .filter(lvl => !allowedLevels || allowedLevels.includes(lvl))
                           .map(lvl => (
                             <option key={lvl} value={lvl}>Level {lvl}</option>
                           ))}

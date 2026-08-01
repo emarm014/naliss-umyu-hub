@@ -47,14 +47,35 @@ export function hasLevelAccess(permissions: any, level: string | null | undefine
 export function hasLevelPermission(permissions: any, permissionKey: string, level: string | null | undefined): boolean {
   if (!permissions) return false;
   if (!permissions[permissionKey]) return false;
-  if (level) {
-    if (!hasLevelAccess(permissions, level)) return false;
-    if (permissions.level_permissions && permissions.level_permissions[level]) {
-      const levelOverride = permissions.level_permissions[level][permissionKey];
+  
+  const levelStr = level ? String(level) : null;
+  if (levelStr && levelStr !== 'all' && levelStr !== 'general') {
+    if (!hasLevelAccess(permissions, levelStr)) return false;
+    if (permissions.level_permissions && permissions.level_permissions[levelStr]) {
+      const levelOverride = permissions.level_permissions[levelStr][permissionKey];
       if (typeof levelOverride === 'boolean') {
         return levelOverride;
       }
     }
   }
   return true;
+}
+
+/**
+ * Returns list of allowed AcademicLevels for a specific permission key.
+ * Takes into account assigned_levels AND level_permissions overrides.
+ * If user is not restricted or managing all levels without overrides, returns null.
+ */
+export function getAllowedLevelsForPermission(permissions: any, permissionKey: string): AcademicLevel[] | null {
+  if (!permissions) return null; // Super Admin or unrestricted
+  
+  // Global toggle check
+  if (!permissions[permissionKey]) return [];
+  
+  const assigned = getAssignedLevels(permissions);
+  const candidateLevels: AcademicLevel[] = assigned ?? ['100', '200', '300', '400'];
+  
+  // Filter candidate levels against level_permissions overrides
+  const allowed = candidateLevels.filter(lvl => hasLevelPermission(permissions, permissionKey, lvl));
+  return allowed;
 }

@@ -31,7 +31,7 @@ import FileUpload from '../lib/FileUpload';
 
 import { useAdminDataStore } from '../store/adminData.store';
 import { useAuthStore } from '../store/auth.store';
-import { getAssignedLevels } from '../utils/access';
+import { getAssignedLevels, getAllowedLevelsForPermission } from '../utils/access';
 
 interface UserWithDepartment extends User {
   departments?: { name: string; code: string } | null;
@@ -88,8 +88,9 @@ export default function StudentsPage() {
     syncAll();
   }, [syncAll]);
 
-  // Moderators are locked to their assigned levels — if null, can see all levels
+  // Moderators are locked to allowed levels considering level_permissions overrides
   const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
+  const allowedLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_students') : null;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AccountStatus | 'all'>('all');
@@ -112,8 +113,8 @@ export default function StudentsPage() {
   const filteredUsers = useMemo(() => {
     let result = [...(allStudents as UserWithDepartment[])].filter(u => u.is_external !== true);
 
-    if (assignedLevels) {
-      result = result.filter(u => u.level && assignedLevels.includes(u.level as AcademicLevel));
+    if (allowedLevels) {
+      result = result.filter(u => u.level && allowedLevels.includes(u.level as AcademicLevel));
     }
     
     if (levelFilter !== 'all') {
@@ -571,8 +572,8 @@ export default function StudentsPage() {
 
           <div className="flex items-center px-4 py-2 bg-gray-50 rounded-xl border border-gray-100">
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-3">Academic</span>
-            {assignedLevels && assignedLevels.length === 1 ? (
-              <span className="text-sm font-black text-primary-950">LEVEL {assignedLevels[0]}</span>
+            {allowedLevels && allowedLevels.length === 1 ? (
+              <span className="text-sm font-black text-primary-950">LEVEL {allowedLevels[0]}</span>
             ) : (
               <select
                 value={levelFilter}
@@ -580,11 +581,13 @@ export default function StudentsPage() {
                 className="bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 cursor-pointer"
               >
                 <option value="all">ALL LEVELS</option>
-                {levelOptions.map((level) => (
-                  <option key={level} value={level}>
-                    {LEVEL_LABELS[level].toUpperCase()}
-                  </option>
-                ))}
+                {levelOptions
+                  .filter(level => !allowedLevels || allowedLevels.includes(level))
+                  .map((level) => (
+                    <option key={level} value={level}>
+                      {LEVEL_LABELS[level].toUpperCase()}
+                    </option>
+                  ))}
               </select>
             )}
           </div>
@@ -1167,9 +1170,10 @@ export default function StudentsPage() {
       )}
 
       {/* Edit User Modal */}
-      {showModal === 'edit' && selectedUser && !isModerator && (
+      {showModal === 'edit' && selectedUser && (
         <EditUserModal
           user={selectedUser!}
+          allowedLevels={allowedLevels}
           onClose={() => setShowModal(null)}
           onSave={() => {
             setShowModal(null);
@@ -1198,7 +1202,7 @@ export default function StudentsPage() {
 }
 
 // Edit User Modal Component
-function EditUserModal({ user, onClose, onSave }: { user: UserWithDepartment; onClose: () => void; onSave: () => void }) {
+function EditUserModal({ user, allowedLevels, onClose, onSave }: { user: UserWithDepartment; allowedLevels: AcademicLevel[] | null; onClose: () => void; onSave: () => void }) {
   const [formData, setFormData] = useState({
     full_name: user.full_name,
     username: user.username || '',
@@ -1343,12 +1347,15 @@ function EditUserModal({ user, onClose, onSave }: { user: UserWithDepartment; on
                 <select
                   value={formData.level}
                   onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                  className="w-full px-5 py-3.5 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary-950 shadow-inner"
+                  disabled={!!allowedLevels && allowedLevels.length === 1}
+                  className="w-full px-5 py-3.5 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary-950 shadow-inner disabled:opacity-50"
                 >
                   <option value="">DEFERRED</option>
-                  {levelOptions.map((level) => (
-                    <option key={level} value={level}>{LEVEL_LABELS[level].toUpperCase()}</option>
-                  ))}
+                  {levelOptions
+                    .filter(level => !allowedLevels || allowedLevels.includes(level))
+                    .map((level) => (
+                      <option key={level} value={level}>{LEVEL_LABELS[level].toUpperCase()}</option>
+                    ))}
                 </select>
               </div>
             </div>

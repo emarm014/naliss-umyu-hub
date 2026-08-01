@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
-import { getAssignedLevels } from '../utils/access';
+import { getAssignedLevels, getAllowedLevelsForPermission } from '../utils/access';
 import { useAdminDataStore } from '../store/adminData.store';
 import type { AcademicLevel, Group, GroupMember, User } from '../types';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -28,6 +28,7 @@ export default function GroupsPage() {
   // Moderators only see the group they are assigned to moderate
   const isModerator = profile?.role === 'moderator';
   const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
+  const allowedLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_groups') : null;
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,8 +73,8 @@ export default function GroupsPage() {
     return storeGroups.filter(g => {
       // Moderators only see the groups matching their assigned levels or where assigned as moderator
       if (isModerator) {
-        if (assignedLevels && assignedLevels.length > 0) {
-          return g.group_type === 'level' && g.level && assignedLevels.includes(g.level as AcademicLevel);
+        if (allowedLevels && allowedLevels.length > 0) {
+          return g.group_type === 'level' && g.level && allowedLevels.includes(g.level as AcademicLevel);
         }
         return g.moderator_id === profile?.id;
       }

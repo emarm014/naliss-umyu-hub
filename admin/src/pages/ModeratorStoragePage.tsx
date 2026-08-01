@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { useAuthStore } from '../store/auth.store';
-import { getAssignedLevels } from '../utils/access';
+import { getAssignedLevels, getAllowedLevelsForPermission } from '../utils/access';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import {
   HardDrive, BookOpen, FileText, Megaphone, Calendar,
@@ -67,6 +67,10 @@ export default function ModeratorStoragePage() {
   const isSuperAdmin = profile?.role === 'super_admin';
   const isModerator = profile?.role === 'moderator';
   const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
+  const allowedMatLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_materials') : null;
+  const allowedPQLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_past_questions') : null;
+  const allowedAnnLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_announcements') : null;
+  const allowedEvLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_events') : null;
 
   const [items, setItems] = useState<StorageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,34 +91,50 @@ export default function ModeratorStoragePage() {
     setError(null);
     try {
       // Fetch materials
-      let matQ = supabase
-        .from('materials')
-        .select('id, title, file_url, file_size, created_at, level, uploaded_by')
-        .not('file_url', 'is', null);
-      if (assignedLevels && !isSuperAdmin) matQ = matQ.in('level', assignedLevels);
-      const { data: mats } = await matQ;
+      let mats: any[] = [];
+      if (!allowedMatLevels || allowedMatLevels.length > 0) {
+        let matQ = supabase
+          .from('materials')
+          .select('id, title, file_url, file_size, created_at, level, uploaded_by')
+          .not('file_url', 'is', null);
+        if (allowedMatLevels && !isSuperAdmin) matQ = matQ.in('level', allowedMatLevels);
+        const { data } = await matQ;
+        mats = data || [];
+      }
 
       // Fetch past questions
-      let pqQ = supabase
-        .from('past_questions')
-        .select('id, title, file_url, file_size, created_at, level, uploaded_by');
-      if (assignedLevels && !isSuperAdmin) pqQ = pqQ.in('level', assignedLevels);
-      const { data: pqs } = await pqQ;
+      let pqs: any[] = [];
+      if (!allowedPQLevels || allowedPQLevels.length > 0) {
+        let pqQ = supabase
+          .from('past_questions')
+          .select('id, title, file_url, file_size, created_at, level, uploaded_by');
+        if (allowedPQLevels && !isSuperAdmin) pqQ = pqQ.in('level', allowedPQLevels);
+        const { data } = await pqQ;
+        pqs = data || [];
+      }
 
       // Fetch announcements (cover images with size)
-      let annQ = supabase
-        .from('announcements')
-        .select('id, title, cover_image_url, cover_image_size, created_at, target_level, author_id')
-        .not('cover_image_url', 'is', null);
-      if (assignedLevels && !isSuperAdmin) annQ = annQ.in('target_level', assignedLevels);
-      const { data: anns } = await annQ;
+      let anns: any[] = [];
+      if (!allowedAnnLevels || allowedAnnLevels.length > 0) {
+        let annQ = supabase
+          .from('announcements')
+          .select('id, title, cover_image_url, cover_image_size, created_at, target_level, author_id')
+          .not('cover_image_url', 'is', null);
+        if (allowedAnnLevels && !isSuperAdmin) annQ = annQ.in('target_level', allowedAnnLevels);
+        const { data } = await annQ;
+        anns = data || [];
+      }
 
       // Fetch events (cover images with size)
-      let evQ = supabase
-        .from('events')
-        .select('id, title, cover_image_url, cover_image_size, created_at, target_level, created_by');
-      if (assignedLevels && !isSuperAdmin) evQ = evQ.in('target_level', assignedLevels);
-      const { data: evs } = await evQ;
+      let evs: any[] = [];
+      if (!allowedEvLevels || allowedEvLevels.length > 0) {
+        let evQ = supabase
+          .from('events')
+          .select('id, title, cover_image_url, cover_image_size, created_at, target_level, created_by');
+        if (allowedEvLevels && !isSuperAdmin) evQ = evQ.in('target_level', allowedEvLevels);
+        const { data } = await evQ;
+        evs = data || [];
+      }
 
       // Fetch chat media messages (images, videos, audio, documents sent in groups)
       const { data: chatMedia } = await supabase
@@ -248,7 +268,7 @@ export default function ModeratorStoragePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [assignedLevels, isSuperAdmin]);
+  }, [allowedMatLevels, allowedPQLevels, allowedAnnLevels, allowedEvLevels, isSuperAdmin]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 

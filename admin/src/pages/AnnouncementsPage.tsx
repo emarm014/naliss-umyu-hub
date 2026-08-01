@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
-import { getAssignedLevels } from '../utils/access';
+import { getAssignedLevels, getAllowedLevelsForPermission } from '../utils/access';
 import type { Announcement } from '../types';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
@@ -58,13 +58,14 @@ export default function AnnouncementsPage() {
   const [priorityFilter] = useState<Announcement['priority'] | 'all'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
+  const allowedLevels = profile?.role === 'moderator' ? getAllowedLevelsForPermission(permissions, 'can_manage_announcements') : null;
 
   const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('announcements_draft', {
     title: '',
     content: '',
     category: 'general',
     priority: 'normal',
-    target_level: assignedLevels?.[0] || 'all',
+    target_level: allowedLevels?.[0] || 'all',
     is_published: false,
     is_pinned: false,
     cover_image_url: '',
@@ -105,12 +106,12 @@ export default function AnnouncementsPage() {
   }, [location, showModal]);
 
   const levelScopedAnnouncements = useMemo(() => {
-    if (!assignedLevels) return allAnnouncements || [];
+    if (!allowedLevels) return allAnnouncements || [];
     return (allAnnouncements || []).filter(announcement => {
       const targetLevelStr = (announcement.target_level as string) || null;
-      return !targetLevelStr || targetLevelStr === 'all' || targetLevelStr === 'general' || assignedLevels.includes(targetLevelStr as any);
+      return !targetLevelStr || targetLevelStr === 'all' || targetLevelStr === 'general' || allowedLevels.includes(targetLevelStr as any);
     });
-  }, [allAnnouncements, assignedLevels]);
+  }, [allAnnouncements, allowedLevels]);
 
   // Client-side filtering and pagination
   const filteredAnnouncements = useMemo(() => {
@@ -664,6 +665,7 @@ export default function AnnouncementsPage() {
           announcement={selectedAnnouncement}
           predefinedAsset={predefinedAsset}
           assignedLevels={assignedLevels}
+          allowedLevels={allowedLevels}
           formData={formData}
           setFormData={setFormData}
           onClose={() => {
@@ -689,6 +691,7 @@ interface AnnouncementFormModalProps {
   announcement: AnnouncementWithAuthor | null;
   predefinedAsset?: any;
   assignedLevels: LevelOption[] | null;
+  allowedLevels: LevelOption[] | null;
   formData: any;
   setFormData: (data: any) => void;
   onClose: () => void;
@@ -699,6 +702,7 @@ function AnnouncementFormModal({
   announcement,
   predefinedAsset,
   assignedLevels,
+  allowedLevels,
   formData,
   setFormData,
   onClose,
@@ -934,11 +938,11 @@ function AnnouncementFormModal({
                     value={currentFormData.target_level}
                     onChange={(e) => setCurrentFormData({ ...currentFormData, target_level: e.target.value as LevelOption })}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 text-sm font-bold text-slate-700 transition-all disabled:opacity-50 appearance-none cursor-pointer"
-                    disabled={!!assignedLevels && assignedLevels.length === 1}
+                    disabled={!!allowedLevels && allowedLevels.length === 1}
                   >
-                    {(!assignedLevels || assignedLevels.length > 1) && <option value="all">Global Tier</option>}
+                    {(!allowedLevels || allowedLevels.length > 1) && <option value="all">Global Tier</option>}
                     {(['100', '200', '300', '400'] as LevelOption[])
-                      .filter(lvl => !assignedLevels || assignedLevels.includes(lvl as any))
+                      .filter(lvl => !allowedLevels || allowedLevels.includes(lvl as any))
                       .map(lvl => (
                         <option key={lvl} value={lvl}>Level {lvl}</option>
                       ))}

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getAssignedLevels } from '../utils/access';
+import { getAssignedLevels, getAllowedLevelsForPermission } from '../utils/access';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import type { Event, AcademicLevel } from '../types';
@@ -44,6 +44,9 @@ const statusConfig = {
 };
 
 export default function EventsPage() {
+  const { profile, permissions } = useAuthStore();
+  const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
+  const allowedLevels = profile?.role === 'moderator' ? getAllowedLevelsForPermission(permissions, 'can_manage_events') : null;
   const { events: allEvents, isSyncing, error: storeError, syncAll, refreshAnalytics } = useAdminDataStore(
     useShallow((state) => ({
       events: state.events,
@@ -78,8 +81,6 @@ export default function EventsPage() {
   const location = useLocation();
   const [predefinedAsset, setPredefinedAsset] = useState<any>(null);
 
-  const { profile, permissions } = useAuthStore();
-
   // Detect and consume assets shared from the Cloud Archive
   useEffect(() => {
     const asset = (location.state as any)?.predefinedAsset;
@@ -91,12 +92,10 @@ export default function EventsPage() {
     }
   }, [location, showModal]);
 
-  const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
-
   const levelScopedEvents = useMemo(() => {
-    if (!assignedLevels) return allEvents;
-    return allEvents.filter(e => !e.target_level || (e.target_level as string) === 'all' || assignedLevels.includes(e.target_level as any));
-  }, [allEvents, assignedLevels]);
+    if (!allowedLevels) return allEvents;
+    return allEvents.filter(e => !e.target_level || (e.target_level as string) === 'all' || (e.target_level as string) === 'general' || allowedLevels.includes(e.target_level as any));
+  }, [allEvents, allowedLevels]);
 
   // Derived Telemetry
   const stats = useMemo(() => ({
@@ -527,6 +526,7 @@ export default function EventsPage() {
           event={selectedEvent}
           predefinedAsset={predefinedAsset}
           assignedLevel={assignedLevels && assignedLevels.length === 1 ? assignedLevels[0] : null}
+          allowedLevels={allowedLevels}
           formData={formData}
           setFormData={setFormData}
           onClose={() => {
@@ -556,6 +556,7 @@ function EventFormModal({
   event,
   predefinedAsset,
   assignedLevel,
+  allowedLevels,
   formData,
   setFormData,
   onClose,
@@ -564,6 +565,7 @@ function EventFormModal({
   event: EventWithCreator | null;
   predefinedAsset?: any;
   assignedLevel: AcademicLevel | null;
+  allowedLevels: AcademicLevel[] | null;
   formData: any;
   setFormData: (data: any) => void;
   onClose: () => void;
@@ -812,14 +814,15 @@ function EventFormModal({
                <select
                  value={currentFormData.target_level}
                  onChange={(e) => setCurrentFormData({ ...currentFormData, target_level: e.target.value as LevelOption })}
-                 disabled={!!assignedLevel}
+                 disabled={!!allowedLevels && allowedLevels.length === 1}
                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-primary-500/20 disabled:opacity-50 appearance-none"
                >
-                 {!assignedLevel && <option value="all">All Levels</option>}
-                 <option value="100">Level 100</option>
-                 <option value="200">Level 200</option>
-                 <option value="300">Level 300</option>
-                 <option value="400">Level 400</option>
+                 {(!allowedLevels || allowedLevels.length > 1) && <option value="all">All Levels</option>}
+                 {(['100', '200', '300', '400'] as LevelOption[])
+                   .filter(lvl => !allowedLevels || allowedLevels.includes(lvl as any))
+                   .map(lvl => (
+                     <option key={lvl} value={lvl}>Level {lvl}</option>
+                   ))}
                </select>
              </div>
           </div>

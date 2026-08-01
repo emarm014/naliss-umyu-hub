@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getAssignedLevels, hasLevelPermission } from '../utils/access';
+import { getAssignedLevels, getAllowedLevelsForPermission } from '../utils/access';
 
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
@@ -91,6 +91,7 @@ export default function PastQuestionsPage() {
 
   const { permissions, profile } = useAuthStore();
   const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
+  const allowedLevels = profile?.role === 'moderator' ? getAllowedLevelsForPermission(permissions, 'can_manage_past_questions') : null;
   const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('past_questions_draft', {
     title: '',
     description: '',
@@ -130,24 +131,22 @@ export default function PastQuestionsPage() {
       }
   }, [location, showModal]);
 
+  const levelScopedPastQuestions = useMemo(() => {
+    if (!allowedLevels) return storePastQuestions;
+    return storePastQuestions.filter(pq => !pq.level || (pq.level as string) === 'all' || (pq.level as string) === 'general' || allowedLevels.includes(pq.level as AcademicLevel));
+  }, [storePastQuestions, allowedLevels]);
+
   // Derived Filtering
   const filteredPastQuestions = useMemo(() => {
-    return storePastQuestions.filter(pq => {
+    return levelScopedPastQuestions.filter(pq => {
       const matchesSearch = !searchQuery || pq.title.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesLevel = levelFilter === 'all' ? true : pq.level === levelFilter;
+      const matchesLevel = (levelFilter as string) === 'all' ? true : pq.level === levelFilter;
       const matchesCourse = courseFilter === 'all' || pq.course_id === courseFilter;
       const matchesSemester = semesterFilter === 'all' || pq.semester === semesterFilter;
-      const matchesAssignedLevel = !assignedLevels || !pq.level || (pq.level as string) === 'all' || assignedLevels.includes(pq.level as any);
-      const matchesLevelPermission = profile?.role !== 'moderator' || hasLevelPermission(permissions, 'can_manage_past_questions', pq.level);
 
-      return matchesSearch && matchesLevel && matchesCourse && matchesSemester && matchesAssignedLevel && matchesLevelPermission;
+      return matchesSearch && matchesLevel && matchesCourse && matchesSemester;
     });
-  }, [storePastQuestions, searchQuery, levelFilter, courseFilter, semesterFilter, assignedLevels, permissions, profile?.role]);
-
-  const levelScopedPastQuestions = useMemo(() => {
-    if (!assignedLevels) return storePastQuestions;
-    return storePastQuestions.filter(pq => !pq.level || (pq.level as string) === 'all' || assignedLevels.includes(pq.level as AcademicLevel));
-  }, [storePastQuestions, assignedLevels]);
+  }, [levelScopedPastQuestions, searchQuery, levelFilter, courseFilter, semesterFilter]);
 
   // Derived Stats
   const stats = useMemo<ArchiveStats>(() => {
@@ -932,12 +931,12 @@ export default function PastQuestionsPage() {
                         <select
                           value={formData.level}
                           onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                          disabled={!!assignedLevels && assignedLevels.length === 1}
+                          disabled={!!allowedLevels && allowedLevels.length === 1}
                           className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-primary-500 font-bold text-slate-800 appearance-none disabled:opacity-50"
                         >
-                          {(!assignedLevels || assignedLevels.length > 1) && <option value="">Select Level</option>}
+                          {(!allowedLevels || allowedLevels.length > 1) && <option value="">Select Level</option>}
                           {(['100', '200', '300', '400'] as AcademicLevel[])
-                            .filter(lvl => !assignedLevels || assignedLevels.includes(lvl))
+                            .filter(lvl => !allowedLevels || allowedLevels.includes(lvl))
                             .map(lvl => (
                               <option key={lvl} value={lvl}>Level {lvl}</option>
                             ))}

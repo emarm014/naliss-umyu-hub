@@ -107,15 +107,14 @@ export default function EventsPage() {
 
   // Client-side Filtering
   const filteredEvents = useMemo(() => {
-    return allEvents.filter(event => {
+    return levelScopedEvents.filter(event => {
       const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'all' || event.status === statusFilter;
-      const matchesLevel = levelFilter === 'all' || event.target_level === levelFilter;
-      const matchesAssigned = !assignedLevels || !event.target_level || (event.target_level as string) === 'all' || assignedLevels.includes(event.target_level as any);
+      const matchesLevel = (levelFilter as string) === 'all' || (event.target_level as string) === (levelFilter as string) || (!event.target_level && (levelFilter as string) === 'all');
       
-      return matchesSearch && matchesStatus && matchesLevel && matchesAssigned;
+      return matchesSearch && matchesStatus && matchesLevel;
     });
-  }, [allEvents, searchQuery, statusFilter, levelFilter, assignedLevels]);
+  }, [levelScopedEvents, searchQuery, statusFilter, levelFilter]);
 
   // Pagination logic
   const totalCount = filteredEvents.length;

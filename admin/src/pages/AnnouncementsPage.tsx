@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
-import { getAssignedLevels, hasLevelPermission } from '../utils/access';
+import { getAssignedLevels } from '../utils/access';
 import type { Announcement } from '../types';
 import { useShallow } from 'zustand/react/shallow';
 import { useAdminDataStore } from '../store/adminData.store';
@@ -104,22 +104,30 @@ export default function AnnouncementsPage() {
     }
   }, [location, showModal]);
 
-  // Client-side filtering and pagination
-  const filteredAnnouncements = (allAnnouncements || []).filter(announcement => {
-    const matchesSearch = (announcement.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (announcement.content || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || 
-                         (statusFilter === 'published' && announcement.is_published) ||
-                         (statusFilter === 'draft' && !announcement.is_published);
-    const matchesCategory = categoryFilter === 'all' || announcement.category === categoryFilter;
-    const matchesLevel = levelFilter === 'all' || announcement.target_level === levelFilter;
-    const matchesPriority = priorityFilter === 'all' || announcement.priority === priorityFilter;
-    const targetLevelStr = (announcement.target_level as string) || null;
-    const matchesAssignedLevel = !assignedLevels || targetLevelStr === 'all' || (!!targetLevelStr && assignedLevels.includes(targetLevelStr as any));
-    const matchesLevelPermission = profile?.role !== 'moderator' || hasLevelPermission(permissions, 'can_manage_announcements', targetLevelStr === 'all' ? null : targetLevelStr);
+  const levelScopedAnnouncements = useMemo(() => {
+    if (!assignedLevels) return allAnnouncements || [];
+    return (allAnnouncements || []).filter(announcement => {
+      const targetLevelStr = (announcement.target_level as string) || null;
+      return !targetLevelStr || targetLevelStr === 'all' || targetLevelStr === 'general' || assignedLevels.includes(targetLevelStr as any);
+    });
+  }, [allAnnouncements, assignedLevels]);
 
-    return matchesSearch && matchesStatus && matchesCategory && matchesLevel && matchesPriority && matchesAssignedLevel && matchesLevelPermission;
-  });
+  // Client-side filtering and pagination
+  const filteredAnnouncements = useMemo(() => {
+    return levelScopedAnnouncements.filter(announcement => {
+      const matchesSearch = (announcement.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           (announcement.content || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = statusFilter === 'all' || 
+                           (statusFilter === 'published' && announcement.is_published) ||
+                           (statusFilter === 'draft' && !announcement.is_published);
+      const matchesCategory = categoryFilter === 'all' || announcement.category === categoryFilter;
+      const targetLevelStr = (announcement.target_level as string) || null;
+      const matchesLevel = (levelFilter as string) === 'all' || targetLevelStr === (levelFilter as string) || (!targetLevelStr && (levelFilter as string) === 'all');
+      const matchesPriority = priorityFilter === 'all' || announcement.priority === priorityFilter;
+
+      return matchesSearch && matchesStatus && matchesCategory && matchesLevel && matchesPriority;
+    });
+  }, [levelScopedAnnouncements, searchQuery, statusFilter, categoryFilter, levelFilter, priorityFilter]);
 
   const totalCount = filteredAnnouncements.length;
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
@@ -324,7 +332,7 @@ export default function AnnouncementsPage() {
             <div>
                 <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1">Total Announcements</p>
                 <div className="flex items-baseline gap-3">
-                    <p className="text-4xl font-black text-gray-950 tracking-tighter">{totalCount.toLocaleString()}</p>
+                    <p className="text-4xl font-black text-gray-950 tracking-tighter">{levelScopedAnnouncements.length.toLocaleString()}</p>
                     <div className="flex items-center gap-1 text-[10px] font-bold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
                         Total
                     </div>
@@ -345,7 +353,7 @@ export default function AnnouncementsPage() {
                 <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1">Important Alerts</p>
                 <div className="flex items-baseline gap-3">
                     <p className="text-4xl font-black text-gray-950 tracking-tighter">
-                        {allAnnouncements.filter(a => a.priority === 'urgent' || a.priority === 'high').length}
+                        {levelScopedAnnouncements.filter((a: Announcement) => a.priority === 'urgent' || a.priority === 'high').length}
                     </p>
                     <div className="flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
                         High Priority
@@ -367,7 +375,7 @@ export default function AnnouncementsPage() {
                 <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1">Total Reach</p>
                 <div className="flex items-baseline gap-3">
                     <p className="text-4xl font-black text-gray-950 tracking-tighter">
-                        {allAnnouncements.reduce((acc, curr) => acc + curr.view_count, 0).toLocaleString()}
+                        {levelScopedAnnouncements.reduce((acc: number, curr: Announcement) => acc + (curr.view_count || 0), 0).toLocaleString()}
                     </p>
                     <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
                         Total Views
@@ -468,8 +476,8 @@ export default function AnnouncementsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-8">
-            {paginatedAnnouncements.map((announcement) => {
-              const priority = priorityConfig[announcement.priority] || priorityConfig.normal;
+            {paginatedAnnouncements.map((announcement: AnnouncementWithAuthor) => {
+              const priority = priorityConfig[announcement.priority as keyof typeof priorityConfig] || priorityConfig.normal;
               const PriorityIcon = priority.icon;
               
               return (

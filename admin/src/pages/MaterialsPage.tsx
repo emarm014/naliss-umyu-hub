@@ -117,7 +117,7 @@ export default function MaterialsPage() {
     let result = [...allMaterials];
 
     if (assignedLevels) {
-      result = result.filter(m => m.level && assignedLevels.includes(m.level as AcademicLevel));
+      result = result.filter(m => !m.level || (m.level as string) === 'all' || assignedLevels.includes(m.level as AcademicLevel));
     }
 
     if (profile?.role === 'moderator' && permissions) {
@@ -652,39 +652,52 @@ export default function MaterialsPage() {
                         >
                           <Star className={`w-5 h-5 ${material.is_featured ? 'fill-current' : ''}`} />
                         </button>
-                        <div className="relative">
-                          <button 
-                            onClick={() => setShowDropdown(showDropdown === material.id ? null : material.id)}
-                            className="p-2 text-gray-400 hover:bg-gray-50 rounded-lg"
-                          >
-                            <MoreVertical className="w-5 h-5" />
-                          </button>
-                          
-                          {showDropdown === material.id && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 py-2 z-20 animate-in fade-in zoom-in-95 duration-200">
+                        {(() => {
+                          const canManageMaterial = profile?.role === 'super_admin' || (profile?.role === 'moderator' && material.uploaded_by === profile?.id && (material.level as string) !== 'all');
+                          if (!canManageMaterial) {
+                            return (
+                              <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200 uppercase tracking-widest">
+                                Read-Only
+                              </span>
+                            );
+                          }
+
+                          return (
+                            <div className="relative">
                               <button
-                                onClick={() => { openEditModal(material); setShowDropdown(null); }}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                onClick={() => setShowDropdown(showDropdown === material.id ? null : material.id)}
+                                className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
                               >
-                                <Edit className="w-4 h-4" /> Edit Material
+                                <MoreVertical className="w-5 h-5" />
                               </button>
-                              <button
-                                onClick={() => { handleToggleActive(material); setShowDropdown(null); }}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                              >
-                                <FileText className="w-4 h-4" />
-                                {material.is_active ? 'Deactivate' : 'Activate'}
-                              </button>
-                              <hr className="my-1 border-gray-100" />
-                              <button
-                                onClick={() => { handleDelete(material); setShowDropdown(null); }}
-                                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                              >
-                                <Trash2 className="w-4 h-4" /> Delete
-                              </button>
+                              
+                              {showDropdown === material.id && (
+                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 py-2 z-20 animate-in fade-in zoom-in-95 duration-200">
+                                  <button
+                                    onClick={() => { openEditModal(material); setShowDropdown(null); }}
+                                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <Edit className="w-4 h-4" /> Edit Material
+                                  </button>
+                                  <button
+                                    onClick={() => { handleToggleActive(material); setShowDropdown(null); }}
+                                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                    {material.is_active ? 'Deactivate' : 'Activate'}
+                                  </button>
+                                  <hr className="my-1 border-gray-100" />
+                                  <button
+                                    onClick={() => { handleDelete(material); setShowDropdown(null); }}
+                                    className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                  >
+                                    <Trash2 className="w-4 h-4" /> Delete
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
+                          );
+                        })()}
                       </div>
                     </div>
 

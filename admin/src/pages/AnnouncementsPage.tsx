@@ -554,43 +554,58 @@ export default function AnnouncementsPage() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={() => handleTogglePin(announcement)}
-                                    disabled={actioningId === announcement.id}
-                                    className={`p-3 rounded-xl transition-all disabled:opacity-50 ${announcement.is_pinned ? 'text-primary-600 bg-primary-50 border border-primary-100' : 'text-gray-300 bg-gray-50 hover:bg-white hover:text-primary-600 border border-transparent hover:border-gray-100'}`}
-                                    title={announcement.is_pinned ? 'Unpin' : 'Pin Strategic'}
-                                >
-                                    <Pin className="h-5 w-5" />
-                                </button>
-                                {!announcement.is_published && (
-                                    <button
-                                        onClick={() => handlePublish(announcement)}
-                                        disabled={actioningId === announcement.id}
-                                        className="p-3 bg-green-50 text-green-600 rounded-xl border border-green-100 hover:bg-green-600 hover:text-white transition-all shadow-xl shadow-green-600/5 disabled:opacity-50"
-                                        title="Commit to Broadcast"
-                                    >
-                                        <Send className="h-5 w-5" />
-                                    </button>
-                                )}
-                                <button
-                                    onClick={() => {
-                                        setSelectedAnnouncement(announcement);
-                                        setShowModal('edit');
-                                    }}
-                                    className="p-3 bg-primary-950 text-primary-400 rounded-xl border border-primary-800 hover:bg-white hover:text-primary-950 transition-all shadow-xl shadow-primary-950/10"
-                                    title="Edit"
-                                >
-                                    <Edit className="h-5 w-5" />
-                                </button>
-                                <button
-                                    onClick={() => handleDelete(announcement.id)}
-                                    className="p-3 bg-red-50 text-red-400 rounded-xl border border-red-100 hover:bg-red-600 hover:text-white transition-all shadow-xl shadow-red-600/5 font-black uppercase text-[10px] tracking-widest flex items-center gap-2"
-                                    title="Delete"
-                                >
-                                    <Trash2 className="h-5 w-5" />
-                                </button>
-                            </div>
+                            {(() => {
+                                const isSuperAdminAuthored = (announcement as any).author?.role === 'super_admin' || (announcement.target_level as string) === 'all';
+                                const canManage = profile?.role === 'super_admin' || (!isSuperAdminAuthored && announcement.author_id === profile?.id);
+
+                                if (!canManage) {
+                                    return (
+                                        <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-3 py-1.5 rounded-xl uppercase tracking-wider border border-amber-200">
+                                            {(announcement.target_level as string) === 'all' ? 'General Broadcast (Read-Only)' : 'Super Admin Post (Read-Only)'}
+                                        </span>
+                                    );
+                                }
+
+                                return (
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => handleTogglePin(announcement)}
+                                            disabled={actioningId === announcement.id}
+                                            className={`p-3 rounded-xl transition-all disabled:opacity-50 ${announcement.is_pinned ? 'text-primary-600 bg-primary-50 border border-primary-100' : 'text-gray-300 bg-gray-50 hover:bg-white hover:text-primary-600 border border-transparent hover:border-gray-100'}`}
+                                            title={announcement.is_pinned ? 'Unpin' : 'Pin Strategic'}
+                                        >
+                                            <Pin className="h-5 w-5" />
+                                        </button>
+                                        {!announcement.is_published && (
+                                            <button
+                                                onClick={() => handlePublish(announcement)}
+                                                disabled={actioningId === announcement.id}
+                                                className="p-3 bg-green-50 text-green-600 rounded-xl border border-green-100 hover:bg-green-600 hover:text-white transition-all shadow-xl shadow-green-600/5 disabled:opacity-50"
+                                                title="Commit to Broadcast"
+                                            >
+                                                <Send className="h-5 w-5" />
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => {
+                                                setSelectedAnnouncement(announcement);
+                                                setShowModal('edit');
+                                            }}
+                                            className="p-3 text-gray-400 hover:text-primary-950 bg-gray-50 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100"
+                                            title="Modify Notice"
+                                        >
+                                            <Edit className="h-5 w-5" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(announcement.id)}
+                                            className="p-3 text-red-400 hover:text-red-600 bg-red-50/50 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            title="Expunge Broadcast"
+                                        >
+                                            <Trash2 className="h-5 w-5" />
+                                        </button>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                   </div>

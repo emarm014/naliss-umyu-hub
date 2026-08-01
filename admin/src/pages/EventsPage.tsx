@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { getAssignedLevels } from '../utils/access';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import type { Event, AcademicLevel } from '../types';
@@ -90,14 +91,19 @@ export default function EventsPage() {
     }
   }, [location, showModal]);
 
-  const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
+  const assignedLevels = profile?.role === 'moderator' ? getAssignedLevels(permissions) : null;
+
+  const levelScopedEvents = useMemo(() => {
+    if (!assignedLevels) return allEvents;
+    return allEvents.filter(e => !e.target_level || (e.target_level as string) === 'all' || assignedLevels.includes(e.target_level as any));
+  }, [allEvents, assignedLevels]);
 
   // Derived Telemetry
   const stats = useMemo(() => ({
-    total: allEvents.length,
-    active: allEvents.filter(e => e.status === 'ongoing' || e.status === 'published').length,
-    drafts: allEvents.filter(e => e.status === 'draft').length,
-  }), [allEvents]);
+    total: levelScopedEvents.length,
+    active: levelScopedEvents.filter(e => e.status === 'ongoing' || e.status === 'published').length,
+    drafts: levelScopedEvents.filter(e => e.status === 'draft').length,
+  }), [levelScopedEvents]);
 
   // Client-side Filtering
   const filteredEvents = useMemo(() => {
@@ -105,11 +111,11 @@ export default function EventsPage() {
       const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'all' || event.status === statusFilter;
       const matchesLevel = levelFilter === 'all' || event.target_level === levelFilter;
-      const matchesAssigned = !assignedLevel || event.target_level === assignedLevel;
+      const matchesAssigned = !assignedLevels || !event.target_level || (event.target_level as string) === 'all' || assignedLevels.includes(event.target_level as any);
       
       return matchesSearch && matchesStatus && matchesLevel && matchesAssigned;
     });
-  }, [allEvents, searchQuery, statusFilter, levelFilter, assignedLevel]);
+  }, [allEvents, searchQuery, statusFilter, levelFilter, assignedLevels]);
 
   // Pagination logic
   const totalCount = filteredEvents.length;
@@ -297,10 +303,10 @@ export default function EventsPage() {
              <select
                 value={levelFilter}
                 onChange={(e) => setLevelFilter(e.target.value as LevelOption)}
-                disabled={!!assignedLevel}
+                disabled={!!assignedLevels && assignedLevels.length === 1}
                 className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 uppercase tracking-wider appearance-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
              >
-                {!assignedLevel && <option value="all">All Levels</option>}
+                {(!assignedLevels || assignedLevels.length > 1) && <option value="all">All Levels</option>}
                 <option value="100">Level 100</option>
                 <option value="200">Level 200</option>
                 <option value="300">Level 300</option>
@@ -419,55 +425,72 @@ export default function EventsPage() {
                 </div>
 
                 {/* Workflow Toolbar */}
-                <div className="flex flex-col gap-2">
-                   {/* State Transitions */}
-                   <div className="flex gap-2 w-full">
-                     {event.status === 'draft' && (
-                       <button
-                         onClick={() => handleStatusChange(event, 'published')}
-                         className="btn-institutional-sm !bg-blue-50 !border-blue-200 !text-blue-700"
-                       >
-                         <Globe className="w-3.5 h-3.5" /> Publish
-                       </button>
-                     )}
-                     {event.status === 'published' && (
-                       <button
-                         onClick={() => handleStatusChange(event, 'ongoing')}
-                         className="btn-institutional-sm !bg-green-50 !border-green-200 !text-green-700"
-                       >
-                         <Activity className="w-3.5 h-3.5" /> Start
-                       </button>
-                     )}
-                     {event.status === 'ongoing' && (
-                       <button
-                         onClick={() => handleStatusChange(event, 'completed')}
-                         className="btn-institutional-sm !bg-purple-50 !border-purple-200 !text-purple-700"
-                       >
-                         <CheckCircle className="w-3.5 h-3.5" /> Complete
-                       </button>
-                     )}
-                   </div>
-                   
-                   {/* Admin Actions */}
-                   <div className="flex gap-2 pt-3 border-t border-slate-100 mt-2">
-                     <button
-                       onClick={() => {
-                         setSelectedEvent(event);
-                         setShowModal('edit');
-                       }}
-                       className="btn-institutional-sm !py-2 !text-slate-600 hover:!text-primary-700"
-                     >
-                       <Edit className="w-3.5 h-3.5" /> Edit
-                     </button>
-                     <button
-                       onClick={() => handleDeleteEvent(event.id)}
-                       className="btn-institutional-sm !py-2 !text-slate-600 hover:!bg-red-50 hover:!text-red-700 hover:!border-red-200 w-auto fl-0 !px-3"
-                       title="Delete Event"
-                     >
-                       <Trash2 className="w-3.5 h-3.5" />
-                     </button>
-                   </div>
-                </div>
+                {(() => {
+                  const isSuperAdminItem = !event.created_by || (event as any).creator?.role === 'super_admin' || (event.target_level as string) === 'all';
+                  const canManageItem = profile?.role === 'super_admin' || (profile?.role === 'moderator' && !isSuperAdminItem && event.created_by === profile?.id);
+
+                  if (!canManageItem) {
+                    return (
+                      <div className="pt-3 border-t border-slate-100 mt-2 flex items-center justify-between">
+                        <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-3 py-1 rounded-lg uppercase tracking-wider border border-amber-200">
+                          {(event.target_level as string) === 'all' ? 'General Broadcast (Read-Only)' : 'Super Admin Post (Read-Only)'}
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="flex flex-col gap-2">
+                      {/* State Transitions */}
+                      <div className="flex gap-2 w-full">
+                        {event.status === 'draft' && (
+                          <button
+                            onClick={() => handleStatusChange(event, 'published')}
+                            className="btn-institutional-sm !bg-blue-50 !border-blue-200 !text-blue-700"
+                          >
+                            <Globe className="w-3.5 h-3.5" /> Publish
+                          </button>
+                        )}
+                        {event.status === 'published' && (
+                          <button
+                            onClick={() => handleStatusChange(event, 'ongoing')}
+                            className="btn-institutional-sm !bg-green-50 !border-green-200 !text-green-700"
+                          >
+                            <Activity className="w-3.5 h-3.5" /> Start
+                          </button>
+                        )}
+                        {event.status === 'ongoing' && (
+                          <button
+                            onClick={() => handleStatusChange(event, 'completed')}
+                            className="btn-institutional-sm !bg-purple-50 !border-purple-200 !text-purple-700"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" /> Complete
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Admin Actions */}
+                      <div className="flex gap-2 pt-3 border-t border-slate-100 mt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedEvent(event);
+                            setShowModal('edit');
+                          }}
+                          className="btn-institutional-sm !py-2 !text-slate-600 hover:!text-primary-700"
+                        >
+                          <Edit className="w-3.5 h-3.5" /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEvent(event.id)}
+                          className="btn-institutional-sm !py-2 !text-slate-600 hover:!bg-red-50 hover:!text-red-700 hover:!border-red-200 w-auto fl-0 !px-3"
+                          title="Delete Event"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )})}
@@ -504,7 +527,7 @@ export default function EventsPage() {
         <EventFormModal
           event={selectedEvent}
           predefinedAsset={predefinedAsset}
-          assignedLevel={assignedLevel}
+          assignedLevel={assignedLevels && assignedLevels.length === 1 ? assignedLevels[0] : null}
           formData={formData}
           setFormData={setFormData}
           onClose={() => {

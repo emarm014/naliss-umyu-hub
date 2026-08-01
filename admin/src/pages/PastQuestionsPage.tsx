@@ -137,7 +137,7 @@ export default function PastQuestionsPage() {
       const matchesLevel = levelFilter === 'all' ? true : pq.level === levelFilter;
       const matchesCourse = courseFilter === 'all' || pq.course_id === courseFilter;
       const matchesSemester = semesterFilter === 'all' || pq.semester === semesterFilter;
-      const matchesAssignedLevel = !assignedLevels || (pq.level && assignedLevels.includes(pq.level as any));
+      const matchesAssignedLevel = !assignedLevels || !pq.level || (pq.level as string) === 'all' || assignedLevels.includes(pq.level as any);
       const matchesLevelPermission = profile?.role !== 'moderator' || hasLevelPermission(permissions, 'can_manage_past_questions', pq.level);
 
       return matchesSearch && matchesLevel && matchesCourse && matchesSemester && matchesAssignedLevel && matchesLevelPermission;
@@ -146,7 +146,7 @@ export default function PastQuestionsPage() {
 
   const levelScopedPastQuestions = useMemo(() => {
     if (!assignedLevels) return storePastQuestions;
-    return storePastQuestions.filter(pq => pq.level && assignedLevels.includes(pq.level as AcademicLevel));
+    return storePastQuestions.filter(pq => !pq.level || (pq.level as string) === 'all' || assignedLevels.includes(pq.level as AcademicLevel));
   }, [storePastQuestions, assignedLevels]);
 
   // Derived Stats
@@ -718,43 +718,57 @@ export default function PastQuestionsPage() {
                   <div className={`p-4 rounded-2xl ${pq.is_featured ? 'bg-primary-950 text-primary-400' : 'bg-slate-900 text-slate-400'} group-hover:scale-110 transition-transform duration-500 shadow-xl shadow-slate-950/10`}>
                     <FileType className="w-6 h-6" />
                   </div>
-                  
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowDropdown(showDropdown === pq.id ? null : pq.id)}
-                      className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all"
-                    >
-                      <MoreVertical className="w-5 h-5" />
-                    </button>
-                    
-                    {showDropdown === pq.id && (
-                      <div className="absolute right-0 mt-3 w-64 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl py-3 z-30 animate-in fade-in zoom-in-95 duration-200">
-                        <div className="px-5 py-2 border-b border-slate-800 mb-2">
-                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</p>
-                        </div>
+                                    {(() => {
+                    const isSuperAdminItem = !pq.uploaded_by || (pq as any).uploader?.role === 'super_admin' || (pq.level as string) === 'all';
+                    const canManageItem = profile?.role === 'super_admin' || (profile?.role === 'moderator' && !isSuperAdminItem && pq.uploaded_by === profile?.id);
+
+                    if (!canManageItem) {
+                      return (
+                        <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-3 py-1.5 rounded-xl uppercase tracking-wider border border-amber-200">
+                          {(pq.level as string) === 'all' ? 'General (Read-Only)' : 'Super Admin Post (Read-Only)'}
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <div className="relative">
                         <button 
-                          onClick={() => { openEditModal(pq); setShowDropdown(null); }}
-                          className="w-full px-5 py-3 text-left text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-3 transition-colors"
+                          onClick={() => setShowDropdown(showDropdown === pq.id ? null : pq.id)}
+                          className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all"
                         >
-                          <Edit className="w-4 h-4 text-primary-400" /> Edit Past Question
+                          <MoreVertical className="w-5 h-5" />
                         </button>
-                        <button 
-                          onClick={() => { handleToggleFeatured(pq); setShowDropdown(null); }}
-                          className="w-full px-5 py-3 text-left text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-3 transition-colors"
-                        >
-                          <Star className={`w-4 h-4 ${pq.is_featured ? 'fill-primary-400 text-primary-400' : 'text-slate-500'}`} />
-                          {pq.is_featured ? 'Release Feature' : 'Promote to Featured'}
-                        </button>
-                        <div className="h-px bg-slate-800 my-2 mx-5"></div>
-                        <button 
-                          onClick={() => { handleDelete(pq); setShowDropdown(null); }}
-                          className="w-full px-5 py-3 text-left text-sm font-black text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 flex items-center gap-3 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" /> Delete Past Question
-                        </button>
+                        
+                        {showDropdown === pq.id && (
+                          <div className="absolute right-0 mt-3 w-64 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl py-3 z-30 animate-in fade-in zoom-in-95 duration-200">
+                            <div className="px-5 py-2 border-b border-slate-800 mb-2">
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</p>
+                            </div>
+                            <button 
+                              onClick={() => { openEditModal(pq); setShowDropdown(null); }}
+                              className="w-full px-5 py-3 text-left text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-3 transition-colors"
+                            >
+                              <Edit className="w-4 h-4 text-primary-400" /> Edit Past Question
+                            </button>
+                            <button 
+                              onClick={() => { handleToggleFeatured(pq); setShowDropdown(null); }}
+                              className="w-full px-5 py-3 text-left text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-3 transition-colors"
+                            >
+                              <Star className={`w-4 h-4 ${pq.is_featured ? 'fill-primary-400 text-primary-400' : 'text-slate-500'}`} />
+                              {pq.is_featured ? 'Release Feature' : 'Promote to Featured'}
+                            </button>
+                            <div className="h-px bg-slate-800 my-2 mx-5"></div>
+                            <button 
+                              onClick={() => { handleDelete(pq); setShowDropdown(null); }}
+                              className="w-full px-5 py-3 text-left text-sm font-black text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 flex items-center gap-3 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" /> Delete Past Question
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="space-y-3">

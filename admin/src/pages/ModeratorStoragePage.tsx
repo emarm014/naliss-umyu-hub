@@ -553,14 +553,22 @@ export default function ModeratorStoragePage() {
                         <Eye className="w-4 h-4" />
                       </a>
                     )}
-                    <button
-                      onClick={() => handleDelete(item)}
-                      disabled={deletingId === item.id}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
-                      title="Delete from Cloudinary"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {(() => {
+                      const isSuperAdminItem = item.level === 'all';
+                      const canDelete = isSuperAdmin || (!isSuperAdminItem);
+                      if (!canDelete) return null;
+
+                      return (
+                        <button
+                          onClick={() => handleDelete(item)}
+                          disabled={deletingId === item.id}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
+                          title="Delete from Cloudinary"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               );

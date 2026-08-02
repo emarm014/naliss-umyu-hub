@@ -126,7 +126,7 @@ export const useGroupStore = create<GroupState>()(
                     // 2. Fetch group details and unread counts in parallel
                     const [groupsResult, unreadResult] = await Promise.all([
                         (supabase as any).from('groups')
-                            .select('id, name, group_type, level, is_official, is_active, avatar_url, created_at')
+                            .select('id, name, group_type, level, is_official, is_active, avatar_url, chat_enabled, allow_media, created_at')
                             .in('id', groupIds)
                             .eq('is_active', true)
                             .order('name') as any,

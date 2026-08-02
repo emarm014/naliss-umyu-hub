@@ -112,12 +112,12 @@ import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { supabase } from '../../src/api/supabase/client';
 
 const quickActions = [
-  { id: 'notepad', name: 'Notepad', icon: 'document-text', color: '#005A36', bg: '#e6f4ea', route: '/notepad' },
-  { id: 'news', name: 'News', icon: 'newspaper', color: '#005A36', bg: '#e6f4ea', route: '/news' },
-  { id: 'archive', name: 'Archive', icon: 'library', color: '#059669', bg: '#ecfdf5', route: '/archive' },
-  { id: 'fyb', name: 'FYB', icon: 'star', color: '#d97706', bg: '#fef3c7', route: '/fyb' },
-  { id: 'event_pool', name: 'Event Pool', icon: 'trophy', color: '#d97706', bg: '#fef3c7', route: '/event-pool' },
-  { id: 'gallery', name: 'Gallery', icon: 'images', color: '#8b5cf6', bg: '#f3e8ff', route: '/gallery' },
+  { id: 'notepad', name: 'Notepad', icon: 'document-text', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: '#064e3b', route: '/notepad' },
+  { id: 'news', name: 'News', icon: 'newspaper', lightColor: '#0284c7', darkColor: '#38bdf8', lightBg: '#f0f9ff', darkBg: '#0c4a6e', route: '/news' },
+  { id: 'archive', name: 'Archive', icon: 'library', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: '#064e3b', route: '/archive' },
+  { id: 'fyb', name: 'FYB', icon: 'star', lightColor: '#d97706', darkColor: '#fbbf24', lightBg: '#fffbeb', darkBg: '#7c2d12', route: '/fyb' },
+  { id: 'event_pool', name: 'Event Pool', icon: 'trophy', lightColor: '#d97706', darkColor: '#fbbf24', lightBg: '#fffbeb', darkBg: '#7c2d12', route: '/event-pool' },
+  { id: 'gallery', name: 'Gallery', icon: 'images', lightColor: '#8b5cf6', darkColor: '#c084fc', lightBg: '#faf5ff', darkBg: '#4c1d95', route: '/gallery' },
 ];
 
 export default function HomeScreen() {
@@ -504,8 +504,8 @@ export default function HomeScreen() {
                   router.push(action.route as any);
                 }}
               >
-                <View style={[styles.actionIconBg, { backgroundColor: isDark ? colors.surfaceVariant : action.bg }]}>
-                  <Ionicons name={action.icon as any} size={24} color={action.color} />
+                <View style={[styles.actionIconBg, { backgroundColor: isDark ? action.darkBg : action.lightBg }]}>
+                  <Ionicons name={action.icon as any} size={24} color={isDark ? action.darkColor : action.lightColor} />
                   {action.id === 'news' && newsUnreadCount > 0 && (
                     <View style={styles.newsBadge}>
                       <Text style={styles.newsBadgeText}>{newsUnreadCount > 99 ? '99+' : newsUnreadCount}</Text>
@@ -556,7 +556,7 @@ export default function HomeScreen() {
           {combinedItems.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
               {(loadingAnnouncements || loadingEvents)
-                ? <ActivityIndicator size="small" color={COLORS.primary} />
+                ? <ActivityIndicator size="small" color={colors.primary} />
                 : <Text style={[styles.emptyText, { color: colors.textMuted }]}>No updates available</Text>}
             </View>
           ) : (
@@ -586,7 +586,6 @@ export default function HomeScreen() {
                           <View style={[styles.posterTag, !isRead && { backgroundColor: theme.gradient[2] }]}>
                             <Text style={styles.posterTagText}>{item.category?.toUpperCase() || 'INFO'}</Text>
                           </View>
-                          {!isRead && <View style={[styles.unreadDot, { backgroundColor: theme.accentColor }]} />}
                         </View>
                         <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
                         <View style={styles.posterFooter}>
@@ -646,9 +645,9 @@ export default function HomeScreen() {
 
         {isAdmin && (
           <TouchableOpacity style={[styles.adminBanner, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push('/(tabs)/(admin)' as any)}>
-            <Ionicons name="shield-checkmark" size={20} color={COLORS.primary} />
+            <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
             <Text style={[styles.adminBannerTitle, { color: colors.text }]}>Access Admin Panel</Text>
-            <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+            <Ionicons name="chevron-forward" size={16} color={colors.primary} />
           </TouchableOpacity>
         )}
 

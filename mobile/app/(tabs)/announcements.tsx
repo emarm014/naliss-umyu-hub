@@ -162,11 +162,11 @@ export default function AnnouncementsScreen() {
                             style={styles.chip}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                                 {cat !== 'All' && cfg && (
-                                    <Ionicons name={cfg.icon as any} size={13} color={isActive ? COLORS.primary : colors.textMuted} />
+                                    <Ionicons name={cfg.icon as any} size={13} color={isActive ? colors.primary : colors.textMuted} />
                                 )}
-                                <Text style={[styles.chipText, { color: isActive ? COLORS.primary : colors.textMuted }, isActive && styles.chipTextActive]}>{cat}</Text>
+                                <Text style={[styles.chipText, { color: isActive ? colors.primary : colors.textMuted }, isActive && { color: colors.primary }]}>{cat}</Text>
                             </View>
-                            {isActive && <View style={styles.chipIndicator} />}
+                            {isActive && <View style={[styles.chipIndicator, { backgroundColor: colors.primary }]} />}
                         </TouchableOpacity>
                     );
                 })}
@@ -177,9 +177,9 @@ export default function AnnouncementsScreen() {
                 style={[styles.content, { backgroundColor: colors.background }]}
                 contentContainerStyle={styles.contentContainer}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}>
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
                 {isLoading ? (
-                    <ActivityIndicator size='large' color={COLORS.primary} style={{ marginTop: 60 }} />
+                    <ActivityIndicator size='large' color={colors.primary} style={{ marginTop: 60 }} />
                 ) : activeCategory === 'Event' ? (
                     filteredEvents.length > 0 ? filteredEvents.map(event => (
                         <EventCard key={event.id} event={event} onApply={() => setActiveApplyPoolId(event.pool_id || null)} />)
@@ -535,14 +535,14 @@ function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
             {/* Info strip */}
             <View style={[styles.eventInfoStrip, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 <View style={styles.eventInfoItem}>
-                    <Ionicons name='time-outline' size={14} color={COLORS.primary} />
+                    <Ionicons name='time-outline' size={14} color={colors.primary} />
                     <Text style={[styles.eventInfoText, { color: colors.textSecondary }]}>
                         {event.start_time ? (event.start_time + (event.end_time ? ' – ' + event.end_time : '')) : 'All Day'}
                     </Text>
                 </View>
                 <View style={[styles.eventInfoDivider, { backgroundColor: colors.border }]} />
                 <View style={styles.eventInfoItem}>
-                    <Ionicons name='location-outline' size={14} color={COLORS.primary} />
+                    <Ionicons name='location-outline' size={14} color={colors.primary} />
                     <Text style={[styles.eventInfoText, { color: colors.textSecondary }]} numberOfLines={1}>
                         {event.is_virtual ? 'Online' : (event.venue || 'Main Campus')}
                     </Text>
@@ -551,7 +551,7 @@ function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
                     <>
                         <View style={[styles.eventInfoDivider, { backgroundColor: colors.border }]} />
                         <View style={styles.eventInfoItem}>
-                            <Ionicons name='people-outline' size={14} color={COLORS.primary} />
+                            <Ionicons name='people-outline' size={14} color={colors.primary} />
                             <Text style={[styles.eventInfoText, { color: colors.textSecondary }]}>{event.current_attendees ?? 0}/{event.max_attendees}</Text>
                         </View>
                     </>
@@ -563,7 +563,7 @@ function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
                 {event.description ? (
                     <Text style={[styles.eventDesc, { color: colors.textSecondary, flex: 1, marginRight: 10 }]} numberOfLines={2}>{event.description}</Text>
                 ) : (
-                    <Text style={[styles.eventDesc, { color: COLORS.primary, fontFamily: 'Inter-SemiBold', flex: 1 }]}>View full details</Text>
+                    <Text style={[styles.eventDesc, { color: colors.primary, fontFamily: 'Inter-SemiBold', flex: 1 }]}>View full details</Text>
                 )}
                 
                 {event.pool_id && onApply ? (

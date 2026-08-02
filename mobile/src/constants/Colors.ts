@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Design System Colors for NALISS UMYU HUB
  * Following a premium, deep-blue focused palette with vibrant accents.
  */
@@ -40,6 +40,13 @@ export const Colors = {
         actionPurple: '#faf5ff',
         actionRed: '#fef2f2',
         actionCyan: '#ecfeff',
+        // Quick Action Icons (Light Mode)
+        actionMintIcon: '#059669',
+        actionBlueIcon: '#0284c7',
+        actionOrangeIcon: '#d97706',
+        actionPurpleIcon: '#8b5cf6',
+        actionRedIcon: '#dc2626',
+        actionCyanIcon: '#0891b2',
     },
     dark: {
         text: '#f8fafc',
@@ -74,6 +81,13 @@ export const Colors = {
         actionPurple: '#4c1d95', // Purple 900
         actionRed: '#7f1d1d',    // Red 900
         actionCyan: '#164e63',   // Cyan 900
+        // Quick Action Icons (Dark Mode - High Contrast Vibrant)
+        actionMintIcon: '#34d399',
+        actionBlueIcon: '#38bdf8',
+        actionOrangeIcon: '#fbbf24',
+        actionPurpleIcon: '#c084fc',
+        actionRedIcon: '#f87171',
+        actionCyanIcon: '#22d3ee',
     },
 };
 

@@ -64,7 +64,7 @@ const NewsCard = ({
     <View style={[styles.card, { backgroundColor: cardBg, borderColor }]}>
       {/* Top Header Bar — Category Tag & Date (NEVER overlaps image or body text) */}
       <View style={styles.cardTopHeader}>
-        <View style={[styles.categoryBadge, { backgroundColor: COLORS.primary || '#3b82f6' }]}>
+        <View style={[styles.categoryBadge, { backgroundColor: colors.primary || '#3b82f6' }]}>
           <Ionicons name="pricetag-outline" size={11} color="#FFFFFF" style={{ marginRight: 4 }} />
           <Text style={styles.categoryBadgeText}>
             {(item.category || 'GENERAL').toUpperCase()}
@@ -160,7 +160,7 @@ const NewsCard = ({
             activeOpacity={0.7}
           >
             <Text style={styles.readMoreText}>{isExpanded ? 'Show Less' : 'Read Full Story'}</Text>
-            <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={COLORS.primary} />
+            <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.primary} />
           </TouchableOpacity>
         )}
       </View>
@@ -232,7 +232,7 @@ export default function NewsScreen() {
       {/* Main List */}
       {isLoading && news.length === 0 ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
@@ -248,7 +248,7 @@ export default function NewsScreen() {
           )}
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 20 }]}
           refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.5}

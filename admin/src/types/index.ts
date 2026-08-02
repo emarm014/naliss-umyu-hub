@@ -457,6 +457,7 @@ export interface Group {
   is_active: boolean;
   is_official: boolean;
   chat_enabled: boolean;
+  allow_media?: boolean;
   created_at: string;
   updated_at: string;
   member_count?: number;

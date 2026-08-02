@@ -395,14 +395,21 @@ export const useAuthStore = create<AuthState>()(
         const userId = user?.id;
         
         if (userId) {
-          // Clear push token from DB on sign out (best-effort â€” don't block signout)
-          (supabase as any).from('users')
-            .update({ push_token: null } as any)
-            .eq('id', userId)
-            .then(
-              () => {},
-              () => {}
-            );
+          // Delete ONLY this device's token — other devices keep receiving notifications.
+          // The old approach set users.push_token = null, which triggered
+          // sync_push_token_from_users() and cascade-deleted ALL device tokens.
+          const { getCurrentPushToken } = require('../hooks/usePushNotifications');
+          const deviceToken = getCurrentPushToken();
+          if (deviceToken) {
+            (supabase as any).from('user_push_tokens')
+              .delete()
+              .eq('user_id', userId)
+              .eq('push_token', deviceToken)
+              .then(
+                () => {},
+                () => {}
+              );
+          }
         }
 
         // Hardened Logout: Wipes memory auth state but preserves SQLite profile & vaults

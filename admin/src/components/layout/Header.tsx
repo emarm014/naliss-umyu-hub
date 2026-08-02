@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, LogOut, User, ChevronDown, RefreshCcw } from 'lucide-react';
+import { Bell, LogOut, User, ChevronDown, RefreshCcw, Download } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 import { useAdminDataStore } from '../../store/adminData.store';
+import { triggerAppDownload } from '../PWAInstallPrompt';
 
 export default function Header() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -44,7 +45,17 @@ export default function Header() {
           )}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Direct Download App Button */}
+          <button
+            onClick={triggerAppDownload}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-950 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-primary-900 active:scale-95 transition-all shadow-md shadow-primary-950/20"
+            title="Download NALISS Admin App"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Download App</span>
+          </button>
+
           {/* Refresh Button */}
           <button
             onClick={() => syncAll(true)}

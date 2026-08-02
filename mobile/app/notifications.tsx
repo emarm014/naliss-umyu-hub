@@ -76,7 +76,7 @@ export default function NotificationsScreen() {
   if (!_hasHydrated) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </SafeAreaView>
     );
   }
@@ -171,12 +171,12 @@ export default function NotificationsScreen() {
 
   const getIconConfig = (type: string) => {
     switch (type) {
-      case 'resource':   return { name: 'folder',       color: '#8B5CF6', bg: COLORS.actionPurple };
-      case 'announcement': return { name: 'megaphone',  color: COLORS.secondary, bg: COLORS.actionMint };
-      case 'event':      return { name: 'calendar',     color: '#3B82F6', bg: COLORS.actionBlue };
-      case 'chat':       return { name: 'chatbubbles',  color: COLORS.primary, bg: COLORS.actionMint };
-      case 'message':    return { name: 'chatbubbles',  color: COLORS.primary, bg: COLORS.actionMint };
-      default:           return { name: 'notifications', color: COLORS.textMuted, bg: '#F1F5F9' };
+      case 'resource':   return { name: 'folder',       color: isDark ? '#c084fc' : '#8B5CF6', bg: colors.actionPurple };
+      case 'announcement': return { name: 'megaphone',  color: isDark ? '#34d399' : colors.primary, bg: colors.actionMint };
+      case 'event':      return { name: 'calendar',     color: isDark ? '#38bdf8' : '#3B82F6', bg: colors.actionBlue };
+      case 'chat':       return { name: 'chatbubbles',  color: isDark ? '#34d399' : colors.primary, bg: colors.actionMint };
+      case 'message':    return { name: 'chatbubbles',  color: isDark ? '#34d399' : colors.primary, bg: colors.actionMint };
+      default:           return { name: 'notifications', color: colors.textMuted, bg: colors.surface };
     }
   };
 
@@ -235,7 +235,7 @@ export default function NotificationsScreen() {
           )}
           {unreadCount > 0 && (
             <TouchableOpacity onPress={markAllAsRead}>
-              <Text style={styles.markAllText}>Mark all read</Text>
+              <Text style={[styles.markAllText, { color: colors.primary }]}>Mark all read</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -263,7 +263,7 @@ export default function NotificationsScreen() {
                   paddingHorizontal: 14,
                   paddingVertical: 7,
                   borderRadius: 20,
-                  backgroundColor: isActive ? COLORS.primary : (isDark ? '#1e293b' : '#f1f5f9'),
+                  backgroundColor: isActive ? colors.primary : (isDark ? '#1e293b' : '#f1f5f9'),
                 }}
               >
                 <Text style={{
@@ -287,7 +287,7 @@ export default function NotificationsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.primary}
+            tintColor={colors.primary}
             enabled={isOnline}
           />
         }
@@ -304,7 +304,7 @@ export default function NotificationsScreen() {
                 style={[
                   styles.notificationCard,
                   { backgroundColor: colors.card, borderBottomColor: colors.border },
-                  !notification.isRead && [styles.unreadCard, { backgroundColor: isDark ? '#0f2a1e' : '#F0FDF4' }],
+                  !notification.isRead && [styles.unreadCard, { backgroundColor: isDark ? '#064e3b33' : '#F0FDF4' }],
                 ]}
                 onPress={() => handleNotificationPress(notification.id, notification.type, notification.data)}
                 activeOpacity={0.7}
@@ -319,7 +319,7 @@ export default function NotificationsScreen() {
                       style={[
                         styles.title, 
                         { color: colors.text }, 
-                        !notification.isRead && [styles.unreadText, { color: isDark ? '#4ade80' : '#064E3B' }]
+                        !notification.isRead && [styles.unreadText, { color: isDark ? '#34d399' : '#064E3B' }]
                       ]} 
                       numberOfLines={2}
                     >
@@ -356,7 +356,7 @@ export default function NotificationsScreen() {
                   />
                 )}
 
-                {!notification.isRead && <View style={styles.unreadDot} />}
+                {!notification.isRead && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}
               </TouchableOpacity>
             );
           })
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
   backButton: { marginRight: 12 },
   headerTitle: { fontFamily: 'Inter-Bold', fontSize: 20 },
-  markAllText: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: '#059669' },
+  markAllText: { fontFamily: 'Inter-SemiBold', fontSize: 14 },
   offlineBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
@@ -399,30 +399,27 @@ const styles = StyleSheet.create({
   offlineBadgeText: { fontFamily: 'Inter-SemiBold', fontSize: 11, color: '#f59e0b' },
   content: { flex: 1 },
   notificationCard: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    padding: 16, borderBottomWidth: 1,
+    flexDirection: 'row', alignItems: 'flex-start', padding: 16,
+    borderBottomWidth: 1, position: 'relative',
   },
-  unreadCard: { borderLeftWidth: 4, borderLeftColor: '#064E3B' },
+  unreadCard: {},
   iconBg: {
-    width: 52, height: 52, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center', marginRight: 16,
-    elevation: 3, shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
+    width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center',
+    marginRight: 14, marginTop: 2,
   },
-  textContainer: { flex: 1, paddingVertical: 2 },
-  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
-  title: { flex: 1, fontFamily: 'Inter-SemiBold', fontSize: 16, marginRight: 8, lineHeight: 20 },
-  unreadText: { fontFamily: 'Inter-Bold', color: '#064E3B' },
-  timeText: { fontFamily: 'Inter-Medium', fontSize: 12, marginTop: 2 },
-  message: { fontFamily: 'Inter-Regular', fontSize: 14, lineHeight: 20 },
+  textContainer: { flex: 1 },
+  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
+  title: { fontFamily: 'Inter-SemiBold', fontSize: 15, flex: 1, marginRight: 8 },
+  unreadText: { fontFamily: 'Inter-Bold' },
+  timeText: { fontFamily: 'Inter-Regular', fontSize: 11 },
+  message: { fontFamily: 'Inter-Regular', fontSize: 13, lineHeight: 18 },
   unreadDot: {
-    width: 10, height: 10, borderRadius: 5,
-    backgroundColor: '#059669', marginLeft: 12, alignSelf: 'center',
+    position: 'absolute', top: 18, right: 12, width: 8, height: 8, borderRadius: 4,
   },
-  emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 100, paddingHorizontal: 40 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', padding: 40, marginTop: 40 },
   emptyIconBg: {
-    width: 80, height: 80, borderRadius: 40,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+    width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center',
+    marginBottom: 16,
   },
   emptyTitle: { fontFamily: 'Inter-Bold', fontSize: 18, marginBottom: 8 },
   emptySubtitle: { fontFamily: 'Inter-Regular', fontSize: 14, textAlign: 'center', lineHeight: 20 },

@@ -257,6 +257,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
               if (error) throw error;
               return (data || []).map((g: any) => ({
                 ...g,
+                allow_media: g.allow_media ?? true,
                 member_count: Number(g.member_count) || 0,
                 moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
               }));
@@ -474,6 +475,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
     if (!groupsRes.error) {
       update.groups = (groupsRes.data || []).map((g: any) => ({
         ...g,
+        allow_media: g.allow_media ?? true,
         member_count: Number(g.member_count) || 0,
         moderator: g.moderator_id ? { id: g.moderator_id, full_name: g.moderator_full_name, email: g.moderator_email, role: g.moderator_role } : null,
       }));

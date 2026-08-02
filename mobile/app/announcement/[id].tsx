@@ -13,6 +13,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/Colors';
 import { useAnnouncementStore } from '../../src/stores';
+import { useNotificationStore } from '../../src/stores/notification.store';
 import { format } from 'date-fns';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { supabase } from '../../src/api/supabase/client';
@@ -106,10 +107,11 @@ function AnnouncementDetailsContent() {
                 // Ignore silent analytics errors
             }
             
-            // Mark as Read in persistence store
+            // Mark as Read in persistence store and notification store
             if (typeof markAsRead === 'function') {
                 markAsRead(announcementId);
             }
+            useNotificationStore.getState().markEntityAsRead('announcement', announcementId);
         }
 
         updateAnnouncementStats();

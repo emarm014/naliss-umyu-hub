@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../components/NalissLogo';
 import { getOrCreateDeviceId, fetchIpAddress, getDeviceName } from '../utils/device';
 import { normalizeError, isNetworkError } from '../utils/sentry';
+import { NotificationRouter } from '../services/notificationRouter';
 const MinimalLoader = () => {
   const { colors } = useTheme();
   return (
@@ -847,6 +848,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     // â”€â”€ OUTSIDE SIGNUP SCREENS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (!session) {
+      NotificationRouter.setAuthResolved(false, true);
       if (!inAuthGroup) {
         safeNavigate.current('/auth/login');
       }
@@ -919,6 +921,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
           safeNavigate.current('/(tabs)');
         }
+        // Signal auth resolution and un-gated status to NotificationRouter
+        NotificationRouter.setAuthResolved(true, inAuthGroup);
       } else if (isProfileComplete === null && offlineUnblocked) {
         const cachedProfile = useAuthStore.getState().profile;
         if (cachedProfile?.registration_number && cachedProfile?.level) {

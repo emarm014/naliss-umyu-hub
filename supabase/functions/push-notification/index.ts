@@ -49,40 +49,113 @@ Deno.serve(async (req: Request) => {
   const hasJwt = authHeader.startsWith("Bearer ");
 
   if (!isInternalCall && !hasJwt) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
+  let senderUser: any = null;
+
   // Verify JWT if not internal call
   if (!isInternalCall && hasJwt) {
     const token = authHeader.replace("Bearer ", "");
     const verifyClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const { error } = await verifyClient.auth.getUser(token);
-    if (error) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), {
+    const { data: authData, error } = await verifyClient.auth.getUser(token);
+    if (error || !authData?.user) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid or expired token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    senderUser = authData.user;
   }
 
   try {
     const { targetUserIds, title, body, data } = await req.json();
 
     if (!targetUserIds || !Array.isArray(targetUserIds) || targetUserIds.length === 0) {
-      return new Response(JSON.stringify({ success: true, message: "No targets" }), {
+      return new Response(JSON.stringify({ success: false, error: "Invalid payload: targetUserIds must be a non-empty array" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (targetUserIds.length > 500) {
+      return new Response(JSON.stringify({ success: false, error: "Payload exceeds maximum target user limit (500)" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Authorization & Security Checks for Non-Internal (Authenticated User) Requests
+    if (!isInternalCall && senderUser) {
+      // 1. Sender Active Status & Role Check
+      const { data: senderProfile } = await supabase
+        .from("users")
+        .select("status, role")
+        .eq("id", senderUser.id)
+        .single();
+
+      if (!senderProfile || senderProfile.status !== "active") {
+        return new Response(JSON.stringify({ success: false, error: "Forbidden: Account is inactive or restricted" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const notifType = data?.type ?? "";
+
+      // 2. Chat Message Authorization: Sender MUST belong to target conversation
+      if (notifType === "message" && data?.group_id) {
+        const { data: member } = await supabase
+          .from("group_members")
+          .select("user_id")
+          .eq("group_id", data.group_id)
+          .eq("user_id", senderUser.id)
+          .single();
+
+        if (!member) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Sender is not a member of this conversation" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      // 3. Broadcast Authorization: Announcements and events require elevated privileges
+      if (["announcement", "event"].includes(notifType)) {
+        const isAdminOrMod = ["super_admin", "system_owner", "moderator"].includes(senderProfile.role);
+        if (!isAdminOrMod) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Elevated privileges required to broadcast notifications" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      // 4. Rate Limiting: Max 30 push calls per 60s per sender
+      const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
+      const { count: recentCount } = await supabase
+        .from("notification_telemetry")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", senderUser.id)
+        .gte("created_at", oneMinuteAgo);
+
+      if (recentCount && recentCount > 30) {
+        return new Response(JSON.stringify({ success: false, error: "Rate limit exceeded: Please wait before sending more notifications" }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Fetch push tokens + ALL notification preferences from user_push_tokens + users (optimized join)
     const { data: userTokens, error } = await supabase
       .from("user_push_tokens")
-      .select("user_id, push_token, users!inner(status, notif_messages, notif_announcements, notif_events, notif_materials, privacy_mode)")
+      .select("user_id, push_token, users!inner(status, notif_enabled, notif_messages, notif_announcements, notif_events, notif_materials, notif_quizzes, notif_assignments, notif_security, notif_system, privacy_mode, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, muted_groups)")
       .in("user_id", targetUserIds)
       .eq("users.status", "active");
 
@@ -94,23 +167,33 @@ Deno.serve(async (req: Request) => {
     }
 
     // Filter by each user's individual notification preferences
-    // null/undefined = default ON (user hasn't changed it)
     const notifType = data?.type ?? "";
+    const targetGroupId = data?.group_id || data?.id || "";
+
     const filteredTokens = userTokens.filter((ut: any) => {
       const u = ut.users;
       if (!u) return false;
-      if (notifType === "message") {
-        return u.notif_messages !== false;
+
+      // 1. Global Notification Toggle
+      if (u.notif_enabled === false) return false;
+
+      // 2. Granular Category Controls
+      if (notifType === "message" && u.notif_messages === false) return false;
+      if (notifType === "announcement" && u.notif_announcements === false) return false;
+      if (notifType === "event" && u.notif_events === false) return false;
+      if (notifType === "material" && u.notif_materials === false) return false;
+      if (notifType === "quiz" && u.notif_quizzes === false) return false;
+      if (notifType === "assignment" && u.notif_assignments === false) return false;
+      if (notifType === "security" && u.notif_security === false) return false;
+      if (notifType === "system" && u.notif_system === false) return false;
+
+      // 3. Conversation & Group Mute Controls
+      if (notifType === "message" && targetGroupId && Array.isArray(u.muted_groups)) {
+        if (u.muted_groups.includes(String(targetGroupId))) {
+          return false;
+        }
       }
-      if (notifType === "announcement") {
-        return u.notif_announcements !== false;
-      }
-      if (notifType === "event") {
-        return u.notif_events !== false;
-      }
-      if (notifType === "material") {
-        return u.notif_materials !== false;
-      }
+
       return true;
     });
 
@@ -186,6 +269,26 @@ Deno.serve(async (req: Request) => {
     const attachments = imageUrl ? [{ url: imageUrl }] : undefined;
     const mutableContent = attachments ? true : undefined;
 
+    // Fetch current unread count per target user from notification_history to calculate dynamic badge
+    const userUnreadCounts = new Map<string, number>();
+    try {
+      const { data: unreadRows } = await supabase
+        .from("notification_history")
+        .select("user_id")
+        .in("user_id", targetUserIds)
+        .eq("is_read", false);
+
+      if (unreadRows && Array.isArray(unreadRows)) {
+        for (const row of unreadRows) {
+          if (row.user_id) {
+            userUnreadCounts.set(row.user_id, (userUnreadCounts.get(row.user_id) || 0) + 1);
+          }
+        }
+      }
+    } catch {
+      // Fallback if query fails
+    }
+
     // Build message objects list (one message per token to support individual Privacy Mode title/body mapping)
     const messages = uniqueTokens.map((ut) => {
       const u = ut.users;
@@ -204,7 +307,9 @@ Deno.serve(async (req: Request) => {
       };
 
       if (!isSilent) {
-        message.badge = 1;
+        // Dynamic badge calculation: existing unread count + 1 for new notification
+        const currentUnread = userUnreadCounts.get(ut.user_id) || 0;
+        message.badge = currentUnread + 1;
       }
       if (categoryId) {
         message.categoryIdentifier = categoryId;
@@ -229,28 +334,43 @@ Deno.serve(async (req: Request) => {
       return message;
     });
 
-    // Send in batches of 100 (Expo Push API limit)
+    // Send in batches of 100 concurrently (Expo Push API recommendation)
     const BATCH_SIZE = 100;
-    const results = [];
-    const telemetryRecords = [];
-    const historyRecords = [];
+    const batchPromises = [];
     const notifId = data?.id || data?.notification_id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE);
       const batchTokens = uniqueTokens.slice(i, i + BATCH_SIZE);
 
-      const response = await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Accept-encoding": "gzip, deflate",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(batch),
-      });
+      batchPromises.push(
+        (async () => {
+          try {
+            const response = await fetch("https://exp.host/--/api/v2/push/send", {
+              method: "POST",
+              headers: {
+                "Accept": "application/json",
+                "Accept-encoding": "gzip, deflate",
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(batch),
+            });
+            const responseJson = await response.json();
+            return { responseJson, batch, batchTokens };
+          } catch (err: any) {
+            return { responseJson: { error: err.message }, batch, batchTokens };
+          }
+        })()
+      );
+    }
 
-      const responseJson = await response.json();
+    const batchOutputs = await Promise.all(batchPromises);
+    const results = [];
+    const telemetryRecords = [];
+    const historyRecords = [];
+
+    for (const output of batchOutputs) {
+      const { responseJson, batch, batchTokens } = output;
       results.push(responseJson);
 
       const ticketData = responseJson.data || [];

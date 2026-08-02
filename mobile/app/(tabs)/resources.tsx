@@ -37,18 +37,17 @@ import { trackFeature, captureUIError } from '../../src/utils/sentry';
 const { width } = Dimensions.get('window');
 
 function useSemanticTheme() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { colors, isDark } = useTheme();
 
   return {
     isDark,
-    cardBg: isDark ? '#1E2638' : '#FFFFFF',
-    headerSectionBg: isDark ? '#1A202C' : '#F7FAFC',
-    textPrimary: isDark ? '#FFFFFF' : '#1A202C',
-    textSecondary: isDark ? '#E2E8F0' : '#4A5568',
-    textMuted: isDark ? '#A0AEC0' : '#718096',
-    border: isDark ? '#2D3748' : '#E2E8F0',
-    brandGreen: '#005A36'
+    cardBg: isDark ? '#0f172a' : '#FFFFFF',
+    headerSectionBg: isDark ? '#020617' : '#F7FAFC',
+    textPrimary: isDark ? '#f8fafc' : '#0f172a',
+    textSecondary: isDark ? '#94a3b8' : '#475569',
+    textMuted: isDark ? '#64748b' : '#94a3b8',
+    border: isDark ? '#1e293b' : '#E2E8F0',
+    brandGreen: colors.primary,
   };
 }
 

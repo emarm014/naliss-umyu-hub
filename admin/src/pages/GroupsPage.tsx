@@ -48,7 +48,7 @@ export default function GroupsPage() {
   // ── Form state ────────────────────────────────────────────────────────────
   const [createForm, setCreateForm] = useState({
     name: '', description: '', group_type: 'department' as 'level' | 'department',
-    level: '' as string, avatar_url: '', is_official: false, chat_enabled: true,
+    level: '' as string, avatar_url: '', is_official: false, chat_enabled: true, allow_media: true,
   });
   const [editForm, setEditForm] = useState<GroupWithDetails | null>(null);
 
@@ -311,6 +311,7 @@ export default function GroupsPage() {
         avatar_url: createForm.avatar_url || null,
         is_official: createForm.is_official,
         chat_enabled: createForm.chat_enabled,
+        allow_media: createForm.allow_media ?? true,
         created_by: profile?.id,
         is_active: true,
       }).select().single();
@@ -353,7 +354,7 @@ export default function GroupsPage() {
       }
 
       closeModal();
-      setCreateForm({ name: '', description: '', group_type: 'department', level: '', avatar_url: '', is_official: false, chat_enabled: true });
+      setCreateForm({ name: '', description: '', group_type: 'department', level: '', avatar_url: '', is_official: false, chat_enabled: true, allow_media: true });
       showSuccess(`Group "${createForm.name}" created successfully.`);
     } catch (err: unknown) {
       setGroupFormError((err as any)?.message || 'Failed to create group. Please try again.');
@@ -377,6 +378,7 @@ export default function GroupsPage() {
         avatar_url: editForm.avatar_url || null,
         is_official: editForm.is_official,
         chat_enabled: editForm.chat_enabled,
+        allow_media: editForm.allow_media ?? true,
         updated_at: new Date().toISOString(),
       };
       const { data: updated, error } = await supabase.from('groups').update(updateData).eq('id', editForm.id).select().single();
@@ -469,6 +471,24 @@ export default function GroupsPage() {
       // Revert
       useAdminDataStore.getState().updateGroup(group as any);
       setGroupFormError('Failed to toggle chat: ' + ((err as any)?.message || 'Unknown error'));
+    }
+  };
+
+  // ── Toggle media lock (Admin Only) ───────────────────────────────────────
+  const handleToggleMedia = async (group: GroupWithDetails) => {
+    if (isModerator) return;
+    const currentVal = group.allow_media ?? true;
+    const newVal = !currentVal;
+    // Optimistic update
+    useAdminDataStore.getState().updateGroup({ ...group, allow_media: newVal } as any);
+    try {
+      const { error } = await supabase.from('groups').update({ allow_media: newVal }).eq('id', group.id);
+      if (error) throw error;
+      showSuccess(`Media & File uploads ${newVal ? 'unlocked (enabled)' : 'strictly locked'} for "${group.name}".`);
+    } catch (err: unknown) {
+      // Revert
+      useAdminDataStore.getState().updateGroup(group as any);
+      setGroupFormError('Failed to toggle media lock: ' + ((err as any)?.message || 'Unknown error'));
     }
   };
 
@@ -807,6 +827,11 @@ export default function GroupsPage() {
                           Chat Off
                         </span>
                       )}
+                      {group.allow_media === false && (
+                        <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest bg-purple-100 text-purple-700 flex items-center gap-1">
+                          <ImageIcon className="w-2.5 h-2.5" /> Media Locked
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -872,6 +897,20 @@ export default function GroupsPage() {
                     >
                       {group.chat_enabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
                       {group.chat_enabled ? 'Chat On' : 'Chat Off'}
+                    </button>
+                  )}
+                  {!isModerator && (
+                    <button
+                      onClick={() => handleToggleMedia(group)}
+                      className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        (group.allow_media ?? true)
+                          ? 'bg-purple-50 hover:bg-purple-100 text-purple-700'
+                          : 'bg-amber-100 text-amber-900 border border-amber-300'
+                      }`}
+                      title={(group.allow_media ?? true) ? "Click to lock media/files in this group" : "Click to unlock media/files in this group"}
+                    >
+                      {(group.allow_media ?? true) ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                      {(group.allow_media ?? true) ? 'Media Allowed' : 'Media Locked'}
                     </button>
                   )}
                   {!isModerator && (
@@ -1250,6 +1289,19 @@ export default function GroupsPage() {
                   />
                   <span className="text-xs font-black text-gray-600 uppercase tracking-widest">Enable Chat</span>
                 </label>
+                {!isModerator && (
+                  <label className="flex items-center gap-2 cursor-pointer bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-100">
+                    <input
+                      type="checkbox"
+                      checked={createForm.allow_media ?? true}
+                      onChange={e => setCreateForm({ ...createForm, allow_media: e.target.checked })}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-xs font-black text-purple-900 uppercase tracking-widest flex items-center gap-1">
+                      <ImageIcon className="w-3.5 h-3.5" /> Allow Media & Files
+                    </span>
+                  </label>
+                )}
               </div>
 
               {createForm.group_type === 'level' && createForm.level && (
@@ -1370,6 +1422,19 @@ export default function GroupsPage() {
                   />
                   <span className="text-xs font-black text-gray-600 uppercase tracking-widest">Enable Chat</span>
                 </label>
+                {!isModerator && (
+                  <label className="flex items-center gap-2 cursor-pointer bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-100">
+                    <input
+                      type="checkbox"
+                      checked={editForm.allow_media ?? true}
+                      onChange={e => setEditForm({ ...editForm, allow_media: e.target.checked })}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-xs font-black text-purple-900 uppercase tracking-widest flex items-center gap-1">
+                      <ImageIcon className="w-3.5 h-3.5" /> Allow Media & Files
+                    </span>
+                  </label>
+                )}
               </div>
 
               <div className="flex flex-col gap-3 pt-2">

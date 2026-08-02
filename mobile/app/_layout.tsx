@@ -134,6 +134,7 @@ import { useSignupStore } from '../src/stores/signup.store';
 import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
 import { useThemeStore } from '../src/stores/theme.store';
 import * as Notifications from 'expo-notifications';
+import { NotificationRouter } from '../src/services/notificationRouter';
 
 
 // ── Kill detection key ────────────────────────────────────────────────────────
@@ -226,41 +227,6 @@ function RootLayoutNav() {
   
   // Register Institutional Signal (Push Notifications)
   usePushNotifications();
-  const lastNotificationResponse = Notifications.useLastNotificationResponse();
-
-  // Handle Cold-Start Notification Deep Linking
-  useEffect(() => {
-    if (isReady && lastNotificationResponse && lastNotificationResponse.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-      const data = lastNotificationResponse.notification.request.content.data;
-      if (!data?.type) return;
-
-      setTimeout(() => {
-        try {
-          switch (data.type) {
-            case 'announcement':
-              if (data.id) router.push(`/announcement/${data.id}` as any);
-              else router.push('/(tabs)/announcements' as any);
-              break;
-            case 'event':
-              if (data.id) router.push(`/event/${data.id}` as any);
-              else router.push('/(tabs)/announcements' as any);
-              break;
-            case 'material':
-              router.push('/(tabs)/resources' as any);
-              break;
-            case 'message':
-              if (data.group_id) router.push(`/chat/${data.group_id}` as any);
-              else router.push('/(tabs)/messages' as any);
-              break;
-            default:
-              router.push('/(tabs)' as any);
-          }
-        } catch {
-          // silent
-        }
-      }, 100);
-    }
-  }, [isReady, lastNotificationResponse]);
 
   // Register 60s Presence Heartbeat
   useHeartbeat();
@@ -329,6 +295,7 @@ function RootLayoutNav() {
   // Drop splash screen safely AFTER React has committed the first UI frame
   useEffect(() => {
     if (isReady) {
+      NotificationRouter.setAppReady(true);
       setTimeout(() => {
         SplashScreen.hideAsync().catch(() => {});
       }, 50);

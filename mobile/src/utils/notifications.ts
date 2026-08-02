@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Push Notification Dispatcher
  * Calls the Supabase Edge Function to send push notifications to target users.
  * Uses the current user's JWT â€” no secret needed in the client.
@@ -48,7 +48,9 @@ export async function sendChatMessageNotification(
   groupName: string,
   senderName: string,
   messagePreview: string,
-  senderId: string
+  senderId: string,
+  mediaType?: 'image' | 'video' | 'audio' | 'document' | string,
+  mediaName?: string
 ): Promise<void> {
   try {
     // Fetch all group members except the sender
@@ -62,10 +64,21 @@ export async function sendChatMessageNotification(
 
     const targetUserIds = members.map((m: any) => m.user_id).filter(Boolean) as string[];
 
+    let formattedPreview = messagePreview;
+    if (mediaType === 'image') {
+      formattedPreview = messagePreview ? `📷 ${messagePreview}` : '📷 Photo';
+    } else if (mediaType === 'video') {
+      formattedPreview = messagePreview ? `📹 ${messagePreview}` : '📹 Video';
+    } else if (mediaType === 'audio') {
+      formattedPreview = '🎙️ Voice message';
+    } else if (mediaType === 'document') {
+      formattedPreview = mediaName ? `📄 ${mediaName}` : messagePreview ? `📄 ${messagePreview}` : '📄 Document';
+    }
+
     await sendPushNotification({
       targetUserIds,
       title: `${groupName}`,
-      body: `${senderName}: ${messagePreview}`,
+      body: `${senderName}: ${formattedPreview}`,
       data: {
         type: 'message',
         group_id: groupId,

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Linking, AppState, AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import * as IntentLauncher from 'expo-intent-launcher';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as TaskManager from 'expo-task-manager';
@@ -11,16 +12,80 @@ import { useNotificationStore } from '../stores/notification.store';
 import { upsertEntityFromNotification } from '../utils/notifications';
 import { extractFileNameFromUrl } from '../utils/download';
 import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
+import { NotificationRouter } from '../services/notificationRouter';
+
+// ── Per-device push token cache ───────────────────────────────────────────────
+// Cached in-memory so the auth store can reference it at sign-out time
+// to delete only THIS device's token, not all tokens for the user.
+let currentPushToken: string | null = null;
+
+/**
+ * Returns the push token registered by this device instance, or null if not yet registered.
+ * Used by auth.store.ts signOut to scope token deletion to the current device only.
+ */
+export function getCurrentPushToken(): string | null {
+  return currentPushToken;
+}
+
+/**
+ * Opens the OS notification settings screen for this app.
+ * Useful when the user has permanently denied notification permissions
+ * and needs to re-enable them from Settings.
+ */
+export async function openNotificationSettings(): Promise<void> {
+  try {
+    if (Platform.OS === 'ios') {
+      await Linking.openSettings();
+    } else {
+      await IntentLauncher.startActivityAsync(
+        IntentLauncher.ActivityAction.APP_NOTIFICATION_SETTINGS,
+        {
+          extra: {
+            'android.provider.extra.APP_PACKAGE':
+              Constants.expoConfig?.android?.package ?? 'com.naliss.umyuk',
+          },
+        }
+      );
+    }
+  } catch {
+    // Fallback: open general app settings
+    await Linking.openSettings();
+  }
+}
 
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const data = notification?.request?.content?.data;
+    const activeGroupId = NotificationRouter.getActiveChatGroupId();
+
+    // Active Chat Foreground Suppression:
+    // If the user is currently viewing the active chat (e.g. /chat/group_123),
+    // suppress foreground alert & sound so banners don't pop up over their active conversation.
+    const isCurrentActiveChat =
+      data?.type === 'message' &&
+      data?.group_id &&
+      activeGroupId &&
+      String(data.group_id) === String(activeGroupId);
+
+    if (isCurrentActiveChat) {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: true,
+        shouldShowBanner: false,
+        shouldShowList: true,
+      };
+    }
+
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 const BACKGROUND_FETCH_TASK = 'background-notification-sync';
@@ -129,10 +194,12 @@ export function usePushNotifications() {
 
   useEffect(() => {
     let tokenListener: any = null;
+    let appStateSub: any = null;
 
     if (user) {
       registerForPushNotificationsAsync().then(token => {
         if (token && !IS_EXPO_GO) {
+          currentPushToken = token;
           saveTokenToDatabase(token);
         }
       });
@@ -141,6 +208,7 @@ export function usePushNotifications() {
       tokenListener = Notifications.addPushTokenListener(async (tokenObj) => {
         const token = tokenObj.data;
         if (token && !IS_EXPO_GO) {
+          currentPushToken = token;
           await saveTokenToDatabase(token);
         }
       });
@@ -148,6 +216,23 @@ export function usePushNotifications() {
       // Sync history and delivered tray
       syncNotificationHistory();
       syncDeliveredNotifications();
+
+      // AppState listener to re-sync history and badge when app resumes to foreground
+      appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+        if (nextState === 'active') {
+          syncNotificationHistory();
+          syncDeliveredNotifications();
+        }
+      });
+
+      // Check for Cold-Start notification tap response
+      Notifications.getLastNotificationResponseAsync()
+        .then((lastResponse) => {
+          if (lastResponse) {
+            NotificationRouter.handleNotificationResponse(lastResponse);
+          }
+        })
+        .catch(() => {});
 
       // Register background fetch
       BackgroundFetch.getStatusAsync().then(status => {
@@ -258,43 +343,8 @@ export function usePushNotifications() {
         }
       } else if (actionId === 'dismiss') {
       } else {
-        // Default tap action
-
-        // Deep link to the relevant screen based on notification type
-        if (!data?.type) return;
-
-        try {
-          switch (data.type) {
-            case 'announcement':
-              if (data.id) {
-                router.push(`/announcement/${data.id}` as any);
-              } else {
-                router.push('/(tabs)/announcements' as any);
-              }
-              break;
-            case 'event':
-              if (data.id) {
-                router.push(`/event/${data.id}` as any);
-              } else {
-                router.push('/(tabs)/announcements' as any);
-              }
-              break;
-            case 'material':
-              router.push('/(tabs)/resources' as any);
-              break;
-            case 'message':
-              if (data.group_id) {
-                router.push(`/chat/${data.group_id}` as any);
-              } else {
-                router.push('/(tabs)/messages' as any);
-              }
-              break;
-            default:
-              router.push('/(tabs)' as any);
-          }
-        } catch {
-          // silent
-        }
+        // Default tap action — delegate to NotificationRouter for deterministic, gated routing
+        NotificationRouter.handleNotificationResponse(response);
       }
     });
 
@@ -340,6 +390,9 @@ export function usePushNotifications() {
       if (tokenListener) {
         tokenListener.remove();
       }
+      if (appStateSub) {
+        appStateSub.remove();
+      }
     };
   }, [user?.id]);
 
@@ -348,7 +401,10 @@ export function usePushNotifications() {
 
     try {
       const { error } = await (supabase as any).from('user_push_tokens')
-        .upsert({ user_id: user.id, push_token: token, updated_at: new Date().toISOString() });
+        .upsert(
+          { user_id: user.id, push_token: token, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,push_token' }
+        );
 
       if (error) throw error;
     } catch {
@@ -463,12 +519,16 @@ async function configureNotificationCategories() {
 async function registerForPushNotificationsAsync() {
   let token;
 
-  // Configure Interactive Categories
-  await configureNotificationCategories();
+  // Configure Interactive Categories in parallel — doesn't need to complete before token registration
+  const categoriesPromise = configureNotificationCategories();
 
   if (Platform.OS === 'android') {
+    // One-time cleanup of legacy channel — only attempt if it still exists
     try {
-      await Notifications.deleteNotificationChannelAsync('default');
+      const legacyChannel = await Notifications.getNotificationChannelAsync('default');
+      if (legacyChannel) {
+        await Notifications.deleteNotificationChannelAsync('default');
+      }
     } catch {
       // silent
     }
@@ -529,6 +589,9 @@ async function registerForPushNotificationsAsync() {
       // silent
     }
   }
+
+  // Await categories to ensure they're registered before the function returns
+  await categoriesPromise;
 
   return token;
 }

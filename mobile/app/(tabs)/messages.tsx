@@ -99,17 +99,17 @@ export default function MessagesScreen() {
         style={[styles.content, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.scrollPadding}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
         {isLoading && conversations.length === 0 ? (
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : (
           <>
             {levelGroups.length > 0 && (
-              <View style={[styles.sectionHeader, { backgroundColor: COLORS.primary }]}>
+              <View style={[styles.sectionHeader, { backgroundColor: colors.primary }]}>
                 <Ionicons name="school-outline" size={18} color="#FFFFFF" />
                 <Text style={[styles.sectionTitle, { color: '#FFFFFF' }]}>LEVEL GROUPS</Text>
               </View>
@@ -132,7 +132,7 @@ export default function MessagesScreen() {
             ))}
 
             {generalGroups.length > 0 && (
-              <View style={[styles.sectionHeader, { marginTop: 12, backgroundColor: COLORS.primary }]}>
+              <View style={[styles.sectionHeader, { marginTop: 12, backgroundColor: colors.primary }]}>
                 <Ionicons name="people-outline" size={18} color="#FFFFFF" />
                 <Text style={[styles.sectionTitle, { color: '#FFFFFF' }]}>GENERAL GROUPS</Text>
               </View>
@@ -335,7 +335,7 @@ function ConversationItem({
               {conversation.name}
             </Text>
             {conversation.is_pinned && (
-              <Ionicons name="pin" size={12} color={COLORS.primary} style={{ marginLeft: 6, transform: [{ rotate: '45deg' }] }} />
+              <Ionicons name="pin" size={12} color={colors.primary} style={{ marginLeft: 6, transform: [{ rotate: '45deg' }] }} />
             )}
             {syncStatus === 'ready' && (
               <Ionicons name="checkmark-circle" size={13} color="#10B981" style={{ marginLeft: 4 }} />

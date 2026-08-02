@@ -34,6 +34,8 @@ import { supabase } from '../../src/api/supabase/client';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSettingsStore, useAuthStore, useMessageStore, useMutationQueueStore, useNetworkStore } from '../../src/stores';
+import { useNotificationStore } from '../../src/stores/notification.store';
+import { NotificationRouter } from '../../src/services/notificationRouter';
 import { useGroupStore } from '../../src/stores/group.store';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../src/components/common/CachedImage';
@@ -43,7 +45,6 @@ import { FileService } from '../../src/services/file.service';
 import { saveMediaToDevice, shareMedia } from '../../src/utils/mediaSaver';
 import { showToast } from '../../src/components/common/overlays';
 import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
-import { sendChatMessageNotification } from '../../src/utils/notifications';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature, isNetworkError } from '../../src/utils/sentry';
@@ -163,11 +164,25 @@ export default function ChatScreen() {
             return useMessageStore.getState().getMessages(id) || [];
         } catch { return []; }
     });
+    const groupFromStore = useGroupStore(s => s.groups.find((g: any) => g.id === id));
     const [group, setGroup] = useState<any>(null);
-    
+    const activeGroup = groupFromStore || group;
+    const isMediaLocked = activeGroup?.allow_media === false;
+
     // Canonical General Hub ID — matches the actual DB group ID
     const GENERAL_HUB_ID = 'a94ece65-c476-4141-b56e-b942cb8558c2';
-    const isGeneralGroup = id === GENERAL_HUB_ID || (group?.name && group.name.toLowerCase().includes('general'));
+    const isGeneralGroup = id === GENERAL_HUB_ID || (activeGroup?.name && activeGroup.name.toLowerCase().includes('general'));
+
+    // Mark Chat A notifications as read and set active chat group ID for banner suppression
+    useEffect(() => {
+        if (id) {
+            useNotificationStore.getState().markGroupAsRead(id);
+            NotificationRouter.setActiveChatGroupId(id);
+        }
+        return () => {
+            NotificationRouter.setActiveChatGroupId(null);
+        };
+    }, [id]);
     const [members, setMembers] = useState<any[]>([]);
     // Fix stale closure: keep a ref to members so setupRealtime always sees the latest list
     const membersRef = useRef<any[]>([]);
@@ -911,12 +926,6 @@ export default function ChatScreen() {
                         // Realtime already confirmed it — nothing to do
                         return prev;
                     });
-
-                    // Fire push notification to all group members (except sender) — fire and forget
-                    const senderName = profile?.username || profile?.full_name || 'Someone';
-                    const groupName = group?.name || 'Group Chat';
-                    const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
-                    sendChatMessageNotification(id, groupName, senderName, preview, currentUser.id);
                 }
             } catch (err: any) {
                 const isNetwork = err?.status === 0 || 
@@ -1113,6 +1122,10 @@ export default function ChatScreen() {
     const handlePickAndCropImage = async () => {
         if (isChatRestricted) {
             Alert.alert('Read-Only Mode', 'Image uploads are disabled in read-only mode.');
+            return;
+        }
+        if (isMediaLocked) {
+            Alert.alert('Media Restricted', 'Media and file uploads have been locked for this group by administrators. Only text and stickers are allowed.');
             return;
         }
         if (!currentUser) return;
@@ -2050,6 +2063,10 @@ export default function ChatScreen() {
             Alert.alert('Read-Only Mode', 'Document uploads are disabled in read-only mode.');
             return;
         }
+        if (isMediaLocked) {
+            Alert.alert('Media Restricted', 'Media and file uploads have been locked for this group by administrators. Only text and stickers are allowed.');
+            return;
+        }
         if (!currentUser) return;
         setShowAttachmentMenu(false);
 
@@ -2095,6 +2112,10 @@ export default function ChatScreen() {
     const handlePickAudioVideo = async () => {
         if (isChatRestricted) {
             Alert.alert('Read-Only Mode', 'Audio and Video uploads are disabled in read-only mode.');
+            return;
+        }
+        if (isMediaLocked) {
+            Alert.alert('Media Restricted', 'Media and file uploads have been locked for this group by administrators. Only text and stickers are allowed.');
             return;
         }
         if (!currentUser) return;
@@ -2916,6 +2937,24 @@ export default function ChatScreen() {
                 </View>
             ) : (
                 <View style={{ backgroundColor: isDark ? '#000000' : colors.card }}>
+                    {isMediaLocked && (
+                        <View style={{ 
+                            backgroundColor: isDark ? '#1e1b4b' : '#f5f3ff', 
+                            paddingVertical: 7, 
+                            paddingHorizontal: 16, 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            gap: 6, 
+                            borderTopWidth: 1, 
+                            borderTopColor: isDark ? '#312e81' : '#ddd6fe' 
+                        }}>
+                            <Ionicons name="lock-closed" size={13} color={isDark ? '#c084fc' : '#7c3aed'} />
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#e9d5ff' : '#6b21a8' }}>
+                                Media & file uploads locked by admin • Text & stickers only
+                            </Text>
+                        </View>
+                    )}
                     <View style={[styles.inputContainer, { 
                         backgroundColor: isDark ? '#000000' : colors.card, 
                         borderTopColor: isDark ? '#121212' : colors.border,
@@ -2925,9 +2964,19 @@ export default function ChatScreen() {
                     }]}>
                         <TouchableOpacity 
                             style={styles.stickerButton}
-                            onPress={() => setShowAttachmentMenu(true)}
+                            onPress={() => {
+                                if (isMediaLocked) {
+                                    Alert.alert('Media Restricted', 'Media and file uploads are disabled in this group by administrators. Only text and stickers are allowed.');
+                                    return;
+                                }
+                                setShowAttachmentMenu(true);
+                            }}
                         >
-                            <Ionicons name="add-circle-outline" size={28} color={colors.textMuted} />
+                            <Ionicons 
+                                name="add-circle-outline" 
+                                size={28} 
+                                color={isMediaLocked ? (isDark ? '#475569' : '#cbd5e1') : colors.textMuted} 
+                            />
                         </TouchableOpacity>
 
                         <TouchableOpacity 

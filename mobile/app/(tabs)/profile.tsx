@@ -397,7 +397,12 @@ export default function ProfileScreen() {
 
     setIsVerifyingPassword(true);
     try {
-      
+      const { verifyPassword } = require('../../src/utils/device');
+      const isValid = await verifyPassword(confirmPasswordInput);
+      if (!isValid) {
+        Alert.alert('Authentication Failed', 'The password you entered is incorrect.');
+        return;
+      }
 
       // Logically deactivate session first (in case RLS blocks delete)
       await (supabase as any)

@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, FlatList,  Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, FlatList, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../src/constants/Colors';
 import { router } from 'expo-router';
 
 import { downloadFile, extractFileNameFromUrl } from '../src/utils';
 import { useAnnouncementStore, useResourceStore, useEventStore } from '../src/stores';
+import { useTheme } from '../src/stores/theme.store';
 import { format } from 'date-fns';
 
 const TABS = ['All Results', 'Announcements', 'Events', 'Resources', 'Past Questions', 'Messages'];
@@ -16,6 +16,7 @@ export default function SearchScreen() {
   const [activeTab, setActiveTab] = useState('All Results');
   const [offlineResults, setOfflineResults] = useState<any[]>([]);
 
+  const { colors, isDark } = useTheme();
   const { announcements, fetchAnnouncements } = useAnnouncementStore();
   const { materials, pastQuestions, fetchMaterials, fetchPastQuestions, incrementDownloadCount } = useResourceStore();
   const { events, fetchUpcomingEvents } = useEventStore();
@@ -68,44 +69,53 @@ export default function SearchScreen() {
     if (!material.file_url) return;
     try {
       const fileName = material.file_name || extractFileNameFromUrl(material.file_url, 'material.pdf');
-      await downloadFile(material.file_url, material.id, fileName);
-      if (incrementDownloadCount) {
-        const type = (material as any).material_type ? 'material' : 'past_question';
-        await incrementDownloadCount(material.id, type);
-      }
-    } catch {
-      // silent — download/view count is telemetry
-    }
+      await downloadFile(material.file_url, fileName, material.title);
+      await incrementDownloadCount(material.id, material.material_type ? 'material' : 'past_question');
+    } catch (_) {}
   };
 
   const renderAnnouncementCard = (item: any) => (
-    <TouchableOpacity key={item.id} style={styles.card} onPress={() => router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any)}>
-      <View style={[styles.iconBox, { backgroundColor: COLORS.actionOrange }]}>
-        <Ionicons name="megaphone" size={24} color="#F59E0B" />
+    <TouchableOpacity
+      key={item.id}
+      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+      onPress={() => router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any)}
+    >
+      <View style={[styles.iconBox, { backgroundColor: colors.actionOrange }]}>
+        <Ionicons name="megaphone" size={24} color={colors.actionOrangeIcon} />
       </View>
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={styles.cardSubtitle} numberOfLines={1}>{item.content}</Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+        <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{item.content}</Text>
         <View style={styles.metaRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{item.target_department_id === null ? 'NALISS Executives' : 'Departmental Office'}</Text>
+          <View style={[styles.badge, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.badgeText, { color: colors.textSecondary }]}>
+              {item.target_department_id === null ? 'NALISS Executives' : 'Departmental Office'}
+            </Text>
           </View>
-          <Text style={styles.metaText}>{item.created_at ? format(new Date(item.created_at), 'MMM d, yyyy') : ''}</Text>
+          <Text style={[styles.metaText, { color: colors.textMuted }]}>
+            {item.created_at ? format(new Date(item.created_at), 'MMM d, yyyy') : ''}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
   );
 
   const renderEventCard = (item: any) => (
-    <TouchableOpacity key={item.id} style={styles.card} onPress={() => router.push({ pathname: '/event/[id]', params: { id: item.id } } as any)}>
-      <View style={[styles.iconBox, { backgroundColor: COLORS.actionBlue }]}>
-        <Ionicons name="calendar" size={24} color="#3B82F6" />
+    <TouchableOpacity
+      key={item.id}
+      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+      onPress={() => router.push({ pathname: '/event/[id]', params: { id: item.id } } as any)}
+    >
+      <View style={[styles.iconBox, { backgroundColor: colors.actionBlue }]}>
+        <Ionicons name="calendar" size={24} color={colors.actionBlueIcon} />
       </View>
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={styles.cardSubtitle} numberOfLines={1}>{item.description}</Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+        <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{item.description}</Text>
         <View style={styles.metaRow}>
-          <Text style={styles.metaText}>{format(new Date(item.start_date || item.created_at || new Date()), 'MMM d, yyyy')} • {item.venue}</Text>
+          <Text style={[styles.metaText, { color: colors.textMuted }]}>
+            {format(new Date(item.start_date || item.created_at || new Date()), 'MMM d, yyyy')} • {item.venue}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -114,38 +124,45 @@ export default function SearchScreen() {
   const renderResourceCard = (item: any) => {
     const isPdf = item.material_type === 'pdf' || (item.file_name && item.file_name.toLowerCase().endsWith('.pdf'));
     return (
-      <TouchableOpacity key={item.id} style={styles.card} onPress={() => handleDownload(item)}>
-        <View style={[styles.iconBox, { backgroundColor: isPdf ? COLORS.actionRed : COLORS.actionBlue }]}>
-          <Ionicons name="document-text" size={24} color={isPdf ? '#EF4444' : '#3B82F6'} />
+      <TouchableOpacity
+        key={item.id}
+        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => handleDownload(item)}
+      >
+        <View style={[styles.iconBox, { backgroundColor: isPdf ? colors.actionRed : colors.actionBlue }]}>
+          <Ionicons name="document-text" size={24} color={isPdf ? colors.actionRedIcon : colors.actionBlueIcon} />
         </View>
         <View style={styles.cardContent}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
-          <Text style={styles.metaText}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+          <Text style={[styles.metaText, { color: colors.textMuted }]}>
             {item.material_type.toUpperCase()} • {item.file_size ? `${(item.file_size / 1024 / 1024).toFixed(1)} MB` : 'PDF'}
           </Text>
         </View>
         <View style={styles.actionIcon}>
-          <Ionicons name="download-outline" size={20} color={COLORS.text} />
+          <Ionicons name="download-outline" size={20} color={colors.textSecondary} />
         </View>
       </TouchableOpacity>
     );
   };
 
-  const renderPastQuestionCard = (item: any, index: number) => {
-    const isDark = index % 2 === 0;
+  const renderPastQuestionCard = (item: any) => {
     return (
-      <TouchableOpacity key={item.id} style={[styles.pqCard, isDark && styles.pqCardDark]} onPress={() => handleDownload(item)}>
-        <View style={[styles.pqIconBox, isDark ? styles.pqIconBoxDark : styles.pqIconBoxLight]}>
-           <Ionicons name={isDark ? "document-text" : "document-attach"} size={24} color={isDark ? "#FFFFFF" : COLORS.textSecondary} />
+      <TouchableOpacity
+        key={item.id}
+        style={[styles.pqCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => handleDownload(item)}
+      >
+        <View style={[styles.pqIconBox, { backgroundColor: colors.actionMint }]}>
+           <Ionicons name="document-attach" size={24} color={colors.actionMintIcon} />
         </View>
         <View style={styles.cardContent}>
-          <Text style={[styles.cardTitle, isDark && { color: '#FFFFFF' }]}>{item.title}</Text>
-          <Text style={[styles.metaText, isDark && { color: '#94A3B8' }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+          <Text style={[styles.metaText, { color: colors.textMuted }]}>
             {item.description || 'Verified past question'}
           </Text>
         </View>
         <View style={styles.actionIcon}>
-          <Ionicons name={isDark ? "chevron-forward" : "eye"} size={20} color={isDark ? "#FFFFFF" : COLORS.text} />
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </View>
       </TouchableOpacity>
     );
@@ -154,7 +171,7 @@ export default function SearchScreen() {
   const renderMessageCard = (item: any) => (
     <TouchableOpacity 
       key={item.entity_id} 
-      style={styles.card} 
+      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]} 
       onPress={() => router.push({ 
         pathname: '/chat/[id]', 
         params: { 
@@ -164,17 +181,17 @@ export default function SearchScreen() {
         } 
       } as any)}
     >
-      <View style={[styles.iconBox, { backgroundColor: '#EDE9FE' }]}>
-        <Ionicons name="chatbubbles" size={24} color="#7C3AED" />
+      <View style={[styles.iconBox, { backgroundColor: colors.actionPurple }]}>
+        <Ionicons name="chatbubbles" size={24} color={colors.actionPurpleIcon} />
       </View>
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{item.sender_name}</Text>
-        <Text style={styles.cardSubtitle} numberOfLines={1}>{item.content}</Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>{item.sender_name}</Text>
+        <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{item.content}</Text>
         <View style={styles.metaRow}>
-          <View style={[styles.badge, { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]}>
-            <Text style={[styles.badgeText, { color: '#10B981' }]}>OFFLINE MESSAGE</Text>
+          <View style={[styles.badge, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.badgeText, { color: colors.primary }]}>OFFLINE MESSAGE</Text>
           </View>
-          <Text style={styles.metaText}>
+          <Text style={[styles.metaText, { color: colors.textMuted }]}>
             {item.created_at ? format(new Date(item.created_at), 'MMM d, h:mm a') : ''}
           </Text>
         </View>
@@ -223,8 +240,8 @@ export default function SearchScreen() {
       return (
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>{row.title}</Text>
-            <Text style={styles.resultCount}>{row.count} results</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{row.title}</Text>
+            <Text style={[styles.resultCount, { color: colors.textMuted }]}>{row.count} results</Text>
           </View>
         </View>
       );
@@ -233,55 +250,57 @@ export default function SearchScreen() {
       case 'announcement': return renderAnnouncementCard(row.item);
       case 'event': return renderEventCard(row.item);
       case 'resource': return renderResourceCard(row.item);
-      case 'past_question': return renderPastQuestionCard(row.item, row.index);
+      case 'past_question': return renderPastQuestionCard(row.item);
       case 'message': return renderMessageCard(row.item);
       default: return null;
     }
-  }, []);
+  }, [colors]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Search Results</Text>
-        <View style={{ width: 24, padding: 5 }} /> {/* Placeholder to balance the flex layout */}
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Search Results</Text>
+        <View style={{ width: 24, padding: 5 }} />
       </View>
 
       {/* Search Input Area */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputBox}>
-          <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
+      <View style={[styles.searchContainer, { borderBottomColor: colors.border }]}>
+        <View style={[styles.searchInputBox, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+          <Ionicons name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.text }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search..."
-            placeholderTextColor={COLORS.textMuted}
+            placeholderTextColor={colors.textMuted}
             autoFocus={false}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={20} color={COLORS.textMuted} />
+              <Ionicons name="close-circle" size={20} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabsContainer}>
+      <View style={[styles.tabsContainer, { borderBottomColor: colors.border }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
           {TABS.map((tab) => {
             const isActive = activeTab === tab;
             return (
               <TouchableOpacity
                 key={tab}
-                style={[styles.tab, isActive && styles.activeTab]}
+                style={[styles.tab, isActive && { borderBottomColor: colors.primary }]}
                 onPress={() => setActiveTab(tab)}
               >
-                <Text style={[styles.tabText, isActive && styles.activeTabText]}>{tab}</Text>
+                <Text style={[styles.tabText, { color: isActive ? colors.primary : colors.textMuted }, isActive && styles.activeTabText]}>
+                  {tab}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -290,7 +309,7 @@ export default function SearchScreen() {
 
       {/* Results Content */}
       <FlatList
-        style={styles.contentContainer}
+        style={[styles.contentContainer, { backgroundColor: colors.background }]}
         showsVerticalScrollIndicator={false}
         data={searchSections}
         keyExtractor={(item) => item._key}
@@ -302,13 +321,13 @@ export default function SearchScreen() {
         ListEmptyComponent={
           query.length > 0 ? (
             <View style={{ alignItems: 'center', marginTop: 100 }}>
-              <Ionicons name="search-outline" size={48} color={COLORS.textMuted} />
-              <Text style={{ fontFamily: 'Inter-Medium', color: COLORS.textMuted, marginTop: 16 }}>No results found for "{searchQuery}"</Text>
+              <Ionicons name="search-outline" size={48} color={colors.textMuted} />
+              <Text style={{ fontFamily: 'Inter-Medium', color: colors.textMuted, marginTop: 16 }}>No results found for "{searchQuery}"</Text>
             </View>
           ) : (
             <View style={{ alignItems: 'center', marginTop: 100 }}>
-               <Ionicons name="search" size={48} color={COLORS.textMuted} opacity={0.5} />
-               <Text style={{ fontFamily: 'Inter-Medium', color: COLORS.textMuted, marginTop: 16 }}>Type above to search the hub</Text>
+               <Ionicons name="search" size={48} color={colors.textMuted} opacity={0.5} />
+               <Text style={{ fontFamily: 'Inter-Medium', color: colors.textMuted, marginTop: 16 }}>Type above to search the hub</Text>
             </View>
           )
         }
@@ -321,7 +340,6 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
@@ -337,7 +355,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Inter-Bold',
     fontSize: 18,
-    color: COLORS.text,
   },
   optionsButton: {
     padding: 5,
@@ -346,12 +363,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
   },
   searchInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 48,
@@ -363,14 +378,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: 'Inter-Medium',
     fontSize: 16,
-    color: COLORS.text,
   },
   clearButton: {
     padding: 5,
   },
   tabsContainer: {
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
   },
   tabsScroll: {
     paddingHorizontal: 20,
@@ -381,21 +394,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  activeTab: {
-    borderBottomColor: COLORS.black,
-  },
   tabText: {
     fontFamily: 'Inter-Medium',
     fontSize: 14,
-    color: '#64748B',
   },
   activeTabText: {
-    color: COLORS.black,
     fontFamily: 'Inter-SemiBold',
   },
   contentContainer: {
     flex: 1,
-    backgroundColor: '#F8FAFC', // slightly off-white bg for content area matching the image closely
   },
   section: {
     marginTop: 24,
@@ -411,22 +418,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Bold',
     fontSize: 13,
     letterSpacing: 0.5,
-    color: COLORS.text,
   },
   resultCount: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: '#94A3B8',
   },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
+    marginHorizontal: 20,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
   },
   iconBox: {
     width: 48,
@@ -442,13 +446,11 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 15,
-    color: COLORS.text,
     marginBottom: 4,
   },
   cardSubtitle: {
     fontFamily: 'Inter-Regular',
     fontSize: 14,
-    color: '#475569',
     lineHeight: 20,
     marginBottom: 8,
   },
@@ -457,7 +459,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   badge: {
-    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -466,12 +467,10 @@ const styles = StyleSheet.create({
   badgeText: {
     fontFamily: 'Inter-Bold',
     fontSize: 10,
-    color: COLORS.text,
   },
   metaText: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: '#64748B',
   },
   actionIcon: {
     padding: 8,
@@ -479,16 +478,11 @@ const styles = StyleSheet.create({
   pqCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
+    marginHorizontal: 20,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  pqCardDark: {
-    backgroundColor: '#1E293B', // dark slate
-    borderColor: 'transparent',
   },
   pqIconBox: {
     width: 48,
@@ -497,11 +491,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
-  },
-  pqIconBoxLight: {
-    backgroundColor: '#F1F5F9',
-  },
-  pqIconBoxDark: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
   },
 });

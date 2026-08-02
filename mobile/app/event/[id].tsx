@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../src/constants/Colors';
 import { useEventStore } from '../../src/stores';
+import { useNotificationStore } from '../../src/stores/notification.store';
 import { format } from 'date-fns';
 import { supabase } from '../../src/api/supabase/client';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
@@ -80,6 +81,7 @@ function EventDetailsContent() {
     useEffect(() => {
         if (!event) return;
         ((supabase as any).rpc('increment_event_view_count' as any, { event_id: event.id }) as any).then(() => {});
+        useNotificationStore.getState().markEntityAsRead('event', event.id);
     }, [event?.id]);
 
     if (!event) {

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import FileUpload from '../lib/FileUpload';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, Award, MessageSquare, Sparkles } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, Award, MessageSquare, Sparkles, Lock } from 'lucide-react';
 import { getAllowedLevelsForPermission } from '../utils/access';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
@@ -569,7 +569,11 @@ export default function EventPoolManagementPage() {
  };
 
   const loadPoolDetails = async (pool: EventPool) => {
- setSelectedPool(pool);
+    if (!canManagePool(pool)) {
+      alert('Access Denied: Moderators cannot manage or modify event pools created by Super Admin.');
+      return;
+    }
+    setSelectedPool(pool);
  setActiveParticipationRule(pool.participation_rule);
  setActiveView('config');
  try {
@@ -1047,13 +1051,20 @@ export default function EventPoolManagementPage() {
  <p className="text-sm text-gray-500 mb-6 capitalize font-medium flex items-center gap-1.5">
  <Activity className="h-4 w-4" /> Status: {pool.status}
  </p>
- <button
- onClick={() => loadPoolDetails(pool)}
- className="w-full py-2.5 bg-primary-50 text-primary-700 hover:bg-primary-100 font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
- >
- <Settings className="h-4 w-4" />
- Manage Pool Rules & Setup
- </button>
+ {canManagePool(pool) ? (
+    <button
+      onClick={() => loadPoolDetails(pool)}
+      className="w-full py-2.5 bg-primary-50 text-primary-700 hover:bg-primary-100 font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
+    >
+      <Settings className="h-4 w-4" />
+      Manage Pool Rules & Setup
+    </button>
+  ) : (
+    <div className="w-full py-2.5 bg-slate-100 text-slate-400 font-bold rounded-lg flex items-center justify-center gap-2 text-xs border border-slate-200 cursor-not-allowed">
+      <Lock className="h-3.5 w-3.5 text-slate-400" />
+      Super Admin Pool (Protected)
+    </div>
+  )}
  </div>
  ))
  )}

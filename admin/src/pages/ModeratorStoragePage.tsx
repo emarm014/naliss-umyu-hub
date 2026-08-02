@@ -24,6 +24,7 @@ interface StorageItem {
   uploader_name?: string | null;
   sender_name?: string | null;
   group_name?: string | null;
+  creator_id?: string | null;
 }
 
 const fmtBytes = (b?: number | null) => {
@@ -150,11 +151,11 @@ export default function ModeratorStoragePage() {
           ? supabase.from('users').select('id, full_name, avatar_url, created_at, level').not('avatar_url', 'is', null).neq('avatar_url', '').in('level', assignedLevels)
           : supabase.from('users').select('id, full_name, avatar_url, created_at, level').not('avatar_url', 'is', null).neq('avatar_url', ''),
 
-        supabase.from('news').select('id, title, image_url, created_at').not('image_url', 'is', null),
-        supabase.from('archives').select('id, title, file_url, file_size, created_at').not('file_url', 'is', null),
-        supabase.from('gallery_topics').select('id, title, cover_image, created_at').not('cover_image', 'is', null),
-        supabase.from('gallery_media').select('id, media_url, created_at, gallery_topics(title)').not('media_url', 'is', null),
-        supabase.from('featured_students').select('id, title, custom_image_url, created_at').not('custom_image_url', 'is', null),
+        supabase.from('news').select('id, title, image_url, created_at, author_id').not('image_url', 'is', null),
+        supabase.from('archives').select('id, title, file_url, file_size, created_at, uploaded_by').not('file_url', 'is', null),
+        supabase.from('gallery_topics').select('id, title, cover_image, created_at, created_by').not('cover_image', 'is', null),
+        supabase.from('gallery_media').select('id, media_url, created_at, uploaded_by, gallery_topics(title)').not('media_url', 'is', null),
+        supabase.from('featured_students').select('id, title, custom_image_url, created_at, created_by').not('custom_image_url', 'is', null),
       ]);
 
       const mats = matsRes.data || [];
@@ -170,10 +171,10 @@ export default function ModeratorStoragePage() {
       const featuredStudents = featuredStudentsRes.data || [];
 
       const all: StorageItem[] = [
-        ...(mats || []).map((m: any) => ({ id: m.id, title: m.title, file_url: m.file_url, file_size: m.file_size, created_at: m.created_at, type: 'material' as const, level: m.level })),
-        ...(pqs || []).map((p: any) => ({ id: p.id, title: p.title, file_url: p.file_url, file_size: p.file_size, created_at: p.created_at, type: 'past_question' as const, level: p.level })),
-        ...(anns || []).map((a: any) => ({ id: a.id, title: a.title, file_url: a.cover_image_url, file_size: a.cover_image_size ?? null, created_at: a.created_at, type: 'announcement' as const, level: a.target_level })),
-        ...(evs || []).map((e: any) => ({ id: e.id, title: e.title, file_url: e.cover_image_url, file_size: e.cover_image_size ?? null, created_at: e.created_at, type: 'event' as const, level: e.target_level })),
+        ...(mats || []).map((m: any) => ({ id: m.id, title: m.title, file_url: m.file_url, file_size: m.file_size, created_at: m.created_at, type: 'material' as const, level: m.level, creator_id: m.uploaded_by })),
+        ...(pqs || []).map((p: any) => ({ id: p.id, title: p.title, file_url: p.file_url, file_size: p.file_size, created_at: p.created_at, type: 'past_question' as const, level: p.level, creator_id: p.uploaded_by })),
+        ...(anns || []).map((a: any) => ({ id: a.id, title: a.title, file_url: a.cover_image_url, file_size: a.cover_image_size ?? null, created_at: a.created_at, type: 'announcement' as const, level: a.target_level, creator_id: a.author_id })),
+        ...(evs || []).map((e: any) => ({ id: e.id, title: e.title, file_url: e.cover_image_url, file_size: e.cover_image_size ?? null, created_at: e.created_at, type: 'event' as const, level: e.target_level, creator_id: e.created_by })),
         ...(chatMedia || []).map((m: any) => ({
           id: m.id,
           title: `${m.message_type.charAt(0).toUpperCase() + m.message_type.slice(1)} — ${(m.groups as any)?.name || 'Group Chat'}`,
@@ -182,6 +183,7 @@ export default function ModeratorStoragePage() {
           created_at: m.created_at,
           type: 'chat_media' as const,
           group_name: (m.groups as any)?.name || null,
+          creator_id: m.sender_id,
         })),
         ...(avatarUsers || []).map((u: any) => ({
           id: u.id,
@@ -190,12 +192,13 @@ export default function ModeratorStoragePage() {
           file_size: null,
           created_at: u.created_at,
           type: 'avatar' as const,
+          creator_id: u.id,
         })),
-        ...(newsData || []).map((n: any) => ({ id: n.id, title: n.title, file_url: n.image_url, file_size: null, created_at: n.created_at, type: 'news' as const })),
-        ...(archivesData || []).map((a: any) => ({ id: a.id, title: a.title, file_url: a.file_url, file_size: typeof a.file_size === 'string' ? null : a.file_size, created_at: a.created_at, type: 'archive' as const })),
-        ...(galleryTopics || []).map((g: any) => ({ id: g.id, title: g.title, file_url: g.cover_image, file_size: null, created_at: g.created_at, type: 'gallery_topic' as const })),
-        ...(galleryMedia || []).map((g: any) => ({ id: g.id, title: `Gallery Media — ${(g.gallery_topics as any)?.title || 'Topic'}`, file_url: g.media_url, file_size: null, created_at: g.created_at, type: 'gallery_media' as const })),
-        ...(featuredStudents || []).map((f: any) => ({ id: f.id, title: f.title, file_url: f.custom_image_url, file_size: null, created_at: f.created_at, type: 'featured_student' as const })),
+        ...(newsData || []).map((n: any) => ({ id: n.id, title: n.title, file_url: n.image_url, file_size: null, created_at: n.created_at, type: 'news' as const, creator_id: n.author_id || null })),
+        ...(archivesData || []).map((a: any) => ({ id: a.id, title: a.title, file_url: a.file_url, file_size: typeof a.file_size === 'string' ? null : a.file_size, created_at: a.created_at, type: 'archive' as const, creator_id: a.uploaded_by || null })),
+        ...(galleryTopics || []).map((g: any) => ({ id: g.id, title: g.title, file_url: g.cover_image, file_size: null, created_at: g.created_at, type: 'gallery_topic' as const, creator_id: g.created_by || null })),
+        ...(galleryMedia || []).map((g: any) => ({ id: g.id, title: `Gallery Media — ${(g.gallery_topics as any)?.title || 'Topic'}`, file_url: g.media_url, file_size: null, created_at: g.created_at, type: 'gallery_media' as const, creator_id: g.uploaded_by || null })),
+        ...(featuredStudents || []).map((f: any) => ({ id: f.id, title: f.title, file_url: f.custom_image_url, file_size: null, created_at: f.created_at, type: 'featured_student' as const, creator_id: f.created_by || null })),
       ];
 
       setItems(all);
@@ -272,8 +275,32 @@ export default function ModeratorStoragePage() {
     };
   }, []);
 
+  // ── Access Rule: Moderators cannot delete Super Admin / Global items ───────
+  const canDeleteItem = useCallback((item: StorageItem) => {
+    if (isSuperAdmin) return true; // Super Admin can delete anything
+
+    // Global platform items (news, archive, gallery_topic, gallery_media, featured_student, avatar)
+    // were created by Super Admin or system, so moderators can NEVER delete them!
+    if (['news', 'archive', 'gallery_topic', 'gallery_media', 'featured_student', 'avatar'].includes(item.type)) {
+      return false;
+    }
+
+    // For level-based items (material, past_question, announcement, event, chat_media):
+    // A moderator can ONLY delete an item if it was created/uploaded by this specific moderator
+    if (item.creator_id && profile?.id) {
+      return item.creator_id === profile.id;
+    }
+
+    return false;
+  }, [isSuperAdmin, profile?.id]);
+
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleDelete = async (item: StorageItem) => {
+    if (!canDeleteItem(item)) {
+      alert('Access Denied: Moderators can never delete items uploaded or managed by Super Admin.');
+      return;
+    }
+
     if (!window.confirm(`Delete "${item.title}"? This permanently removes the file from Cloudinary.`)) return;
 
     setDeletingId(item.id);
@@ -558,22 +585,23 @@ export default function ModeratorStoragePage() {
                         <Eye className="w-4 h-4" />
                       </a>
                     )}
-                    {(() => {
-                      const isSuperAdminItem = item.level === 'all';
-                      const canDelete = isSuperAdmin || (!isSuperAdminItem);
-                      if (!canDelete) return null;
-
-                      return (
-                        <button
-                          onClick={() => handleDelete(item)}
-                          disabled={deletingId === item.id}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
-                          title="Delete from Cloudinary"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      );
-                    })()}
+                    {canDeleteItem(item) ? (
+                      <button
+                        onClick={() => handleDelete(item)}
+                        disabled={deletingId === item.id}
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
+                        title="Delete from Cloudinary"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <span
+                        className="p-2 text-slate-300 cursor-not-allowed flex items-center gap-1"
+                        title="Super Admin item — Protected (Moderators cannot delete Super Admin content)"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                      </span>
+                    )}
                   </div>
                 </div>
               );

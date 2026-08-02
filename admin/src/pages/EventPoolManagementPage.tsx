@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import FileUpload from '../lib/FileUpload';
 import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, Award, MessageSquare, Sparkles } from 'lucide-react';
+import { getAllowedLevelsForPermission } from '../utils/access';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import Modal from '../components/ui/Modal';
@@ -82,7 +83,11 @@ type QuizQuestion = {
 
 export default function EventPoolManagementPage() {
   const { profile, permissions } = useAuthStore();
-  const assignedLevel = (profile?.role === 'moderator' ? permissions?.assigned_level : null) ?? null;
+  
+  const eventAllowedLevels = useMemo(() => {
+    if (profile?.role === 'super_admin') return null; // Unrestricted (Super Admin)
+    return getAllowedLevelsForPermission(permissions, 'can_manage_events');
+  }, [profile?.role, permissions]);
 
   const [pools, setPools] = useState<EventPool[]>([]);
 
@@ -90,13 +95,14 @@ export default function EventPoolManagementPage() {
   const canManagePool = (pool: EventPool) => isSuperAdmin || (profile?.role === 'moderator' && (pool as any).created_by === profile?.id);
 
   const displayedPools = useMemo(() => {
-    if (!assignedLevel) return pools;
+    if (!eventAllowedLevels) return pools;
+    if (eventAllowedLevels.length === 0) return [];
     return pools.filter(pool => {
       const allowed = pool.target_constraints?.allowed_levels;
       if (!allowed || allowed.length === 0 || allowed.includes('all')) return true;
-      return allowed.includes(assignedLevel);
+      return allowed.some((lvl: string) => eventAllowedLevels.includes(lvl as any));
     });
-  }, [pools, assignedLevel]);
+  }, [pools, eventAllowedLevels]);
  const [selectedPool, setSelectedPool] = useState<EventPool | null>(null);
  const [submissions, setSubmissions] = useState<Submission[]>([]);
  const [applications, setApplications] = useState<any[]>([]);
@@ -172,67 +178,101 @@ export default function EventPoolManagementPage() {
  fetchEvents();
  }, []);
 
- const fetchInviteUsers = async (query: string, level: string) => {
- setIsInviteSearching(true);
- try {
-   let req = supabase.from('users').select('id, full_name, username, avatar_url, level');
-   
-   if (query.trim().length >= 2) {
-       req = req.or(`full_name.ilike.%${query}%,username.ilike.%${query}%`);
-   }
-   if (level !== 'all') {
-       req = req.eq('level', level);
-   }
-   
-   const { data } = await req.limit(50);
-   // Filter out already invited users
-   const invitedIds = invitedUsers.map(u => u.id);
-   setInviteSearchResults((data || []).filter(u => !invitedIds.includes(u.id)));
- } catch { setInviteSearchResults([]); }
- finally { setIsInviteSearching(false); }
- };
+  const fetchInviteUsers = async (query: string, level: string) => {
+    setIsInviteSearching(true);
+    try {
+      let req = supabase.from('users')
+        .select('id, full_name, username, avatar_url, level, role, is_external')
+        .eq('role', 'student');
+      
+      if (query.trim().length >= 2) {
+        req = req.or(`full_name.ilike.%${query}%,username.ilike.%${query}%`);
+      }
+      
+      if (level !== 'all') {
+        if (eventAllowedLevels && !eventAllowedLevels.includes(level as any)) {
+          setInviteSearchResults([]);
+          setIsInviteSearching(false);
+          return;
+        }
+        req = req.eq('level', level);
+      } else if (eventAllowedLevels && eventAllowedLevels.length > 0) {
+        req = req.in('level', eventAllowedLevels);
+      }
+      
+      const { data } = await req.limit(50);
+      const invitedIds = invitedUsers.map(u => u.id);
+      
+      // Strict filter: exclude external moderators & already invited users
+      const filtered = (data || []).filter((u: any) => 
+        !u.is_external && 
+        u.role !== 'moderator' && 
+        !invitedIds.includes(u.id)
+      );
+      setInviteSearchResults(filtered);
+    } catch { setInviteSearchResults([]); }
+    finally { setIsInviteSearching(false); }
+  };
 
- const handleInviteSearch = (query: string) => {
- setInviteSearchQuery(query);
- fetchInviteUsers(query, inviteFilterLevel);
- };
+  const handleInviteSearch = (query: string) => {
+    setInviteSearchQuery(query);
+    fetchInviteUsers(query, inviteFilterLevel);
+  };
 
- const handleInviteFilterChange = (level: string) => {
- setInviteFilterLevel(level);
- fetchInviteUsers(inviteSearchQuery, level);
- };
+  const handleInviteFilterChange = (level: string) => {
+    setInviteFilterLevel(level);
+    fetchInviteUsers(inviteSearchQuery, level);
+  };
 
- useEffect(() => {
- if (activeParticipationRule === 'individual_selection') {
-     fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
- }
- }, [activeParticipationRule]);
+  useEffect(() => {
+    if (activeParticipationRule === 'individual_selection') {
+      fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
+    }
+  }, [activeParticipationRule]);
 
   const addInvitedUser = (user: any) => {
-  setInvitedUsers(prev => [...prev, user]);
-  setInviteSearchResults(prev => prev.filter(u => u.id !== user.id));
+    setInvitedUsers(prev => [...prev, user]);
+    setInviteSearchResults(prev => prev.filter(u => u.id !== user.id));
   };
 
   const removeInvitedUser = (userId: string) => {
-  setInvitedUsers(prev => prev.filter(u => u.id !== userId));
-  // optionally refresh the list to re-add the user to the browser
-  fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
+    setInvitedUsers(prev => prev.filter(u => u.id !== userId));
+    fetchInviteUsers(inviteSearchQuery, inviteFilterLevel);
   };
 
   // Voting Candidate Search Logic
   const fetchCandidateSearchUsers = async (query: string, level: string) => {
     setIsCandidateSearching(true);
     try {
-      let req = supabase.from('users').select('id, full_name, username, avatar_url, level').eq('role', 'student');
+      let req = supabase.from('users')
+        .select('id, full_name, username, avatar_url, level, role, is_external')
+        .eq('role', 'student');
+        
       if (query.trim().length >= 2) {
         req = req.or(`full_name.ilike.%${query}%,username.ilike.%${query}%`);
       }
+      
       if (level !== 'all') {
+        if (eventAllowedLevels && !eventAllowedLevels.includes(level as any)) {
+          setCandidateSearchResults([]);
+          setIsCandidateSearching(false);
+          return;
+        }
         req = req.eq('level', level);
+      } else if (eventAllowedLevels && eventAllowedLevels.length > 0) {
+        req = req.in('level', eventAllowedLevels);
       }
+      
       const { data } = await req.limit(50);
       const existingCandidateUserIds = candidatesList.map(c => c.user_id);
-      setCandidateSearchResults((data || []).filter(u => !existingCandidateUserIds.includes(u.id)));
+      
+      // Strict filter: exclude external moderators & existing candidates
+      const filtered = (data || []).filter((u: any) => 
+        !u.is_external && 
+        u.role !== 'moderator' && 
+        !existingCandidateUserIds.includes(u.id)
+      );
+      setCandidateSearchResults(filtered);
     } catch {
       setCandidateSearchResults([]);
     } finally {
@@ -473,40 +513,41 @@ export default function EventPoolManagementPage() {
  }
  };
 
- const handleCreatePool = async (e: React.FormEvent) => {
- e.preventDefault();
- try {
-  if (showCreateModal === 'create') {
-  const { error } = await supabase.from('event_pools').insert({
-  title: newPoolTitle,
-  type: newPoolType,
-  status: 'draft',
-  participation_rule: assignedLevel ? 'level_based' : 'open',
-  target_constraints: {
-    allowed_levels: assignedLevel ? [assignedLevel] : ['100', '200', '300', '400'],
-    enable_registration: true
-  },
-  event_id: selectedEventId || null
-  });
-  if (error) throw error;
- } else if (showCreateModal === 'edit' && editingPoolId) {
- const { error } = await supabase.from('event_pools').update({
- title: newPoolTitle,
- type: newPoolType,
- event_id: selectedEventId || null
- }).eq('id', editingPoolId);
- if (error) throw error;
- }
- setShowCreateModal(false);
- setEditingPoolId(null);
- setNewPoolTitle('');
- setNewPoolType('quiz');
- setSelectedEventId('');
- fetchPools();
- } catch (e: any) {
- alert('Failed to save event pool: ' + e.message);
- }
- };
+  const handleCreatePool = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (showCreateModal === 'create') {
+        const defaultLevels = eventAllowedLevels || ['100', '200', '300', '400'];
+        const { error } = await supabase.from('event_pools').insert({
+          title: newPoolTitle,
+          type: newPoolType,
+          status: 'draft',
+          participation_rule: eventAllowedLevels ? 'level_based' : 'open',
+          target_constraints: {
+            allowed_levels: defaultLevels,
+            enable_registration: true
+          },
+          event_id: selectedEventId || null
+        });
+        if (error) throw error;
+      } else if (showCreateModal === 'edit' && editingPoolId) {
+        const { error } = await supabase.from('event_pools').update({
+          title: newPoolTitle,
+          type: newPoolType,
+          event_id: selectedEventId || null
+        }).eq('id', editingPoolId);
+        if (error) throw error;
+      }
+      setShowCreateModal(false);
+      setEditingPoolId(null);
+      setNewPoolTitle('');
+      setNewPoolType('quiz');
+      setSelectedEventId('');
+      fetchPools();
+    } catch (e: any) {
+      alert('Failed to save event pool: ' + e.message);
+    }
+  };
 
  const handleDeletePool = async (id: string, title: string) => {
  if (!window.confirm(`Are you sure you want to delete "${title}"?`)) return;
@@ -610,7 +651,15 @@ export default function EventPoolManagementPage() {
  const strict_once_off_selection = fd.get('strict_once_off_selection') === 'on';
  const instant_feedback = fd.get('instant_feedback') === 'on';
  
- const allowed_levels = assignedLevel ? [assignedLevel] : (fd.getAll('allowed_levels') as string[]);
+  let allowed_levels: string[] = [];
+  if (eventAllowedLevels) {
+    const formLevels = fd.getAll('allowed_levels') as string[];
+    allowed_levels = formLevels.filter(lvl => eventAllowedLevels.includes(lvl as any));
+    if (allowed_levels.length === 0) allowed_levels = eventAllowedLevels;
+  } else {
+    allowed_levels = fd.getAll('allowed_levels') as string[];
+    if (allowed_levels.length === 0) allowed_levels = ['100', '200', '300', '400'];
+  }
 
  try {
  const updates = {
@@ -971,7 +1020,7 @@ export default function EventPoolManagementPage() {
       <Trophy className="w-12 h-12 text-slate-300 mx-auto mb-3" />
       <p className="text-base font-bold text-slate-700">No event pools found</p>
       <p className="text-xs text-slate-400 mt-1">
-        {assignedLevel ? `No event pools assigned to Level ${assignedLevel}.` : 'Create a new event pool to get started.'}
+        {eventAllowedLevels ? `No event pools found for Level ${eventAllowedLevels.join(', ')}.` : 'Create a new event pool to get started.'}
       </p>
     </div>
   ) : (
@@ -1091,71 +1140,67 @@ export default function EventPoolManagementPage() {
   </div>
 
   {activeParticipationRule === 'level_based' && (
-      <div className="mt-4 p-4 bg-white border rounded-xl border-slate-200">
-          <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-bold text-slate-700">Allowed Levels</label>
-              {assignedLevel && (
-                  <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                      🔒 Restricted to Level {assignedLevel}
-                  </span>
-              )}
-          </div>
-          <div className="flex flex-wrap gap-3">
-              {['100', '200', '300', '400'].map(level => {
-                  const isChecked = assignedLevel ? level === assignedLevel : selectedPool.target_constraints?.allowed_levels?.includes(level);
-                  const isDisabled = !!assignedLevel;
-                  return (
-                      <label key={level} className={`flex items-center gap-1.5 text-sm ${isDisabled && level !== assignedLevel ? 'text-gray-400 opacity-50' : 'text-gray-800 font-medium'}`}>
-                          <input
-                              type="checkbox"
-                              name="allowed_levels"
-                              value={level}
-                              defaultChecked={isChecked}
-                              disabled={isDisabled}
-                              className="rounded text-primary-600 focus:ring-primary-500"
-                          />
-                          Level {level}
-                      </label>
-                  );
-              })}
-          </div>
-      </div>
-  )}
-  {activeParticipationRule === 'individual_selection' && (
-      <div className="mt-4 p-4 bg-white border rounded-xl border-slate-200">
-          <label className="block text-sm font-bold text-slate-700 mb-4">Invite Participants</label>
-          
-          <div className="flex flex-col md:flex-row gap-6">
-              {/* Left Column: Student Browser */}
-              <div className="flex-1 space-y-3">
-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Browse Students</h4>
-                  
-                  {/* Filters Row */}
-                  <div className="flex gap-2">
-                      <div className="relative flex-1">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                          <input
-                              type="text"
-                              value={inviteSearchQuery}
-                              onChange={(e) => handleInviteSearch(e.target.value)}
-                              placeholder="Search by name or username..."
-                              className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
-                          />
-                      </div>
-                      <select 
-                          value={inviteFilterLevel}
-                          onChange={(e) => handleInviteFilterChange(e.target.value)}
-                          className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 bg-white min-w-[100px]"
-                      >
-                          <option value="all">All Levels</option>
-                          <option value="100">Level 100</option>
-                          <option value="200">Level 200</option>
-                          <option value="300">Level 300</option>
-                          <option value="400">Level 400</option>
-                      </select>
-                  </div>
-
-                  {/* Browser List */}
+       <div className="mt-4 p-4 bg-white border rounded-xl border-slate-200">
+           <div className="flex items-center justify-between mb-2">
+               <label className="block text-xs font-bold text-slate-700">Allowed Target Levels</label>
+               {eventAllowedLevels && (
+                   <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                       🔒 Restricted to Level(s) {eventAllowedLevels.join(', ')}
+                   </span>
+               )}
+           </div>
+           <div className="flex flex-wrap gap-3">
+               {(eventAllowedLevels || ['100', '200', '300', '400']).map(level => {
+                   const isChecked = selectedPool.target_constraints?.allowed_levels?.includes(level) ?? true;
+                   return (
+                       <label key={level} className="flex items-center gap-1.5 text-sm text-gray-800 font-medium cursor-pointer">
+                           <input
+                               type="checkbox"
+                               name="allowed_levels"
+                               value={level}
+                               defaultChecked={isChecked}
+                               className="rounded text-primary-600 focus:ring-primary-500"
+                           />
+                           Level {level}
+                       </label>
+                   );
+               })}
+           </div>
+       </div>
+   )}
+   {activeParticipationRule === 'individual_selection' && (
+       <div className="mt-4 p-4 bg-white border rounded-xl border-slate-200">
+           <label className="block text-sm font-bold text-slate-700 mb-4">Invite Participants</label>
+           
+           <div className="flex flex-col md:flex-row gap-6">
+               {/* Left Column: Student Browser */}
+               <div className="flex-1 space-y-3">
+                   <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Browse Students</h4>
+                   
+                   {/* Filters Row */}
+                   <div className="flex gap-2">
+                       <div className="relative flex-1">
+                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                           <input
+                               type="text"
+                               value={inviteSearchQuery}
+                               onChange={(e) => handleInviteSearch(e.target.value)}
+                               placeholder="Search by name or username..."
+                               className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                           />
+                       </div>
+                       <select 
+                           value={inviteFilterLevel}
+                           onChange={(e) => handleInviteFilterChange(e.target.value)}
+                           className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 bg-white min-w-[100px]"
+                       >
+                           <option value="all">All Assigned Levels</option>
+                           {(eventAllowedLevels || ['100', '200', '300', '400']).map(lvl => (
+                               <option key={lvl} value={lvl}>Level {lvl}</option>
+                           ))}
+                       </select>
+                   </div>
+                   {/* Browser List */}
                   <div className="border rounded-lg h-[300px] overflow-y-auto divide-y bg-slate-50 relative">
                       {isInviteSearching && (
                           <div className="absolute inset-0 bg-white/50 flex items-center justify-center backdrop-blur-sm z-10">
@@ -1479,11 +1524,10 @@ export default function EventPoolManagementPage() {
             onChange={(e) => handleCandidateFilterChange(e.target.value)}
             className="px-2 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
           >
-            <option value="all">All Levels</option>
-            <option value="100">Level 100</option>
-            <option value="200">Level 200</option>
-            <option value="300">Level 300</option>
-            <option value="400">Level 400</option>
+            <option value="all">All Assigned Levels</option>
+            {(eventAllowedLevels || ['100', '200', '300', '400']).map(lvl => (
+              <option key={lvl} value={lvl}>Level {lvl}</option>
+            ))}
           </select>
         </div>
 

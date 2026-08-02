@@ -100,100 +100,74 @@ export default function ModeratorStoragePage() {
     if (showLoader) setIsLoading(true);
     setError(null);
     try {
-      // Fetch materials
-      let mats: any[] = [];
-      if (!allowedMatLevels || allowedMatLevels.length > 0) {
-        let matQ = supabase
-          .from('materials')
-          .select('id, title, file_url, file_size, created_at, level, uploaded_by')
-          .not('file_url', 'is', null);
-        if (allowedMatLevels && !isSuperAdmin) matQ = matQ.in('level', allowedMatLevels);
-        const { data } = await matQ;
-        mats = data || [];
-      }
+      // Execute all 11 storage database queries in PARALLEL via Promise.all
+      const [
+        matsRes,
+        pqsRes,
+        annsRes,
+        evsRes,
+        chatMediaRes,
+        avatarRes,
+        newsRes,
+        archivesRes,
+        galleryTopicsRes,
+        galleryMediaRes,
+        featuredStudentsRes
+      ] = await Promise.all([
+        (!allowedMatLevels || allowedMatLevels.length > 0)
+          ? (allowedMatLevels && !isSuperAdmin
+              ? supabase.from('materials').select('id, title, file_url, file_size, created_at, level, uploaded_by').not('file_url', 'is', null).in('level', allowedMatLevels)
+              : supabase.from('materials').select('id, title, file_url, file_size, created_at, level, uploaded_by').not('file_url', 'is', null))
+          : Promise.resolve({ data: [] }),
 
-      // Fetch past questions
-      let pqs: any[] = [];
-      if (!allowedPQLevels || allowedPQLevels.length > 0) {
-        let pqQ = supabase
-          .from('past_questions')
-          .select('id, title, file_url, file_size, created_at, level, uploaded_by');
-        if (allowedPQLevels && !isSuperAdmin) pqQ = pqQ.in('level', allowedPQLevels);
-        const { data } = await pqQ;
-        pqs = data || [];
-      }
+        (!allowedPQLevels || allowedPQLevels.length > 0)
+          ? (allowedPQLevels && !isSuperAdmin
+              ? supabase.from('past_questions').select('id, title, file_url, file_size, created_at, level, uploaded_by').in('level', allowedPQLevels)
+              : supabase.from('past_questions').select('id, title, file_url, file_size, created_at, level, uploaded_by'))
+          : Promise.resolve({ data: [] }),
 
-      // Fetch announcements (cover images with size)
-      let anns: any[] = [];
-      if (!allowedAnnLevels || allowedAnnLevels.length > 0) {
-        let annQ = supabase
-          .from('announcements')
-          .select('id, title, cover_image_url, cover_image_size, created_at, target_level, author_id')
-          .not('cover_image_url', 'is', null);
-        if (allowedAnnLevels && !isSuperAdmin) annQ = annQ.in('target_level', allowedAnnLevels);
-        const { data } = await annQ;
-        anns = data || [];
-      }
+        (!allowedAnnLevels || allowedAnnLevels.length > 0)
+          ? (allowedAnnLevels && !isSuperAdmin
+              ? supabase.from('announcements').select('id, title, cover_image_url, cover_image_size, created_at, target_level, author_id').not('cover_image_url', 'is', null).in('target_level', allowedAnnLevels)
+              : supabase.from('announcements').select('id, title, cover_image_url, cover_image_size, created_at, target_level, author_id').not('cover_image_url', 'is', null))
+          : Promise.resolve({ data: [] }),
 
-      // Fetch events (cover images with size)
-      let evs: any[] = [];
-      if (!allowedEvLevels || allowedEvLevels.length > 0) {
-        let evQ = supabase
-          .from('events')
-          .select('id, title, cover_image_url, cover_image_size, created_at, target_level, created_by');
-        if (allowedEvLevels && !isSuperAdmin) evQ = evQ.in('target_level', allowedEvLevels);
-        const { data } = await evQ;
-        evs = data || [];
-      }
+        (!allowedEvLevels || allowedEvLevels.length > 0)
+          ? (allowedEvLevels && !isSuperAdmin
+              ? supabase.from('events').select('id, title, cover_image_url, cover_image_size, created_at, target_level, created_by').not('cover_image_url', 'is', null).in('target_level', allowedEvLevels)
+              : supabase.from('events').select('id, title, cover_image_url, cover_image_size, created_at, target_level, created_by').not('cover_image_url', 'is', null))
+          : Promise.resolve({ data: [] }),
 
-      // Fetch chat media messages (images, videos, audio, documents sent in groups)
-      const { data: chatMedia } = await supabase
-        .from('messages')
-        .select('id, content, message_type, file_size, metadata, created_at, group_id, sender_id, groups(name)')
-        .in('message_type', ['image', 'video', 'audio', 'document'])
-        .eq('is_deleted', false)
-        .not('content', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(500);
+        supabase.from('messages')
+          .select('id, content, message_type, file_size, metadata, created_at, group_id, sender_id, groups(name)')
+          .in('message_type', ['image', 'video', 'audio', 'document'])
+          .eq('is_deleted', false)
+          .not('content', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(500),
 
-      // Fetch user avatars — filter by assigned levels for moderators
-      let avatarQ = supabase
-        .from('users')
-        .select('id, full_name, avatar_url, created_at, level')
-        .not('avatar_url', 'is', null)
-        .neq('avatar_url', '');
-      if (assignedLevels && !isSuperAdmin) avatarQ = avatarQ.in('level', assignedLevels);
-      const { data: avatarUsers } = await avatarQ;
+        (assignedLevels && !isSuperAdmin)
+          ? supabase.from('users').select('id, full_name, avatar_url, created_at, level').not('avatar_url', 'is', null).neq('avatar_url', '').in('level', assignedLevels)
+          : supabase.from('users').select('id, full_name, avatar_url, created_at, level').not('avatar_url', 'is', null).neq('avatar_url', ''),
 
-      // Fetch news
-      const { data: newsData } = await supabase
-        .from('news')
-        .select('id, title, image_url, created_at')
-        .not('image_url', 'is', null);
+        supabase.from('news').select('id, title, image_url, created_at').not('image_url', 'is', null),
+        supabase.from('archives').select('id, title, file_url, file_size, created_at').not('file_url', 'is', null),
+        supabase.from('gallery_topics').select('id, title, cover_image, created_at').not('cover_image', 'is', null),
+        supabase.from('gallery_media').select('id, media_url, created_at, gallery_topics(title)').not('media_url', 'is', null),
+        supabase.from('featured_students').select('id, title, custom_image_url, created_at').not('custom_image_url', 'is', null),
+      ]);
 
-      // Fetch archives
-      const { data: archivesData } = await supabase
-        .from('archives')
-        .select('id, title, file_url, file_size, created_at')
-        .not('file_url', 'is', null);
-
-      // Fetch gallery topics
-      const { data: galleryTopics } = await supabase
-        .from('gallery_topics')
-        .select('id, title, cover_image, created_at')
-        .not('cover_image', 'is', null);
-
-      // Fetch gallery media
-      const { data: galleryMedia } = await supabase
-        .from('gallery_media')
-        .select('id, media_url, created_at, gallery_topics(title)')
-        .not('media_url', 'is', null);
-
-      // Fetch featured students
-      const { data: featuredStudents } = await supabase
-        .from('featured_students')
-        .select('id, title, custom_image_url, created_at')
-        .not('custom_image_url', 'is', null);
+      const mats = matsRes.data || [];
+      const pqs = pqsRes.data || [];
+      const anns = annsRes.data || [];
+      const evs = evsRes.data || [];
+      const chatMedia = chatMediaRes.data || [];
+      const avatarUsers = avatarRes.data || [];
+      const newsData = newsRes.data || [];
+      const archivesData = archivesRes.data || [];
+      const galleryTopics = galleryTopicsRes.data || [];
+      const galleryMedia = galleryMediaRes.data || [];
+      const featuredStudents = featuredStudentsRes.data || [];
 
       const all: StorageItem[] = [
         ...(mats || []).map((m: any) => ({ id: m.id, title: m.title, file_url: m.file_url, file_size: m.file_size, created_at: m.created_at, type: 'material' as const, level: m.level })),

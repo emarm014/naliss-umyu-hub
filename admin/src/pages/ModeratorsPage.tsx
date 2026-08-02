@@ -125,7 +125,7 @@ export default function ModeratorsPage() {
 
   // Client-side filtering based on active tab
   const filteredUsers = useMemo(() => {
-    let result = (allStudents as UserWithDepartment[]).filter(u => ['moderator', 'super_admin'].includes(u.role));
+    let result = (allStudents as UserWithDepartment[]).filter(u => u.role === 'moderator');
 
     if (activeTab === 'student_moderators') {
       result = result.filter(u => !isExternalModerator(u));
@@ -746,7 +746,9 @@ export default function ModeratorsPage() {
               onChange={(e) => setStatusFilter(e.target.value as AccountStatus | 'all')}
               className="bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 cursor-pointer"
             >
-              <option value="all">ALL USERS</option>
+              <option value="all">
+                {activeTab === 'external_moderators' ? 'ALL EXTERNAL MODERATORS' : 'ALL STUDENT MODERATORS'}
+              </option>
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
                   {STATUS_LABELS[status].toUpperCase()}
@@ -778,16 +780,15 @@ export default function ModeratorsPage() {
           <div className="flex items-center px-4 py-2 bg-gray-50 rounded-xl border border-gray-100">
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-3">Responsibility</span>
             <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
-              className="bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 cursor-pointer"
+              value={activeTab === 'external_moderators' ? 'external_moderator' : 'student_moderator'}
+              disabled
+              className="bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 cursor-not-allowed opacity-90"
             >
-              <option value="all">ALL ROLES</option>
-              {roleOptions.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABELS[role].toUpperCase()}
-                </option>
-              ))}
+              {activeTab === 'external_moderators' ? (
+                <option value="external_moderator">EXTERNAL MODERATOR</option>
+              ) : (
+                <option value="student_moderator">STUDENT MODERATOR</option>
+              )}
             </select>
           </div>
 

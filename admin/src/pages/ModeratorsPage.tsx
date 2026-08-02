@@ -1673,20 +1673,34 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
     full_name: '',
     email: '',
     role: 'moderator' as UserRole,
-    level: '' as any,
     password: '',
   });
+  const [selectedLevels, setSelectedLevels] = useState<AcademicLevel[]>(['100']);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const toggleLevel = (lvl: AcademicLevel) => {
+    if (selectedLevels.includes(lvl)) {
+      if (selectedLevels.length === 1) return; // Must keep at least one level selected
+      setSelectedLevels(prev => prev.filter(l => l !== lvl));
+    } else {
+      setSelectedLevels(prev => [...prev, lvl].sort());
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedLevels.length === 0) {
+      setError('Please select at least one assigned level for this moderator.');
+      return;
+    }
     setIsSaving(true);
     setError(null);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
+      const primaryLevel = selectedLevels[0];
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`,
         {
@@ -1699,7 +1713,7 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
             email: formData.email,
             password: formData.password,
             full_name: formData.full_name,
-            level: formData.level,
+            level: primaryLevel,
             role: 'moderator',
             is_external: true
           })
@@ -1712,15 +1726,34 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
       }
 
       const resJson = await response.json().catch(() => ({}));
-      const createdUserId = resJson?.user?.id || resJson?.id;
+      let createdUserId = resJson?.user?.id || resJson?.id;
 
-      // Explicitly mark user as external moderator in public.users
-      if (createdUserId || formData.email) {
-        if (createdUserId) {
-          await supabase.from('users').update({ is_external: true, role: 'moderator' }).eq('id', createdUserId);
-        } else {
-          await supabase.from('users').update({ is_external: true, role: 'moderator' }).eq('email', formData.email);
-        }
+      if (!createdUserId) {
+        const { data: userRec } = await supabase.from('users').select('id').eq('email', formData.email).maybeSingle();
+        if (userRec) createdUserId = userRec.id;
+      }
+
+      if (createdUserId) {
+        // Explicitly mark user as external moderator in public.users
+        await supabase.from('users').update({ is_external: true, role: 'moderator', level: primaryLevel }).eq('id', createdUserId);
+
+        // Upsert assigned_levels in moderator_permissions
+        await supabase.from('moderator_permissions').upsert({
+          user_id: createdUserId,
+          assigned_level: primaryLevel,
+          assigned_levels: selectedLevels,
+          can_manage_announcements: true,
+          can_manage_materials: true,
+          can_manage_past_questions: true,
+          can_manage_students: true,
+          can_manage_groups: true,
+          can_manage_group_media: true,
+          can_manage_events: true,
+          can_manage_news: true,
+          can_manage_archives: true,
+          can_manage_storage: true,
+          updated_at: new Date().toISOString(),
+        });
       }
 
       onSave();
@@ -1736,8 +1769,8 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
       <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-white">
         <div className="px-8 py-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 uppercase tracking-tight">Add New Moderator</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Create a new moderator account.</p>
+            <h2 className="text-xl font-bold text-slate-900 uppercase tracking-tight">Add External Moderator</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Create a new moderator account with assigned levels.</p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all">
             <X className="w-6 h-6" />
@@ -1778,33 +1811,30 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
                 </div>
              </div>
 
-             <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Assigned Level</label>
-                   <select
-                     value={formData.level}
-                     required
-                     onChange={(e) => setFormData({ ...formData, level: e.target.value as any })}
-                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 appearance-none transition-all"
-                   >
-                     <option value="" disabled>Select Level</option>
-                     {['100', '200', '300', '400'].map(level => (
-                       <option key={level} value={level}>LEVEL {level}</option>
-                     ))}
-                   </select>
+             {/* Multi-level selection */}
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Assigned Academic Level(s) *</label>
+                <div className="grid grid-cols-4 gap-2">
+                   {(['100', '200', '300', '400'] as AcademicLevel[]).map(level => {
+                     const isSelected = selectedLevels.includes(level);
+                     return (
+                       <button
+                         key={level}
+                         type="button"
+                         onClick={() => toggleLevel(level)}
+                         className={`py-3 px-2 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-1.5 ${
+                           isSelected
+                             ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                             : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                         }`}
+                       >
+                         {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                         LEVEL {level}
+                       </button>
+                     );
+                   })}
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[10px] font-black text-gray-400 uppercase ml-1">User Role</label>
-                   <select
-                     value={formData.role}
-                     onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-primary-950/10 focus:border-primary-950 appearance-none transition-all"
-                   >
-                     {['moderator'].map(role => (
-                       <option key={role} value={role}>{role.toUpperCase()}</option>
-                     ))}
-                   </select>
-                </div>
+                <p className="text-[10px] font-bold text-slate-400 ml-1">Click to select multiple levels assigned to this moderator.</p>
              </div>
           </div>
 

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { useAdminDataStore } from '../store/adminData.store';
 import { useAuthStore } from '../store/auth.store';
+import { getAllowedLevelsForPermission } from '../utils/access';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Modal from '../components/ui/Modal';
 import {
@@ -74,8 +75,10 @@ export default function GroupMediaPage() {
   const { groups: storeGroups } = useAdminDataStore();
   const { profile, permissions } = useAuthStore();
   const isModerator = profile?.role === 'moderator';
-  const [moderatorGroupId, setModeratorGroupId] = useState<string | null>(null);
-  const [moderatorGroupName, setModeratorGroupName] = useState<string>('');
+  const allowedLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_group_media') : null;
+
+  const [moderatorGroupIds, setModeratorGroupIds] = useState<string[]>([]);
+  const [moderatorGroupNames, setModeratorGroupNames] = useState<string[]>([]);
   const [moderatorGroupResolved, setModeratorGroupResolved] = useState<boolean>(!isModerator);
   const [media, setMedia] = useState<MediaMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -104,9 +107,9 @@ export default function GroupMediaPage() {
         .order('created_at', { ascending: false })
         .limit(500);
       // No is_deleted filter — fetch all, filter client-side so admin sees deleted ones too
-      if (isModerator && moderatorGroupId) {
-        query = query.eq('group_id', moderatorGroupId);
-      } else if (isModerator && !moderatorGroupId) {
+      if (isModerator && moderatorGroupIds.length > 0) {
+        query = query.in('group_id', moderatorGroupIds);
+      } else if (isModerator && moderatorGroupIds.length === 0) {
         setMedia([]); setIsLoading(false); return;
       }
       const { data, error: err } = await query;
@@ -121,24 +124,27 @@ export default function GroupMediaPage() {
   useEffect(() => {
     if (!isModerator || !profile?.id) return;
     
-    const assignedLevel = permissions?.assigned_level;
     let query = supabase.from('groups').select('id, name');
     
-    if (assignedLevel) {
-      query = query.eq('group_type', 'level').eq('level', assignedLevel);
+    if (allowedLevels && allowedLevels.length > 0) {
+      query = query.eq('group_type', 'level').in('level', allowedLevels);
+    } else if (permissions?.assigned_level) {
+      query = query.eq('group_type', 'level').eq('level', permissions.assigned_level);
     } else {
       query = query.eq('moderator_id', profile.id);
     }
 
-    query.maybeSingle()
-      .then(({ data }) => {
-        if (data) { 
-          setModeratorGroupId(data.id); 
-          setModeratorGroupName(data.name); 
-        }
-        setModeratorGroupResolved(true);
-      });
-  }, [isModerator, profile?.id, permissions?.assigned_level]); // eslint-disable-line
+    query.then(({ data }) => {
+      if (data && data.length > 0) { 
+        setModeratorGroupIds(data.map(g => g.id)); 
+        setModeratorGroupNames(data.map(g => g.name)); 
+      } else {
+        setModeratorGroupIds([]);
+        setModeratorGroupNames([]);
+      }
+      setModeratorGroupResolved(true);
+    });
+  }, [isModerator, profile?.id, permissions, allowedLevels]); // eslint-disable-line
 
   useEffect(() => {
     if (moderatorGroupResolved) fetchMedia();
@@ -146,7 +152,7 @@ export default function GroupMediaPage() {
 
   useEffect(() => {
     if (!moderatorGroupResolved) return;
-    const filter = isModerator && moderatorGroupId ? `group_id=eq.${moderatorGroupId}` : undefined;
+    const filter = isModerator && moderatorGroupIds.length > 0 ? `group_id=in.(${moderatorGroupIds.join(',')})` : undefined;
     const channel = supabase.channel(`group-media-watch:${Date.now()}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', ...(filter ? { filter } : {}) }, (payload) => {
         if ((payload.new as any)?.is_deleted) {
@@ -161,7 +167,7 @@ export default function GroupMediaPage() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [moderatorGroupResolved, isModerator, moderatorGroupId]); // eslint-disable-line
+  }, [moderatorGroupResolved, isModerator, moderatorGroupIds]); // eslint-disable-line
 
   const handleDelete = async (msg: MediaMessage) => {
     if (!window.confirm('Delete this ' + msg.message_type + ' permanently? Removes from Cloudinary and chat. Cannot be undone.')) return;
@@ -264,10 +270,12 @@ export default function GroupMediaPage() {
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl">
                 <Lock className="w-3.5 h-3.5 text-amber-600" />
                 <span className="text-xs font-black text-amber-700 uppercase tracking-widest">
-                  {moderatorGroupName || 'Your Group'} only
+                  {allowedLevels && allowedLevels.length > 0 
+                    ? `LEVEL ${allowedLevels.join(', ')} HUBS` 
+                    : (moderatorGroupNames.length > 0 ? moderatorGroupNames.join(', ') : 'YOUR GROUPS')}
                 </span>
               </div>
-              <p className="text-gray-500 font-medium text-sm">You can view and delete media shared in your group.</p>
+              <p className="text-gray-500 font-medium text-sm">You can view and delete media shared in your assigned level groups.</p>
             </div>
           ) : (
             <p className="text-gray-500 font-medium">View, moderate and delete media. Deleting removes files from Cloudinary permanently.</p>
@@ -322,7 +330,7 @@ export default function GroupMediaPage() {
           <p className="font-bold text-red-600">{error}</p>
           <button onClick={fetchMedia} className="mt-4 px-5 py-2 bg-primary-950 text-white rounded-xl text-xs font-black uppercase tracking-widest">Retry</button>
         </div>
-      ) : media.length === 0 && isModerator && !moderatorGroupId ? (
+      ) : media.length === 0 && isModerator && moderatorGroupIds.length === 0 ? (
         <div className="bg-white rounded-3xl p-20 text-center border-2 border-dashed border-gray-100">
           <Shield className="w-14 h-14 text-gray-200 mx-auto mb-4" />
           <h3 className="text-lg font-black text-gray-900">No Group Assigned</h3>

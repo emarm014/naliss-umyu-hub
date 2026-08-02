@@ -50,7 +50,6 @@ function getUserLevelLabel(user: UserWithDepartment): string {
 const ITEMS_PER_PAGE = 10;
 
 const levelOptions: AcademicLevel[] = ['100', '200', '300', '400'];
-const statusOptions: AccountStatus[] = ['active', 'suspended', 'banned', 'pending_verification'];
 const roleOptions: UserRole[] = ['moderator', 'moderator', 'super_admin'];
 
 // Live countdown component for suspension expiry
@@ -94,7 +93,7 @@ export default function ModeratorsPage() {
   
   const [activeTab, setActiveTab] = useState<'student_moderators' | 'external_moderators'>('student_moderators');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<AccountStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<AccountStatus | 'restricted' | 'all'>('all');
   // Moderators start with their level pre-selected and cannot change it
   const [levelFilter, setLevelFilter] = useState<AcademicLevel | 'all'>(assignedLevel as AcademicLevel || 'all');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
@@ -141,7 +140,11 @@ export default function ModeratorsPage() {
     }
 
     if (statusFilter !== 'all') {
-      result = result.filter(u => u.status === statusFilter);
+      if (statusFilter === 'restricted') {
+        result = result.filter(u => ['suspended', 'banned'].includes(u.status) || (u as any).permissions?.is_restricted === true);
+      } else {
+        result = result.filter(u => u.status === statusFilter);
+      }
     }
     if (roleFilter !== 'all') {
       result = result.filter(u => u.role === roleFilter);
@@ -743,17 +746,15 @@ export default function ModeratorsPage() {
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-3">Status</span>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as AccountStatus | 'all')}
+              onChange={(e) => setStatusFilter(e.target.value as AccountStatus | 'restricted' | 'all')}
               className="bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 cursor-pointer"
             >
-              <option value="all">
-                {activeTab === 'external_moderators' ? 'ALL EXTERNAL MODERATORS' : 'ALL STUDENT MODERATORS'}
-              </option>
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {STATUS_LABELS[status].toUpperCase()}
-                </option>
-              ))}
+              <option value="all">ALL STATUSES</option>
+              <option value="active">ACTIVE</option>
+              <option value="restricted">RESTRICTED</option>
+              <option value="suspended">SUSPENDED</option>
+              <option value="banned">BANNED</option>
+              <option value="pending_verification">PENDING</option>
             </select>
           </div>
 

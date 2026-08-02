@@ -141,7 +141,9 @@ export default function ModeratorsPage() {
 
     if (statusFilter !== 'all') {
       if (statusFilter === 'restricted') {
-        result = result.filter(u => ['suspended', 'banned'].includes(u.status) || (u as any).permissions?.is_restricted === true);
+        result = result.filter(u => u.status !== 'active' || ['suspended', 'banned'].includes(u.status) || (u as any).permissions?.is_restricted === true);
+      } else if (statusFilter === 'active') {
+        result = result.filter(u => u.status === 'active' && !(u as any).permissions?.is_restricted);
       } else {
         result = result.filter(u => u.status === statusFilter);
       }
@@ -746,15 +748,12 @@ export default function ModeratorsPage() {
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-3">Status</span>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as AccountStatus | 'restricted' | 'all')}
+              onChange={(e) => setStatusFilter(e.target.value as 'active' | 'restricted' | 'all')}
               className="bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 cursor-pointer"
             >
               <option value="all">ALL STATUSES</option>
               <option value="active">ACTIVE</option>
               <option value="restricted">RESTRICTED</option>
-              <option value="suspended">SUSPENDED</option>
-              <option value="banned">BANNED</option>
-              <option value="pending_verification">PENDING</option>
             </select>
           </div>
 

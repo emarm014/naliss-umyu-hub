@@ -30,9 +30,21 @@ import FileUpload from '../lib/FileUpload';
 
 import { useAdminDataStore } from '../store/adminData.store';
 import { useAuthStore } from '../store/auth.store';
+import { getAssignedLevels } from '../utils/access';
 
 interface UserWithDepartment extends User {
   departments?: { name: string; code: string } | null;
+}
+
+function getUserLevelLabel(user: UserWithDepartment): string {
+  const assigned = getAssignedLevels(user.permissions);
+  if (assigned && assigned.length > 0) {
+    return `LEVEL ${assigned.join(', ')}`;
+  }
+  if (user.level) {
+    return `LEVEL ${user.level}`;
+  }
+  return 'ALL LEVELS';
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -814,8 +826,12 @@ export default function ModeratorsPage() {
             <thead>
               <tr className="bg-gray-50/50 border-b border-gray-100">
                 <th className="px-8 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Full Name</th>
-                <th className="px-8 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Username</th>
-                <th className="px-8 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Reg Number</th>
+                {activeTab === 'student_moderators' && (
+                  <>
+                    <th className="px-8 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Username</th>
+                    <th className="px-8 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Reg Number</th>
+                  </>
+                )}
                 <th className="px-8 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Level / Role</th>
                 <th className="px-8 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
                 <th className="px-8 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
@@ -824,7 +840,7 @@ export default function ModeratorsPage() {
             <tbody className="divide-y divide-gray-50">
             {allStudents.length === 0 && isSyncing && !lastSync ? (
                 <tr>
-                  <td colSpan={6} className="px-8 py-32 text-center">
+                  <td colSpan={activeTab === 'student_moderators' ? 6 : 4} className="px-8 py-32 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-12 h-12 border-4 border-primary-100 border-t-primary-950 rounded-full animate-spin mb-4" />
                       <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Loading Moderators...</p>
@@ -833,7 +849,7 @@ export default function ModeratorsPage() {
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={6} className="px-8 py-24">
+                  <td colSpan={activeTab === 'student_moderators' ? 6 : 4} className="px-8 py-24">
                      <div className="flex flex-col items-center justify-center text-center">
                         <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center text-red-500 mb-4">
                            <ShieldAlert className="w-8 h-8" />
@@ -846,7 +862,7 @@ export default function ModeratorsPage() {
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-8 py-32 text-center">
+                  <td colSpan={activeTab === 'student_moderators' ? 6 : 4} className="px-8 py-32 text-center">
                     <div className="flex flex-col items-center justify-center opacity-40">
                        <Search className="w-16 h-16 text-gray-300 mb-4" />
                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest">No matching moderator profiles</p>
@@ -876,19 +892,23 @@ export default function ModeratorsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-8 py-5">
-                       <div className="flex flex-col">
-                          <span className="text-[11px] font-black text-primary-600 font-mono tracking-tight">@{user.username || 'not_set'}</span>
-                       </div>
-                    </td>
-                    <td className="px-8 py-5">
-                       <div className="flex items-center gap-2">
-                          <code className="text-[11px] font-mono font-bold bg-gray-100 px-2 py-0.5 rounded text-gray-600">{user.registration_number || 'PENDING'}</code>
-                       </div>
-                    </td>
+                    {activeTab === 'student_moderators' && (
+                      <>
+                        <td className="px-8 py-5">
+                           <div className="flex flex-col">
+                              <span className="text-[11px] font-black text-primary-600 font-mono tracking-tight">@{user.username || 'not_set'}</span>
+                           </div>
+                        </td>
+                        <td className="px-8 py-5">
+                           <div className="flex items-center gap-2">
+                              <code className="text-[11px] font-mono font-bold bg-gray-100 px-2 py-0.5 rounded text-gray-600">{user.registration_number || 'PENDING'}</code>
+                           </div>
+                        </td>
+                      </>
+                    )}
                     <td className="px-8 py-5">
                        <div className="flex flex-col gap-1">
-                          <span className="text-[10px] font-black text-gray-950 italic tracking-tighter">LEVEL {user.level || '?' }</span>
+                          <span className="text-[10px] font-black text-gray-950 italic tracking-tighter">{getUserLevelLabel(user)}</span>
                           <span className={`inline-flex w-fit px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter ${
                             user.role === 'super_admin' ? 'bg-purple-100 text-purple-700' :
                             user.role === 'moderator' ? 'bg-amber-100 text-amber-700' :

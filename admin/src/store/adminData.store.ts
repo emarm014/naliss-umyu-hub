@@ -17,7 +17,7 @@ async function fetchAllUsers(): Promise<User[]> {
   while (true) {
     const { data, error } = await supabase
       .from('users')
-      .select('*, departments(name, code)')
+      .select('*, departments(name, code), moderator_permissions(assigned_level, assigned_levels, level_permissions, can_manage_announcements, can_manage_materials, can_manage_past_questions, can_manage_lecturers, can_manage_executives, can_manage_students, can_manage_groups, can_manage_group_media, can_manage_storage, can_manage_messaging, can_manage_security, can_manage_archives, can_manage_news, can_manage_events, is_restricted)')
       .neq('role', 'super_admin')
       .order('created_at', { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
@@ -25,7 +25,15 @@ async function fetchAllUsers(): Promise<User[]> {
     if (error) throw error;
     if (!data || data.length === 0) break;
 
-    all.push(...(data as User[]));
+    const formatted = data.map((u: any) => {
+      const perms = Array.isArray(u.moderator_permissions) ? u.moderator_permissions[0] : u.moderator_permissions;
+      return {
+        ...u,
+        permissions: perms || u.permissions
+      };
+    });
+
+    all.push(...(formatted as User[]));
 
     // If we got fewer rows than the page size, we've reached the last page
     if (data.length < PAGE_SIZE) break;

@@ -1,6 +1,6 @@
 // placeholder moderator storage
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import { useAuthStore } from '../store/auth.store';
@@ -66,11 +66,21 @@ export default function ModeratorStoragePage() {
   const { profile, permissions } = useAuthStore();
   const isSuperAdmin = profile?.role === 'super_admin';
   const isModerator = profile?.role === 'moderator';
-  const assignedLevels = isModerator ? getAssignedLevels(permissions) : null;
-  const allowedMatLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_materials') : null;
-  const allowedPQLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_past_questions') : null;
-  const allowedAnnLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_announcements') : null;
-  const allowedEvLevels = isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_events') : null;
+
+  const assignedLevels = useMemo(() => isModerator ? getAssignedLevels(permissions) : null, [isModerator, permissions]);
+  const allowedMatLevels = useMemo(() => isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_materials') : null, [isModerator, permissions]);
+  const allowedPQLevels = useMemo(() => isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_past_questions') : null, [isModerator, permissions]);
+  const allowedAnnLevels = useMemo(() => isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_announcements') : null, [isModerator, permissions]);
+  const allowedEvLevels = useMemo(() => isModerator ? getAllowedLevelsForPermission(permissions, 'can_manage_events') : null, [isModerator, permissions]);
+
+  // Memoize level keys as primitive string to prevent infinite reference re-creation loops
+  const levelKeys = useMemo(() => [
+    (assignedLevels || []).join(','),
+    (allowedMatLevels || []).join(','),
+    (allowedPQLevels || []).join(','),
+    (allowedAnnLevels || []).join(','),
+    (allowedEvLevels || []).join(',')
+  ].join('|'), [assignedLevels, allowedMatLevels, allowedPQLevels, allowedAnnLevels, allowedEvLevels]);
 
   const [items, setItems] = useState<StorageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,8 +96,8 @@ export default function ModeratorStoragePage() {
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
-  const fetchItems = useCallback(async () => {
-    setIsLoading(true);
+  const fetchItems = useCallback(async (showLoader = true) => {
+    if (showLoader) setIsLoading(true);
     setError(null);
     try {
       // Fetch materials
@@ -215,77 +225,78 @@ export default function ModeratorStoragePage() {
       ];
 
       setItems(all);
+      setIsLoading(false); // Instantly display loaded UI
 
-      // Background: fetch sizes for items that don't have one stored yet
-      // Only for Cloudinary URLs — use HEAD request to get Content-Length
+      // Non-blocking background fetch for Cloudinary HEAD file sizes
       const needsSize = all.filter(i =>
         i.file_size === null &&
         i.file_url?.includes('cloudinary.com')
       );
 
       if (needsSize.length > 0) {
-        // Fetch in batches of 5 to avoid overwhelming the browser
-        const fetchSize = async (item: StorageItem): Promise<number | null> => {
-          try {
-            const res = await fetch(item.file_url!, { method: 'HEAD' });
-            const len = res.headers.get('content-length');
-            return len ? parseInt(len, 10) : null;
-          } catch {
-            return null;
-          }
-        };
+        (async () => {
+          const fetchSize = async (item: StorageItem): Promise<number | null> => {
+            try {
+              const res = await fetch(item.file_url!, { method: 'HEAD' });
+              const len = res.headers.get('content-length');
+              return len ? parseInt(len, 10) : null;
+            } catch {
+              return null;
+            }
+          };
 
-        const batchSize = 5;
-        for (let i = 0; i < needsSize.length; i += batchSize) {
-          const batch = needsSize.slice(i, i + batchSize);
-          const sizes = await Promise.all(batch.map(fetchSize));
+          const batchSize = 5;
+          for (let i = 0; i < needsSize.length; i += batchSize) {
+            const batch = needsSize.slice(i, i + batchSize);
+            const sizes = await Promise.all(batch.map(fetchSize));
 
-          // Update items with fetched sizes
-          setItems(prev => prev.map(item => {
-            const idx = batch.findIndex(b => b.id === item.id);
-            if (idx === -1 || sizes[idx] === null) return item;
-            return { ...item, file_size: sizes[idx] };
-          }));
+            setItems(prev => prev.map(item => {
+              const idx = batch.findIndex(b => b.id === item.id);
+              if (idx === -1 || sizes[idx] === null) return item;
+              return { ...item, file_size: sizes[idx] };
+            }));
 
-          // Persist sizes back to DB so next load is instant
-          for (let j = 0; j < batch.length; j++) {
-            const item = batch[j];
-            const size = sizes[j];
-            if (size === null) continue;
+            for (let j = 0; j < batch.length; j++) {
+              const item = batch[j];
+              const size = sizes[j];
+              if (size === null) continue;
 
-            if (item.type === 'announcement') {
-              supabase.from('announcements').update({ cover_image_size: size }).eq('id', item.id).then(() => {});
-            } else if (item.type === 'event') {
-              supabase.from('events').update({ cover_image_size: size }).eq('id', item.id).then(() => {});
-            } else if (item.type === 'chat_media') {
-              supabase.from('messages').update({ file_size: size }).eq('id', item.id).then(() => {});
+              if (item.type === 'announcement') {
+                supabase.from('announcements').update({ cover_image_size: size }).eq('id', item.id).then(() => {});
+              } else if (item.type === 'event') {
+                supabase.from('events').update({ cover_image_size: size }).eq('id', item.id).then(() => {});
+              } else if (item.type === 'chat_media') {
+                supabase.from('messages').update({ file_size: size }).eq('id', item.id).then(() => {});
+              }
             }
           }
-        }
+        })();
       }
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Failed to load storage data.');
-    } finally {
       setIsLoading(false);
     }
-  }, [allowedMatLevels, allowedPQLevels, allowedAnnLevels, allowedEvLevels, isSuperAdmin]);
+  }, [levelKeys, isSuperAdmin]);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => { fetchItems(true); }, [fetchItems]);
 
-  // ── Real-time: any deletion/insert on content tables instantly re-fetches ─
+  // Real-time: subscribe once on mount without re-subscribing endlessly
+  const fetchItemsRef = useRef(fetchItems);
+  useEffect(() => { fetchItemsRef.current = fetchItems; }, [fetchItems]);
+
   useEffect(() => {
     const tables = ['materials', 'past_questions', 'announcements', 'events', 'messages', 'news', 'archives', 'gallery_topics', 'gallery_media', 'featured_students'];
     const channels = tables.map(table =>
       supabase
-        .channel(`storage-watch:${table}:${Date.now()}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table }, () => { fetchItems(); })
+        .channel(`storage-watch:${table}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => { fetchItemsRef.current(false); })
         .subscribe()
     );
 
     return () => {
       channels.forEach(ch => supabase.removeChannel(ch));
     };
-  }, [fetchItems]);
+  }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleDelete = async (item: StorageItem) => {
@@ -408,7 +419,7 @@ export default function ModeratorStoragePage() {
           )}
         </div>
         <button
-          onClick={fetchItems}
+          onClick={() => fetchItems(true)}
           disabled={isLoading}
           className="flex items-center gap-2 px-5 py-3 bg-primary-950 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-primary-800 transition-all disabled:opacity-50"
         >
@@ -500,7 +511,7 @@ export default function ModeratorStoragePage() {
         <div className="bg-white rounded-3xl p-12 text-center border border-red-100">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <p className="font-bold text-red-600">{error}</p>
-          <button onClick={fetchItems} className="mt-4 px-5 py-2 bg-primary-950 text-white rounded-xl text-xs font-black uppercase tracking-widest">Retry</button>
+          <button onClick={() => fetchItems(true)} className="mt-4 px-5 py-2 bg-primary-950 text-white rounded-xl text-xs font-black uppercase tracking-widest">Retry</button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-3xl p-20 text-center border-2 border-dashed border-gray-100">

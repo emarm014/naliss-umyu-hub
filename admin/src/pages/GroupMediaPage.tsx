@@ -322,7 +322,7 @@ export default function GroupMediaPage() {
               ))}
             </div>
           )}
-          <button onClick={fetchMedia} disabled={isLoading}
+          <button onClick={() => fetchMedia()} disabled={isLoading}
             className="flex items-center gap-2 px-5 py-3 bg-primary-950 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-primary-800 transition-all disabled:opacity-50">
             <RefreshCw className={"w-4 h-4 " + (isLoading ? 'animate-spin' : '')} />
             Refresh
@@ -358,7 +358,7 @@ export default function GroupMediaPage() {
         <div className="bg-white rounded-3xl p-12 text-center border border-red-100">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <p className="font-bold text-red-600">{error}</p>
-          <button onClick={fetchMedia} className="mt-4 px-5 py-2 bg-primary-950 text-white rounded-xl text-xs font-black uppercase tracking-widest">Retry</button>
+          <button onClick={() => fetchMedia()} className="mt-4 px-5 py-2 bg-primary-950 text-white rounded-xl text-xs font-black uppercase tracking-widest">Retry</button>
         </div>
       ) : media.length === 0 && isModerator && moderatorGroupIds.length === 0 ? (
         <div className="bg-white rounded-3xl p-20 text-center border-2 border-dashed border-gray-100">

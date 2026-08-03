@@ -97,35 +97,71 @@ export default function GroupMediaPage() {
   const showSuccess = (msg: string) => { setSuccessMessage(msg); setTimeout(() => setSuccessMessage(null), 5000); };
   const showError = (msg: string) => { setErrorMessage(msg); setTimeout(() => setErrorMessage(null), 5000); };
 
-  const fetchMedia = async () => {
+  const fetchMedia = async (overrideGroupIds?: string[]) => {
     setIsLoading(true); setError(null);
     try {
+      const targetGroupIds = overrideGroupIds !== undefined ? overrideGroupIds : moderatorGroupIds;
+
       let query = supabase
         .from('messages')
-        .select('id, content, message_type, created_at, deleted_at, is_deleted, deleted_by_user_id, sender_id, group_id, metadata, sender:users!messages_sender_id_fkey(full_name, username, email, role, registration_number, level), group:groups!messages_group_id_fkey(name, group_type), deleted_by:users!messages_deleted_by_user_id_fkey(full_name, username)')
-        .in('message_type', ['image', 'video', 'document', 'audio'])
+        .select('id, content, message_type, content_type, attachment_url, created_at, deleted_at, is_deleted, deleted_by_user_id, sender_id, group_id, metadata, sender:users!messages_sender_id_fkey(full_name, username, email, role, registration_number, level), group:groups!messages_group_id_fkey(name, group_type), deleted_by:users!messages_deleted_by_user_id_fkey(full_name, username)')
+        .or('message_type.in.(image,video,document,audio,file),content_type.in.(image,video,document,audio,file),content.ilike.http%,attachment_url.not.is.null')
         .order('created_at', { ascending: false })
-        .limit(500);
-      // No is_deleted filter — fetch all, filter client-side so admin sees deleted ones too
-      if (isModerator && moderatorGroupIds.length > 0) {
-        query = query.in('group_id', moderatorGroupIds);
-      } else if (isModerator && moderatorGroupIds.length === 0) {
-        setMedia([]); setIsLoading(false); return;
+        .limit(1000);
+
+      // Filter for moderator groups if applicable
+      if (isModerator && targetGroupIds.length > 0) {
+        query = query.in('group_id', targetGroupIds);
+      } else if (isModerator && targetGroupIds.length === 0) {
+        setMedia([]); 
+        setIsLoading(false); 
+        return;
       }
+
       const { data, error: err } = await query;
       if (err) throw err;
-      setMedia((data as unknown as MediaMessage[]) || []);
-    } catch (e: unknown) { setError((e as Error)?.message || 'Failed to load media.'); }
-    finally { setIsLoading(false); }
+
+      // Normalize media messages
+      const normalized = ((data || []) as any[]).map((m: any) => {
+        const rawUrl = m.attachment_url || m.content || '';
+        const url = getValidUrl(rawUrl);
+        const msgType = (m.message_type || m.content_type || '').toLowerCase();
+
+        let type: 'image' | 'video' | 'document' | 'audio' = 'image';
+        if (msgType.includes('video') || url.includes('/video/upload/') || url.match(/\.(mp4|mov|avi|webm)$/i)) {
+          type = 'video';
+        } else if (msgType.includes('audio') || url.match(/\.(mp3|wav|m4a|aac|ogg)$/i)) {
+          type = 'audio';
+        } else if (msgType.includes('doc') || msgType.includes('pdf') || url.match(/\.(pdf|docx?|pptx?|xlsx?|txt)$/i)) {
+          type = 'document';
+        }
+
+        return {
+          ...m,
+          content: url || m.content,
+          message_type: type,
+        };
+      });
+
+      setMedia((normalized as unknown as MediaMessage[]) || []);
+    } catch (e: unknown) { 
+      setError((e as Error)?.message || 'Failed to load media.'); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
-  useEffect(() => { fetchMedia(); }, []); // eslint-disable-line
-
   useEffect(() => {
-    if (!isModerator || !profile?.id) return;
-    
+    if (!isModerator) {
+      setModeratorGroupResolved(true);
+      fetchMedia([]);
+      return;
+    }
+
+    if (!profile?.id) return;
+
     let query = supabase.from('groups').select('id, name');
-    
+
     if (allowedLevels && allowedLevels.length > 0) {
       query = query.eq('group_type', 'level').in('level', allowedLevels);
     } else if (permissions?.assigned_level) {
@@ -135,20 +171,14 @@ export default function GroupMediaPage() {
     }
 
     query.then(({ data }) => {
-      if (data && data.length > 0) { 
-        setModeratorGroupIds(data.map(g => g.id)); 
-        setModeratorGroupNames(data.map(g => g.name)); 
-      } else {
-        setModeratorGroupIds([]);
-        setModeratorGroupNames([]);
-      }
+      const ids = data && data.length > 0 ? data.map(g => g.id) : [];
+      const names = data && data.length > 0 ? data.map(g => g.name) : [];
+      setModeratorGroupIds(ids);
+      setModeratorGroupNames(names);
       setModeratorGroupResolved(true);
+      fetchMedia(ids);
     });
   }, [isModerator, profile?.id, permissions, allowedLevels]); // eslint-disable-line
-
-  useEffect(() => {
-    if (moderatorGroupResolved) fetchMedia();
-  }, [moderatorGroupResolved]); // eslint-disable-line
 
   useEffect(() => {
     if (!moderatorGroupResolved) return;

@@ -7,6 +7,8 @@ ADD COLUMN IF NOT EXISTS allow_media BOOLEAN NOT NULL DEFAULT true;
 COMMENT ON COLUMN public.groups.allow_media IS 'Controls whether group members can upload media/files in this group chat. Only modifiable by Admins.';
 
 -- Update get_groups_with_counts RPC to return allow_media
+DROP FUNCTION IF EXISTS public.get_groups_with_counts();
+
 CREATE OR REPLACE FUNCTION public.get_groups_with_counts()
 RETURNS TABLE (
   id uuid,

@@ -46,6 +46,8 @@ export default function LecturerDetailScreen() {
     ? lecturer.qualifications.split('\n').filter(Boolean)
     : [];
 
+  const cleanAvatar = getCleanAvatarUrl(lecturer.avatar_url);
+  const cachedAvatarUri = useOfflineImage(cleanAvatar);
 
   return (
     <View style={styles.root}>
@@ -119,30 +121,19 @@ export default function LecturerDetailScreen() {
               <Text style={styles.contactBtnText}>Email</Text>
             </TouchableOpacity>
           )}
-          {lecturer.office_location && (
-            <TouchableOpacity
-              style={[styles.contactBtn, styles.contactBtnOutline]}
-              onPress={() => {}}
-            >
-              <Ionicons name="location-outline" size={16} color={COLORS.primary} />
-              <Text style={[styles.contactBtnText, { color: COLORS.primary }]}>
-                {lecturer.office_location}
-              </Text>
-            </TouchableOpacity>
-          )}
           {lecturer.phone && (
             <TouchableOpacity
               style={[styles.contactBtn, styles.contactBtnOutline]}
               onPress={() => Linking.openURL(`tel:${lecturer.phone}`)}
             >
-              <Ionicons name="call-outline" size={16} color={COLORS.primary} />
+              <Ionicons name="call" size={16} color={COLORS.primary} />
               <Text style={[styles.contactBtnText, { color: COLORS.primary }]}>Call</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Biography */}
-        {lecturer.bio ? (
+        {/* About / Bio section */}
+        {lecturer.bio && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionAccent} />
@@ -152,20 +143,20 @@ export default function LecturerDetailScreen() {
               <Text style={styles.bioText}>{lecturer.bio}</Text>
             </View>
           </View>
-        ) : null}
+        )}
 
-        {/* Academic Qualifications */}
+        {/* Qualifications */}
         {qualifications.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionAccent} />
-              <Text style={styles.sectionTitle}>Academic Qualifications</Text>
+              <Text style={styles.sectionTitle}>Qualifications</Text>
             </View>
             <View style={styles.card}>
-              {qualifications.map((q: string, i: number) => (
-                <View key={i} style={styles.qualItem}>
+              {qualifications.map((q: string, index: number) => (
+                <View key={index} style={styles.qualItem}>
                   <View style={styles.qualIcon}>
-                    <Ionicons name="school" size={14} color={COLORS.primary} />
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
                   </View>
                   <Text style={styles.qualText}>{q}</Text>
                 </View>
@@ -174,34 +165,22 @@ export default function LecturerDetailScreen() {
           </View>
         )}
 
-        {/* Contact Info */}
+        {/* Office details */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionAccent} />
-            <Text style={styles.sectionTitle}>Contact Information</Text>
+            <Text style={styles.sectionTitle}>Office & Hours</Text>
           </View>
           <View style={styles.card}>
-            {lecturer.email && (
-              <View style={styles.infoRow}>
-                <Ionicons name="mail-outline" size={16} color={COLORS.primary} />
-                <Text style={styles.infoText}>{lecturer.email}</Text>
-              </View>
-            )}
-            {lecturer.phone && (
-              <View style={styles.infoRow}>
-                <Ionicons name="call-outline" size={16} color={COLORS.primary} />
-                <Text style={styles.infoText}>{lecturer.phone}</Text>
-              </View>
-            )}
             {lecturer.office_location && (
               <View style={styles.infoRow}>
-                <Ionicons name="location-outline" size={16} color={COLORS.primary} />
-                <Text style={styles.infoText}>{lecturer.office_location}</Text>
+                <Ionicons name="location" size={16} color={COLORS.primary} />
+                <Text style={styles.infoText}>Office: {lecturer.office_location}</Text>
               </View>
             )}
             {lecturer.office_hours && (
               <View style={styles.infoRow}>
-                <Ionicons name="time-outline" size={16} color={COLORS.primary} />
+                <Ionicons name="time" size={16} color={COLORS.primary} />
                 <Text style={styles.infoText}>Office Hours: {lecturer.office_hours}</Text>
               </View>
             )}
@@ -214,7 +193,7 @@ export default function LecturerDetailScreen() {
       <UniversalViewer
         isVisible={viewerVisible}
         onClose={() => setViewerVisible(false)}
-        fileUri={getCleanAvatarUrl(lecturer.avatar_url) || ''}
+        fileUri={cachedAvatarUri || cleanAvatar || ''}
         fileType="image"
         fileName={lecturer.full_name}
         showDownload={false}

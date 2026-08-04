@@ -14,6 +14,7 @@ import { getCleanAvatarUrl } from '../../../src/utils';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../../src/components/common/CachedImage';
+import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
 
 export default function ExecutiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -42,6 +43,9 @@ export default function ExecutiveDetailScreen() {
   const avatarUrl = exec.avatar_url || exec.user?.avatar_url;
   const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
   const isActive = exec.is_active !== false;
+
+  const cleanAvatar = getCleanAvatarUrl(avatarUrl);
+  const cachedAvatarUri = useOfflineImage(cleanAvatar);
 
   const formatDate = (d: string | null) => {
     if (!d) return null;
@@ -127,7 +131,7 @@ export default function ExecutiveDetailScreen() {
                 style={[styles.contactBtn, styles.contactBtnOutline]}
                 onPress={() => Linking.openURL(`tel:${exec.phone}`)}
               >
-                <Ionicons name="call-outline" size={16} color="#b45309" />
+                <Ionicons name="call" size={16} color="#b45309" />
                 <Text style={[styles.contactBtnText, { color: '#b45309' }]}>Call</Text>
               </TouchableOpacity>
             )}

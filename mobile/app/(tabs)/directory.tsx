@@ -197,28 +197,30 @@ export default function DirectoryScreen() {
 
 import { getCleanAvatarUrl } from '../../src/utils';
 import { useOfflineImage } from '../../src/hooks/useOfflineImage';
+import { CachedImage } from '../../src/components/common/CachedImage';
 
 function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (uri: string, name: string) => void }) {
     const cleanAvatar = getCleanAvatarUrl(staff.avatar_url);
     const effectiveAvatar = cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(staff.full_name)}&size=200`;
     const cachedUri = useOfflineImage(cleanAvatar);
+    const initials = staff.full_name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => onPressAvatar(effectiveAvatar, staff.full_name)}
+                    onPress={() => onPressAvatar(cachedUri || effectiveAvatar, staff.full_name)}
                     activeOpacity={0.8}
                 >
-                    {cachedUri ? (
-                        <Image source={{ uri: cachedUri }} style={styles.avatar} />
-                    ) : (
-                        <View style={[styles.avatar, styles.placeholderAvatar]}>
-                            <Text style={styles.avatarPlaceholderText}>
-                                {staff.full_name.charAt(0)}
-                            </Text>
-                        </View>
-                    )}
+                    <CachedImage
+                        entityId={staff.id}
+                        remoteUrl={effectiveAvatar}
+                        assetType="lecturer"
+                        style={styles.avatar}
+                        fallbackName={staff.full_name}
+                        fallbackInitials={initials}
+                    />
                 </TouchableOpacity>
                 <View style={styles.staffInfo}>
                     <Text style={styles.staffName}>{staff.full_name}</Text>
@@ -263,22 +265,24 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
     const cleanAvatar = getCleanAvatarUrl(rawAvatarUrl);
     const effectiveAvatar = cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(fullName)}&size=200`;
     const cachedUri = useOfflineImage(cleanAvatar);
+    const initials = fullName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
 
     return (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => onPressAvatar(effectiveAvatar, fullName)}
+                    onPress={() => onPressAvatar(cachedUri || effectiveAvatar, fullName)}
                     activeOpacity={0.8}
                 >
-                    {cachedUri ? (
-                        <Image source={{ uri: cachedUri }} style={styles.avatar} />
-                    ) : (
-                        <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: COLORS.secondary + '20' }]}>
-                            <Text style={styles.avatarPlaceholderText}>{fullName.charAt(0)}</Text>
-                        </View>
-                    )}
+                    <CachedImage
+                        entityId={executive.id}
+                        remoteUrl={effectiveAvatar}
+                        assetType="executive"
+                        style={styles.avatar}
+                        fallbackName={fullName}
+                        fallbackInitials={initials}
+                    />
                 </TouchableOpacity>
                 <View style={styles.staffInfo}>
                     <Text style={styles.staffName}>{fullName}</Text>

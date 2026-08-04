@@ -27,7 +27,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "ng.umyu.students.naliss",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification", "fetch"],
+        "UIBackgroundModes": [
+          "remote-notification",
+          "fetch"
+        ],
         "NSCameraUsageDescription": "Allow NALISS to access your camera for profile photos",
         "NSPhotoLibraryUsageDescription": "Allow NALISS to access your photos for profile pictures and material uploads",
         "NSMicrophoneUsageDescription": "Allow NALISS to access your microphone for audio messages",
@@ -96,7 +99,8 @@
           }
         }
       ],
-      "./plugins/withAndroidAbiFilters.js"
+      "./plugins/withAndroidAbiFilters.js",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

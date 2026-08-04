@@ -9,7 +9,7 @@ import {
   Plus, Search, Edit, Trash2, User as UserIcon,
   Crown, X, ChevronLeft, ChevronRight,
   Linkedin, Twitter, Instagram, Facebook, Users, Activity,
-  ShieldAlert, Loader2
+  ShieldAlert, Loader2, Image as ImageIcon, Upload
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import { useAuthStore } from '../store/auth.store';
@@ -44,6 +44,8 @@ export default function ExecutivesPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [customPosition, setCustomPosition] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoCaption, setPhotoCaption] = useState('');
 
   const { executives: allExecutives, isSyncing, error: storeError, syncAll, removeExecutive, refreshAnalytics } = useAdminDataStore();
 
@@ -102,16 +104,14 @@ export default function ExecutivesPage() {
 
   const handleDelete = async (id: string) => {
     if (isSubmitting) return;
-    if (!window.confirm('Are you sure you want to permanently delete this executive profile? This action cannot be undone.')) {
-      return;
-    }
+    if (!window.confirm('Are you sure you want to permanently delete this executive record?')) return;
 
-    // Capture avatar URL BEFORE optimistic remove — allExecutives will no longer contain this item after removeExecutive()
+    // Capture avatar URL BEFORE optimistic remove
     const exec = allExecutives.find(e => e.id === id) as any;
     const avatarUrl = exec?.avatar_url;
 
     removeExecutive(id);
-    setSuccessMessage('Profile deleted successfully.');
+    setSuccessMessage('Executive record removed.');
     setTimeout(() => setSuccessMessage(null), 5000);
 
     try {
@@ -134,7 +134,7 @@ export default function ExecutivesPage() {
         .update({ is_current: !executive.is_current })
         .eq('id', executive.id);
       if (error) throw error;
-      setSuccessMessage(`Executive updated to ${!executive.is_current ? 'Current' : 'Past'}.`);
+      setSuccessMessage(`Executive marked as ${!executive.is_current ? 'Current' : 'Past'}.`);
       refreshAnalytics();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: unknown) {
@@ -146,14 +146,17 @@ export default function ExecutivesPage() {
     if (!window.confirm(`Are you sure you want to end the tenure for ${executive.full_name} and shift them to Alumni?`)) return;
     
     try {
-      const { error } = await supabase.rpc('archive_executive_tenure', { target_id: executive.id });
+      const { error } = await supabase
+        .from('executives')
+        .update({ is_current: false, is_alumni: true, end_date: new Date().toISOString() })
+        .eq('id', executive.id);
       if (error) throw error;
-      setSuccessMessage(`${executive.full_name} has been shifted to Alumni.`);
+      setSuccessMessage(`${executive.full_name || 'Executive'} archived as Alumni.`);
       syncAll(true);
       refreshAnalytics();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: unknown) {
-      setFormError('Failed to archive tenure: ' + ((err as any)?.message || 'Unknown error'));
+      setFormError('Failed to archive: ' + ((err as any)?.message || 'Unknown error'));
     }
   };
 
@@ -169,9 +172,10 @@ export default function ExecutivesPage() {
 
   const openEditModal = (executive: Executive) => {
     setSelectedExecutive(executive);
+    const isStandard = Object.keys(positionLabels).includes(executive.position_code || '');
     setFormData({
       full_name: executive.full_name || '',
-      position: executive.position_code || 'president',
+      position: isStandard ? (executive.position_code || 'president') : 'other',
       email: executive.email || '',
       phone: executive.phone || '',
       avatar_url: executive.avatar_url || '',
@@ -186,6 +190,7 @@ export default function ExecutivesPage() {
       instagram: executive.social_links?.instagram || '',
       facebook: executive.social_links?.facebook || '',
     });
+    setCustomPosition(isStandard ? '' : executive.position);
     setShowModal('edit');
   };
 
@@ -198,6 +203,63 @@ export default function ExecutivesPage() {
     } catch {
       setSelectedExecutive(executive);
       setShowModal('photos');
+    }
+  };
+
+  const handleAddPhoto = async () => {
+    if (!photoUrl || !selectedExecutive) return;
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('photos').insert({
+        entity_type: 'executive',
+        entity_id: selectedExecutive.id,
+        url: photoUrl,
+        caption: photoCaption || null,
+        display_order: (selectedExecutive.photos?.length || 0) + 1,
+      });
+      if (error) throw error;
+      const { data } = await supabase
+        .from('photos').select('*')
+        .eq('entity_type', 'executive').eq('entity_id', selectedExecutive.id)
+        .order('display_order');
+      setSelectedExecutive({ ...selectedExecutive, photos: data || [] });
+      setPhotoUrl('');
+      setPhotoCaption('');
+    } catch (err: unknown) {
+      setFormError((err as any)?.message || 'Failed to add photo.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: string) => {
+    if (!selectedExecutive) return;
+    if (!window.confirm('Are you sure you want to delete this photo?')) return;
+    try {
+      const { error } = await supabase.from('photos').delete().eq('id', photoId);
+      if (error) throw error;
+      const { data } = await supabase
+        .from('photos').select('*')
+        .eq('entity_type', 'executive').eq('entity_id', selectedExecutive.id)
+        .order('display_order');
+      setSelectedExecutive({ ...selectedExecutive, photos: data || [] });
+    } catch (err: unknown) {
+      setFormError((err as any)?.message || 'Failed to delete photo.');
+    }
+  };
+
+  const handleSetProfilePhoto = async (photoUrl: string) => {
+    if (!selectedExecutive) return;
+    try {
+      const { error } = await supabase
+        .from('executives').update({ avatar_url: photoUrl }).eq('id', selectedExecutive.id);
+      if (error) throw error;
+      setSelectedExecutive({ ...selectedExecutive, avatar_url: photoUrl });
+      refreshAnalytics();
+      setSuccessMessage('Profile photo updated.');
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: unknown) {
+      setFormError((err as any)?.message || 'Failed to set profile photo.');
     }
   };
 
@@ -278,23 +340,23 @@ export default function ExecutivesPage() {
               </div>
             </div>
             <h1 className="text-4xl lg:text-7xl font-black leading-[1.05] tracking-tight">
-              Executives
+              Student <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-200 via-primary-300 to-amber-200">Leadership.</span>
             </h1>
-            <p className="text-primary-100/50 mt-8 text-xl font-medium leading-relaxed max-w-lg">
-                Manage student leaders, positions, and terms.
-            </p>
+            <p className="text-slate-400 font-medium text-base mt-6 max-w-xl">Manage union executives, office holders, and archived student leadership rosters.</p>
           </div>
-
-          <button onClick={openCreateModal} className="w-fit px-10 py-5 bg-primary-400 text-primary-950 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-2xl shadow-primary-400/20 hover:bg-primary-300 transition-all active:scale-95 flex items-center gap-3">
-             <Plus className="w-4 h-4" />
-             Add Executive
-          </button>
+          {isSuperAdmin && (
+            <button onClick={openCreateModal} className="btn-institutional px-8 py-4 text-base font-bold shadow-xl flex items-center justify-center gap-3">
+              <Plus className="w-5 h-5" />
+              <span>Register Executive</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="glass-card p-6 border-l-4 border-l-primary-600">
+        <div className="glass-card p-6 border-l-4 border-l-primary-500">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-bold text-slate-400 tracking-wider uppercase">Total Records</p>
@@ -382,18 +444,11 @@ export default function ExecutivesPage() {
                 <div className={`absolute top-0 right-0 h-1 w-full ${executive.is_current ? 'bg-primary-500' : 'bg-amber-500'}`} />
                 <div className="p-6">
                   <div className="flex items-start gap-4">
-                    <div className="relative group/avatar cursor-pointer" onClick={() => openPhotosModal(executive)}>
-                      <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary-100 to-primary-50 border-2 border-white shadow-md flex items-center justify-center overflow-hidden">
-                        {displayAvatar ? (
-                          <img src={displayAvatar} alt={displayName} className="w-full h-full object-cover transition-transform duration-500 group-hover/avatar:scale-110" />
-                        ) : (
-                          <UserIcon className="h-8 w-8 text-primary-400/50" />
-                        )}
-                      </div>
-                      {executive.is_current && (
-                        <div className="absolute -top-2 -right-2 w-7 h-7 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
-                          <Crown className="w-3.5 h-3.5 text-white" />
-                        </div>
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary-100 to-primary-50 border-2 border-white shadow-md flex items-center justify-center overflow-hidden">
+                      {displayAvatar ? (
+                        <img src={displayAvatar} alt={displayName} className="w-full h-full object-cover" />
+                      ) : (
+                        <UserIcon className="h-8 w-8 text-primary-400/50" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -427,19 +482,21 @@ export default function ExecutivesPage() {
                           {executive.is_current ? 'Archive Profile' : 'Restore'}
                         </button>
                         <div className="flex gap-1.5">
-                          <button onClick={() => openEditModal(executive)} className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200"><Edit className="h-4 w-4" /></button>
-                          <button onClick={() => handleDelete(executive.id)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                          <button onClick={() => openPhotosModal(executive)} className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors" title="Manage Gallery">
+                            <ImageIcon className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => openEditModal(executive)} className="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors" title="Edit Profile">
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleDelete(executive.id)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete Profile">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
                       {executive.is_current && !executive.is_alumni && (
                         <button onClick={() => handleArchiveTenure(executive)} className="w-full py-2 bg-primary-100 text-primary-700 hover:bg-primary-200 rounded-lg text-xs font-bold transition-colors">
                           End Tenure / Shift to Alumni
                         </button>
-                      )}
-                      {executive.is_alumni && (
-                        <div className="w-full py-1.5 bg-slate-100 text-slate-500 rounded-lg text-xs font-bold text-center">
-                          Alumni Member
-                        </div>
                       )}
                     </div>
                   )}
@@ -498,17 +555,6 @@ export default function ExecutivesPage() {
                 
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Biography / Introduction</label>
-                  <textarea
-                    value={formData.bio}
-                    onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                    rows={4}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:bg-white font-medium text-slate-900 transition-all"
-                    placeholder="Provide a brief introduction for this executive..."
-                  />
-                </div>
-
-                <div className="col-span-2 mt-4 bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center gap-3">
-                    <input type="checkbox" id="is_current" checked={formData.is_current} onChange={(e) => setFormData({ ...formData, is_current: e.target.checked })} className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer" />
                     <div><label htmlFor="is_current" className="text-sm font-bold text-slate-900 cursor-pointer">Current Administration</label><p className="text-xs font-medium text-slate-500">Uncheck to archive this executive into legacy records.</p></div>
                 </div>
               </div>

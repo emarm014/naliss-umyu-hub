@@ -14,19 +14,37 @@ import { UniversalViewer } from '../../../src/components/common/UniversalViewer'
 import { CachedImage } from '../../../src/components/common/CachedImage';
 import { getCleanAvatarUrl } from '../../../src/utils';
 import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
+import { supabase } from '../../../src/api/supabase/client';
 
 export default function LecturerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { lecturers } = useDirectoryStore();
   const [lecturer, setLecturer] = useState<any>(null);
+  const [photos, setPhotos] = useState<any[]>([]);
   const [viewerVisible, setViewerVisible] = useState(false);
+  const [activeViewerItem, setActiveViewerItem] = useState<{ uri: string; name: string } | null>(null);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const found = lecturers.find(l => l.id === id);
     if (found) setLecturer(found);
   }, [id, lecturers]);
+
+  useEffect(() => {
+    if (!id || typeof id !== 'string') return;
+    supabase
+      .from('photos')
+      .select('*')
+      .eq('entity_type', 'lecturer')
+      .eq('entity_id', id)
+      .order('display_order', { ascending: true })
+      .then(({ data, error }) => {
+        if (data && !error) {
+          setPhotos(data);
+        }
+      });
+  }, [id]);
 
   if (!lecturer) {
     return (
@@ -49,6 +67,14 @@ export default function LecturerDetailScreen() {
 
   const cleanAvatar = getCleanAvatarUrl(lecturer.avatar_url);
   const cachedAvatarUri = useOfflineImage(cleanAvatar);
+
+  const openMainAvatarViewer = () => {
+    setActiveViewerItem({
+      uri: cachedAvatarUri || cleanAvatar || '',
+      name: lecturer.full_name,
+    });
+    setViewerVisible(true);
+  };
 
   return (
     <View style={styles.root}>
@@ -78,7 +104,7 @@ export default function LecturerDetailScreen() {
           avatarUrl={lecturer.avatar_url}
           initials={initials}
           title={lecturer.title}
-          onPressAvatar={() => setViewerVisible(true)}
+          onPressAvatar={openMainAvatarViewer}
         />
 
         {/* Name & info */}
@@ -132,6 +158,29 @@ export default function LecturerDetailScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Personal Media Gallery */}
+        {photos.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionAccent} />
+              <Text style={styles.sectionTitle}>Media Gallery ({photos.length})</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
+              {photos.map((photo) => (
+                <GalleryCard
+                  key={photo.id}
+                  photo={photo}
+                  fallbackName={lecturer.full_name}
+                  onPress={(uri, title) => {
+                    setActiveViewerItem({ uri, name: title });
+                    setViewerVisible(true);
+                  }}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* About / Bio section */}
         {lecturer.bio && (
@@ -194,14 +243,40 @@ export default function LecturerDetailScreen() {
       <UniversalViewer
         isVisible={viewerVisible}
         onClose={() => setViewerVisible(false)}
-        fileUri={cachedAvatarUri || cleanAvatar || ''}
+        fileUri={activeViewerItem?.uri || ''}
         fileType="image"
-        fileName={lecturer.full_name}
+        fileName={activeViewerItem?.name || lecturer.full_name}
         showDownload={false}
         showShare={false}
         isHalfScreen={true}
       />
     </View>
+  );
+}
+
+function GalleryCard({ photo, fallbackName, onPress }: { photo: any; fallbackName: string; onPress: (uri: string, name: string) => void }) {
+  const cleanUrl = getCleanAvatarUrl(photo.url);
+  const cachedUri = useOfflineImage(cleanUrl);
+  const title = photo.caption || fallbackName;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={styles.galleryCard}
+      onPress={() => onPress(cachedUri || cleanUrl || '', title)}
+    >
+      <CachedImage
+        entityId={photo.id}
+        remoteUrl={cleanUrl}
+        assetType="lecturer_gallery"
+        style={styles.galleryImage}
+      />
+      {photo.caption ? (
+        <View style={styles.captionOverlay}>
+          <Text style={styles.captionText} numberOfLines={1}>{photo.caption}</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
   );
 }
 
@@ -361,6 +436,19 @@ const styles = StyleSheet.create({
   },
   bioText: { fontSize: 14, fontFamily: 'Inter-Regular', color: '#334155', lineHeight: 22 },
 
+  // Gallery
+  galleryCard: {
+    width: 140, height: 110, borderRadius: 14,
+    overflow: 'hidden', backgroundColor: '#e2e8f0',
+    position: 'relative', borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  galleryImage: { width: '100%', height: '100%' },
+  captionOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(15,23,42,0.75)', paddingHorizontal: 8, paddingVertical: 4,
+  },
+  captionText: { color: '#fff', fontSize: 10, fontFamily: 'Inter-Medium' },
+
   // Qualifications
   qualItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   qualIcon: {
@@ -374,3 +462,4 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   infoText: { flex: 1, fontSize: 13, fontFamily: 'Inter-Regular', color: '#334155' },
 });
+

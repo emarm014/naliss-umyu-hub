@@ -15,19 +15,37 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 import { CachedImage } from '../../../src/components/common/CachedImage';
 import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
+import { supabase } from '../../../src/api/supabase/client';
 
 export default function ExecutiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { executives } = useDirectoryStore();
   const [exec, setExec] = useState<any>(null);
+  const [photos, setPhotos] = useState<any[]>([]);
   const [viewerVisible, setViewerVisible] = useState(false);
+  const [activeViewerItem, setActiveViewerItem] = useState<{ uri: string; name: string } | null>(null);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const found = executives.find((e: any) => e.id === id);
     if (found) setExec(found);
   }, [id, executives]);
+
+  useEffect(() => {
+    if (!id || typeof id !== 'string') return;
+    supabase
+      .from('photos')
+      .select('*')
+      .eq('entity_type', 'executive')
+      .eq('entity_id', id)
+      .order('display_order', { ascending: true })
+      .then(({ data, error }) => {
+        if (data && !error) {
+          setPhotos(data);
+        }
+      });
+  }, [id]);
 
   if (!exec) {
     return (
@@ -50,6 +68,14 @@ export default function ExecutiveDetailScreen() {
   const formatDate = (d: string | null) => {
     if (!d) return null;
     try { return format(new Date(d), 'MMM yyyy'); } catch { return null; }
+  };
+
+  const openMainAvatarViewer = () => {
+    setActiveViewerItem({
+      uri: cachedAvatarUri || cleanAvatar || '',
+      name,
+    });
+    setViewerVisible(true);
   };
 
   return (
@@ -78,7 +104,7 @@ export default function ExecutiveDetailScreen() {
           avatarUrl={avatarUrl}
           initials={initials}
           isActive={isActive}
-          onPressAvatar={() => setViewerVisible(true)}
+          onPressAvatar={openMainAvatarViewer}
         />
 
         <Text style={styles.heroName}>{name}</Text>
@@ -138,12 +164,35 @@ export default function ExecutiveDetailScreen() {
           </View>
         )}
 
+        {/* Leadership Media Gallery */}
+        {photos.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionAccent} />
+              <Text style={styles.sectionTitle}>Leadership Gallery ({photos.length})</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
+              {photos.map((photo) => (
+                <GalleryCard
+                  key={photo.id}
+                  photo={photo}
+                  fallbackName={name}
+                  onPress={(uri, title) => {
+                    setActiveViewerItem({ uri, name: title });
+                    setViewerVisible(true);
+                  }}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Biography */}
         {exec.bio ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionAccent} />
-              <Text style={styles.sectionTitle}>About</Text>
+              <Text style={styles.sectionTitle}>About Executive</Text>
             </View>
             <View style={styles.card}>
               <Text style={styles.bioText}>{exec.bio}</Text>
@@ -190,7 +239,7 @@ export default function ExecutiveDetailScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionAccent} />
-              <Text style={styles.sectionTitle}>Contact</Text>
+              <Text style={styles.sectionTitle}>Contact Details</Text>
             </View>
             <View style={styles.card}>
               {exec.email && (
@@ -215,14 +264,40 @@ export default function ExecutiveDetailScreen() {
       <UniversalViewer
         isVisible={viewerVisible}
         onClose={() => setViewerVisible(false)}
-        fileUri={getCleanAvatarUrl(avatarUrl) || ''}
+        fileUri={activeViewerItem?.uri || ''}
         fileType="image"
-        fileName={name}
+        fileName={activeViewerItem?.name || name}
         showDownload={false}
         showShare={false}
         isHalfScreen={true}
       />
     </View>
+  );
+}
+
+function GalleryCard({ photo, fallbackName, onPress }: { photo: any; fallbackName: string; onPress: (uri: string, name: string) => void }) {
+  const cleanUrl = getCleanAvatarUrl(photo.url);
+  const cachedUri = useOfflineImage(cleanUrl);
+  const title = photo.caption || fallbackName;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={styles.galleryCard}
+      onPress={() => onPress(cachedUri || cleanUrl || '', title)}
+    >
+      <CachedImage
+        entityId={photo.id}
+        remoteUrl={cleanUrl}
+        assetType="executive_gallery"
+        style={styles.galleryImage}
+      />
+      {photo.caption ? (
+        <View style={styles.captionOverlay}>
+          <Text style={styles.captionText} numberOfLines={1}>{photo.caption}</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
   );
 }
 
@@ -343,6 +418,20 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
   bioText: { fontSize: 14, fontFamily: 'Inter-Regular', color: '#334155', lineHeight: 22 },
+
+  // Gallery
+  galleryCard: {
+    width: 140, height: 110, borderRadius: 14,
+    overflow: 'hidden', backgroundColor: '#fef3c7',
+    position: 'relative', borderWidth: 1, borderColor: '#fde68a',
+  },
+  galleryImage: { width: '100%', height: '100%' },
+  captionOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(120,53,15,0.85)', paddingHorizontal: 8, paddingVertical: 4,
+  },
+  captionText: { color: '#fff', fontSize: 10, fontFamily: 'Inter-Medium' },
+
   roleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   roleIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#fef3c7', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   roleTitle: { fontSize: 15, fontFamily: 'Inter-Bold', color: '#0f172a', marginBottom: 2 },

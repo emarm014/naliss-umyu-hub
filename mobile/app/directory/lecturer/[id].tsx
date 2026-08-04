@@ -33,13 +33,13 @@ export default function LecturerDetailScreen() {
 
   useEffect(() => {
     if (!id || typeof id !== 'string') return;
-    supabase
+    (supabase as any)
       .from('photos')
       .select('*')
       .eq('entity_type', 'lecturer')
       .eq('entity_id', id)
       .order('display_order', { ascending: true })
-      .then(({ data, error }) => {
+      .then(({ data, error }: any) => {
         if (data && !error) {
           setPhotos(data);
         }

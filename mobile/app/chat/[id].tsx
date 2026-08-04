@@ -1133,9 +1133,9 @@ export default function ChatScreen() {
 
         // Step 1: Launch System Gallery / Camera Access View
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ImagePicker.MediaTypeOptions.All,
             allowsMultipleSelection: true,
-            selectionLimit: 3,
+            selectionLimit: 10,
             quality: 1,              // Preserve crisp max resolution
         });
 
@@ -2072,37 +2072,50 @@ export default function ChatScreen() {
 
         try {
             const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+                type: ['*/*'],
                 copyToCacheDirectory: true,
                 multiple: true
             });
 
             if (!result.canceled && result.assets && result.assets.length > 0) {
-                const assets = result.assets.slice(0, 3);
-                const files: SelectedFile[] = assets.map(asset => {
-                    const name = asset.name;
-                    return {
+                const assets = result.assets.slice(0, 10);
+                const files: SelectedFile[] = [];
+
+                for (const asset of assets) {
+                    const name = asset.name || 'document';
+                    const ext = name.substring(name.lastIndexOf('.')).toLowerCase();
+                    const validExts = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.txt', '.csv', '.zip'];
+                    const mime = asset.mimeType?.toLowerCase() || '';
+
+                    const isValidDoc = validExts.includes(ext) || 
+                        mime.includes('pdf') || 
+                        mime.includes('word') || 
+                        mime.includes('document') || 
+                        mime.includes('presentation') || 
+                        mime.includes('sheet') ||
+                        mime.includes('text');
+
+                    if (!isValidDoc) {
+                        Alert.alert('Invalid File Type', `File "${name}" is not a supported document format.`);
+                        continue;
+                    }
+                    if (asset.size && asset.size > 15 * 1024 * 1024) {
+                        Alert.alert('File Too Large', `File "${name}" exceeds the 15MB limit.`);
+                        continue;
+                    }
+
+                    files.push({
                         uri: asset.uri,
                         name,
                         size: asset.size,
-                        mimeType: asset.mimeType,
+                        mimeType: asset.mimeType || 'application/octet-stream',
                         type: 'document'
-                    };
-                });
-
-                for (const file of files) {
-                    const mime = file.mimeType?.toLowerCase() || '';
-                    if (mime !== 'application/pdf' && mime !== 'application/msword' && mime !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-                        Alert.alert('Invalid File Type', 'Unsupported document format. Only PDF and Word documents are allowed.');
-                        return;
-                    }
-                    if (file.size && file.size > 5 * 1024 * 1024) {
-                        Alert.alert('File Too Large', 'Please select files smaller than 5MB.');
-                        return;
-                    }
+                    });
                 }
 
-                setUnprocessedImages(files);
+                if (files.length > 0) {
+                    setUnprocessedImages(prev => [...prev, ...files]);
+                }
             }
         } catch (err: any) {
             captureUIError('ChatScreen.pickDocument', err, { groupId: id });
@@ -2129,37 +2142,40 @@ export default function ChatScreen() {
             });
 
             if (!result.canceled && result.assets && result.assets.length > 0) {
-                const assets = result.assets.slice(0, 3);
-                const files: SelectedFile[] = assets.map(asset => {
-                    const name = asset.name;
-                    const isAudio = asset.mimeType?.startsWith('audio') || name.toLowerCase().endsWith('.mp3') || name.toLowerCase().endsWith('.m4a') || name.toLowerCase().endsWith('.wav');
-                    return {
+                const assets = result.assets.slice(0, 10);
+                const files: SelectedFile[] = [];
+
+                for (const asset of assets) {
+                    const name = asset.name || 'media';
+                    const ext = name.substring(name.lastIndexOf('.')).toLowerCase();
+                    const isAudio = asset.mimeType?.startsWith('audio') || ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac'].includes(ext);
+                    const isVideo = asset.mimeType?.startsWith('video') || ['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v'].includes(ext);
+
+                    if (!isAudio && !isVideo) {
+                        Alert.alert('Invalid File Type', `File "${name}" is not a supported audio/video format.`);
+                        continue;
+                    }
+
+                    const sizeLimit = isAudio ? 10 * 1024 * 1024 : 30 * 1024 * 1024;
+                    const sizeLabelMB = isAudio ? '10MB' : '30MB';
+
+                    if (asset.size && asset.size > sizeLimit) {
+                        Alert.alert('File Too Large', `File "${name}" exceeds the ${sizeLabelMB} limit.`);
+                        continue;
+                    }
+
+                    files.push({
                         uri: asset.uri,
                         name,
                         size: asset.size,
                         mimeType: asset.mimeType,
                         type: isAudio ? 'audio' : 'video'
-                    };
-                });
-
-                for (const file of files) {
-                    const isAudio = file.type === 'audio';
-                    const sizeLimit = isAudio ? 5 * 1024 * 1024 : 15 * 1024 * 1024;
-                    const sizeLabelMB = isAudio ? '5MB' : '15MB';
-
-                    const mime = file.mimeType?.toLowerCase() || '';
-                    if (!mime.startsWith('audio/') && !mime.startsWith('video/')) {
-                        Alert.alert('Invalid File Type', 'Unsupported media type selected. Only audio and video files are allowed.');
-                        return;
-                    }
-
-                    if (file.size && file.size > sizeLimit) {
-                        Alert.alert('File Too Large', `Please select files smaller than ${sizeLabelMB}.`);
-                        return;
-                    }
+                    });
                 }
 
-                setUnprocessedImages(files);
+                if (files.length > 0) {
+                    setUnprocessedImages(prev => [...prev, ...files]);
+                }
             }
         } catch (err: any) {
             captureUIError('ChatScreen.pickAudioVideo', err, { groupId: id });

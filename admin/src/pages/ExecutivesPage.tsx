@@ -9,7 +9,7 @@ import {
   Plus, Search, Edit, Trash2, User as UserIcon,
   Crown, X, ChevronLeft, ChevronRight,
   Linkedin, Twitter, Instagram, Facebook, Users, Activity,
-  ShieldAlert, Loader2, Image as ImageIcon, Upload
+  ShieldAlert, Loader2, Image as ImageIcon
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import { useAuthStore } from '../store/auth.store';
@@ -44,8 +44,6 @@ export default function ExecutivesPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [customPosition, setCustomPosition] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('');
-  const [photoCaption, setPhotoCaption] = useState('');
 
   const { executives: allExecutives, isSyncing, error: storeError, syncAll, removeExecutive, refreshAnalytics } = useAdminDataStore();
 
@@ -206,31 +204,7 @@ export default function ExecutivesPage() {
     }
   };
 
-  const handleAddPhoto = async () => {
-    if (!photoUrl || !selectedExecutive) return;
-    setIsSubmitting(true);
-    try {
-      const { error } = await supabase.from('photos').insert({
-        entity_type: 'executive',
-        entity_id: selectedExecutive.id,
-        url: photoUrl,
-        caption: photoCaption || null,
-        display_order: (selectedExecutive.photos?.length || 0) + 1,
-      });
-      if (error) throw error;
-      const { data } = await supabase
-        .from('photos').select('*')
-        .eq('entity_type', 'executive').eq('entity_id', selectedExecutive.id)
-        .order('display_order');
-      setSelectedExecutive({ ...selectedExecutive, photos: data || [] });
-      setPhotoUrl('');
-      setPhotoCaption('');
-    } catch (err: unknown) {
-      setFormError((err as any)?.message || 'Failed to add photo.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+
 
   const handleDeletePhoto = async (photoId: string) => {
     if (!selectedExecutive) return;
@@ -644,22 +618,18 @@ export default function ExecutivesPage() {
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
                     />
                     <div className="absolute inset-0 bg-primary-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-4">
-                      <div className="flex flex-col gap-2 w-full">
                         <button 
-                          onClick={async () => {
-                            if (!window.confirm('Are you sure you want to delete this photo?')) return;
-
-                            try {
-                              const { error } = await supabase.from('photos').delete().eq('id', photo.id);
-                              if (error) throw error;
-                              openPhotosModal(selectedExecutive);
-                            } catch { /* silent */ }
-                          }}
-                          className="w-full py-2 bg-red-600 text-white rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-2"
+                          onClick={() => handleSetProfilePhoto(photo.url)}
+                          className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <UserIcon className="w-3.5 h-3.5" /> SET AVATAR
+                        </button>
+                        <button 
+                          onClick={() => handleDeletePhoto(photo.id)}
+                          className="w-full py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> DELETE
                         </button>
-                      </div>
                     </div>
                   </div>
                 ))}

@@ -193,16 +193,30 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
   return dbObj as SQLite.SQLiteDatabase;
 }
 
+let initDbPromise: Promise<SQLite.SQLiteDatabase | null> | null = null;
+
 export const initDB = async () => {
     if (Platform.OS === 'web') return null;
-    try {
-        const rawDb = await SQLite.openDatabaseAsync(activeDbName);
-        currentRawDb = rawDb;
+    if (initDbPromise) return initDbPromise;
+
+    initDbPromise = (async () => {
+        try {
+            if (db) {
+                // If we already have a db instance, verify it works before returning early
+                try {
+                    await db.execAsync('SELECT 1');
+                    return db;
+                } catch (_) {}
+            }
+            const rawDb = await SQLite.openDatabaseAsync(activeDbName);
+            currentRawDb = rawDb;
         db = wrapDatabaseWithObservability(rawDb);
         // Enforce busy timeout loop to insulate the database against thread blockages
         await db.execAsync('PRAGMA busy_timeout = 5000;');
+        // Execute journal_mode = WAL independently because execAsync wraps multi-statement queries in a transaction
+        await db.execAsync('PRAGMA journal_mode = WAL;');
+        
         await db.execAsync(`
-            PRAGMA journal_mode = WAL;
             CREATE TABLE IF NOT EXISTS local_messages (
                 id TEXT PRIMARY KEY,
                 group_id TEXT,
@@ -413,8 +427,11 @@ export const initDB = async () => {
         return db;
     } catch (e) {
         console.warn('Failed to initialize SQLite DB:', e);
+        initDbPromise = null;
         return null;
     }
+    })();
+    return initDbPromise;
 };
 
 export const getDB = () => db;

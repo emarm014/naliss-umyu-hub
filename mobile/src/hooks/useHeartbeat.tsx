@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus, Animated, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
@@ -54,8 +54,8 @@ export function useHeartbeat() {
                 if (error) {
                     // Fallback to direct table update if RPC doesn't exist
                     await (supabase as any)
-                        .from('profiles')
-                        .update({ last_seen: new Date().toISOString() })
+                        .from('users')
+                        .update({ last_active_at: new Date().toISOString() })
                         .eq('id', user.id);
                 } else if (data && typeof data === 'object') {
                     if ('active_alert' in data) {

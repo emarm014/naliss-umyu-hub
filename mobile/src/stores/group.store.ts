@@ -259,7 +259,10 @@ export const useGroupStore = create<GroupState>()(
                 try {
                     const { error } = await (supabase as any).rpc('mark_group_as_read', { p_group_id: groupId });
                     if (error) {
-                        console.error('Failed to mark group as read via RPC:', error);
+                        const isNetErr = error?.message?.includes('Network') || error?.details?.includes('Network');
+                        if (!isNetErr) {
+                            console.error('Failed to mark group as read via RPC:', error);
+                        }
                     }
                     
                     // Also update SQLite cache so local-first reads don't show stale unread counts
@@ -269,8 +272,11 @@ export const useGroupStore = create<GroupState>()(
                     if (session?.user?.id) {
                         cacheEntityList('groups', get().groups, session.user.id).catch(() => {});
                     }
-                } catch (err) {
-                    console.error('Exception in markGroupAsRead:', err);
+                } catch (err: any) {
+                    const isNetErr = err?.message?.includes('Network');
+                    if (!isNetErr) {
+                        console.error('Exception in markGroupAsRead:', err);
+                    }
                 }
             },
 

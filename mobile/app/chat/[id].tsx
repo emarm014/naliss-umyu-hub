@@ -1133,7 +1133,7 @@ export default function ChatScreen() {
 
         // Step 1: Launch System Gallery / Camera Access View
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.All,
+            mediaTypes: ['images', 'videos'],
             allowsMultipleSelection: true,
             selectionLimit: 10,
             quality: 1,              // Preserve crisp max resolution

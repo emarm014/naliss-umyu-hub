@@ -184,7 +184,7 @@ export default function ChallengeEngineScreen() {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') return Alert.alert('Permission needed', 'We need access to your photos to upload media.');
         const result = await ImagePicker.launchImageLibraryAsync({ 
-            mediaTypes: ImagePicker.MediaTypeOptions.All,
+            mediaTypes: ['images', 'videos'],
             quality: 0.8
         });
         if (!result.canceled && result.assets[0]) {

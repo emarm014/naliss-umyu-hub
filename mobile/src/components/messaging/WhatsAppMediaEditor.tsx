@@ -42,6 +42,15 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     // For flatlist scroll sync
     const mainListRef = React.useRef<FlatList>(null);
 
+    const handleViewableItemsChanged = React.useRef(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            setActiveIndex(viewableItems[0].index);
+            setPlayingVideoIndex(null);
+        }
+    }).current;
+
+    const viewabilityConfig = React.useRef({ itemVisiblePercentThreshold: 50 }).current;
+
     useEffect(() => {
         if (!visible) {
             setFinalizedAssets([]);
@@ -141,15 +150,6 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
             </TouchableOpacity>
         );
     };
-
-    const handleViewableItemsChanged = React.useRef(({ viewableItems }: any) => {
-        if (viewableItems.length > 0) {
-            setActiveIndex(viewableItems[0].index);
-            setPlayingVideoIndex(null);
-        }
-    }).current;
-
-    const viewabilityConfig = React.useRef({ itemVisiblePercentThreshold: 50 }).current;
 
     return (
         <Modal visible={visible} transparent={false} animationType="slide">

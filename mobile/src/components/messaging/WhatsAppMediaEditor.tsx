@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { ImageEditor } from 'expo-image-editor';
 import { Video, ResizeMode } from 'expo-av';
 import { CustomVideoPlayer } from '../common/CustomVideoPlayer';
 
@@ -37,7 +36,6 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     const [finalizedAssets, setFinalizedAssets] = useState<FinalizedMedia[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     const [isProcessing, setIsProcessing] = useState(false);
-    const [isCropping, setIsCropping] = useState(false);
     
     const [playingVideoIndex, setPlayingVideoIndex] = useState<number | null>(null);
     
@@ -73,6 +71,28 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
         const newAssets = [...finalizedAssets];
         newAssets[activeIndex].caption = text;
         setFinalizedAssets(newAssets);
+    };
+
+    const handleCropSquare = async () => {
+        if (!activeAsset || isVideoAsset(activeAsset)) return;
+        setIsProcessing(true);
+        try {
+            const side = Math.min(activeAsset.width || 1080, activeAsset.height || 1080);
+            const originX = Math.max(0, Math.floor(((activeAsset.width || side) - side) / 2));
+            const originY = Math.max(0, Math.floor(((activeAsset.height || side) - side) / 2));
+            
+            const result = await manipulateAsync(
+                activeAsset.uri,
+                [{ crop: { originX, originY, width: side, height: side } }],
+                { compress: 0.9, format: SaveFormat.JPEG }
+            );
+            
+            setFinalizedAssets(prev => prev.map((asset, i) => i === activeIndex ? { ...asset, uri: result.uri, width: result.width, height: result.height } : asset));
+        } catch (e) {
+            console.warn('Failed to crop image', e);
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const handleRotate = async () => {
@@ -146,7 +166,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                     <View style={styles.headerActions}>
                         {!isVideoAsset(activeAsset) && (
                             <>
-                                <TouchableOpacity onPress={() => setIsCropping(true)} style={styles.iconButton} disabled={isProcessing}>
+                                <TouchableOpacity onPress={handleCropSquare} style={styles.iconButton} disabled={isProcessing}>
                                     <Ionicons name="crop" size={24} color="#fff" />
                                 </TouchableOpacity>
                                 <TouchableOpacity onPress={handleRotate} style={styles.iconButton} disabled={isProcessing}>
@@ -275,28 +295,6 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                     </View>
                 </View>
             </KeyboardAvoidingView>
-
-            {/* Cropper - using asView to avoid nested Modal issues on Android */}
-            {isCropping && (
-                <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', zIndex: 100 }]}>
-                    <ImageEditor
-                        visible={true}
-                        asView={true}
-                        onCloseEditor={() => setIsCropping(false)}
-                        imageUri={activeAsset?.uri || ''}
-                        fixedCropAspectRatio={16 / 9}
-                        lockAspectRatio={false}
-                        minimumCropDimensions={{
-                            width: 100,
-                            height: 100,
-                        }}
-                        onEditingComplete={(result) => {
-                            setFinalizedAssets(prev => prev.map((asset, i) => i === activeIndex ? { ...asset, uri: result.uri } : asset));
-                            setIsCropping(false);
-                        }}
-                    />
-                </View>
-            )}
         </Modal>
     );
 };

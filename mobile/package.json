@@ -35,8 +35,6 @@
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.23",
     "expo-font": "~14.0.12",
-    "expo-gl": "~16.0.10",
-    "expo-image-editor": "^1.7.1",
     "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.11",
     "expo-intent-launcher": "~13.0.8",
@@ -69,7 +67,6 @@
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "~0.21.0",
     "react-native-webview": "13.15.0",
-    "recoil": "^0.7.7",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

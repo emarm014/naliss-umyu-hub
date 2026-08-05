@@ -1,4 +1,4 @@
-﻿import { Logger } from './logger';
+import { Logger } from './logger';
 import { isNetworkError } from './sentry';
 
 export interface TimeoutError extends Error {
@@ -64,6 +64,19 @@ export const withRetry = async <T>(
     componentName = 'System',
     operationName = 'AsyncOperation'
   } = options;
+
+  // Fast-fail if device is offline — skip all retry loops
+  try {
+    const NetInfo = require('@react-native-community/netinfo').default;
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      throw new Error(`Network request failed`);
+    }
+  } catch (e: any) {
+    // If the check itself fails with a network message, propagate it
+    if (e?.message?.includes('Network request failed')) throw e;
+    // Otherwise (e.g., NetInfo not available), proceed normally
+  }
 
   let attempt = 1;
 

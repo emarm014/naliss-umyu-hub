@@ -119,8 +119,13 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                         setLocalUri(result.uri);
                     }
                 }
-            } catch (err) {
-                console.warn('[CachedImage] Failed to load image:', err);
+            } catch (err: any) {
+                // Use debug-level logging to avoid flooding Sentry breadcrumbs when offline
+                const isNet = err?.message?.includes('Network') || err?.message?.includes('Unable to resolve host');
+                if (!isNet) {
+                    console.warn('[CachedImage] Failed to load image:', err);
+                }
+                if (isMounted) setHasError(true);
             } finally {
                 if (isMounted) {
                     setLoading(false);

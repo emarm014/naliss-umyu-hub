@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -28,6 +28,33 @@ interface MutationQueueState {
 
 const loggedFatalMutations = new Set<string>();
 
+// Tables that are valid targets for offline mutations.
+// Mutations targeting tables outside this list are silently purged on hydration.
+// This prevents stale mutations from old code (e.g., targeting a removed 'profiles' table)
+// from endlessly retrying and throwing 404/403 errors.
+const VALID_MUTATION_TABLES = new Set([
+  'users', 'user_sessions', 'messages', 'reactions', 'group_members',
+  'groups', 'news', 'archives', 'featured_students', 'announcement_reads',
+  'notification_history', 'notepad_notes', 'notepad_folders',
+  'system_settings', 'event_pools', 'event_pool_participants',
+  'event_pool_submissions', 'event_pool_votes',
+  'congratulations', 'fyb_courses', 'fyb_materials',
+]);
+
+/**
+ * Removes any queued mutations that target tables no longer in the schema.
+ * This auto-cleans leftover mutations from old code paths.
+ */
+function sanitizeQueue(queue: OfflineMutation[]): OfflineMutation[] {
+  return queue.filter(mut => {
+    if (!VALID_MUTATION_TABLES.has(mut.table)) {
+      Logger.warn('mutationQueue', `Purging stale mutation targeting removed table: "${mut.table}"`, { id: mut.id });
+      return false;
+    }
+    return true;
+  });
+}
+
 export const useMutationQueueStore = create<MutationQueueState>()(
   persist(
     (set, get) => ({
@@ -54,6 +81,16 @@ export const useMutationQueueStore = create<MutationQueueState>()(
       processQueue: async () => {
         // Prevent concurrent queue processing loops
         if (get().isProcessing || get().queue.length === 0) return;
+
+        // Skip processing entirely if device is offline
+        try {
+          const NetInfo = require('@react-native-community/netinfo').default;
+          const netState = await NetInfo.fetch();
+          if (!netState.isConnected) {
+            Logger.info('mutationQueue', 'Device is offline, skipping queue processing.');
+            return;
+          }
+        } catch (_) {}
 
         set({ isProcessing: true });
         Logger.info('mutationQueue', `Processing mutation queue (${get().queue.length} items)...`);
@@ -146,7 +183,17 @@ export const useMutationQueueStore = create<MutationQueueState>()(
       partialize: (state) => ({
         queue: state.queue,
         failedQueue: state.failedQueue
-      })
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Auto-purge stale mutations targeting removed/renamed tables
+          const cleanQueue = sanitizeQueue(state.queue);
+          const cleanFailed = sanitizeQueue(state.failedQueue);
+          if (cleanQueue.length !== state.queue.length || cleanFailed.length !== state.failedQueue.length) {
+            useMutationQueueStore.setState({ queue: cleanQueue, failedQueue: cleanFailed });
+          }
+        }
+      }
     }
   )
 );

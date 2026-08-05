@@ -124,6 +124,15 @@ export const useAuthStore = create<AuthState>()(
         
         const deviceId = 'unknown';
 
+        // Fast-path: if offline, skip network fetch entirely and keep local cache
+        try {
+          const netState = await NetInfo.fetch();
+          if (!netState.isConnected) {
+            Logger.info('auth.store', 'Device is offline, serving profile from local cache.');
+            return;
+          }
+        } catch (_) {}
+
         try {
           const { data, error } = await Logger.perf('auth.store', 'fetchProfile', () => 
             withRetry(async () => {

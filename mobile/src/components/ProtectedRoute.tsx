@@ -61,6 +61,16 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       let isSubscribed = true;
       const verifyDeviceSession = async () => {
         try {
+          // Skip device session verification if offline — will retry on next app foreground
+          const NetInfo = require('@react-native-community/netinfo').default;
+          const netState = await NetInfo.fetch();
+          if (!netState.isConnected) {
+            if (isSubscribed) {
+              setDeviceSessionChecked(true); // Allow app to render from cache
+            }
+            return;
+          }
+
           const deviceId = await getOrCreateDeviceId();
           const ipAddress = await fetchIpAddress();
           const deviceName = getDeviceName();

@@ -68,8 +68,6 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
         }
     }, [visible, assets]);
 
-    if (!visible || finalizedAssets.length === 0) return null;
-
     const activeAsset = finalizedAssets[activeIndex];
 
     const isVideoAsset = (asset: MediaAsset) => {
@@ -152,8 +150,9 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     };
 
     return (
-        <Modal visible={visible} transparent={false} animationType="slide">
-            <KeyboardAvoidingView 
+        <Modal visible={visible && finalizedAssets.length > 0} transparent={false} animationType="slide">
+            {finalizedAssets.length > 0 && activeAsset && (
+                <KeyboardAvoidingView 
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={[styles.container, { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20) }]}
             >
@@ -294,7 +293,8 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                         </TouchableOpacity>
                     </View>
                 </View>
-            </KeyboardAvoidingView>
+                </KeyboardAvoidingView>
+            )}
         </Modal>
     );
 };

@@ -137,7 +137,30 @@ export function FeaturedStudentPopup() {
         // Prevents the popup from appearing on auth/signup screens (level, identity, etc.)
         const isInSignupFlow = !!signupProvider || (signupStep != null && signupStep > 0);
         if (!profile || isProfileComplete !== true || isInSignupFlow) return;
+        
         checkForActiveFeature();
+
+        // Realtime listener for INSTANT popup when Admin adds a featured student
+        const channel = supabase
+            .channel('global_featured_students_listener')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'featured_students',
+                    filter: 'is_active=eq.true',
+                },
+                () => {
+                    // Admin published a new active featured student, fetch and show!
+                    checkForActiveFeature();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [profile, isProfileComplete, signupProvider, signupStep]);
 
     // Realtime listener for incoming congratulations on featured student device

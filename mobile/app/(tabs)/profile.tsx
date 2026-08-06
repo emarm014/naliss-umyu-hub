@@ -652,6 +652,7 @@ export default function ProfileScreen() {
   }
 
   return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <LinearGradient
         colors={[COLORS.primary, COLORS.secondary]}
@@ -906,6 +907,12 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: colors.textMuted }]}>NALISS UMYU HUB v1.0.0</Text>
+          <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>© 2026 NALISS Department, UMYU</Text>
+        </View>
+      </View>
+    </ScrollView>
 
 
         {/* Security / Password Change Modal */}
@@ -913,6 +920,7 @@ export default function ProfileScreen() {
             visible={showChangePassword}
             onClose={() => { setShowChangePassword(false); setPasswordData({ newPassword: '', confirmPassword: '' }); }}
             contentStyle={{ backgroundColor: colors.card }}
+            useNativeModal={false}
         >
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Change Password</Text>
@@ -1077,6 +1085,7 @@ export default function ProfileScreen() {
             visible={showSecurityMenu}
             onClose={() => setShowSecurityMenu(false)}
             contentStyle={{ backgroundColor: colors.card, height: 'auto', borderTopLeftRadius: 32, borderTopRightRadius: 32 }}
+            useNativeModal={false}
         >
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Security Settings</Text>
@@ -1130,6 +1139,7 @@ export default function ProfileScreen() {
             onClose={() => setShowManageSessions(false)}
             contentStyle={{ backgroundColor: colors.card }}
             animationType="fade"
+            useNativeModal={false}
         >
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Manage Active Sessions</Text>
@@ -1182,6 +1192,7 @@ export default function ProfileScreen() {
             visible={showDeviceLogs}
             onClose={() => setShowDeviceLogs(false)}
             contentStyle={{ backgroundColor: colors.card }}
+            useNativeModal={false}
         >
                     <View style={styles.modalHeader}>
                         <View style={{ flex: 1, marginRight: 16 }}>
@@ -1276,6 +1287,7 @@ export default function ProfileScreen() {
             dismissible={!isVerifyingPassword}
             contentStyle={{ backgroundColor: colors.card }}
             animationType="fade"
+            useNativeModal={false}
         >
                     <View style={styles.avatarModalHeader}>
                         <Text style={[styles.avatarModalTitle, { color: colors.text }]}>Confirm Password</Text>
@@ -1349,6 +1361,7 @@ export default function ProfileScreen() {
             visible={showNotifications}
             onClose={closeNotificationsModal}
             contentStyle={{ backgroundColor: colors.card }}
+            useNativeModal={false}
         >
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Notifications</Text>
@@ -1425,6 +1438,7 @@ export default function ProfileScreen() {
             visible={showDisplay}
             onClose={() => setShowDisplay(false)}
             contentStyle={{ backgroundColor: colors.card }}
+            useNativeModal={false}
         >
                     <View style={styles.modalHeader}>
                         <Text style={[styles.modalTitle, { color: colors.text }]}>Display</Text>
@@ -1506,17 +1520,13 @@ export default function ProfileScreen() {
                     </ScrollView>
         </SafeBottomSheet>
 
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>NALISS UMYU HUB v1.0.0</Text>
-          <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>© 2026 NALISS Department, UMYU</Text>
-        </View>
-      </View>
       {/* Avatar Confirmation Modal — inline JSX, NOT a nested component (prevents shaking) */}
       <SafeModal
         visible={showAvatarConfirm}
         onClose={() => setShowAvatarConfirm(false)}
         contentStyle={{ backgroundColor: colors.card }}
         animationType="fade"
+        useNativeModal={false}
       >
             <View style={styles.avatarModalHeader}>
               <Text style={[styles.avatarModalTitle, { color: colors.text }]}>Confirm New Photo</Text>
@@ -1565,7 +1575,7 @@ export default function ProfileScreen() {
         fileName={viewerFile.name}
         isHalfScreen={true}
       />
-    </ScrollView>
+    </View>
   );
 }
 

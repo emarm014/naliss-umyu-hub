@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase, ensureActiveSession } from '../lib/supabase';
 import { adminRealtimeManager as realtimeCoordinator } from '../lib/realtimeManager';
 import { queryClient } from '../lib/queryClient';
+import { sortHierarchically } from '../utils/hierarchy';
 
 // ── Paginated user fetcher ────────────────────────────────────────────────────
 // PostgREST has a default max-rows cap (typically 1000). For departments with
@@ -295,14 +296,14 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
             lecturers: await safeFetch('lecturers', async () => {
               const { data, error } = await supabase.from('lecturers').select('*').order('display_order', { ascending: true });
               if (error) throw error;
-              return data || [];
+              return sortHierarchically(data || [], 'lecturer');
             }, get().lecturers, 30 * 60 * 1000)
           }),
           async () => ({
             executives: await safeFetch('executives', async () => {
               const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
               if (error) throw error;
-              return data || [];
+              return sortHierarchically(data || [], 'executive');
             }, get().executives, 30 * 60 * 1000)
           }),
           async () => ({

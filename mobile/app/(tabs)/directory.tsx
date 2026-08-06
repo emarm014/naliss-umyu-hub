@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDirectoryStore } from '../../src/stores';
+import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
 import { Lecturer } from '../../src/types';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
@@ -41,17 +42,42 @@ export default function DirectoryScreen() {
         loadData();
     }, [activeTab]);
 
-    const loadData = async () => {
+    useEffect(() => {
+        const staffChannel = supabase
+            .channel('public:lecturers')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'lecturers' },
+                () => { fetchLecturers(true); }
+            )
+            .subscribe();
+
+        const execChannel = supabase
+            .channel('public:executives')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'executives' },
+                () => { fetchExecutives(true); }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(staffChannel);
+            supabase.removeChannel(execChannel);
+        };
+    }, []);
+
+    const loadData = async (force = false) => {
         if (activeTab === 'staff') {
-            await fetchLecturers();
+            await fetchLecturers(force);
         } else {
-            await fetchExecutives();
+            await fetchExecutives(force);
         }
     };
     const onRefresh = async () => {
         setRefreshing(true);
         try {
-            await loadData();
+            await loadData(true);
         } finally {
             setRefreshing(false);
         }

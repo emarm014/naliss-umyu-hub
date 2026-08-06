@@ -254,7 +254,11 @@ export function usePushNotifications() {
 
       // Silent Sync pushes wake application and trigger reloading
       if (notifType === 'silent_sync' || data?.is_silent === 'true' || data?.is_silent === true) {
-        if (data?.sync_target === 'messages' && data?.group_id) {
+        if (data?.sync_target === 'profile') {
+          useAuthStore.getState().fetchProfile(true).catch(e => {
+            console.error('[PushNotifications] background profile sync failed:', e);
+          });
+        } else if (data?.sync_target === 'messages' && data?.group_id) {
           // Future expansion: trigger messages reload
         }
         return;

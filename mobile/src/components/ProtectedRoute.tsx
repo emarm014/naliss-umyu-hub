@@ -86,14 +86,37 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           if (fetchErr) throw normalizeError(fetchErr);
           if (!isSubscribed) return;
 
-          const activeIds = (activeSessions as any[])?.map(s => s.device_id) || [];
+          // 1b. Auto-purge stale sessions (last active > 30 days ago).
+          // These are ghost rows left by the old signOut that never cleaned up
+          // user_sessions.  Without this, users who accumulated stale sessions
+          // before the fix would be permanently locked out.
+          const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+          const now = Date.now();
+          const staleSessions = (activeSessions as any[] || []).filter(
+            s => s.last_active_at && (now - new Date(s.last_active_at).getTime()) > STALE_THRESHOLD_MS
+          );
+          if (staleSessions.length > 0) {
+            const staleIds = staleSessions.map(s => s.device_id);
+            await (supabase as any)
+              .from('user_sessions')
+              .delete()
+              .eq('user_id', session.user.id)
+              .in('device_id', staleIds);
+          }
+
+          // Re-calculate active list after purge
+          const freshSessions = (activeSessions as any[] || []).filter(
+            s => !staleSessions.some(st => st.device_id === s.device_id)
+          );
+
+          const activeIds = freshSessions.map(s => s.device_id);
           const isCurrentDeviceActive = activeIds.includes(deviceId);
 
           // 2. Enforce 5 device limit:
           // If the current device is NOT already one of the active sessions,
           // and we already have 5 or more active sessions, block access.
           if (!isCurrentDeviceActive && activeIds.length >= 5) {
-            setExceededSessions(activeSessions || []);
+            setExceededSessions(freshSessions);
             setSessionError('device_limit_exceeded');
             setDeviceSessionChecked(true);
             return;
@@ -1143,7 +1166,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           const ipAddress = await fetchIpAddress();
           const deviceName = getDeviceName();
   
-          await (supabase as any).from('user_sessions').upsert({
+          const { error: upsertErr } = await (supabase as any).from('user_sessions').upsert({
               user_id: session!.user.id,
               device_id: deviceId,
               device_name: deviceName,
@@ -1152,6 +1175,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               is_active: true,
               last_active_at: new Date().toISOString()
           }, { onConflict: 'user_id,device_id' });
+          
+          if (upsertErr) {
+            console.error('Failed to register new device:', upsertErr);
+            // Allow them in anyway so they aren't completely stuck, but log the error
+          }
           
           Alert.alert('Success', 'Device removed successfully. You are now logged in on this device.');
           setSessionError(null);

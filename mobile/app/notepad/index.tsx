@@ -214,9 +214,17 @@ export default function NotepadDashboard() {
                                     </View>
                                 ) : <View />}
                                 
-                                <Text style={styles.dateText}>
-                                    {format(new Date(item.updatedAt), 'MMM d, yyyy')}
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    {item.syncStatus === 'pending' && (
+                                        <Ionicons name="cloud-upload-outline" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
+                                    )}
+                                    {item.syncStatus === 'failed' && (
+                                        <Ionicons name="cloud-offline-outline" size={14} color="#EF4444" style={{ marginRight: 6 }} />
+                                    )}
+                                    <Text style={styles.dateText}>
+                                        {format(new Date(item.updatedAt), 'MMM d, yyyy')}
+                                    </Text>
+                                </View>
                             </View>
                         </TouchableOpacity>
                     )}

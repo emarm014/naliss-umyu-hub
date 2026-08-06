@@ -36,6 +36,7 @@ export interface SafeOverlayProps {
     animationType?: OverlayAnimation;
     dismissible?: boolean;
     overlayStyle?: StyleProp<ViewStyle>;
+    useNativeModal?: boolean;
 }
 
 /**
@@ -49,7 +50,8 @@ export const SafeOverlayContainer = ({
     children,
     animationType = 'fade',
     dismissible = true,
-    overlayStyle
+    overlayStyle,
+    useNativeModal = true
 }: SafeOverlayProps) => {
     const opacity = useRef(new Animated.Value(0)).current;
     const translateY = useRef(new Animated.Value(100)).current;
@@ -87,6 +89,27 @@ export const SafeOverlayContainer = ({
         }
     };
 
+    const content = (
+        <View style={[styles.container, useNativeModal === false && { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }]} accessibilityViewIsModal>
+            <TouchableWithoutFeedback onPress={() => { if (dismissible && onClose) onClose(); }}>
+                <Animated.View style={[styles.backdrop, { opacity }]} />
+            </TouchableWithoutFeedback>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={[styles.keyboardView, overlayStyle]}
+                pointerEvents="box-none"
+            >
+                <Animated.View style={[styles.contentWrapper, getAnimatedStyle()]} pointerEvents="box-none">
+                    {children}
+                </Animated.View>
+            </KeyboardAvoidingView>
+        </View>
+    );
+
+    if (useNativeModal === false) {
+        return content;
+    }
+
     return (
         <Modal
             transparent
@@ -97,20 +120,7 @@ export const SafeOverlayContainer = ({
             }}
             animationType="none"
         >
-            <View style={styles.container} accessibilityViewIsModal>
-                <TouchableWithoutFeedback onPress={() => { if (dismissible && onClose) onClose(); }}>
-                    <Animated.View style={[styles.backdrop, { opacity }]} />
-                </TouchableWithoutFeedback>
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={[styles.keyboardView, overlayStyle]}
-                    pointerEvents="box-none"
-                >
-                    <Animated.View style={[styles.contentWrapper, getAnimatedStyle()]} pointerEvents="box-none">
-                        {children}
-                    </Animated.View>
-                </KeyboardAvoidingView>
-            </View>
+            {content}
         </Modal>
     );
 };
@@ -159,7 +169,9 @@ export const SafeBottomSheet = ({ size = 'fullscreen', contentStyle, children, .
                     paddingBottom: Math.max(insets.bottom, 16),
                     borderTopLeftRadius: 24,
                     borderTopRightRadius: 24,
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    maxHeight: '90%',
+                    flexShrink: 1
                 },
                 contentStyle
             ]}>

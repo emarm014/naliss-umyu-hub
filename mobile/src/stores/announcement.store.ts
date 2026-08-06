@@ -65,16 +65,16 @@ export const useAnnouncementStore = create<AnnouncementState>()(
           } catch { /* fall through to server fetch */ }
         }
 
-        // SESSION GUARD: Don't query if unauthenticated — avoids 401 spam after logout
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        // OFFLINE GUARD: if offline, data from SQLite is already displayed
+        const { useNetworkStore } = require('./network.store');
+        if (!useNetworkStore.getState().isOnline) {
           set({ isLoading: false });
           return;
         }
 
-        // OFFLINE GUARD: if offline, data from SQLite is already displayed
-        const { useNetworkStore } = require('./network.store');
-        if (!useNetworkStore.getState().isOnline) {
+        // SESSION GUARD: Don't query if unauthenticated — avoids 401 spam after logout
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
           set({ isLoading: false });
           return;
         }

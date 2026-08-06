@@ -61,6 +61,21 @@ export const saveMediaToDevice = async (pathOrUrl: string, mimeType: string, fil
     }
 };
 
+const getUTI = (mimeType: string): string => {
+    const mime = mimeType.toLowerCase();
+    if (mime.includes('pdf')) return 'com.adobe.pdf';
+    if (mime.includes('msword') || mime.includes('wordprocessingml')) return 'com.microsoft.word.doc';
+    if (mime.includes('powerpoint') || mime.includes('presentationml')) return 'com.microsoft.powerpoint.ppt';
+    if (mime.includes('excel') || mime.includes('spreadsheetml')) return 'com.microsoft.excel.xls';
+    if (mime.includes('text/plain')) return 'public.plain-text';
+    if (mime.includes('csv')) return 'public.comma-separated-values-text';
+    if (mime.includes('image/jpeg') || mime.includes('jpg')) return 'public.jpeg';
+    if (mime.includes('image/png')) return 'public.png';
+    if (mime.includes('video/mp4')) return 'public.mpeg-4';
+    if (mime.includes('audio')) return 'public.audio';
+    return 'public.data';
+};
+
 export const shareMedia = async (pathOrUrl: string, mimeType?: string, fileName?: string) => {
     try {
         const isAvailable = await Sharing.isAvailableAsync();
@@ -70,7 +85,7 @@ export const shareMedia = async (pathOrUrl: string, mimeType?: string, fileName?
         const options: any = { dialogTitle: 'Share File' };
         if (mimeType && mimeType !== 'application/octet-stream') {
             options.mimeType = mimeType;
-            options.UTI = mimeType;
+            options.UTI = getUTI(mimeType);
         } else {
             options.mimeType = '*/*';
             options.UTI = 'public.data';

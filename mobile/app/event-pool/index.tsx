@@ -11,6 +11,7 @@ import { isBefore, differenceInSeconds } from 'date-fns';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { CachedImage } from '../../src/components/common/CachedImage';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
@@ -25,6 +26,8 @@ export default function EventPoolDashboard() {
     
     const [tick, setTick] = useState(0);
     const [securingTicketId, setSecuringTicketId] = useState<string | null>(null);
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerFile, setViewerFile] = useState<{ uri: string, type: 'image' | 'video', name: string } | null>(null);
 
     const pools = useEventPoolStore(s => s.pools);
     const isLoading = useEventPoolStore(s => s.isLoading);
@@ -252,7 +255,15 @@ export default function EventPoolDashboard() {
                         <View style={styles.winnerBadge}>
                             <Ionicons name="trophy" size={16} color="#d97706" />
                         </View>
-                        <CachedImage remoteUrl={winner.avatar_url} style={styles.winnerAvatar} entityId={`winner_${item.featured_students?.[0]?.user_id || 'none'}`} assetType="user" fallbackName={winner.full_name} />
+                        <TouchableOpacity 
+                            onPress={() => {
+                                setViewerFile({ uri: winner.avatar_url || '', type: 'image', name: winner.full_name || '' });
+                                setViewerVisible(true);
+                            }}
+                            activeOpacity={0.8}
+                        >
+                            <CachedImage remoteUrl={winner.avatar_url} style={styles.winnerAvatar} entityId={`winner_${item.featured_students?.[0]?.user_id || 'none'}`} assetType="user" fallbackName={winner.full_name} />
+                        </TouchableOpacity>
                         <View style={styles.winnerInfo}>
                             <Text style={[styles.winnerName, { color: textColor }]}>{winner.full_name}</Text>
                             <Text style={[styles.winnerUsername, { color: subtextColor }]}>Event Winner</Text>
@@ -323,6 +334,19 @@ export default function EventPoolDashboard() {
                         </View>
                     )}
                 </ScrollView>
+            )}
+
+            {viewerFile && (
+                <UniversalViewer
+                    isVisible={viewerVisible}
+                    onClose={() => {
+                        setViewerVisible(false);
+                        setTimeout(() => setViewerFile(null), 300);
+                    }}
+                    fileUri={viewerFile.uri}
+                    fileType={viewerFile.type}
+                    fileName={viewerFile.name}
+                />
             )}
         </View>
     );

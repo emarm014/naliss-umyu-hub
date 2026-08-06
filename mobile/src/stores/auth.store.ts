@@ -200,9 +200,17 @@ export const useAuthStore = create<AuthState>()(
           // Unify avatar download
           if (merged.avatar_url) {
             const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+            const urlHash = merged.avatar_url.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
+            
+            // Delete old cached avatar to prevent disk clutter
+            const oldLocalPath = get().localAvatarUrl;
+            if (oldLocalPath && !oldLocalPath.includes(urlHash)) {
+              try { await FileSystem.deleteAsync(oldLocalPath, { idempotent: true }); } catch (e) {}
+            }
+
             const localUri = await UnifiedDownloadEngine.download(
               merged.avatar_url,
-              `user_avatar_${user.id}`,
+              `user_avatar_${user.id}_${urlHash}`,
               undefined,
               'user_avatar'
             );
@@ -231,7 +239,18 @@ export const useAuthStore = create<AuthState>()(
 
         // 1. Instantly merge update into memory Zustand + MMKV cache
         const merged = { ...profile, ...updates };
-        set({ profile: merged as Profile });
+        
+        // If avatar is being updated, we MUST clear the legacy local overrides 
+        // so the app correctly renders the new remote avatar.
+        if (updates.avatar_url) {
+          set({ 
+            profile: merged as Profile,
+            localAvatarUrl: null,
+            confirmedAvatarUrl: updates.avatar_url 
+          });
+        } else {
+          set({ profile: merged as Profile });
+        }
 
         // 2. Instantly persist to permanent local SQLite database
         await saveLocalUserSession(merged);
@@ -418,6 +437,21 @@ export const useAuthStore = create<AuthState>()(
                 () => {},
                 () => {}
               );
+          }
+
+          // Delete this device's session row so it no longer counts toward the
+          // 5-device concurrency limit.  Without this, signing out leaves a
+          // ghost row with is_active = true, which blocks re-login.
+          try {
+            const { getOrCreateDeviceId } = require('../utils/device');
+            const deviceId = await getOrCreateDeviceId();
+            await (supabase as any)
+              .from('user_sessions')
+              .delete()
+              .eq('user_id', userId)
+              .eq('device_id', deviceId);
+          } catch {
+            // Best-effort — don't block logout if this fails
           }
         }
 

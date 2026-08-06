@@ -151,6 +151,9 @@ export default function CreateNoteScreen() {
         router.back();
 
         setTimeout(() => {
+            // Filter out orphaned materials before saving
+            const validLinkedMaterials = linkedMaterials.filter(id => materials.some(m => m.id === id));
+
             if (editingId) {
                 updateNote(editingId, {
                     subject: subject.trim(),
@@ -158,7 +161,7 @@ export default function CreateNoteScreen() {
                     courseLevel,
                     content: content.trim(),
                     mediaPaths,
-                    linkedMaterials
+                    linkedMaterials: validLinkedMaterials
                 });
             } else {
                 addNote({
@@ -167,7 +170,7 @@ export default function CreateNoteScreen() {
                     courseLevel,
                     content: content.trim(),
                     mediaPaths,
-                    linkedMaterials
+                    linkedMaterials: validLinkedMaterials
                 });
             }
         }, 0);
@@ -454,6 +457,7 @@ export default function CreateNoteScreen() {
                     onClose={() => setIsQueuePreviewVisible(false)}
                     animationType="fade"
                     overlayStyle={styles.modalBackground}
+                    useNativeModal={false}
                 >
                     <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsQueuePreviewVisible(false)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
                         <Ionicons name="close" size={32} color="#FFFFFF" />
@@ -657,6 +661,7 @@ export default function CreateNoteScreen() {
                 onClose={() => setIsImageModalVisible(false)}
                 animationType="fade"
                 overlayStyle={styles.modalBackground}
+                useNativeModal={false}
             >
                 <TouchableOpacity style={[styles.modalCloseBtn, { top: Math.max(top + 10, 40) }]} onPress={() => setIsImageModalVisible(false)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
                     <Ionicons name="close" size={32} color="#FFFFFF" />

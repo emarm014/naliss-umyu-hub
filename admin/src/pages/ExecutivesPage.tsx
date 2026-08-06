@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import { useAuthStore } from '../store/auth.store';
+import { sortHierarchically } from '../utils/hierarchy';
 
 const ITEMS_PER_PAGE = 12;
 
@@ -59,7 +60,7 @@ export default function ExecutivesPage() {
   };
 
   // Client-side filtering and pagination
-  const filteredExecutives = allExecutives.filter(executive => {
+  let filteredExecutives = allExecutives.filter(executive => {
     const displayName = executive.full_name || executive.linked_user?.full_name || '';
     const matchesSearch = displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          executive.position.toLowerCase().includes(searchQuery.toLowerCase());
@@ -70,6 +71,8 @@ export default function ExecutivesPage() {
 
     return matchesSearch && matchesCurrent && matchesSession;
   });
+
+  filteredExecutives = sortHierarchically(filteredExecutives, 'executive');
 
   const totalCount = filteredExecutives.length;
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);

@@ -8,8 +8,10 @@ import { SafeModal } from '../../src/components/common/overlays';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { router } from 'expo-router';
 import { NetworkStatusDot } from '../_layout';
+import { useNetworkStore } from '../../src/stores/network.store';
 import { format } from 'date-fns';
 import { COLORS } from '../../src/constants/Colors';
 import { NalissLogo } from '../../src/components/NalissLogo';
@@ -171,7 +173,7 @@ export default function HomeScreen() {
     },
     initialData: () => {
       try {
-        const cached = (mmkvStorage as any).getStringSync?.(FYB_CACHE_KEY);
+        const cached = require('../../src/stores/mmkv.storage').getSyncItem(FYB_CACHE_KEY);
         if (cached) return JSON.parse(cached);
       } catch {}
       return undefined;
@@ -185,12 +187,16 @@ export default function HomeScreen() {
   }, [pinnedFeatured]);
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const isOnline = useNetworkStore(s => s.isOnline);
 
   const updateProfile = useAuthStore(s => s.updateProfile);
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
   const [showAvatarConfirm, setShowAvatarConfirm] = useState(false);
-  const [showSnapshot, setShowSnapshot] = useState(false);
+  
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerFile, setViewerFile] = useState<{ uri: string, type: 'image', name: string } | null>(null);
+
   const localAvatarUrl = useAuthStore(s => s.localAvatarUrl);
 
   const handleAvatarPress = () => {
@@ -410,6 +416,16 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accentColor} />}
       >
+        {/* Offline Banner */}
+        {!isOnline && (
+          <View style={[styles.offlineBanner, { backgroundColor: isDark ? '#451a03' : '#fffbeb' }]}>
+            <Ionicons name="cloud-offline" size={16} color={isDark ? '#fbbf24' : '#d97706'} />
+            <Text style={[styles.offlineText, { color: isDark ? '#fbbf24' : '#d97706' }]}>
+              You're offline. Showing cached updates.
+            </Text>
+          </View>
+        )}
+
         {/* ── LEVEL-THEMED PROFILE HEADER ─────────────────────────────────── */}
         <LinearGradient
           colors={theme.gradient}
@@ -433,9 +449,18 @@ export default function HomeScreen() {
           {/* Avatar + identity */}
           <View style={styles.headerBody}>
             <View style={styles.avatarSection}>
-              {/* ACTION 1: Tap Avatar to View Privacy Snapshot */}
+              {/* ACTION 1: Tap Avatar to View in Universal Viewer */}
               <TouchableOpacity
-                onPress={() => setShowSnapshot(true)}
+                onPress={() => {
+                  if (avatar) {
+                    setViewerFile({
+                      uri: avatar,
+                      type: 'image',
+                      name: `${user.full_name || 'Profile'}'s Avatar`,
+                    });
+                    setViewerVisible(true);
+                  }
+                }}
                 activeOpacity={0.8}
               >
                 <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
@@ -579,6 +604,14 @@ export default function HomeScreen() {
                         entityId={item.id}
                         assetType="announcement_cover"
                         resizeMode="cover"
+                        onPress={() => {
+                          setViewerFile({
+                            uri: item.cover_image_url || '',
+                            type: 'image',
+                            name: item.title || '',
+                          });
+                          setViewerVisible(true);
+                        }}
                       />
                       <LinearGradient colors={['transparent', 'rgba(12,74,110,0.95)']} style={styles.posterGradient} />
                       <View style={styles.posterContent}>
@@ -699,28 +732,19 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
       </SafeModal>
-
-      {/* Student Privacy Snapshot Modal */}
-      <SafeModal
-        visible={showSnapshot}
-        onClose={() => setShowSnapshot(false)}
-        contentStyle={{ backgroundColor: colors.card, alignItems: 'center', paddingVertical: 40 }}
-        animationType="fade"
-      >
-            <Image 
-              source={{ uri: avatar, cache: 'force-cache' }} 
-              style={{ width: 160, height: 160, borderRadius: 80, marginBottom: 20, borderWidth: 4, borderColor: theme.accentColor + '50' }} 
-            />
-            <Text style={[styles.fullName, { color: colors.text, marginBottom: 4, textShadowRadius: 0 }]}>{user.full_name}</Text>
-            <Text style={[styles.handle, { color: colors.textMuted, marginBottom: 30 }]}>@{displayName.toLowerCase()}</Text>
-            
-            <TouchableOpacity
-              style={[styles.cancelButton, { borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 40 }]}
-              onPress={() => setShowSnapshot(false)}
-            >
-              <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Close</Text>
-            </TouchableOpacity>
-      </SafeModal>
+      {/* Universal Viewer for Profile Picture */}
+      {viewerFile && (
+        <UniversalViewer
+          isVisible={viewerVisible}
+          onClose={() => {
+            setViewerVisible(false);
+            setTimeout(() => setViewerFile(null), 300);
+          }}
+          fileUri={viewerFile?.uri || ''}
+          fileType={viewerFile?.type || 'image'}
+          fileName={viewerFile?.name || ''}
+        />
+      )}
     </View>
   );
 }
@@ -743,6 +767,18 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#F1F5F9',
     alignItems: 'center', justifyContent: 'center', position: 'relative',
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  offlineText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   notifBadge: {
     position: 'absolute', top: -2, right: -2, backgroundColor: '#EF4444',

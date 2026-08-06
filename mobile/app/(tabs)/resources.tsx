@@ -19,6 +19,9 @@ import {
 import { useResourceStore, useDirectoryStore, useAuthStore } from '../../src/stores';
 import { downloadFile, extractFileNameFromUrl, getVaultFilePath } from '../../src/utils/download';
 import * as Sharing from 'expo-sharing';
+import * as Sentry from '@sentry/react-native';
+import { SafeOverlayContainer, showToast } from '../../src/components/common/overlays';
+import { sortHierarchically } from '../../src/utils/hierarchy';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { SafeBottomSheet } from '../../src/components/common/overlays';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
@@ -314,28 +317,22 @@ export default function ResourcesScreen() {
   }, [filteredCourses]);
 
   const filteredLecturers = useMemo(() => {
-    return lecturers.filter(l =>
+    const filtered = lecturers.filter(l =>
       l.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (l.position?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
       (l.title?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-    ).sort((a, b) => {
-       const orderA = typeof a.display_order === 'number' ? a.display_order : 999;
-       const orderB = typeof b.display_order === 'number' ? b.display_order : 999;
-       return orderA - orderB;
-    });
+    );
+    return sortHierarchically(filtered, 'lecturer');
   }, [lecturers, searchQuery]);
 
   const filteredExecutives = useMemo(() => {
-    return executives.filter(e => {
+    const filtered = executives.filter(e => {
       const name = e.user?.full_name || e.full_name || 'Executive';
       const position = e.position || '';
       return name.toLowerCase().includes(searchQuery.toLowerCase()) ||
              position.toLowerCase().includes(searchQuery.toLowerCase());
-    }).sort((a, b) => {
-       const orderA = typeof a.display_order === 'number' ? a.display_order : 999;
-       const orderB = typeof b.display_order === 'number' ? b.display_order : 999;
-       return orderA - orderB;
     });
+    return sortHierarchically(filtered, 'executive');
   }, [executives, searchQuery]);
 
   return (
@@ -787,24 +784,30 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
   };
 
   const handleBookPress = async () => {
-    // Images and Videos MUST open directly in the in-app viewer with no external app option
-    if (isImage || isVideo || !localDownloaded) {
-      onRead();
-      return;
-    }
+    try {
+      // Images and Videos MUST open directly in the in-app viewer with no external app option
+      if (isImage || isVideo || !localDownloaded) {
+        onRead();
+        return;
+      }
 
-    // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
-    const displayName = fileAsset.name || extractFileNameFromUrl(fileAsset.url, material.id);
-    const vaultPath = getVaultFilePath(material.id, displayName, fileAsset.url);
-    
-    Alert.alert('Open File', displayName, [
-      { text: 'Open in App', onPress: onRead },
-      {
-        text: 'Open with Other App',
-        onPress: () => openExternalDocument(vaultPath, mime, displayName),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+      // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
+      const { extractFileNameFromUrl: extractName, getVaultFilePath: getVaultPath } = require('../../src/utils/download');
+      const displayName = fileAsset.name || extractName(fileAsset.url, material.id);
+      const vaultPath = getVaultPath(material.id, displayName, fileAsset.url);
+      
+      Alert.alert('Open File', displayName, [
+        { text: 'Open in App', onPress: () => onRead() },
+        {
+          text: 'Open with Other App',
+          onPress: () => openExternalDocument(vaultPath, mime, displayName),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    } catch (err) {
+      console.warn('Error in handleBookPress:', err);
+      onRead(); // Fallback to in-app viewer if anything fails
+    }
   };
 
   const handleDownloadPress = async () => {

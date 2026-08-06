@@ -38,6 +38,17 @@ Sentry.init({
   // Disable native nagger — works in Expo Go without a native build
   enableNativeNagger: false,
   debug: !IS_PROD,
+  
+  // ── Error Filtering ──────────────────────────────────────────────────────
+  // Globally drop network/timeout errors from ever hitting Sentry
+  ignoreErrors: [
+    'Network request failed',
+    'Failed to fetch',
+    'NetworkError',
+    'timed out',
+    'Unable to resolve host',
+    'software caused connection abort',
+  ],
 });
 
 // ── Global console.error interception ──────────────────────────────────────

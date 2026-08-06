@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Image } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, Image, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNetworkStore } from '../stores/network.store';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -10,6 +10,7 @@ interface PosterImageProps {
   fallbackUri?: string;
   style?: any;
   gradientColors: [string, string];
+  onPress?: () => void;
 }
 
 const globalPosterMemoryCache: Record<string, string> = {};
@@ -23,6 +24,7 @@ export function PosterImage({
   fallbackUri,
   style,
   gradientColors,
+  onPress,
 }: PosterImageProps) {
   const isOnline = useNetworkStore((s) => s.isOnline);
   const targetUri = uri || fallbackUri || '';
@@ -100,22 +102,17 @@ export function PosterImage({
     };
   }, [targetUri, entityId, preCachedUri]);
 
-  return (
-    <View style={[style, styles.container]}>
-      {/* 1. Underlying Placeholder Gradient (Always rendered) */}
+  const content = (
+    <>
       <LinearGradient
         colors={gradientColors}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-
-      {/* 2. Shimmer overlay while loading */}
       {status === 'loading' && (
         <View style={[StyleSheet.absoluteFill, styles.shimmer]} />
       )}
-
-      {/* 3. Actual Image */}
       {(localUri || targetUri) ? (
         <Image
           source={{ uri: localUri || targetUri }}
@@ -128,7 +125,23 @@ export function PosterImage({
           fadeDuration={200}
         />
       ) : null}
-    </View>
+    </>
+  );
+
+  if (onPress) {
+      return (
+          <View style={[style, styles.container]}>
+              <TouchableOpacity activeOpacity={0.9} style={StyleSheet.absoluteFill} onPress={onPress}>
+                  {content}
+              </TouchableOpacity>
+          </View>
+      );
+  }
+
+  return (
+      <View style={[style, styles.container]}>
+          {content}
+      </View>
   );
 }
 

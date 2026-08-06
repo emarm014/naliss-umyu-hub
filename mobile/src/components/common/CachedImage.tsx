@@ -36,11 +36,24 @@ interface CachedImageProps {
     fallbackName?: string | null;
     fallbackInitials?: string | null;
     blurRadius?: number;
+    onPress?: () => void;
 }
 
-export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials, blurRadius }: CachedImageProps) {
-    // Initialize synchronously if the file is already cached in memory
-    const preCachedUri = entityId ? globalMemoryCache[entityId] : null;
+export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials, blurRadius, onPress }: CachedImageProps) {
+    // Initialize synchronously if the file is already cached in memory or is a local file
+    const isLocalFile = remoteUrl && !remoteUrl.startsWith('http://') && !remoteUrl.startsWith('https://');
+    let preCachedUri = isLocalFile ? (remoteUrl.startsWith('file://') ? remoteUrl : `file://${remoteUrl}`) : null;
+    
+    if (!preCachedUri && entityId && globalMemoryCache[entityId]) {
+        try {
+            const parsed = JSON.parse(globalMemoryCache[entityId]);
+            if (parsed.url === remoteUrl) {
+                preCachedUri = parsed.path;
+            }
+        } catch (e) {
+            // Legacy cache (just a string path). We must miss the cache so SQLite can verify the URL.
+        }
+    }
     
     const [localUri, setLocalUri] = useState<string | null>(preCachedUri);
     const [loading, setLoading] = useState<boolean>(!preCachedUri);
@@ -83,7 +96,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     // 2. Verify file exists
                     const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
                     if (fileInfo.exists) {
-                        globalMemoryCache[entityId] = cached.local_path;
+                        globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: cached.local_path });
                         saveGlobalCache();
                         if (isMounted) {
                             setLocalUri(cached.local_path);
@@ -103,17 +116,24 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 }
 
                 // 3. Download if not found or URL changed
-                // Fix: Unique, stable filename layout preventing disk clutter
-                const filename = `${assetType}_${entityId}.jpg`;
+                // Use a short hash of the remoteUrl to ensure the filename changes when the avatar updates,
+                // forcing React Native to render the new image.
+                const urlHash = remoteUrl.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
+                const filename = `${assetType}_${entityId}_${urlHash}.jpg`;
                 const fileUri = `${FileSystem.documentDirectory}${filename}`;
                 
+                // Clean up the old file if it exists and is different to prevent disk clutter
+                if (cached?.local_path && cached.local_path !== fileUri) {
+                    try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
+                }
+
                 const result = await FileSystem.downloadAsync(remoteUrl, fileUri);
                 
                 if (result.status === 200) {
                     // 4. Save to SQLite
                     await upsertAssetCache(entityId, remoteUrl, result.uri, assetType);
                     
-                    globalMemoryCache[entityId] = result.uri;
+                    globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: result.uri });
                     saveGlobalCache();
                     if (isMounted) {
                         setLocalUri(result.uri);
@@ -147,6 +167,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
             <TouchableOpacity
                 style={[style, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]}
                 onLongPress={handleLongPress}
+                onPress={onPress}
                 activeOpacity={0.9}
             >
                 {initials ? (
@@ -164,6 +185,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         <TouchableOpacity 
             style={[style, { overflow: 'hidden' }]} 
             onLongPress={handleLongPress}
+            onPress={onPress}
             activeOpacity={0.9}
         >
             <Image

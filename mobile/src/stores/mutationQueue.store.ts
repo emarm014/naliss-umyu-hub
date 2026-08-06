@@ -7,7 +7,7 @@ import { Logger } from '../utils/logger';
 export interface OfflineMutation {
   id: string;
   table: string;
-  action: 'insert' | 'update' | 'delete';
+  action: 'insert' | 'update' | 'delete' | 'upsert';
   payload: any;
   queryConstraints?: {
     eq?: { [key: string]: any };
@@ -134,6 +134,9 @@ export const useMutationQueueStore = create<MutationQueueState>()(
                 }
               }
               const { error } = await deleteQuery;
+              if (error) throw error;
+            } else if (mut.action === 'upsert') {
+              const { error } = await query.upsert(mut.payload);
               if (error) throw error;
             }
 

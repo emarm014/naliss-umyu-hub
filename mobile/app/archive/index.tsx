@@ -46,6 +46,7 @@ export default function ArchiveScreen() {
   const [readerUrl, setReaderUrl] = useState<string>('');
   const [readerFileType, setReaderFileType] = useState<'image' | 'video' | 'pdf' | 'audio' | 'document'>('document');
   const [readerTitle, setReaderTitle] = useState('');
+  const [readerId, setReaderId] = useState<string | undefined>(undefined);
 
   const markAsRead = useArchiveStore(s => s.markAsRead);
 
@@ -65,114 +66,98 @@ export default function ArchiveScreen() {
     fetchArchives(page + 1);
   };
 
-  const openExternalDocument = async (vaultPath: string, rawMime: string, fileName: string) => {
+  const handleRead = async (item: any) => {
+    if (!item.file_url) return;
+    
     try {
-      const fileUri = vaultPath.startsWith('file://') ? vaultPath : `file://${vaultPath}`;
-      const nameLower = (fileName || vaultPath).toLowerCase();
+      let fileType: 'image' | 'video' | 'pdf' | 'audio' | 'document' = 'document';
+      const mType = (item.file_type || '').toLowerCase();
+      const mime = (item.file_mime_type || '').toLowerCase();
+      const url = item.file_url.toLowerCase();
+      const fileName = (item.file_name || item.file_url).toLowerCase();
 
-      // Deduce precise MIME type for Android ACTION_VIEW intent so only supported viewer apps are presented
-      let mimeType = rawMime || 'application/octet-stream';
-      if (nameLower.endsWith('.pdf')) mimeType = 'application/pdf';
-      else if (nameLower.endsWith('.doc')) mimeType = 'application/msword';
-      else if (nameLower.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      else if (nameLower.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
-      else if (nameLower.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      else if (nameLower.endsWith('.ppt')) mimeType = 'application/vnd.ms-powerpoint';
-      else if (nameLower.endsWith('.pptx')) mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-      else if (nameLower.endsWith('.txt')) mimeType = 'text/plain';
-      else if (nameLower.endsWith('.csv')) mimeType = 'text/csv';
+      // Priority 1: File extension (most reliable — from actual filename)
+      if (fileName.match(/\.(mp4|mov|avi|webm|mkv|m4v)$/)) {
+        fileType = 'video';
+      } else if (fileName.match(/\.(mp3|wav|ogg|aac|m4a|flac)$/)) {
+        fileType = 'audio';
+      } else if (fileName.match(/\.(pdf)$/)) {
+        fileType = 'pdf';
+      } else if (fileName.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff|heic)$/)) {
+        fileType = 'image';
+      } else if (fileName.match(/\.(doc|docx|ppt|pptx|xls|xlsx|txt|csv)$/)) {
+        fileType = 'document';
+      }
+      // Priority 2: MIME type from database
+      else if (mime.includes('video/')) {
+        fileType = 'video';
+      } else if (mime.includes('audio/')) {
+        fileType = 'audio';
+      } else if (mime.includes('pdf')) {
+        fileType = 'pdf';
+      } else if (mime.includes('image/')) {
+        fileType = 'image';
+      } else if (mime.includes('word') || mime.includes('presentation') || mime.includes('spreadsheet') || mime.includes('text/')) {
+        fileType = 'document';
+      }
+      // Priority 3: material_type field set by admin
+      else if (mType === 'video') {
+        fileType = 'video';
+      } else if (mType === 'image') {
+        fileType = 'image';
+      } else if (mType === 'pdf' || mType === 'note' || mType === 'assignment') {
+        fileType = 'pdf';
+      } else if (mType === 'word' || mType === 'ppt' || mType === 'document') {
+        fileType = 'document';
+      }
+      // Priority 4: Cloudinary path (least reliable — PDFs end up under /image/upload/)
+      else if (url.includes('/video/upload/')) {
+        fileType = 'video';
+      } else if (url.includes('/raw/upload/')) {
+        // raw upload — check extension to distinguish audio from pdf/document
+        if (url.match(/\.(mp3|wav|ogg|aac|m4a|flac)(\?|$)/)) {
+          fileType = 'audio';
+        } else {
+          fileType = 'pdf'; // raw = non-image/video = document/pdf
+        }
+      } else if (url.includes('/image/upload/')) {
+        fileType = 'image'; // /image/upload/ with no extension = image (Cloudinary default)
+      }
+      // Default: document (safest fallback — viewer handles unknown formats)
 
-      if (Platform.OS === 'android') {
-        const IntentLauncher = require('expo-intent-launcher');
-        const FileSystem = require('expo-file-system');
+      const displayName = item.file_name || extractFileNameFromUrl(item.file_url, item.title);
 
-        // Convert file:// URI to content:// URI so target app is granted read permissions
-        const contentUri = await FileSystem.getContentUriAsync(fileUri);
-
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-          type: mimeType,
-        });
-      } else {
-        const Sharing = require('expo-sharing');
-        const isAvail = await Sharing.isAvailableAsync();
-        if (!isAvail) {
+      // Use local vault file if already downloaded — works offline, faster
+      let fileUri = item.file_url;
+      try {
+        const { getVaultFilePath, checkFileExists } = require('../../src/utils/download');
+        const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
+        const vaultFileName = `${item.id}_${safeName}`;
+        const isInVault = await checkFileExists(vaultFileName, item.file_url, item.id);
+        
+        if (!isInVault && !isOnline) {
           Alert.alert(
-            'No App Available',
-            'No app available on your device supports opening this file format. Please use the In-App Viewer.'
+            'Offline Mode',
+            "This reference resource hasn't been saved to your device yet. Please connect to the internet to download."
           );
           return;
         }
-        await Sharing.shareAsync(fileUri, { mimeType });
-      }
-    } catch (err: any) {
-      console.warn('Failed to open archive with external app:', err);
-      Alert.alert(
-        'No App Available',
-        'No app available on your device supports opening this file format. Please use the In-App Viewer.'
-      );
-    }
-  };
-
-  const handleRead = async (item: any) => {
-    if (!item.file_url) return;
-    try {
-      let fileType = item.file_type || 'document';
-      const displayName = extractFileNameFromUrl(item.file_url, item.title);
-      
-      let fileUri = item.file_url;
-      const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
-      const vaultFileName = `${item.id}_${safeName}`;
-      const isInVault = await checkFileExists(vaultFileName, item.file_url, item.id);
-      
-      if (!isInVault && !isOnline) {
-        Alert.alert(
-          'Offline Mode',
-          "This reference resource hasn't been saved to your device yet. Please connect to the internet to download."
-        );
-        return;
-      }
-      
-      if (isInVault) {
-        fileUri = getVaultFilePath(item.id, displayName, item.file_url);
+        
+        if (isInVault) {
+          fileUri = getVaultFilePath(item.id, displayName, item.file_url);
+        }
+      } catch {
+        // Vault check failed — fall back to Cloudinary URL (requires internet)
       }
 
-      const url = (item.file_url || '').toLowerCase();
-      const type = (item.file_type || '').toLowerCase();
-      const name = (displayName || item.title || '').toLowerCase();
+      setReaderUrl(fileUri);
+      setReaderFileType(fileType);
+      setReaderTitle(displayName);
+      setReaderId(item.id);
+      setViewerVisible(true);
 
-      const isImage = type === 'image' || url.match(/\.(jpg|jpeg|png|webp|gif|svg|bmp|tiff|heic)$/) !== null || name.match(/\.(jpg|jpeg|png|webp|gif|svg)$/) !== null;
-      const isVideo = type === 'video' || url.match(/\.(mp4|mov|avi|webm|mkv|m4v)$/) !== null || name.match(/\.(mp4|mov|avi|webm)$/) !== null;
-
-      // Images and Videos MUST open directly in the in-app viewer with no external app option
-      if (isImage || isVideo || !isInVault) {
-        setReaderUrl(fileUri);
-        setReaderFileType(fileType);
-        setReaderTitle(displayName);
-        setViewerVisible(true);
-        return;
-      }
-
-      // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
-      const vaultPath = getVaultFilePath(item.id, displayName, item.file_url);
-      Alert.alert('Open File', displayName, [
-        {
-          text: 'Open in App',
-          onPress: () => {
-            setReaderUrl(fileUri);
-            setReaderFileType(fileType);
-            setReaderTitle(displayName);
-            setViewerVisible(true);
-          },
-        },
-        {
-          text: 'Open with Other App',
-          onPress: () => openExternalDocument(vaultPath, item.file_type, displayName),
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
     } catch (err) {
+      console.warn('Error in Archive handleRead:', err);
       Alert.alert('Error', 'Could not open the viewer.');
     }
   };
@@ -186,32 +171,48 @@ export default function ArchiveScreen() {
     }
     
     try {
-      setDownloadProgress(prev => ({ ...prev, [item.id]: 1 }));
-      const displayName = extractFileNameFromUrl(item.file_url, item.title);
+      const { downloadFile, extractFileNameFromUrl } = require('../../src/utils/download');
+      const displayName = item.file_name || extractFileNameFromUrl(item.file_url, item.title);
+      
       const resultUri = await downloadFile(
         item.file_url,
         item.id,
-        displayName,
-        (p: number) => {
-          const pct = Math.round(p * 100);
-          setDownloadProgress(prev => ({ ...prev, [item.id]: Math.max(pct, 1) }));
-        }
+        displayName
       );
       if (resultUri) {
         setDownloadedIds(prev => ({ ...prev, [item.id]: true }));
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setDownloadProgress(prev => ({ ...prev, [item.id]: null }));
     }
   };
 
-  const renderItem = ({ item }: { item: any }) => {
-    const isDownloaded = downloadedIds[item.id];
+  const ArchiveItem = ({ item }: { item: any }) => {
+    const isDownloaded = downloadedIds[item.id] || false;
     const progress = downloadProgress[item.id];
     const isDownloading = progress !== null && progress !== undefined;
     
+    useEffect(() => {
+      let active = true;
+      const checkDl = async () => {
+        if (!item.file_url) return;
+        try {
+          const { checkFileExists, extractFileNameFromUrl } = require('../../src/utils/download');
+          const displayName = extractFileNameFromUrl(item.file_url, item.title);
+          const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
+          const vaultFileName = `${item.id}_${safeName}`;
+          const exists = await checkFileExists(vaultFileName, item.file_url, item.id);
+          if (active && exists && !downloadedIds[item.id]) {
+            setDownloadedIds((prev) => ({ ...prev, [item.id]: true }));
+          }
+        } catch {
+          // Ignore
+        }
+      };
+      checkDl();
+      return () => { active = false; };
+    }, [item.file_url, item.id, downloadedIds[item.id]]);
+
     const cardBg = isDark ? '#1E2638' : '#FFFFFF';
     const borderCol = isDark ? '#2D3748' : '#E2E8F0';
     const textPrimary = isDark ? '#FFFFFF' : '#0f172a';
@@ -311,7 +312,7 @@ export default function ArchiveScreen() {
         <FlatList
           data={archives}
           keyExtractor={item => item.id}
-          renderItem={renderItem}
+          renderItem={({ item }) => <ArchiveItem item={item} />}
           contentContainerStyle={styles.listContainer}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.5}
@@ -333,13 +334,14 @@ export default function ArchiveScreen() {
         />
       )}
 
-      <UniversalViewer
-        isVisible={viewerVisible}
-        onClose={() => setViewerVisible(false)}
-        fileUri={readerUrl}
-        fileType={readerFileType}
-        fileName={readerTitle}
-      />
+        <UniversalViewer
+          isVisible={viewerVisible}
+          onClose={() => setViewerVisible(false)}
+          fileUri={readerUrl}
+          fileType={readerFileType}
+          fileName={readerTitle}
+          fileId={readerId}
+        />
     </View>
   );
 }

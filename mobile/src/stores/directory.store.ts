@@ -4,6 +4,7 @@ import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Lecturer, Executive } from '../types';
 import { Logger } from '../utils/logger';
+import { sortHierarchically } from '../utils/hierarchy';
 
 interface DirectoryState {
     lecturers: Lecturer[];
@@ -42,7 +43,7 @@ export const useDirectoryStore = create<DirectoryState>()(
                         const { getCachedEntityList } = require('../lib/database');
                         const cached = await getCachedEntityList('lecturers');
                         if (cached.length > 0) {
-                            set({ lecturers: cached as any, isLoading: false });
+                            set({ lecturers: sortHierarchically(cached, 'lecturer') as any, isLoading: false });
                         }
                     } catch { /* fall through to server fetch */ }
                 }
@@ -58,9 +59,10 @@ export const useDirectoryStore = create<DirectoryState>()(
                         .order('display_order', { ascending: true, nullsFirst: false });
 
                     if (error) throw error;
+                    const sortedData = sortHierarchically(data || [], 'lecturer');
                     const { cacheEntityList } = require('../lib/database');
-                    cacheEntityList('lecturers', data, '').catch(() => {});
-                    set({ lecturers: (data as unknown) as Lecturer[], isLoading: false, lastFetchLecturers: Date.now() });
+                    cacheEntityList('lecturers', sortedData, '').catch(() => {});
+                    set({ lecturers: (sortedData as unknown) as Lecturer[], isLoading: false, lastFetchLecturers: Date.now() });
                 } catch (err) {
                     Logger.error('directory-store', 'fetchLecturers failed', err);
                     set({ isLoading: false });
@@ -78,7 +80,7 @@ export const useDirectoryStore = create<DirectoryState>()(
                         const { getCachedEntityList } = require('../lib/database');
                         const cached = await getCachedEntityList('executives');
                         if (cached.length > 0) {
-                            set({ executives: cached as any, isLoading: false });
+                            set({ executives: sortHierarchically(cached, 'executive') as any, isLoading: false });
                         }
                     } catch { /* fall through to server fetch */ }
                 }
@@ -94,9 +96,10 @@ export const useDirectoryStore = create<DirectoryState>()(
                         .order('display_order', { ascending: true, nullsFirst: false });
 
                     if (error) throw error;
+                    const sortedData = sortHierarchically(data || [], 'executive');
                     const { cacheEntityList } = require('../lib/database');
-                    cacheEntityList('executives', data, '').catch(() => {});
-                    set({ executives: data as any, isLoading: false, lastFetchExecutives: Date.now() });
+                    cacheEntityList('executives', sortedData, '').catch(() => {});
+                    set({ executives: sortedData as any, isLoading: false, lastFetchExecutives: Date.now() });
                 } catch (err) {
                     Logger.error('directory-store', 'fetchExecutives failed', err);
                     set({ isLoading: false });

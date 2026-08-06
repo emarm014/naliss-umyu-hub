@@ -27,6 +27,20 @@ function isNativeNpe(error: any): boolean {
   }
 }
 
+export function isTransactionRecoveryError(error: any): boolean {
+  if (!error) return false;
+  try {
+    const msg = typeof error === 'string'
+      ? error
+      : (error && typeof error === 'object' && typeof error.message === 'string')
+        ? error.message
+        : String(error);
+    return typeof msg === 'string' && (msg.includes('cannot commit - no transaction is active') || msg.includes('cannot rollback - no transaction is active'));
+  } catch (_) {
+    return false;
+  }
+}
+
 async function recoverDatabase(): Promise<boolean> {
   if (recoveryPromise) return recoveryPromise;
   isRecovering = true;
@@ -50,6 +64,10 @@ async function recoverDatabase(): Promise<boolean> {
       
       // Add a short delay to ensure file handles are fully released by the OS
       await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Reset the global promise so initDB actually runs again
+      initDbPromise = null;
+      
       const newDb = await initDB();
       if (newDb) {
         console.warn('SQLite recovery successful');
@@ -169,11 +187,13 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
             throw new Error('Database connection lost and recovery failed');
           }
 
-          if (sql) {
-            trackSqlTransaction(methodName, sql, duration, error);
-            captureDatabaseError(methodName, error, { sql, args, duration });
-          } else {
-            captureDatabaseError(methodName, error, { args, duration });
+          if (!isTransactionRecoveryError(error)) {
+            if (sql) {
+              trackSqlTransaction(methodName, sql, duration, error);
+              captureDatabaseError(methodName, error, { sql, args, duration });
+            } else {
+              captureDatabaseError(methodName, error, { args, duration });
+            }
           }
           throw error;
         }
@@ -1280,12 +1300,16 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
             if (i + BATCH_SIZE < entities.length) {
                 await new Promise(r => setTimeout(r, 0));
             }
-        }
-        resolve();
-    } catch (e) {
-        console.error('SQLite cacheEntityList error:', e);
-        reject(e);
-    }
+          }
+          resolve();
+      } catch (e: any) {
+          if (isTransactionRecoveryError(e)) {
+              console.warn('SQLite cacheEntityList transaction aborted due to recovery.');
+          } else {
+              console.error('SQLite cacheEntityList error:', e);
+          }
+          reject(e);
+      }
         }).catch(err => {
             console.error('SQLite queue fallback error:', err);
             reject(err);

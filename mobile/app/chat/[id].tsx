@@ -1673,9 +1673,11 @@ export default function ChatScreen() {
                                                     key={child.id}
                                                     style={[itemStyle, { position: 'relative' }]}
                                                     activeOpacity={0.8}
-                                                    onPress={() => {
+                                                    delayLongPress={400}
+                                                    onLongPress={() => setLongPressedMessage(item)}
+                                                    onPress={() => handleDoubleTapReply(item, () => {
                                                         handleOpenSwipeableMedia(child.id, item.albumItems);
-                                                    }}
+                                                    })}
                                                 >
                                                     <CachedImage 
                                                         remoteUrl={mediaUrl}

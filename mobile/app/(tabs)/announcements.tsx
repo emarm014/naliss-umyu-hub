@@ -4,6 +4,7 @@ import {
     TextInput, SafeAreaView, Platform, ActivityIndicator,
     Image, RefreshControl, Alert, Dimensions,
 } from 'react-native';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -11,6 +12,7 @@ import { COLORS } from '../../src/constants/Colors';
 import { useAnnouncementStore, useEventStore, useAuthStore } from '../../src/stores';
 import { supabase } from '../../src/api/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
+import { useNetworkStore } from '../../src/stores/network.store';
 import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
@@ -61,8 +63,11 @@ export default function AnnouncementsScreen() {
     const fetchAnnouncements = useAnnouncementStore(s => s.fetchAnnouncements);
     const fetchUpcomingEvents = useEventStore(s => s.fetchUpcomingEvents);
     const { colors, isDark } = useTheme();
+    const isOnline = useNetworkStore(s => s.isOnline);
 
     const [activeApplyPoolId, setActiveApplyPoolId] = useState<string | null>(null);
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerFile, setViewerFile] = useState<{ uri: string, type: 'image' | 'video', name: string } | null>(null);
 
     const loadData = async () => {
         const level = user?.level || undefined;
@@ -152,6 +157,16 @@ export default function AnnouncementsScreen() {
                 </View>
             </View>
 
+            {/* Offline Banner */}
+            {!isOnline && (
+                <View style={[styles.offlineBanner, { backgroundColor: isDark ? '#451a03' : '#fffbeb' }]}>
+                    <Ionicons name="cloud-offline" size={16} color={isDark ? '#fbbf24' : '#d97706'} />
+                    <Text style={[styles.offlineText, { color: isDark ? '#fbbf24' : '#d97706' }]}>
+                        You're offline. Showing cached updates.
+                    </Text>
+                </View>
+            )}
+
             {/* Filter chips */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll} style={[styles.filterRow, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 {CATEGORIES.map(cat => {
@@ -182,11 +197,29 @@ export default function AnnouncementsScreen() {
                     <ActivityIndicator size='large' color={colors.primary} style={{ marginTop: 60 }} />
                 ) : activeCategory === 'Event' ? (
                     filteredEvents.length > 0 ? filteredEvents.map(event => (
-                        <EventCard key={event.id} event={event} onApply={() => setActiveApplyPoolId(event.pool_id || null)} />)
+                        <EventCard 
+                            key={event.id} 
+                            event={event} 
+                            onApply={() => setActiveApplyPoolId(event.pool_id || null)} 
+                            onImagePress={() => {
+                                setViewerFile({ uri: event.cover_image_url || '', type: 'image', name: event.title || '' });
+                                setViewerVisible(true);
+                            }}
+                        />)
                     ) : <EmptyState icon='calendar-outline' text='No upcoming events' />
                 ) : (
                     sortedAnnouncements.length > 0 ? sortedAnnouncements.map(ann => (
-                        <AnnouncementCard key={ann.id} announcement={ann} user={user} onDelete={handleDelete} onApply={() => setActiveApplyPoolId(ann.pool_id)} />)
+                        <AnnouncementCard 
+                            key={ann.id} 
+                            announcement={ann} 
+                            user={user} 
+                            onDelete={handleDelete} 
+                            onApply={() => setActiveApplyPoolId(ann.pool_id)} 
+                            onImagePress={() => {
+                                setViewerFile({ uri: ann.cover_image_url || '', type: 'image', name: ann.title || '' });
+                                setViewerVisible(true);
+                            }}
+                        />)
                     ) : <EmptyState icon='notifications-off-outline' text='No announcements found' />
                 )}
             </ScrollView>
@@ -197,6 +230,19 @@ export default function AnnouncementsScreen() {
                     poolId={activeApplyPoolId} 
                     user={user} 
                     onClose={() => setActiveApplyPoolId(null)} 
+                />
+            )}
+
+            {viewerFile && (
+                <UniversalViewer
+                    isVisible={viewerVisible}
+                    onClose={() => {
+                        setViewerVisible(false);
+                        setTimeout(() => setViewerFile(null), 300);
+                    }}
+                    fileUri={viewerFile.uri}
+                    fileType={viewerFile.type}
+                    fileName={viewerFile.name}
                 />
             )}
         </SafeAreaView>
@@ -389,7 +435,7 @@ const overlayStyles = StyleSheet.create({
     submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
 
-function AnnouncementCard({ announcement, user, onDelete, onApply }: { announcement: any; user: any; onDelete: (id: string) => void; onApply: () => void }) {
+function AnnouncementCard({ announcement, user, onDelete, onApply, onImagePress }: { announcement: any; user: any; onDelete: (id: string) => void; onApply: () => void; onImagePress?: () => void; }) {
     const cat = CATEGORY_CONFIG[(announcement.category || 'general').toLowerCase()] || DEFAULT_CAT;
     const priority = PRIORITY_CONFIG[announcement.priority] || PRIORITY_CONFIG.normal;
     const timeAgo = announcement.created_at
@@ -411,6 +457,7 @@ function AnnouncementCard({ announcement, user, onDelete, onApply }: { announcem
                     fallbackUri={announcement.cover_image_url || undefined}
                     style={StyleSheet.absoluteFillObject}
                     gradientColors={cat.gradient}
+                    onPress={announcement.cover_image_url ? onImagePress : undefined}
                 />
                 {/* Dark overlay for text readability */}
                 <LinearGradient colors={['transparent', 'rgba(0,0,0,0.72)']} style={styles.annCardOverlay} />
@@ -479,7 +526,7 @@ function AnnouncementCard({ announcement, user, onDelete, onApply }: { announcem
     );
 }
 
-function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
+function EventCard({ event, onApply, onImagePress }: { event: any, onApply?: () => void, onImagePress?: () => void }) {
     const status = STATUS_CONFIG[event.status] || STATUS_CONFIG.draft;
     const isOngoing = event.status === 'ongoing';
     const eventGradient: [string, string] = isOngoing ? ['#065f46', '#059669'] : ['#1e3a8a', '#2563eb'];
@@ -498,6 +545,7 @@ function EventCard({ event, onApply }: { event: any, onApply?: () => void }) {
                     fallbackUri={event.cover_image_url || undefined}
                     style={StyleSheet.absoluteFillObject}
                     gradientColors={eventGradient}
+                    onPress={event.cover_image_url ? onImagePress : undefined}
                 />
                 <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={styles.eventHeroOverlay} />
 
@@ -632,6 +680,18 @@ const styles = StyleSheet.create({
         height: 3,
         backgroundColor: COLORS.primary,
         borderRadius: 1.5,
+    },
+    offlineBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        gap: 8,
+    },
+    offlineText: {
+        fontSize: 13,
+        fontWeight: '600',
     },
     content: { flex: 1, paddingHorizontal: 16 },
     contentContainer: { paddingTop: 16, paddingBottom: 60 },

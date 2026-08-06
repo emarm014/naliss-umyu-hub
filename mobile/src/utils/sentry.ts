@@ -107,6 +107,7 @@ export function isNetworkError(error: any): boolean {
     lowerErrStr.includes('network request failed') || 
     lowerErrStr.includes('failed to fetch') || 
     lowerErrStr.includes('timeout') ||
+    lowerErrStr.includes('timed out') ||
     lowerErrStr.includes('software caused connection abort') ||
     lowerErrStr.includes('unable to resolve host') ||
     lowerErrStr.includes('networkerror')

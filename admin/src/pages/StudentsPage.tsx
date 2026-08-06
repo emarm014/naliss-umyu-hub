@@ -32,6 +32,7 @@ import FileUpload from '../lib/FileUpload';
 import { useAdminDataStore } from '../store/adminData.store';
 import { useAuthStore } from '../store/auth.store';
 import { getAssignedLevels, getAllowedLevelsForPermission } from '../utils/access';
+import { sendPushNotification } from '../lib/notifications';
 
 interface UserWithDepartment extends User {
   departments?: { name: string; code: string } | null;
@@ -235,6 +236,18 @@ export default function StudentsPage() {
       setSelectedUser(null);
       setActionReason('');
       setSuspendDuration('7d');
+
+      sendPushNotification({
+        targetUserIds: [selectedUser.id],
+        title: '',
+        body: '',
+        data: {
+          type: 'silent_sync',
+          sync_target: 'profile',
+          is_silent: true,
+          priority: 'silent'
+        }
+      });
     } catch (err: unknown) {
       setActionError((err as any)?.message || 'Action failed. Please try again.');
     } finally {
@@ -311,6 +324,18 @@ export default function StudentsPage() {
       });
 
       showSuccess('User verified and activated successfully.');
+
+      sendPushNotification({
+        targetUserIds: [userId],
+        title: '',
+        body: '',
+        data: {
+          type: 'silent_sync',
+          sync_target: 'profile',
+          is_silent: true,
+          priority: 'silent'
+        }
+      });
     } catch (err: unknown) {
       setActionError((err as any)?.message || 'Verification failed. Please try again.');
     } finally {
@@ -433,6 +458,18 @@ export default function StudentsPage() {
           ? `${user.full_name} promoted to Moderator for Level ${user.level}. All permissions enabled.`
           : `${user.full_name} demoted back to Student.`
       );
+
+      sendPushNotification({
+        targetUserIds: [user.id],
+        title: '',
+        body: '',
+        data: {
+          type: 'silent_sync',
+          sync_target: 'profile',
+          is_silent: true,
+          priority: 'silent'
+        }
+      });
     } catch (err: unknown) {
       // Revert optimistic update
       useAdminDataStore.getState().updateStudent(user as any);

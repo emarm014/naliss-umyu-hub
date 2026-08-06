@@ -23,11 +23,14 @@ export function getDeviceName(): string {
   return `${Platform.OS === 'ios' ? 'iPhone' : 'Android Device'} (${Platform.OS} ${osVersion})`;
 }
 
+let cachedDeviceId: string | null = null;
+
 /**
  * Retrieves a persisted unique device ID or generates a new one.
  * Stores it persistently in AsyncStorage to survive app restarts.
  */
 export async function getOrCreateDeviceId(): Promise<string> {
+  if (cachedDeviceId) return cachedDeviceId;
   try {
     let deviceId = await AsyncStorage.getItem('device_id');
     if (!deviceId) {
@@ -37,11 +40,13 @@ export async function getOrCreateDeviceId(): Promise<string> {
                  Date.now().toString(36);
       await AsyncStorage.setItem('device_id', deviceId);
     }
+    cachedDeviceId = deviceId;
     return deviceId;
   } catch (error) {
     console.error('Failed to get or create device ID:', error);
     // Fallback in-memory ID if AsyncStorage fails
-    return 'temp_device_' + Date.now().toString(36);
+    cachedDeviceId = 'temp_device_' + Date.now().toString(36);
+    return cachedDeviceId;
   }
 }
 

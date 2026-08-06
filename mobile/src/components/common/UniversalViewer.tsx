@@ -21,7 +21,6 @@ import { Video, ResizeMode, Audio } from 'expo-av';
 import { WebView } from 'react-native-webview';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import { BlurView } from 'expo-blur';
 import * as Sentry from '@sentry/react-native';
 import { SafeOverlayContainer, showToast } from './overlays';
 import {  saveMediaToDevice, shareMedia } from '../../utils/mediaSaver';
@@ -356,9 +355,15 @@ function ViewerItemSlide({
           }
           setIsDownloading(false);
         }
-      } catch (err) {
+      } catch (err: any) {
         if (!cancelled) {
-          setLocalUri(item.uri);
+          const errMsg = err?.message || String(err) || '';
+          const isNet = errMsg.includes('Network') || errMsg.includes('Unable to resolve host') || errMsg.includes('connect') || errMsg.includes('Unknown host');
+          if (isNet) {
+            setDownloadError('Network connection required to view full size media. Please connect to the internet and tap retry.');
+          } else {
+            setLocalUri(item.uri);
+          }
           setIsDownloading(false);
         }
       }
@@ -488,7 +493,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       dismissible={false}
       overlayStyle={StyleSheet.absoluteFill}
     >
-      <BlurView intensity={80} style={StyleSheet.absoluteFill}>
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.85)' }]}>
         <View style={[
           styles.container, 
           isLandscape && { marginTop: 0, borderRadius: 0 },
@@ -646,7 +651,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             </View>
           )}
         </View>
-      </BlurView>
+      </View>
     </SafeOverlayContainer>
   );
 };

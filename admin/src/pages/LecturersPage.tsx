@@ -4,6 +4,7 @@ import type { Department } from '../types';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import { useAuthStore } from '../store/auth.store';
+import { sortHierarchically } from '../utils/hierarchy';
 import {
   Plus,
   Search,
@@ -117,6 +118,8 @@ export default function LecturersPage() {
         l.position?.toLowerCase().includes(q)
       );
     }
+
+    result = sortHierarchically(result, 'lecturer');
 
     setFilteredLecturers(result);
     setCurrentPage(1);

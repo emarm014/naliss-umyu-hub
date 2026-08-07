@@ -31,13 +31,21 @@ Sentry.init({
       typeof breadcrumb.data?.url === 'string' &&
       (breadcrumb.data.url.includes('/realtime/') || breadcrumb.data.url.includes('heartbeat'))
     ) return null;
+    // Drop repetitive SQLite debug breadcrumbs — PRAGMA calls fire on every screen
+    if (
+      breadcrumb.category === 'db.sqlite' &&
+      breadcrumb.level === 'debug' &&
+      typeof breadcrumb.data?.sql === 'string' &&
+      breadcrumb.data.sql.startsWith('PRAGMA')
+    ) return null;
     return breadcrumb;
   },
 
   // ── Capture config ───────────────────────────────────────────────────────
   // Disable native nagger — works in Expo Go without a native build
   enableNativeNagger: false,
-  debug: !IS_PROD,
+  // Only enable debug logging in local development — NOT preview builds
+  debug: __DEV__ && !IS_PROD,
   
   // ── Error Filtering ──────────────────────────────────────────────────────
   // Globally drop network/timeout errors from ever hitting Sentry

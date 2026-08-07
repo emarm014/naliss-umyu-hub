@@ -8,7 +8,8 @@ import { useResourceStore } from '../../src/stores';
 import { Course, Material } from '../../src/types';
 import { format } from 'date-fns';
 import { FileService } from '../../src/services/file.service';
-import * as Linking from 'expo-linking';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { extractFileNameFromUrl, getVaultFilePath, checkFileExists } from '../../src/utils/download';
 
 export default function CourseDetailScreen() {
     const { id } = useLocalSearchParams();
@@ -18,6 +19,52 @@ export default function CourseDetailScreen() {
     const [course, setCourse] = useState<Course | null>(null);
     const [courseMaterials, setCourseMaterials] = useState<Material[]>([]);
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+    // UniversalViewer state
+    const [readerVisible, setReaderVisible] = useState(false);
+    const [readerUrl, setReaderUrl] = useState('');
+    const [readerFileType, setReaderFileType] = useState<'image' | 'video' | 'pdf' | 'audio' | 'document'>('document');
+    const [readerTitle, setReaderTitle] = useState('');
+    const [readerId, setReaderId] = useState('');
+
+    const handleRead = async (material: Material) => {
+        if (!material.file_url) return;
+        try {
+            let fileType: 'image' | 'video' | 'pdf' | 'audio' | 'document' = 'document';
+            const url = material.file_url.toLowerCase();
+            const fileName = (material.file_name || material.file_url).toLowerCase();
+
+            if (fileName.match(/\.(mp4|mov|avi|webm|mkv|m4v)$/)) fileType = 'video';
+            else if (fileName.match(/\.(mp3|wav|ogg|aac|m4a|flac)$/)) fileType = 'audio';
+            else if (fileName.match(/\.(pdf)$/)) fileType = 'pdf';
+            else if (fileName.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff|heic)$/)) fileType = 'image';
+            else if (fileName.match(/\.(doc|docx|ppt|pptx|xls|xlsx|txt|csv)$/)) fileType = 'document';
+            else if (url.includes('/video/upload/')) fileType = 'video';
+            else if (url.includes('/raw/upload/')) fileType = 'pdf';
+            else if (url.includes('/image/upload/')) fileType = 'image';
+
+            const displayName = material.file_name || extractFileNameFromUrl(material.file_url, material.title);
+
+            // Use local vault file if already downloaded
+            let fileUri = material.file_url;
+            try {
+                const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
+                const vaultFileName = `${material.id}_${safeName}`;
+                const isInVault = await checkFileExists(vaultFileName, material.file_url, material.id);
+                if (isInVault) {
+                    fileUri = getVaultFilePath(material.id, displayName, material.file_url);
+                }
+            } catch {}
+
+            setReaderUrl(fileUri);
+            setReaderFileType(fileType);
+            setReaderTitle(displayName);
+            setReaderId(material.id);
+            setReaderVisible(true);
+        } catch {
+            Alert.alert('Error', 'Could not open the viewer.');
+        }
+    };
 
     const handleDownload = async (material: Material) => {
         if (!material.file_url) {
@@ -35,8 +82,7 @@ export default function CourseDetailScreen() {
             if (localUri) {
                 await FileService.shareFile(localUri);
             } else {
-                // Fallback: open in browser
-                await Linking.openURL(material.file_url);
+                Alert.alert('Download Failed', 'Could not download the file. Please try again.');
             }
         } catch {
             Alert.alert('Download Failed', 'Could not download the file. Please try again.');
@@ -146,7 +192,7 @@ export default function CourseDetailScreen() {
                             <TouchableOpacity
                                 key={material.id}
                                 style={styles.materialCard}
-                                onPress={() => handleDownload(material)}
+                                onPress={() => handleRead(material)}
                                 activeOpacity={0.75}
                             >
                                 <View style={styles.materialIconBg}>
@@ -181,6 +227,16 @@ export default function CourseDetailScreen() {
                 </View>
 
             </ScrollView>
+
+            {/* Universal In-App Viewer */}
+            <UniversalViewer
+                isVisible={readerVisible}
+                onClose={() => setReaderVisible(false)}
+                fileUri={readerUrl}
+                fileType={readerFileType}
+                fileName={readerTitle}
+                fileId={readerId}
+            />
         </View>
     );
 }

@@ -46,6 +46,10 @@ export default function LecturerDetailScreen() {
       });
   }, [id]);
 
+  // ── Hooks MUST be called before any early return ──
+  const cleanAvatar = lecturer ? getCleanAvatarUrl(lecturer.avatar_url) : null;
+  const cachedAvatarUri = useOfflineImage(cleanAvatar);
+
   if (!lecturer) {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -64,9 +68,6 @@ export default function LecturerDetailScreen() {
     : typeof lecturer.qualifications === 'string' && lecturer.qualifications
     ? lecturer.qualifications.split('\n').filter(Boolean)
     : [];
-
-  const cleanAvatar = getCleanAvatarUrl(lecturer.avatar_url);
-  const cachedAvatarUri = useOfflineImage(cleanAvatar);
 
   const openMainAvatarViewer = () => {
     setActiveViewerItem({

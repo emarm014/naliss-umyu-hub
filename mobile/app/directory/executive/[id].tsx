@@ -47,6 +47,11 @@ export default function ExecutiveDetailScreen() {
       });
   }, [id]);
 
+  // ── Hooks MUST be called before any early return ──
+  const avatarUrl = exec?.avatar_url || exec?.user?.avatar_url || null;
+  const cleanAvatar = getCleanAvatarUrl(avatarUrl);
+  const cachedAvatarUri = useOfflineImage(cleanAvatar);
+
   if (!exec) {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -58,12 +63,8 @@ export default function ExecutiveDetailScreen() {
   }
 
   const name = exec.full_name || exec.user?.full_name || 'Executive';
-  const avatarUrl = exec.avatar_url || exec.user?.avatar_url;
   const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
   const isActive = exec.is_active !== false;
-
-  const cleanAvatar = getCleanAvatarUrl(avatarUrl);
-  const cachedAvatarUri = useOfflineImage(cleanAvatar);
 
   const formatDate = (d: string | null) => {
     if (!d) return null;

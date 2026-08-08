@@ -73,7 +73,7 @@ export default function ExecutiveDetailScreen() {
 
   const openMainAvatarViewer = () => {
     setActiveViewerItem({
-      uri: cachedAvatarUri || cleanAvatar || '',
+      uri: cachedAvatarUri || cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(name || 'user')}&size=200`,
       name,
     });
     setViewerVisible(true);

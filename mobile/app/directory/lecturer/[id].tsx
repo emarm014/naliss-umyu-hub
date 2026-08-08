@@ -71,7 +71,7 @@ export default function LecturerDetailScreen() {
 
   const openMainAvatarViewer = () => {
     setActiveViewerItem({
-      uri: cachedAvatarUri || cleanAvatar || '',
+      uri: cachedAvatarUri || cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(lecturer.full_name || 'user')}&size=200`,
       name: lecturer.full_name,
     });
     setViewerVisible(true);

@@ -1263,6 +1263,19 @@ export default function ChatScreen() {
         });
     };
 
+    const handleAvatarPress = (avatarUrl: string | null, username: string) => {
+        const cleanUrl = getCleanAvatarUrl(avatarUrl);
+        const uri = cleanUrl || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(username || 'user')}&size=200`;
+        setViewerMediaList(undefined);
+        setViewerInitialIndex(0);
+        setViewerFile({
+            uri,
+            type: 'image',
+            name: `${username || 'User'}'s Avatar`
+        });
+        setViewerVisible(true);
+    };
+
     // Open profile by username
     const openProfileByUsername = async (username: string) => {
         const clean = username.startsWith('@') ? username.slice(1) : username;
@@ -1466,7 +1479,11 @@ export default function ChatScreen() {
                         shouldGroupMessages ? (
                             <View style={{ width: 36, marginRight: 8 }} />
                         ) : (
-                            <TouchableOpacity style={styles.messageAvatarContainer} onPress={() => openProfile(item.sender_id)}>
+                            <TouchableOpacity 
+                                style={styles.messageAvatarContainer} 
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                onPress={() => handleAvatarPress(displayUser?.avatar_url, displayUser?.username || displayUser?.full_name)}
+                            >
                                 <CachedImage 
                                     remoteUrl={getCleanAvatarUrl(displayUser?.avatar_url)} 
                                     style={styles.messageAvatarImage} 

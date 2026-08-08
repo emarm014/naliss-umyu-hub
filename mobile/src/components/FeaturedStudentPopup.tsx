@@ -74,7 +74,7 @@ interface BurstParticle {
 export function FeaturedStudentPopup() {
     const { colors, isDark } = useTheme();
     const { profile, isProfileComplete } = useAuthStore();
-    const signupProvider = useSignupStore(s => s.provider);
+    const signupEmail = useSignupStore(s => s.email);
     const signupStep = useSignupStore(s => s.currentStep);
     
     const [feature, setFeature] = useState<FeaturedStudent | null>(null);
@@ -135,7 +135,7 @@ export function FeaturedStudentPopup() {
     useEffect(() => {
         // Only show the popup when the user has FULLY completed registration.
         // Prevents the popup from appearing on auth/signup screens (level, identity, etc.)
-        const isInSignupFlow = !!signupProvider || (signupStep != null && signupStep > 0);
+        const isInSignupFlow = !!signupEmail || (signupStep != null && signupStep > 0);
         if (!profile || isProfileComplete !== true || isInSignupFlow) return;
         
         checkForActiveFeature();
@@ -161,7 +161,7 @@ export function FeaturedStudentPopup() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [profile, isProfileComplete, signupProvider, signupStep]);
+    }, [profile, isProfileComplete, signupEmail, signupStep]);
 
     // Realtime listener for incoming congratulations on featured student device
     useEffect(() => {

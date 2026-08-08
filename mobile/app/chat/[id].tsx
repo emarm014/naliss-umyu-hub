@@ -1674,10 +1674,11 @@ export default function ChatScreen() {
                                                     style={[itemStyle, { position: 'relative' }]}
                                                     activeOpacity={0.8}
                                                     delayLongPress={400}
+                                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                                     onLongPress={() => setLongPressedMessage(item)}
-                                                    onPress={() => handleDoubleTapReply(item, () => {
+                                                    onPress={() => {
                                                         handleOpenSwipeableMedia(child.id, item.albumItems);
-                                                    })}
+                                                    }}
                                                 >
                                                     <CachedImage 
                                                         remoteUrl={mediaUrl}
@@ -1781,14 +1782,15 @@ export default function ChatScreen() {
                             <TouchableOpacity
                                 activeOpacity={0.92}
                                 delayLongPress={400}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                 onLongPress={() => setLongPressedMessage(item)}
-                                onPress={() => handleDoubleTapReply(item, () => {
+                                onPress={() => {
                                     if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
                                         handleDownloadMedia(item.id, item.content, item.metadata?.name || `image_${item.id}.jpg`);
                                     } else {
                                         handleOpenSwipeableMedia(item.id);
                                     }
-                                })}
+                                }}
                             >
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
@@ -1858,14 +1860,15 @@ export default function ChatScreen() {
                                         activeOpacity={0.92}
                                         style={styles.videoThumbContainer}
                                         delayLongPress={400}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         onLongPress={() => setLongPressedMessage(item)}
-                                        onPress={() => handleDoubleTapReply(item, () => {
+                                        onPress={() => {
                                             if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
                                                 handleDownloadMedia(item.id, item.content, item.metadata?.name || `video_${item.id}.mp4`);
                                             } else {
                                                 handleOpenSwipeableMedia(item.id);
                                             }
-                                        })}
+                                        }}
                                     >
                                         {/* Video thumbnail frame */}
                                         {(() => {
@@ -1952,8 +1955,9 @@ export default function ChatScreen() {
                                         style={[styles.documentActionArea, { width: 260 }]}
                                         activeOpacity={0.8}
                                         delayLongPress={400}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         onLongPress={() => setLongPressedMessage(item)}
-                                        onPress={() => handleDoubleTapReply(item, () => {
+                                        onPress={() => {
                                             const fileName = item.metadata?.name || (
                                                 item.message_type === 'audio' ? `audio_${item.id}.mp3` : `document_${item.id}.pdf`
                                             );
@@ -1966,7 +1970,7 @@ export default function ChatScreen() {
                                             } else if (downloadingIds[item.id] === undefined) {
                                                 handleDownloadMedia(item.id, item.content, fileName);
                                             }
-                                        })}
+                                        }}
                                     >
                                         {/* File type icon */}
                                         <View style={[styles.documentIconBox, downloadedIds[item.id] && styles.documentIconBoxDone]}>

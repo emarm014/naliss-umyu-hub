@@ -22,6 +22,7 @@ import { WebView } from 'react-native-webview';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sentry from '@sentry/react-native';
+import { trackViewerEvent, captureViewerError } from '../../utils/sentry';
 import { SafeOverlayContainer, showToast } from './overlays';
 import {  saveMediaToDevice, shareMedia } from '../../utils/mediaSaver';
 import Pdf from 'react-native-pdf';
@@ -270,7 +271,10 @@ function ViewerItemSlide({
   React.useEffect(() => {
     if (!isVisible) return;
 
+    trackViewerEvent({ stage: 'open', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
+
     if (item.uri.startsWith('file://') || item.uri.startsWith('/')) {
+      trackViewerEvent({ stage: 'vault_hit', uri: item.uri, fileType: item.type, fileName: item.name });
       setLocalUri(item.uri.startsWith('file://') ? item.uri : `file://${item.uri}`);
       setIsOffline(true);
       setIsDownloading(false);
@@ -289,12 +293,15 @@ function ViewerItemSlide({
           const vaultPath = getVaultFilePath(item.fileId, item.name, item.uri);
           const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
           if (vaultInfo.exists && (vaultInfo as any).size > 0) {
+            trackViewerEvent({ stage: 'vault_hit', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
             if (!cancelled) {
               setLocalUri(vaultPath);
               setIsOffline(true);
               setIsDownloading(false);
             }
             return;
+          } else {
+            trackViewerEvent({ stage: 'vault_miss', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
           }
         }
 
@@ -329,6 +336,7 @@ function ViewerItemSlide({
 
         const cachedInfo = await FileSystem.getInfoAsync(destinationPath);
         if (cachedInfo.exists && (cachedInfo as any).size > 0) {
+          trackViewerEvent({ stage: 'cache_hit', uri: item.uri, fileType: item.type, fileName: item.name });
           if (!cancelled) {
             setLocalUri(destinationPath);
             setIsOffline(true);
@@ -336,6 +344,8 @@ function ViewerItemSlide({
           }
           return;
         }
+
+        trackViewerEvent({ stage: 'download_start', uri: viewerUrl, fileType: item.type, fileName: item.name });
 
         const callback = (p: FileSystem.DownloadProgressData) => {
           if (!cancelled && p.totalBytesExpectedToWrite > 0) {
@@ -348,9 +358,11 @@ function ViewerItemSlide({
 
         if (!cancelled) {
           if (result && result.status === 200) {
+            trackViewerEvent({ stage: 'download_ok', uri: item.uri, fileType: item.type, fileName: item.name });
             setLocalUri(result.uri);
             setIsOffline(false);
           } else {
+            trackViewerEvent({ stage: 'download_fail', uri: item.uri, fileType: item.type, fileName: item.name, error: `HTTP ${result?.status || 'unknown'}` });
             setDownloadError('Could not load file. Tap retry.');
           }
           setIsDownloading(false);
@@ -359,6 +371,7 @@ function ViewerItemSlide({
         if (!cancelled) {
           const errMsg = err?.message || String(err) || '';
           const isNet = errMsg.includes('Network') || errMsg.includes('Unable to resolve host') || errMsg.includes('connect') || errMsg.includes('Unknown host');
+          captureViewerError('download_fail', err, { uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
           if (isNet) {
             setDownloadError('Network connection required to view full size media. Please connect to the internet and tap retry.');
           } else {
@@ -383,7 +396,11 @@ function ViewerItemSlide({
       fileUri={item.uri}
       fileName={item.name}
       onRetry={() => setRetryKey(k => k + 1)}
-      onImageError={() => setDownloadError('Image could not be displayed.')}
+      onImageError={() => {
+        trackViewerEvent({ stage: 'render_error', uri: item.uri, fileType: item.type, fileName: item.name, error: 'Image could not be displayed' });
+        captureViewerError('render_error', new Error('Image render failed'), { uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
+        setDownloadError('Image could not be displayed.');
+      }}
       pdfEngine={pdfEngine}
       isOffline={isOffline}
       onSingleTap={onSingleTap}
@@ -458,6 +475,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   const saveToDevice = async () => {
     try {
       setIsSaving(true);
+      trackViewerEvent({ stage: 'save', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
       const uriToSave = activeItem.uri.startsWith('file://') ? activeItem.uri : `file://${activeItem.uri}`;
       const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
       const result = await saveMediaToDevice(uriToSave, mimeType, activeItem.name);
@@ -469,6 +487,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         Alert.alert('Save Failed', result.error || 'Could not save the file.');
       }
     } catch (err: any) {
+      captureViewerError('save', err, { uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
       Alert.alert('Error', 'Could not save file.');
     } finally {
       setIsSaving(false);
@@ -477,10 +496,12 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   const shareFile = async () => {
     try {
+      trackViewerEvent({ stage: 'share', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
       const uriToShare = activeItem.uri.startsWith('file://') ? activeItem.uri : `file://${activeItem.uri}`;
       const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
       await shareMedia(uriToShare, mimeType, activeItem.name);
     } catch (err: any) {
+      captureViewerError('share', err, { uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
       Alert.alert('Error', 'Could not share this file.');
     }
   };
@@ -502,7 +523,10 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           {/* Header */}
           {shouldShowControls && (
             <View style={[styles.header, isLandscape && styles.landscapeOverlayHeader]}>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <TouchableOpacity onPress={() => {
+              trackViewerEvent({ stage: 'close', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
+              onClose();
+            }} style={styles.closeButton}>
                 <Ionicons name="close" size={24} color={COLORS.black} />
               </TouchableOpacity>
 

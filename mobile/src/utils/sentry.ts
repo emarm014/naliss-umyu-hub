@@ -383,3 +383,102 @@ export function setSentryNetworkContext(isOnline: boolean, networkType?: string 
   if (networkType) Sentry.setTag('network.type', networkType);
   Sentry.setContext('network', { isOnline, networkType });
 }
+
+// ── UniversalViewer Diagnostic System ──────────────────────────────────────────
+// Tracks the FULL lifecycle of every viewer open so crashes show exactly what
+// broke: which screen triggered it, what URI/type was passed, which stage
+// failed (tap → open → resolve → download → render).
+
+type ViewerStage =
+  | 'tap'           // User tapped an image/video/doc
+  | 'open'          // UniversalViewer became visible
+  | 'vault_hit'     // File found in local vault (offline)
+  | 'vault_miss'    // File not in vault, will download
+  | 'cache_hit'     // File found in viewer cache
+  | 'download_start'// Download started
+  | 'download_ok'   // Download completed successfully
+  | 'download_fail' // Download failed
+  | 'render'        // Content rendered to screen
+  | 'render_error'  // Content failed to render (image error, PDF crash, etc.)
+  | 'close'         // Viewer closed
+  | 'save'          // User saved to device
+  | 'share';        // User shared file
+
+interface ViewerDiagnostics {
+  stage: ViewerStage;
+  uri?: string;
+  fileType?: string;
+  fileName?: string;
+  fileId?: string;
+  source?: string;       // Which screen triggered the viewer (e.g. 'resources', 'chat', 'gallery')
+  durationMs?: number;
+  error?: string;
+  extra?: Record<string, any>;
+}
+
+/**
+ * Track a viewer lifecycle event as a Sentry breadcrumb.
+ * Every stage is logged so the crash trail shows the exact sequence:
+ *   tap → open → vault_miss → download_start → download_ok → render
+ * If the app freezes or crashes, the last breadcrumb tells you exactly WHERE.
+ */
+export function trackViewerEvent(diag: ViewerDiagnostics) {
+  const isError = diag.stage === 'download_fail' || diag.stage === 'render_error';
+  Sentry.addBreadcrumb({
+    category: 'viewer',
+    message: `Viewer [${diag.stage}] ${diag.fileName || diag.uri?.slice(0, 60) || ''}`,
+    data: {
+      stage: diag.stage,
+      fileType: diag.fileType,
+      fileName: diag.fileName,
+      fileId: diag.fileId,
+      uri: diag.uri?.slice(0, 200),
+      source: diag.source,
+      durationMs: diag.durationMs,
+      error: diag.error,
+      ...diag.extra,
+    },
+    level: isError ? 'error' : 'info',
+  });
+}
+
+/**
+ * Capture a viewer error as a REAL Sentry exception (not just a breadcrumb).
+ * Use this when the viewer encounters an unrecoverable error that should
+ * show up as its own issue in the Sentry Issues dashboard.
+ */
+export function captureViewerError(
+  stage: ViewerStage,
+  error: unknown,
+  context: {
+    uri?: string;
+    fileType?: string;
+    fileName?: string;
+    fileId?: string;
+    source?: string;
+  }
+) {
+  if (isNetworkError(error)) {
+    // Don't report network errors as viewer bugs — they're expected offline
+    trackViewerEvent({
+      stage,
+      ...context,
+      error: `[Network] ${(error as any)?.message || String(error)}`,
+    });
+    return;
+  }
+  const err = normalizeError(error);
+  err.name = `ViewerError [${stage}]`;
+  Sentry.captureException(err, {
+    tags: {
+      component: 'UniversalViewer',
+      viewer_stage: stage,
+      file_type: context.fileType || 'unknown',
+      source_screen: context.source || 'unknown',
+    },
+    extra: {
+      ...context,
+      originalError: error,
+    },
+  });
+}

@@ -111,7 +111,7 @@ export const useFYBStore = create<FYBState>()(
             cacheEntityList('featured_students', items, '').catch(() => {});
 
             // Background prefetch covers for offline
-            const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+            const { getOptimizedCloudinaryUrl } = require('../lib/cloudinary');
             const { prefetchAsset } = require('../utils/prefetchAsset');
             items.forEach((item: any) => {
                 const img = item.custom_image_url || item.users?.avatar_url;

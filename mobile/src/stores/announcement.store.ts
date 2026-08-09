@@ -110,7 +110,7 @@ export const useAnnouncementStore = create<AnnouncementState>()(
           cacheEntityList('announcements', data, session.user.id).catch(() => {});
           
           // Background prefetch covers for offline
-          const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+          const { getOptimizedCloudinaryUrl } = require('../lib/cloudinary');
           const { prefetchAsset } = require('../utils/prefetchAsset');
           data.forEach((ann: any) => {
               if (ann.cover_image_url) {

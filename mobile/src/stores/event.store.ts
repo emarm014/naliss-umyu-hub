@@ -142,7 +142,7 @@ export const useEventStore = create<EventState>()(
                     cacheEntityList('events', mappedEvents, session?.user?.id || '').catch(() => {});
 
                     // Background prefetch covers for offline
-                    const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+                    const { getOptimizedCloudinaryUrl } = require('../lib/cloudinary');
                     const { prefetchAsset } = require('../utils/prefetchAsset');
                     mappedEvents.forEach((ev: any) => {
                         if (ev.cover_image_url) {

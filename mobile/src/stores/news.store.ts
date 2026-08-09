@@ -89,7 +89,7 @@ export const useNewsStore = create<NewsState>()(
           
           if (data && data.length > 0) {
               // Background prefetch covers for offline
-              const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+              const { getOptimizedCloudinaryUrl } = require('../lib/cloudinary');
               const { prefetchAsset } = require('../utils/prefetchAsset');
               data.forEach((item: any) => {
                   if (item.cover_image_url) {

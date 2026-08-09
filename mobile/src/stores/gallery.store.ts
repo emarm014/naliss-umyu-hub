@@ -87,7 +87,7 @@ export const useGalleryStore = create<GalleryState>()(
             cacheEntityList('gallery_topics', items, '').catch(() => {});
 
             // Background prefetch covers for offline
-            const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+            const { getOptimizedCloudinaryUrl } = require('../lib/cloudinary');
             const { prefetchAsset } = require('../utils/prefetchAsset');
             items.forEach((topic: any) => {
                 if (topic.cover_image) {

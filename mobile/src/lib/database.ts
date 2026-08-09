@@ -16,11 +16,13 @@ if (!_global.sqliteTransactionQueue) {
 }
 export function enqueueTransaction<T>(task: () => Promise<T>): Promise<T> {
     const queue = _global.sqliteTransactionQueue;
-    const nextQueue = queue.then(task).catch((err: any) => {
+    const taskPromise = queue.then(() => task());
+    
+    _global.sqliteTransactionQueue = taskPromise.catch((err: any) => {
         console.error('SQLite queued transaction error:', err);
     });
-    _global.sqliteTransactionQueue = nextQueue;
-    return queue.then(task);
+    
+    return taskPromise;
 }
 
 function isNativeNpe(error: any): boolean {

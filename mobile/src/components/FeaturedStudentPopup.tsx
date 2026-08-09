@@ -149,11 +149,16 @@ export function FeaturedStudentPopup() {
                     event: '*',
                     schema: 'public',
                     table: 'featured_students',
-                    filter: 'is_active=eq.true',
                 },
-                () => {
+                (payload) => {
                     // Admin published a new active featured student, fetch and show!
-                    checkForActiveFeature();
+                    const newRow = payload.new as any;
+                    if (newRow && newRow.is_active === true) {
+                        checkForActiveFeature();
+                    } else if (!payload.new && payload.old) {
+                        // In case of deletes, we might want to refresh, but for now we only care if one is active
+                        checkForActiveFeature();
+                    }
                 }
             )
             .subscribe();

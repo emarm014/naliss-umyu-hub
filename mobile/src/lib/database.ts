@@ -10,8 +10,18 @@ let isRecovering = false;
 let activeDbName = 'chat.db';
 
 // Global queue to prevent "cannot start a transaction within a transaction" errors
-// Any SQLite operation using withTransactionAsync must be queued here.
-export let sqliteTransactionQueue: Promise<void> = Promise.resolve();
+const _global = globalThis as any;
+if (!_global.sqliteTransactionQueue) {
+    _global.sqliteTransactionQueue = Promise.resolve();
+}
+export function enqueueTransaction<T>(task: () => Promise<T>): Promise<T> {
+    const queue = _global.sqliteTransactionQueue;
+    const nextQueue = queue.then(task).catch((err: any) => {
+        console.error('SQLite queued transaction error:', err);
+    });
+    _global.sqliteTransactionQueue = nextQueue;
+    return queue.then(task);
+}
 
 function isNativeNpe(error: any): boolean {
   if (!error) return false;
@@ -633,51 +643,46 @@ export const insertOrReplaceMessage = async (msg: any, groupId: string) => {
 };
 
 export const batchInsertMessages = async (messages: any[], groupId: string) => {
+    if (initDbPromise) await initDbPromise;
     const activeDb = db;
     if (!activeDb || messages.length === 0) return;
     
     // Queue transactions to prevent "cannot start a transaction within a transaction" SQLite errors
-    return new Promise<void>((resolve, reject) => {
-        sqliteTransactionQueue = sqliteTransactionQueue.then(async () => {
-            try {
-                const BATCH_SIZE = 50;
-                for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-                    const chunk = messages.slice(i, i + BATCH_SIZE);
-                    await activeDb.withTransactionAsync(async () => {
-                        const statement = await activeDb.prepareAsync(
-                            `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
-                             VALUES ($id, $groupId, $createdAt, $rawData, $localMediaPath)`
-                        );
-                        try {
-                            for (const msg of chunk) {
-                                const rawData = safeJsonStringify(msg);
-                                const createdAt = msg.created_at || new Date().toISOString();
-                                const localMediaPath = msg.local_media_path || null;
-                                await statement.executeAsync({
-                                    $id: msg.id,
-                                    $groupId: groupId,
-                                    $createdAt: createdAt,
-                                    $rawData: rawData,
-                                    $localMediaPath: localMediaPath
-                                });
-                            }
-                        } finally {
-                            await statement.finalizeAsync();
+    return enqueueTransaction(async () => {
+        try {
+            const BATCH_SIZE = 50;
+            for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+                const chunk = messages.slice(i, i + BATCH_SIZE);
+                await activeDb.withTransactionAsync(async () => {
+                    const statement = await activeDb.prepareAsync(
+                        `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
+                         VALUES ($id, $groupId, $createdAt, $rawData, $localMediaPath)`
+                    );
+                    try {
+                        for (const msg of chunk) {
+                            const rawData = safeJsonStringify(msg);
+                            const createdAt = msg.created_at || new Date().toISOString();
+                            const localMediaPath = msg.local_media_path || null;
+                            await statement.executeAsync({
+                                $id: msg.id,
+                                $groupId: groupId,
+                                $createdAt: createdAt,
+                                $rawData: rawData,
+                                $localMediaPath: localMediaPath
+                            });
                         }
-                    });
-                    if (i + BATCH_SIZE < messages.length) {
-                        await new Promise(r => setTimeout(r, 0));
+                    } finally {
+                        await statement.finalizeAsync();
                     }
+                });
+                if (i + BATCH_SIZE < messages.length) {
+                    await new Promise(r => setTimeout(r, 0));
                 }
-                resolve();
-            } catch (e) {
-                console.error('SQLite batch insert error:', e);
-                reject(e);
             }
-        }).catch(err => {
-            console.error('SQLite queue fallback error:', err);
-            reject(err);
-        });
+        } catch (e: any) {
+            console.error('SQLite batchInsertMessages error:', e);
+            throw e;
+        }
     });
 };
 
@@ -1262,15 +1267,15 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
 // Stores full entity lists in content_manifest so reads are instant from SQLite.
 
 export const cacheEntityList = async (contentType: string, entities: any[], userId: string) => {
+    if (initDbPromise) await initDbPromise;
     const activeDb = db;
     if (!activeDb || !entities.length) return;
     
     // Queue transactions to prevent "cannot start a transaction within a transaction" SQLite errors
-    return new Promise<void>((resolve, reject) => {
-        sqliteTransactionQueue = sqliteTransactionQueue.then(async () => {
-            const now = new Date().toISOString();
-    try {
-        const BATCH_SIZE = 50;
+    return enqueueTransaction(async () => {
+        const now = new Date().toISOString();
+        try {
+            const BATCH_SIZE = 50;
         for (let i = 0; i < entities.length; i += BATCH_SIZE) {
             const chunk = entities.slice(i, i + BATCH_SIZE);
             await activeDb.withTransactionAsync(async () => {
@@ -1300,20 +1305,15 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
             if (i + BATCH_SIZE < entities.length) {
                 await new Promise(r => setTimeout(r, 0));
             }
-          }
-          resolve();
-      } catch (e: any) {
-          if (isTransactionRecoveryError(e)) {
-              console.warn('SQLite cacheEntityList transaction aborted due to recovery.');
-          } else {
-              console.error('SQLite cacheEntityList error:', e);
-          }
-          reject(e);
-      }
-        }).catch(err => {
-            console.error('SQLite queue fallback error:', err);
-            reject(err);
-        });
+        }
+    } catch (e: any) {
+        if (isTransactionRecoveryError(e)) {
+            console.warn('SQLite cacheEntityList transaction aborted due to recovery.');
+        } else {
+            console.error('SQLite cacheEntityList error:', e);
+        }
+        throw e;
+    }
     });
 };
 

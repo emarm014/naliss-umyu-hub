@@ -416,16 +416,6 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accentColor} />}
       >
-        {/* Offline Banner */}
-        {!isOnline && (
-          <View style={[styles.offlineBanner, { backgroundColor: isDark ? '#451a03' : '#fffbeb' }]}>
-            <Ionicons name="cloud-offline" size={16} color={isDark ? '#fbbf24' : '#d97706'} />
-            <Text style={[styles.offlineText, { color: isDark ? '#fbbf24' : '#d97706' }]}>
-              You're offline. Showing cached updates.
-            </Text>
-          </View>
-        )}
-
         {/* ── LEVEL-THEMED PROFILE HEADER ─────────────────────────────────── */}
         <LinearGradient
           colors={theme.gradient}
@@ -604,9 +594,9 @@ export default function HomeScreen() {
                         entityId={item.id}
                         assetType="announcement_cover"
                         resizeMode="cover"
-                        onPress={() => {
+                        onPress={(localUri) => {
                           setViewerFile({
-                            uri: item.cover_image_url || '',
+                            uri: localUri || item.cover_image_url || '',
                             type: 'image',
                             name: item.title || '',
                           });

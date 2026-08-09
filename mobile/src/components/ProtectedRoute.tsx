@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { useRouter, useSegments, usePathname } from 'expo-router';
 import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView, Platform, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useSettingsStore, useTheme } from '../stores';
 import MaintenanceScreen from '../../app/maintenance';
 import { useSignupStore, useGlobalSyncStore } from '../stores';
@@ -43,6 +44,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const segments = useSegments() as string[];
   const router = useRouter();
   
+  const insets = useSafeAreaInsets();
   const profile = useAuthStore(s => s.profile);
   const [restrictionInfo, setRestrictionInfo] = useState<{
     type: 'banned' | 'suspended';
@@ -1195,7 +1197,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     };
 
     return (
-      <SafeAreaView style={styles.restrictionSafeArea}>
+      <View style={[styles.restrictionSafeArea, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 24) }]}>
         <View style={styles.restrictionContainer}>
           <View style={styles.restrictionLogoRow}>
             <NalissLogo size={42} />
@@ -1288,7 +1290,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             </TouchableOpacity>
           </View>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 

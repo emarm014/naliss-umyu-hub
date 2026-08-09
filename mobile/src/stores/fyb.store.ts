@@ -109,6 +109,18 @@ export const useFYBStore = create<FYBState>()(
           if (items.length > 0) {
             const { cacheEntityList } = require('../lib/database');
             cacheEntityList('featured_students', items, '').catch(() => {});
+
+            // Background prefetch covers for offline
+            const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+            const { prefetchAsset } = require('../utils/prefetchAsset');
+            items.forEach((item: any) => {
+                const img = item.custom_image_url || item.users?.avatar_url;
+                if (img) {
+                    const homeUrl = getOptimizedCloudinaryUrl(img, 600, 400);
+                    const posterEntityId = 'poster_' + homeUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
+                    prefetchAsset(posterEntityId, homeUrl, 'poster');
+                }
+            });
           }
           
           set({ 

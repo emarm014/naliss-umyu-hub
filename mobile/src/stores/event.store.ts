@@ -138,7 +138,20 @@ export const useEventStore = create<EventState>()(
 
                     
                     const { cacheEntityList } = require('../lib/database');
-                    cacheEntityList('events', mappedEvents, '').catch(() => {});
+                    const session = (await supabase.auth.getSession()).data.session;
+                    cacheEntityList('events', mappedEvents, session?.user?.id || '').catch(() => {});
+
+                    // Background prefetch covers for offline
+                    const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+                    const { prefetchAsset } = require('../utils/prefetchAsset');
+                    mappedEvents.forEach((ev: any) => {
+                        if (ev.cover_image_url) {
+                            const homeUrl = getOptimizedCloudinaryUrl(ev.cover_image_url, 600, 400);
+                            const posterEntityId = 'poster_' + homeUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
+                            prefetchAsset(posterEntityId, homeUrl, 'poster');
+                        }
+                    });
+
                     set({ events: mappedEvents as unknown as Event[], isLoading: false, lastFetch: Date.now() });
                     scheduleTimetableAlarms(mappedEvents as unknown as Event[]);
 

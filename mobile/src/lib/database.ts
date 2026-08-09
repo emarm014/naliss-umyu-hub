@@ -523,8 +523,8 @@ export const saveLocalUserSession = async (profile: any) => {
         
         await db.runAsync(
             `INSERT OR REPLACE INTO local_user_session (
-                id, username, email, level, department_id, raw_profile_json, updated_at, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                id, username, email, level, department_id, raw_profile_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
                 profile.id,
                 profile.username || null,
@@ -532,8 +532,7 @@ export const saveLocalUserSession = async (profile: any) => {
                 profile.level || null,
                 profile.department_id || profile.department || null,
                 profileJson,
-                updatedAt,
-                lastSyncedAt
+                updatedAt
             ]
         );
     } catch (e) {
@@ -556,24 +555,6 @@ export const getLocalUserSession = async () => {
             }
             return {
                 ...profile,
-                id: result.id,
-                username: result.username,
-                email: result.email,
-                level: result.level,
-                department_id: result.department_id,
-                full_name: result.full_name,
-                phone: result.phone,
-                avatar_url: result.avatar_url,
-                local_avatar_path: result.local_avatar_path,
-                faculty: result.faculty,
-                department: result.department,
-                programme: result.programme,
-                executive_role: result.executive_role,
-                membership_status: result.membership_status,
-                biography: result.biography,
-                notification_preferences: result.notification_preferences ? JSON.parse(result.notification_preferences) : undefined,
-                privacy_preferences: result.privacy_preferences ? JSON.parse(result.privacy_preferences) : undefined,
-                appearance_settings: result.appearance_settings ? JSON.parse(result.appearance_settings) : undefined,
                 permissions: result.permissions ? JSON.parse(result.permissions) : undefined,
                 created_at: result.created_at,
                 updated_at: result.updated_at,
@@ -1259,6 +1240,19 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
         );
     } catch (e) {
         console.error('SQLite getSyncState error:', e);
+        return null;
+    }
+};
+
+export const getAssetCacheByUrl = async (remoteUrl: string): Promise<string | null> => {
+    if (!db) return null;
+    try {
+        const result = await db.getFirstAsync<{ local_path: string }>(
+            'SELECT local_path FROM asset_cache WHERE remote_url = ?',
+            [remoteUrl]
+        );
+        return result?.local_path || null;
+    } catch (e) {
         return null;
     }
 };

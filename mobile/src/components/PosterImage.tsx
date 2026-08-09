@@ -10,7 +10,7 @@ interface PosterImageProps {
   fallbackUri?: string;
   style?: any;
   gradientColors: [string, string];
-  onPress?: () => void;
+  onPress?: (localUri: string | null) => void;
 }
 
 const globalPosterMemoryCache: Record<string, string> = {};
@@ -131,7 +131,7 @@ export function PosterImage({
   if (onPress) {
       return (
           <View style={[style, styles.container]}>
-              <TouchableOpacity activeOpacity={0.9} style={StyleSheet.absoluteFill} onPress={onPress}>
+              <TouchableOpacity activeOpacity={0.9} style={StyleSheet.absoluteFill} onPress={() => onPress?.(localUri)}>
                   {content}
               </TouchableOpacity>
           </View>

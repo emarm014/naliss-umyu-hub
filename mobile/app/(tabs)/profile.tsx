@@ -239,7 +239,7 @@ export default function ProfileScreen() {
   const handleAvatarPress = () => {
     Alert.alert('Update Profile Picture', 'How would you like to update your avatar?', [
       { text: 'Pick from Gallery', onPress: pickImage },
-      { text: 'Generate Random Sticker', onPress: generateSticker },
+      { text: 'Generate Sticker', onPress: generateSticker },
       { text: 'Cancel', style: 'cancel' }
     ], { cancelable: true });
   };
@@ -612,10 +612,6 @@ export default function ProfileScreen() {
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case 'system_owner':
-        return ['#7c3aed', '#4c1d95']; // Violet
-      case 'super_admin':
-        return ['#dc2626', '#991b1b']; // Red
       case 'moderator':
         return ['#d97706', '#92400e']; // Amber
       default:
@@ -625,10 +621,6 @@ export default function ProfileScreen() {
 
   const getRoleLabel = (role: string) => {
     switch (role) {
-      case 'system_owner':
-        return 'System Owner';
-      case 'super_admin':
-        return 'Super Admin';
       case 'moderator':
         return 'Moderator';
       default:
@@ -842,7 +834,7 @@ export default function ProfileScreen() {
               iconColor="#7c3aed" 
               iconBg={COLORS.actionPurple} 
               label="Display" 
-              onPress={() => setShowDisplay(true)}
+              onPress={() => router.push('/profile/display' as any)}
               colors={colors}
             />
             <MenuItem 
@@ -850,7 +842,7 @@ export default function ProfileScreen() {
               iconColor="#0284c7" 
               iconBg={COLORS.actionBlue} 
               label="Security" 
-              onPress={() => setShowSecurityMenu(true)}
+              onPress={() => router.push('/profile/security' as any)}
               colors={colors}
             />
             <MenuItem 
@@ -858,17 +850,7 @@ export default function ProfileScreen() {
               iconColor="#ea580c" 
               iconBg={COLORS.actionOrange} 
               label="Notification Preferences" 
-              onPress={() => {
-                if (storeProfile) {
-                  setNotifSettings({
-                    notif_announcements: (storeProfile as any)?.notif_announcements ?? true,
-                    notif_events: (storeProfile as any)?.notif_events ?? true,
-                    notif_messages: (storeProfile as any)?.notif_messages ?? true,
-                    notif_materials: (storeProfile as any)?.notif_materials ?? true,
-                  });
-                }
-                setShowNotifications(true);
-              }}
+              onPress={() => router.push('/profile/notifications' as any)}
               rightContent={<Ionicons name="chevron-forward" size={20} color={colors.textMuted} />}
               colors={colors}
             />

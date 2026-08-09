@@ -85,6 +85,17 @@ export const useGalleryStore = create<GalleryState>()(
           if (items.length > 0) {
             const { cacheEntityList } = require('../lib/database');
             cacheEntityList('gallery_topics', items, '').catch(() => {});
+
+            // Background prefetch covers for offline
+            const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+            const { prefetchAsset } = require('../utils/prefetchAsset');
+            items.forEach((topic: any) => {
+                if (topic.cover_image) {
+                    const homeUrl = getOptimizedCloudinaryUrl(topic.cover_image, 600, 400);
+                    const posterEntityId = 'poster_' + homeUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
+                    prefetchAsset(posterEntityId, homeUrl, 'poster');
+                }
+            });
           }
           
           set({ 
@@ -142,9 +153,21 @@ export const useGalleryStore = create<GalleryState>()(
             .order('created_at', { ascending: true });
 
           if (error) throw error;
+          const items = (data || []) as unknown as GalleryMedia[];
           
+          if (items.length > 0) {
+            // Background prefetch media for offline
+            const { prefetchAsset } = require('../utils/prefetchAsset');
+            items.forEach((m: any) => {
+                if (m.media_url && m.media_type === 'image') {
+                    const posterEntityId = 'poster_' + m.media_url.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
+                    prefetchAsset(posterEntityId, m.media_url, 'poster');
+                }
+            });
+          }
+
           set(state => ({ 
-            mediaByTopic: { ...state.mediaByTopic, [topicId]: (data || []) as unknown as GalleryMedia[] },
+            mediaByTopic: { ...state.mediaByTopic, [topicId]: items },
             isLoadingMedia: { ...state.isLoadingMedia, [topicId]: false }
           }));
         } catch (err) {

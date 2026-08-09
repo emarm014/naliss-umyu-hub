@@ -305,6 +305,21 @@ function ViewerItemSlide({
           }
         }
 
+        const { getAssetCacheByUrl } = require('../../../lib/database');
+        const cachedSqlitePath = await getAssetCacheByUrl(item.uri);
+        if (cachedSqlitePath) {
+          const sqliteFileInfo = await FileSystem.getInfoAsync(cachedSqlitePath);
+          if (sqliteFileInfo.exists && (sqliteFileInfo as any).size > 0) {
+            trackViewerEvent({ stage: 'cache_hit', uri: item.uri, fileType: item.type, fileName: item.name });
+            if (!cancelled) {
+              setLocalUri(cachedSqlitePath);
+              setIsOffline(true);
+              setIsDownloading(false);
+            }
+            return;
+          }
+        }
+
         const viewerUrl = getViewerUrl(item.uri);
         const destinationPath = item.fileId
           ? getVaultFilePath(item.fileId, item.name, item.uri)

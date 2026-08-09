@@ -108,6 +108,23 @@ export const useAnnouncementStore = create<AnnouncementState>()(
 
           const { cacheEntityList } = require('../lib/database');
           cacheEntityList('announcements', data, session.user.id).catch(() => {});
+          
+          // Background prefetch covers for offline
+          const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+          const { prefetchAsset } = require('../utils/prefetchAsset');
+          data.forEach((ann: any) => {
+              if (ann.cover_image_url) {
+                  // Prefetch for Home tab (CachedImage, 600x400, entityId = ann.id)
+                  const homeUrl = getOptimizedCloudinaryUrl(ann.cover_image_url, 600, 400);
+                  prefetchAsset(ann.id, homeUrl, 'announcement_cover');
+
+                  // Prefetch for Updates tab (PosterImage, 800 width, entityId = auto generated)
+                  const updatesUrl = getOptimizedCloudinaryUrl(ann.cover_image_url, 800);
+                  const posterEntityId = 'poster_' + updatesUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
+                  prefetchAsset(posterEntityId, updatesUrl, 'poster');
+              }
+          });
+
           set({ announcements: (data as unknown) as Announcement[], isLoading: false, lastFetch: Date.now() });
         } catch (error) {
           // Offline or network error — keep showing cached data, don't clear it

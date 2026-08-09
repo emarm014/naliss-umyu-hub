@@ -157,16 +157,6 @@ export default function AnnouncementsScreen() {
                 </View>
             </View>
 
-            {/* Offline Banner */}
-            {!isOnline && (
-                <View style={[styles.offlineBanner, { backgroundColor: isDark ? '#451a03' : '#fffbeb' }]}>
-                    <Ionicons name="cloud-offline" size={16} color={isDark ? '#fbbf24' : '#d97706'} />
-                    <Text style={[styles.offlineText, { color: isDark ? '#fbbf24' : '#d97706' }]}>
-                        You're offline. Showing cached updates.
-                    </Text>
-                </View>
-            )}
-
             {/* Filter chips */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll} style={[styles.filterRow, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 {CATEGORIES.map(cat => {
@@ -201,8 +191,8 @@ export default function AnnouncementsScreen() {
                             key={event.id} 
                             event={event} 
                             onApply={() => setActiveApplyPoolId(event.pool_id || null)} 
-                            onImagePress={() => {
-                                setViewerFile({ uri: event.cover_image_url || '', type: 'image', name: event.title || '' });
+                            onImagePress={(localUri) => {
+                                setViewerFile({ uri: localUri || event.cover_image_url || '', type: 'image', name: event.title || '' });
                                 setViewerVisible(true);
                             }}
                         />)
@@ -215,8 +205,8 @@ export default function AnnouncementsScreen() {
                             user={user} 
                             onDelete={handleDelete} 
                             onApply={() => setActiveApplyPoolId(ann.pool_id)} 
-                            onImagePress={() => {
-                                setViewerFile({ uri: ann.cover_image_url || '', type: 'image', name: ann.title || '' });
+                            onImagePress={(localUri) => {
+                                setViewerFile({ uri: localUri || ann.cover_image_url || '', type: 'image', name: ann.title || '' });
                                 setViewerVisible(true);
                             }}
                         />)
@@ -435,7 +425,7 @@ const overlayStyles = StyleSheet.create({
     submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
 
-function AnnouncementCard({ announcement, user, onDelete, onApply, onImagePress }: { announcement: any; user: any; onDelete: (id: string) => void; onApply: () => void; onImagePress?: () => void; }) {
+function AnnouncementCard({ announcement, user, onDelete, onApply, onImagePress }: { announcement: any, user: any, onDelete: (id: string) => void, onApply?: () => void, onImagePress?: (localUri: string | null) => void }) {
     const cat = CATEGORY_CONFIG[(announcement.category || 'general').toLowerCase()] || DEFAULT_CAT;
     const priority = PRIORITY_CONFIG[announcement.priority] || PRIORITY_CONFIG.normal;
     const timeAgo = announcement.created_at
@@ -504,7 +494,7 @@ function AnnouncementCard({ announcement, user, onDelete, onApply, onImagePress 
                             style={{ backgroundColor: '#10b981', marginLeft: 'auto', marginRight: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center' }}
                             onPress={() => {
                                 // We check if there's a pool, then trigger onApply which opens the modal overlay
-                                onApply();
+                                onApply?.();
                             }}
                         >
                             <Ionicons name='clipboard-outline' size={14} color='#fff' />
@@ -526,7 +516,7 @@ function AnnouncementCard({ announcement, user, onDelete, onApply, onImagePress 
     );
 }
 
-function EventCard({ event, onApply, onImagePress }: { event: any, onApply?: () => void, onImagePress?: () => void }) {
+function EventCard({ event, onApply, onImagePress }: { event: any, onApply?: () => void, onImagePress?: (localUri: string | null) => void }) {
     const status = STATUS_CONFIG[event.status] || STATUS_CONFIG.draft;
     const isOngoing = event.status === 'ongoing';
     const eventGradient: [string, string] = isOngoing ? ['#065f46', '#059669'] : ['#1e3a8a', '#2563eb'];

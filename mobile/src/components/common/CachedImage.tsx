@@ -36,7 +36,7 @@ interface CachedImageProps {
     fallbackName?: string | null;
     fallbackInitials?: string | null;
     blurRadius?: number;
-    onPress?: () => void;
+    onPress?: (localUri: string | null) => void;
 }
 
 export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials, blurRadius, onPress }: CachedImageProps) {
@@ -163,11 +163,17 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
     const initials = fallbackInitials || (fallbackName ? fallbackName.slice(0, 2).toUpperCase() : null);
 
     if ((!localUri && !remoteUrl) || hasError) {
+        let fallbackIcon = "person";
+        if (assetType === 'announcement_cover') fallbackIcon = "megaphone-outline";
+        else if (assetType === 'event_cover') fallbackIcon = "calendar-outline";
+        else if (assetType === 'group_avatar') fallbackIcon = "people";
+        else if (assetType !== 'user' && assetType !== 'user_avatar') fallbackIcon = "image-outline";
+
         return (
             <TouchableOpacity
                 style={[style, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]}
                 onLongPress={handleLongPress}
-                onPress={onPress}
+                onPress={() => onPress?.(localUri)}
                 activeOpacity={0.9}
             >
                 {initials ? (
@@ -175,7 +181,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                         {initials}
                     </Text>
                 ) : (
-                    <Ionicons name="person" size={Math.min((style as any)?.width || 48, 48) * 0.5} color={isDark ? '#475569' : '#94a3b8'} />
+                    <Ionicons name={fallbackIcon as any} size={Math.min((style as any)?.width || 48, 48) * 0.5} color={isDark ? '#475569' : '#94a3b8'} />
                 )}
             </TouchableOpacity>
         );
@@ -185,7 +191,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         <TouchableOpacity 
             style={[style, { overflow: 'hidden' }]} 
             onLongPress={handleLongPress}
-            onPress={onPress}
+            onPress={() => onPress?.(localUri)}
             activeOpacity={0.9}
         >
             <Image

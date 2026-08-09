@@ -87,6 +87,18 @@ export const useNewsStore = create<NewsState>()(
           const { cacheEntityList } = require('../lib/database');
           cacheEntityList('news', data, '').catch(() => {});
           
+          if (data && data.length > 0) {
+              // Background prefetch covers for offline
+              const { getOptimizedCloudinaryUrl } = require('../utils/cloudinary');
+              const { prefetchAsset } = require('../utils/prefetchAsset');
+              data.forEach((item: any) => {
+                  if (item.cover_image_url) {
+                      const homeUrl = getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400);
+                      const posterEntityId = 'poster_' + homeUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
+                      prefetchAsset(posterEntityId, homeUrl, 'poster');
+                  }
+              });
+          }
           set({ news: data as any[], isLoading: false, lastFetchNews: Date.now() });
         } catch (err) {
           Logger.error('news-store', 'fetchNews failed', err);

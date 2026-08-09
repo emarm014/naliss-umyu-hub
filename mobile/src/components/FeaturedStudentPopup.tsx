@@ -497,7 +497,13 @@ export function FeaturedStudentPopup() {
                         {/* Header Image Area */}
                         <View style={styles.imageHeader}>
                             {bgImage ? (
-                                <Image source={{ uri: bgImage }} style={styles.coverImage} resizeMode="cover" />
+                                <CachedImage 
+                                    remoteUrl={bgImage} 
+                                    style={styles.coverImage as any} 
+                                    resizeMode="cover" 
+                                    entityId={feature.id} 
+                                    assetType="featured_student"
+                                />
                             ) : (
                                 <View style={[styles.coverImage, { backgroundColor: badge.color, opacity: 0.15 }]} />
                             )}

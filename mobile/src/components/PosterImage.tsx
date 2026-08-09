@@ -89,8 +89,11 @@ export function PosterImage({
             } else {
                 if (isMounted) setStatus('error');
             }
-        } catch (err) {
-            console.warn('[PosterImage] Failed to load poster:', err);
+        } catch (err: any) {
+            const isNet = err?.message?.includes('Network') || err?.message?.includes('Unable to resolve host');
+            if (!isNet) {
+                console.warn('[PosterImage] Failed to load poster:', err);
+            }
             if (isMounted) setStatus('error');
         }
     };

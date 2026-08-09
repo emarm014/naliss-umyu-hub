@@ -1464,7 +1464,14 @@ export default function ChatScreen() {
             <Pressable
                 onLongPress={() => setLongPressedMessage(item)}
                 delayLongPress={400}
-                onPress={() => handleDoubleTapReply(item)}
+                onPress={() => {
+                    // Only fire double-tap reply for text/system messages.
+                    // Media messages (image, video, document, audio) handle their own onPress
+                    // via inner TouchableOpacity to open the Universal Viewer.
+                    if (item.message_type === 'text' || item.message_type === 'system' || item.isAlbum) {
+                        handleDoubleTapReply(item);
+                    }
+                }}
             >
                 <View style={[
                     styles.messageWrapper, 
@@ -2774,60 +2781,35 @@ export default function ChatScreen() {
                             <Ionicons name="arrow-undo" size={20} color={COLORS.text} />
                             <Text style={styles.contextItemText}>Reply</Text>
                         </TouchableOpacity>
-                        {['image', 'video', 'audio', 'document'].includes(longPressedMessage.message_type) && (
-                            <>
-                                <TouchableOpacity 
-                                    style={styles.contextItem} 
-                                    onPress={() => {
-                                        handleSaveMessageMedia(longPressedMessage);
-                                        setLongPressedMessage(null);
-                                    }}
-                                >
-                                    <Ionicons name="cloud-download-outline" size={20} color={COLORS.text} />
-                                    <Text style={styles.contextItemText}>Save to Device</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity 
-                                    style={styles.contextItem} 
-                                    onPress={() => {
-                                        handleShareMessageMedia(longPressedMessage);
-                                        setLongPressedMessage(null);
-                                    }}
-                                >
-                                    <Ionicons name="share-social-outline" size={20} color={COLORS.text} />
-                                    <Text style={styles.contextItemText}>Share</Text>
-                                </TouchableOpacity>
-                            </>
+                        {/* Edit — only for own text messages, only within 1 hour */}
+                        {longPressedMessage.sender_id === currentUser?.id && longPressedMessage.message_type === 'text' &&
+                         Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
+                            <TouchableOpacity style={styles.contextItem} onPress={() => handleEdit(longPressedMessage)}>
+                                <Ionicons name="create-outline" size={20} color={COLORS.text} />
+                                <Text style={styles.contextItemText}>Edit</Text>
+                            </TouchableOpacity>
                         )}
-                        {/* Edit — only for text, only within 1 hour */}
-                        {longPressedMessage.sender_id === currentUser?.id && (
-                            <>
-                                {longPressedMessage.message_type === 'text' &&
-                                 Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
-                                    <TouchableOpacity style={styles.contextItem} onPress={() => handleEdit(longPressedMessage)}>
-                                        <Ionicons name="create-outline" size={20} color={COLORS.text} />
-                                        <Text style={styles.contextItemText}>Edit</Text>
-                                    </TouchableOpacity>
-                                )}
-                                {/* Delete — only within 1 hour */}
-                                {Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
-                                    <TouchableOpacity style={styles.contextItem} onPress={() => {
-                                        handleDelete(longPressedMessage.id);
-                                        setLongPressedMessage(null);
-                                    }}>
-                                        <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                                        <Text style={[styles.contextItemText, { color: '#ef4444' }]}>Delete</Text>
-                                    </TouchableOpacity>
-                                )}
-                                {(longPressedMessage.status === 'failed' || longPressedMessage.status === 'unsent') && (
-                                    <TouchableOpacity style={styles.contextItem} onPress={() => {
-                                        handleResend(longPressedMessage.id);
-                                        setLongPressedMessage(null);
-                                    }}>
-                                        <Ionicons name="refresh" size={20} color="#f59e0b" />
-                                        <Text style={[styles.contextItemText, { color: '#f59e0b' }]}>Resend</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </>
+                        {/* Delete — own messages only, within 1 hour */}
+                        {longPressedMessage.sender_id === currentUser?.id &&
+                         Date.now() - new Date(longPressedMessage.created_at).getTime() < 60 * 60 * 1000 && (
+                            <TouchableOpacity style={styles.contextItem} onPress={() => {
+                                handleDelete(longPressedMessage.id);
+                                setLongPressedMessage(null);
+                            }}>
+                                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                                <Text style={[styles.contextItemText, { color: '#ef4444' }]}>Delete</Text>
+                            </TouchableOpacity>
+                        )}
+                        {/* Resend — only for failed/unsent messages */}
+                        {longPressedMessage.sender_id === currentUser?.id &&
+                         (longPressedMessage.status === 'failed' || longPressedMessage.status === 'unsent') && (
+                            <TouchableOpacity style={styles.contextItem} onPress={() => {
+                                handleResend(longPressedMessage.id);
+                                setLongPressedMessage(null);
+                            }}>
+                                <Ionicons name="refresh" size={20} color="#f59e0b" />
+                                <Text style={[styles.contextItemText, { color: '#f59e0b' }]}>Resend</Text>
+                            </TouchableOpacity>
                         )}
                     </View>
                 </SafeOverlayContainer>

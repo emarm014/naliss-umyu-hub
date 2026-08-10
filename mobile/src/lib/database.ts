@@ -53,6 +53,50 @@ export function isTransactionRecoveryError(error: any): boolean {
   }
 }
 
+/**
+ * Resilient transaction wrapper that recovers from abandoned native transactions.
+ * If a previous transaction's ROLLBACK failed (leaving the connection in a dirty state),
+ * this wrapper detects the resulting "cannot start a transaction" error, issues a
+ * cleanup ROLLBACK, and retries the BEGIN once.
+ */
+async function withSafeTransactionAsync(
+  database: SQLite.SQLiteDatabase,
+  task: () => Promise<void>
+): Promise<void> {
+  // Attempt to begin the transaction
+  try {
+    await database.execAsync('BEGIN');
+  } catch (beginErr: any) {
+    const msg = beginErr?.message || String(beginErr);
+    if (msg.includes('cannot start a transaction within a transaction')) {
+      // An abandoned transaction is blocking; roll it back and retry
+      console.warn('withSafeTransactionAsync: clearing abandoned transaction before retry');
+      try {
+        await database.execAsync('ROLLBACK');
+      } catch (_rollbackErr) {
+        // Swallow – the rollback may itself fail if the native state is inconsistent
+      }
+      // Retry BEGIN after cleanup
+      await database.execAsync('BEGIN');
+    } else {
+      throw beginErr;
+    }
+  }
+
+  // Execute the task and commit/rollback
+  try {
+    await task();
+    await database.execAsync('COMMIT');
+  } catch (taskErr) {
+    try {
+      await database.execAsync('ROLLBACK');
+    } catch (_rollbackErr) {
+      // Swallow – avoid masking the original error
+    }
+    throw taskErr;
+  }
+}
+
 async function recoverDatabase(): Promise<boolean> {
   if (recoveryPromise) return recoveryPromise;
   isRecovering = true;
@@ -636,7 +680,7 @@ export const batchInsertMessages = async (messages: any[], groupId: string) => {
             const BATCH_SIZE = 50;
             for (let i = 0; i < messages.length; i += BATCH_SIZE) {
                 const chunk = messages.slice(i, i + BATCH_SIZE);
-                await activeDb.withTransactionAsync(async () => {
+                await withSafeTransactionAsync(activeDb, async () => {
                     const statement = await activeDb.prepareAsync(
                         `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
                          VALUES ($id, $groupId, $createdAt, $rawData, $localMediaPath)`
@@ -1274,7 +1318,7 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
             const BATCH_SIZE = 50;
         for (let i = 0; i < entities.length; i += BATCH_SIZE) {
             const chunk = entities.slice(i, i + BATCH_SIZE);
-            await activeDb.withTransactionAsync(async () => {
+            await withSafeTransactionAsync(activeDb, async () => {
                 const statement = await activeDb.prepareAsync(
                     `INSERT OR REPLACE INTO content_manifest (id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?)`

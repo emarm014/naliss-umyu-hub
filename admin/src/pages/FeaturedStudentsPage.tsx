@@ -299,9 +299,6 @@ export default function FeaturedStudentsPage() {
     }
   };
 
-  // ─── Helpers ────────────────────────────────────────────────
-  const getTypeInfo = (type: string) => TYPE_OPTIONS.find((t: any) => t.value === type) || TYPE_OPTIONS[0];
-
   // ─── Render ─────────────────────────────────────────────────
   return (
     <div className="p-8 lg:p-12 max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700 pb-20">

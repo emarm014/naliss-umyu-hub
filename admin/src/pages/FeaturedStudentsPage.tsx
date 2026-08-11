@@ -5,7 +5,7 @@ import {
   CheckCircle, X, Users, Calendar, Sparkles, Heart,
   ChevronLeft, ChevronRight, Clock, Send,
   Zap, Flame, Shield, Award, Medal, Rocket, Diamond,
-  Target, GraduationCap, MapPin, Feather, Compass
+  GraduationCap
 } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import FileUpload from '../lib/FileUpload';
@@ -73,6 +73,12 @@ const SCOPE_OPTIONS = [
   { value: 'department', label: 'Department' },
   { value: 'faculty', label: 'Faculty' },
   { value: 'university', label: 'University-Wide' },
+];
+
+const TYPE_OPTIONS = [
+  { value: 'student_of_the_week', label: 'Student of the Week', icon: Star },
+  { value: 'legend_of_the_month', label: 'Legend of the Month', icon: Crown },
+  { value: 'event_winner', label: 'Event Winner', icon: Trophy },
 ];
 
 const ITEMS_PER_PAGE = 8;
@@ -294,7 +300,7 @@ export default function FeaturedStudentsPage() {
   };
 
   // ─── Helpers ────────────────────────────────────────────────
-  const getTypeInfo = (type: string) => TYPE_OPTIONS.find(t => t.value === type) || TYPE_OPTIONS[0];
+  const getTypeInfo = (type: string) => TYPE_OPTIONS.find((t: any) => t.value === type) || TYPE_OPTIONS[0];
 
   // ─── Render ─────────────────────────────────────────────────
   return (
@@ -418,8 +424,6 @@ export default function FeaturedStudentsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {paginated.map(item => {
-            const typeInfo = getTypeInfo(item.type);
-            const TypeIcon = typeInfo.icon;
             return (
               <div
                 key={item.id}

@@ -1,10 +1,11 @@
-﻿import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Alert } from 'react-native';
 import { extractFileNameFromUrl } from '../utils/download';
 import { getVaultBase } from '../utils/vault';
 import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
 import { Logger } from '../utils/logger';
+import { getAssetCacheByUrl } from '../lib/database';
 
 const VAULT_DIRECTORY = getVaultBase();
 
@@ -37,14 +38,23 @@ export const FileService = {
 
   async isDownloaded(fileId: string, fileUrlOrName: string): Promise<boolean> {
     const localUri = this.getLocalUri(fileId, fileUrlOrName);
-    const info = await FileSystem.getInfoAsync(localUri);
-    if (!info.exists) return false;
-    // Validate real content â€” not an empty file
-    if ((info as any).size !== undefined && (info as any).size === 0) {
-      await FileSystem.deleteAsync(localUri, { idempotent: true });
-      return false;
+    try {
+        const info = await FileSystem.getInfoAsync(localUri);
+        if (!info.exists) return false;
+        // Validate real content — not an empty file
+        if ((info as any).size !== undefined && (info as any).size === 0) {
+            try {
+                await FileSystem.deleteAsync(localUri, { idempotent: true });
+            } catch (deleteError) {
+                console.warn('[FileService] Failed to delete file in isDownloaded:', deleteError);
+            }
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.warn('[FileService] isDownloaded check failed:', error);
+        return false;
     }
-    return true;
   },
 
   async downloadFile(
@@ -62,6 +72,19 @@ export const FileService = {
       const dirInfo = await FileSystem.getInfoAsync(folder);
       if (!dirInfo.exists) {
         await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
+      }
+
+      // SQLite Deduplication: Check if CachedImage already has this file
+      const existingCache = await getAssetCacheByUrl(url);
+      if (existingCache) {
+          const fileInfo = await FileSystem.getInfoAsync(existingCache);
+          if (fileInfo.exists && (fileInfo as any).size > 0) {
+              await FileSystem.copyAsync({
+                  from: existingCache,
+                  to: localPath,
+              });
+              return localPath;
+          }
       }
 
       let cleanUrl = url
@@ -98,16 +121,24 @@ export const FileService = {
   },
 
   async shareFile(localUri: string) {
-    if (!(await Sharing.isAvailableAsync())) {
-      Alert.alert('Sharing Unavailable', 'Your device does not support file sharing.');
-      return;
+    try {
+        if (!(await Sharing.isAvailableAsync())) {
+            Alert.alert('Sharing Unavailable', 'Your device does not support file sharing.');
+            return;
+        }
+        await Sharing.shareAsync(localUri);
+    } catch (error) {
+        console.warn('[FileService] shareFile failed:', error);
     }
-    await Sharing.shareAsync(localUri);
   },
 
   async deleteFile(fileId: string, fileUrlOrName: string) {
     const localUri = this.getLocalUri(fileId, fileUrlOrName);
-    await FileSystem.deleteAsync(localUri, { idempotent: true });
+    try {
+        await FileSystem.deleteAsync(localUri, { idempotent: true });
+    } catch (error) {
+        console.warn('[FileService] deleteFile failed:', error);
+    }
   },
 
 };

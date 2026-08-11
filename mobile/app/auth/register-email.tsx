@@ -34,6 +34,7 @@ export default function RegisterEmail() {
   const [focused, setFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
+  const [agreedToPolicy, setAgreedToPolicy] = useState(false);
   const isMounted = useRef(true);
   const router = useRouter();
 
@@ -260,10 +261,37 @@ export default function RegisterEmail() {
           </View>
         </View>
 
+        <View style={styles.consentRow}>
+            <TouchableOpacity
+                onPress={() => setAgreedToPolicy(!agreedToPolicy)}
+                style={styles.checkbox}
+            >
+                <View style={[styles.checkboxBox, agreedToPolicy && styles.checkboxChecked]}>
+                    {agreedToPolicy && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+            </TouchableOpacity>
+            <Text style={styles.consentText}>
+                I agree to the{' '}
+                <Text
+                    style={styles.consentLink}
+                    onPress={() => router.push('/auth/privacy-policy' as any)}
+                >
+                    Privacy Policy
+                </Text>
+                {' '}and{' '}
+                <Text
+                    style={styles.consentLink}
+                    onPress={() => router.push('/auth/terms-of-service' as any)}
+                >
+                    Terms of Service
+                </Text>
+            </Text>
+        </View>
+
         <TouchableOpacity
-          style={[styles.btn, isLoading && styles.btnDisabled]}
+          style={[styles.btn, (isLoading || !agreedToPolicy) && styles.btnDisabled]}
           onPress={handleNext}
-          disabled={isLoading}
+          disabled={isLoading || !agreedToPolicy}
           activeOpacity={0.85}
         >
           {isLoading ? (
@@ -320,4 +348,15 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.75 },
   btnInner: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   btnText: { color: '#fff', fontSize: 15, fontFamily: 'Inter-Bold' },
+  consentRow: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 16, marginHorizontal: 4 },
+  checkbox: { marginRight: 10, marginTop: 2 },
+  checkboxBox: {
+      width: 20, height: 20, borderRadius: 4,
+      borderWidth: 2, borderColor: '#cbd5e1', backgroundColor: '#fff',
+      justifyContent: 'center', alignItems: 'center',
+  },
+  checkboxChecked: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkmark: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  consentText: { fontSize: 13, fontFamily: 'Inter-Regular', color: '#64748b', flex: 1, lineHeight: 20 },
+  consentLink: { color: COLORS.primary, fontFamily: 'Inter-SemiBold' },
 });

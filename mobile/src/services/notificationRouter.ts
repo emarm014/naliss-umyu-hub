@@ -44,13 +44,13 @@ class NotificationRouterService {
       switch (type) {
         case 'chat':
         case 'message':
-          if (data.group_id) {
-            return `/chat/${data.group_id}`;
+          const chatId = data.group_id || data.id || data.chatId;
+          if (chatId && typeof chatId === 'string' && chatId.length >= 5) {
+            return `/chat/${chatId}`;
+          } else {
+            console.warn('[Notification] Invalid chatId in payload:', chatId);
+            return '/(tabs)/messages';
           }
-          if (data.id) {
-            return `/chat/${data.id}`;
-          }
-          return '/(tabs)/messages';
 
         case 'announcement':
           if (entityId) {
@@ -84,6 +84,9 @@ class NotificationRouterService {
 
         case 'security':
         case 'profile':
+          if (data.userId && typeof data.userId === 'string') {
+            return `/chat/user_profile/${data.userId}`;
+          }
           return '/profile';
 
         case 'fyb':

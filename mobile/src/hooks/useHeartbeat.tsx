@@ -41,7 +41,14 @@ export function useHeartbeat() {
     useEffect(() => {
         if (!session || !user) return;
 
-        let timeoutId: ReturnType<typeof setTimeout>;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+        const stopPing = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+        };
 
         const pingPresence = async () => {
             // Only ping if the app is active
@@ -78,25 +85,31 @@ export function useHeartbeat() {
                 console.debug('Heartbeat ping failed, will retry next cycle', err);
             }
 
-            // Schedule next ping in 60 seconds + up to 15 seconds of random jitter
-            const nextTick = 60000 + Math.random() * 15000;
-            timeoutId = setTimeout(pingPresence, nextTick);
+            if (appState.current === 'active') {
+                // Schedule next ping in 60 seconds + up to 15 seconds of random jitter
+                const nextTick = 60000 + Math.random() * 15000;
+                timeoutId = setTimeout(pingPresence, nextTick);
+            }
         };
 
         // Track app state to pause heartbeat when backgrounded
         const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-            if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+            const wasBackgrounded = appState.current.match(/inactive|background/);
+            appState.current = nextAppState;
+            
+            if (wasBackgrounded && nextAppState === 'active') {
                 // App has come to the foreground, trigger an immediate ping
                 pingPresence();
+            } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+                stopPing();
             }
-            appState.current = nextAppState;
         });
 
         // Start initial ping
         pingPresence();
 
         return () => {
-            clearTimeout(timeoutId);
+            stopPing();
             subscription.remove();
         };
     }, [session, user, setActiveAlert]);

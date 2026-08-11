@@ -443,6 +443,17 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
+          {/* Privacy Policy */}
+          <View style={styles.policyRow}>
+              <TouchableOpacity onPress={() => router.push('/auth/privacy-policy' as any)}>
+                  <Text style={styles.policyLink}>Privacy Policy</Text>
+              </TouchableOpacity>
+              <Text style={styles.policySeparator}>·</Text>
+              <TouchableOpacity onPress={() => router.push('/auth/terms-of-service' as any)}>
+                  <Text style={styles.policyLink}>Terms of Service</Text>
+              </TouchableOpacity>
+          </View>
+
           {/* Register */}
           <View style={styles.registerRow}>
             <Text style={styles.registerText}>Don't have an account? </Text>
@@ -525,6 +536,9 @@ const styles = StyleSheet.create({
     borderColor: '#fca5a5', backgroundColor: '#fff5f5', gap: 10,
   },
   googleBtnText: { fontSize: 14, fontFamily: 'Inter-SemiBold', color: '#dc2626' },
+  policyRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24, marginBottom: 4 },
+  policyLink: { fontSize: 13, color: COLORS.primary, fontFamily: 'Inter-Medium' },
+  policySeparator: { fontSize: 13, color: '#999', marginHorizontal: 12 },
   registerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 22 },
   registerText: { fontSize: 13, fontFamily: 'Inter-Regular', color: '#64748b' },
   registerLink: { fontSize: 13, fontFamily: 'Inter-Bold', color: COLORS.primary },

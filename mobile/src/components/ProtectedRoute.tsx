@@ -17,6 +17,7 @@ import { NalissLogo } from '../components/NalissLogo';
 import { getOrCreateDeviceId, fetchIpAddress, getDeviceName } from '../utils/device';
 import { normalizeError, isNetworkError } from '../utils/sentry';
 import { NotificationRouter } from '../services/notificationRouter';
+import { safeFire } from '../utils/safeFire';
 const MinimalLoader = () => {
   const { colors } = useTheme();
   return (
@@ -343,13 +344,16 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         useOfflineAssetStore.getState().initialize();
 
         const { OfflineSyncService } = require('../services/offlineSync.service');
-        OfflineSyncService.syncAll().catch(() => {});
+        safeFire(OfflineSyncService.syncAll(), 'OfflineSync');
         
+        const { IntegrityService } = require('../services/integrity.service');
         // Execute database health checks and auto-healing scans
-        const { IntegrityService } = require('../services/integrityService');
-        IntegrityService.runStartupIntegrityChecks().then(() => {
-          IntegrityService.runFileSelfHealingScanner().catch(() => {});
-        }).catch(() => {});
+        safeFire(
+          IntegrityService.runStartupIntegrityChecks().then(() => {
+            return IntegrityService.runFileSelfHealingScanner();
+          }),
+          'IntegrityChecks'
+        );
       } catch (e) {
         // silent load failure
       }
@@ -379,6 +383,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         // Force instant, non-blocking absolute routing to the update password form
         router.replace('/auth/update-password' as any);
         return;
+      }
+
+      // ── MISSING SESSION OFFLINE GUARD ─────────────────────────────────────────
+      // If Supabase emits a null session (e.g. TOKEN_REFRESHED error or INITIAL_SESSION)
+      // while we are offline, do NOT wipe the state. Keep the cached session so the
+      // app remains usable offline until network returns to attempt a real refresh.
+      if (!currentSession && !useNetworkStore.getState().isOnline) {
+        if (useAuthStore.getState().session) {
+          console.warn(`[ProtectedRoute] Ignoring ${event} with null session because device is offline. Keeping cached session.`);
+          return;
+        }
       }
 
       // â”€â”€ SIGNED_OUT intercept â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -419,7 +434,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         if (!isInSignupFlow && (!currentSession.user.email || !INSTITUTIONAL_EMAIL_REGEX.test(currentSession.user.email))) {
           Alert.alert('Access Denied', 'You must use an institutional student email (@students.umyu.edu.ng).');
           useAuthStore.getState().setSession(null); useAuthStore.getState().setUser(null); useAuthStore.getState().setIsProfileComplete(null); useAuthStore.getState().setProfile(null);
-          supabase.auth.signOut().catch(() => {});
+          safeFire(supabase.auth.signOut(), 'signOut');
           return;
         }
 
@@ -477,7 +492,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               useAuthStore.getState().setUser(null);
               useAuthStore.getState().setIsProfileComplete(null);
               useAuthStore.getState().setProfile(null);
-              supabase.auth.signOut().catch(() => {});
+              safeFire(supabase.auth.signOut(), 'signOut');
               return;
             }
 
@@ -492,7 +507,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               useAuthStore.getState().setUser(null);
               useAuthStore.getState().setIsProfileComplete(null);
               useAuthStore.getState().setProfile(null);
-              supabase.auth.signOut().catch(() => {});
+              safeFire(supabase.auth.signOut(), 'signOut');
               return;
             }
 
@@ -533,7 +548,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             ) {
               useAuthStore.getState().setIsProfileComplete(true);
               // Trigger self-healing profile verification on session startup
-              useAuthStore.getState().verifyAndRepairProfile().catch(() => {});
+              safeFire(useAuthStore.getState().verifyAndRepairProfile(), 'verifyProfile');
             } else {
               useAuthStore.getState().setIsProfileComplete(false);
               hydrateSignupStore(currentSession);
@@ -742,7 +757,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               setRestrictionInfo(null);
             } else if (u.status === 'graduated') {
               Alert.alert('Access Denied', 'This account has been graduated.');
-              supabase.auth.signOut();
+              safeFire(supabase.auth.signOut(), 'signOut');
             }
           }
         }

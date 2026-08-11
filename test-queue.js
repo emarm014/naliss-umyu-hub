@@ -1,4 +1,4 @@
-const _global = globalThis as any;
+const _global = globalThis;
 if (!_global.sqliteTransactionQueue) {
     _global.sqliteTransactionQueue = Promise.resolve();
 }

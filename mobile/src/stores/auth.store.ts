@@ -10,6 +10,7 @@ import { withRetry } from '../utils/api-protection';
 import * as FileSystem from 'expo-file-system/legacy';
 import NetInfo from '@react-native-community/netinfo';
 import { saveLocalUserSession, getLocalUserSession, clearLocalUserSession } from '../lib/database';
+import { safeFire } from '../utils/safeFire';
 
 const cacheAvatarLocally = async (userId: string, remoteUrl: string): Promise<string | null> => {
   if (!userId || !remoteUrl) return null;
@@ -108,7 +109,7 @@ export const useAuthStore = create<AuthState>()(
           });
           setSentryUserContext(localProfile);
           // Run self-healing check on hydrate
-          get().verifyAndRepairProfile().catch(() => {});
+          safeFire(get().verifyAndRepairProfile(), 'verifyProfile');
         }
       },
 
@@ -270,7 +271,7 @@ export const useAuthStore = create<AuthState>()(
             }
           });
           // Best-effort background queue execution
-          useMutationQueueStore.getState().processQueue().catch(() => {});
+          safeFire(useMutationQueueStore.getState().processQueue(), 'processQueue');
         }
 
         // 4. Log Telemetry

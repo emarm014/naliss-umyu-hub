@@ -70,11 +70,109 @@ function SuspensionCountdown({ until }: { until: Date }) {
   );
 }
 
+function DeletedAccountsTab({ data }: { data: any[] }) {
+  const handleExport = () => {
+    if (data.length === 0) return;
+    const headers = ['Name', 'Email', 'Username', 'Level', 'Deleted Date'];
+    const csvContent = [
+      headers.join(','),
+      ...data.map(item => [
+        `"${item.full_name || ''}"`,
+        `"${item.email || ''}"`,
+        `"${item.username || ''}"`,
+        `"${item.level || ''}"`,
+        `"${new Date(item.deleted_at).toLocaleString()}"`
+      ].join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `deleted_accounts_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="bg-white p-12 rounded-3xl border border-gray-100 shadow-sm flex flex-col items-center justify-center">
+        <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+          <UserX className="w-10 h-10 text-gray-300" />
+        </div>
+        <h3 className="text-xl font-black text-gray-900 mb-2">No Deleted Accounts</h3>
+        <p className="text-gray-500 font-medium">There are no deleted accounts in the archive.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+      <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <h3 className="text-lg font-black text-gray-900">Deleted Accounts Archive</h3>
+        <button
+          onClick={handleExport}
+          className="px-4 py-2 bg-gray-900 text-white rounded-xl text-sm font-bold shadow-md hover:bg-gray-800 transition-all flex items-center gap-2"
+        >
+          Export CSV
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">
+              <th className="p-4 pl-6">Student Info</th>
+              <th className="p-4">Level</th>
+              <th className="p-4">Deleted At</th>
+              <th className="p-4">Deleted By</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {data.map((user) => (
+              <tr key={user.id} className="hover:bg-gray-50/50 transition-colors">
+                <td className="p-4 pl-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+                      <UserX className="w-5 h-5 text-red-500" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-gray-900">{user.full_name || 'Unknown'}</div>
+                      <div className="text-xs text-gray-500 font-medium mt-0.5">{user.email} • @{user.username}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="p-4">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-black bg-gray-100 text-gray-600 uppercase">
+                    Level {user.level || '???'}
+                  </span>
+                </td>
+                <td className="p-4">
+                  <div className="text-sm font-bold text-gray-900">
+                    {new Date(user.deleted_at).toLocaleDateString()}
+                  </div>
+                  <div className="text-xs text-gray-400 font-medium mt-0.5">
+                    {new Date(user.deleted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </td>
+                <td className="p-4 text-sm text-gray-500">
+                  {user.logs?.deleted_by ? 'Self / Admin' : 'Unknown'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function StudentsPage() {
 
-  const { students: allStudents, isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore(
+  const { students: allStudents, deletedAccounts, isSyncing, lastSync, syncAll, error, refreshAnalytics } = useAdminDataStore(
     useShallow((state) => ({
       students: state.students,
+      deletedAccounts: state.deletedAccounts,
       isSyncing: state.isSyncing,
       lastSync: state.lastSync,
       syncAll: state.syncAll,
@@ -97,6 +195,7 @@ export default function StudentsPage() {
   const [statusFilter, setStatusFilter] = useState<AccountStatus | 'all'>('all');
   const [levelFilter, setLevelFilter] = useState<AcademicLevel | 'all'>('all');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
+  const [activeTab, setActiveTab] = useState<'active' | 'deleted'>('active');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<UserWithDepartment | null>(null);
   const [showModal, setShowModal] = useState<'view' | 'edit' | 'add' | 'confirm' | 'permissions' | null>(null);
@@ -577,8 +676,28 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {/* Filters & Search */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col xl:flex-row gap-6">
+      {/* Tab Switcher */}
+      <div className="flex items-center gap-2 mb-2 px-2 mt-4">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === 'active' ? 'bg-primary-950 text-white shadow-md' : 'bg-transparent text-gray-500 hover:bg-gray-100'}`}
+        >
+          Active Students
+        </button>
+        <button
+          onClick={() => setActiveTab('deleted')}
+          className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === 'deleted' ? 'bg-red-600 text-white shadow-md' : 'bg-transparent text-gray-500 hover:bg-gray-100'}`}
+        >
+          Deleted Accounts
+        </button>
+      </div>
+
+      {activeTab === 'deleted' ? (
+        <DeletedAccountsTab data={deletedAccounts} />
+      ) : (
+        <>
+          {/* Filters & Search */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col xl:flex-row gap-6">
         <div className="relative flex-1 group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-primary-950 transition-colors" />
           <input
@@ -893,6 +1012,8 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Student Profile Modal */}
       {showModal === 'view' && selectedUser && (

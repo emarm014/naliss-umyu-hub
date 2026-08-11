@@ -1,6 +1,32 @@
 import * as Sentry from '@sentry/react-native';
+import { ErrorUtils } from 'react-native';
 
-// ── Sentry: initialised before everything else so it catches all boot errors ──
+// Catch any unhandled promise rejections globally
+if (typeof globalThis !== 'undefined' && !(globalThis as any)._rejectHandlerInstalled) {
+    (globalThis as any)._rejectHandlerInstalled = true;
+    
+    const originalHandler = ErrorUtils.getGlobalHandler?.();
+    ErrorUtils.setGlobalHandler((error, isFatal) => {
+        console.error('[Global Error]', isFatal ? 'FATAL' : 'NON-FATAL', error);
+        // Report to Sentry if available
+        if (typeof require !== 'undefined') {
+            try {
+                const SentryLocal = require('@sentry/react-native');
+                if (SentryLocal.captureException) {
+                    SentryLocal.captureException(error);
+                }
+            } catch (e) { /* Sentry not available */ }
+        }
+        // Call original handler if it exists
+        if (originalHandler) originalHandler(error, isFatal);
+    });
+
+    // Handle unhandled promise rejections specifically
+    if (globalThis && !(globalThis as any).__PromiseRejectHandler) {
+        (globalThis as any).__PromiseRejectHandler = true;
+        // The above global ErrorUtils handles most RN uncaught errors
+    }
+}// ── Sentry: initialised before everything else so it catches all boot errors ──
 const IS_PROD = process.env.EXPO_PUBLIC_APP_ENV === 'production';
 
 Sentry.init({
@@ -154,7 +180,8 @@ import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
 import { useThemeStore } from '../src/stores/theme.store';
 import * as Notifications from 'expo-notifications';
 import { NotificationRouter } from '../src/services/notificationRouter';
-
+import { runCacheMaintenance } from '../src/utils/cacheMaintenance';
+import { checkpointWal } from '../src/lib/database';
 
 // ── Kill detection key ────────────────────────────────────────────────────────
 // Written to AsyncStorage when app goes to background during an active signup.
@@ -225,6 +252,44 @@ function extractSessionFromUrl(url: string) {
   return null;
 }
 
+// ── Safe Deep Link Validation & Routing ───────────────────────────────────────
+function handleDeepLink(url: string) {
+  try {
+    const parsed = new URL(url);
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    
+    // Auth redirect - let the session handler deal with it
+    if (parsed.hash && parsed.hash.includes('access_token=')) return;
+
+    if (pathParts[0] === 'chat' && pathParts[1]) {
+      const chatId = pathParts[1];
+      if (!chatId || chatId.length < 5) {
+        console.warn('[DeepLink] Invalid chat ID:', chatId);
+        return router.push('/(tabs)/messages' as any);
+      }
+      
+      if (pathParts[2] === 'message' && pathParts[3]) {
+        const messageId = pathParts[3];
+        if (messageId.length < 5) {
+          console.warn('[DeepLink] Invalid message ID:', messageId);
+          return router.push(`/chat/${chatId}` as any);
+        }
+        router.push(`/chat/${chatId}/message/${messageId}` as any);
+      } else {
+        router.push(`/chat/${chatId}` as any);
+      }
+    } else if (pathParts[0] === 'user_profile' && pathParts[1]) {
+        const userId = pathParts[1];
+        if (!userId || userId.length < 5) {
+            return router.push('/(tabs)/home' as any);
+        }
+        router.push(`/chat/user_profile/${userId}` as any);
+    }
+  } catch (error) {
+    console.warn('[DeepLink] Failed to parse URL:', url, error);
+  }
+}
+
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
@@ -249,6 +314,35 @@ function RootLayoutNav() {
 
   // Register 60s Presence Heartbeat
   useHeartbeat();
+
+  // ── Cache Maintenance & Database WAL Checkpoint ────────────────────────────
+  useEffect(() => {
+    // Run cache maintenance in the background (delayed by 10s so it doesn't block startup)
+    const timer = setTimeout(() => {
+        runCacheMaintenance();
+    }, 10000);
+
+    let lastMaintenanceRun = 0;
+    const MIN_MAINTENANCE_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
+
+    const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') {
+            // Checkpoint WAL when user returns to the app (fast operation)
+            checkpointWal();
+
+            // Run periodic cache maintenance if enough time has passed
+            if (Date.now() - lastMaintenanceRun > MIN_MAINTENANCE_INTERVAL) {
+                lastMaintenanceRun = Date.now();
+                runCacheMaintenance();
+            }
+        }
+    });
+
+    return () => {
+        clearTimeout(timer);
+        sub.remove();
+    };
+  }, []);
 
   // ── Sync Native Theme with Zustand ──────────────────────────────────────────
   // This completely overrides the user's phone OS dark mode setting so the app
@@ -419,6 +513,8 @@ function RootLayoutNav() {
           if (!signupState.isGoogleDelaying) {
             await supabase.auth.setSession(tokens);
           }
+        } else {
+          handleDeepLink(initialUrl);
         }
       }
     };
@@ -433,6 +529,8 @@ function RootLayoutNav() {
         if (!signupState.isGoogleDelaying) {
           await supabase.auth.setSession(tokens);
         }
+      } else {
+        handleDeepLink(event.url);
       }
     });
 

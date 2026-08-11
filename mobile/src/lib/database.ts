@@ -291,6 +291,9 @@ export const initDB = async () => {
         await db.execAsync('PRAGMA busy_timeout = 5000;');
         // Execute journal_mode = WAL independently because execAsync wraps multi-statement queries in a transaction
         await db.execAsync('PRAGMA journal_mode = WAL;');
+        await db.execAsync('PRAGMA synchronous = NORMAL;');
+        await db.execAsync('PRAGMA cache_size = -8000;');
+        await db.execAsync('PRAGMA temp_store = MEMORY;');
         
         await db.execAsync(`
             CREATE TABLE IF NOT EXISTS local_messages (
@@ -511,6 +514,22 @@ export const initDB = async () => {
 };
 
 export const getDB = () => db;
+
+/**
+ * Run WAL checkpoint to prevent unbounded WAL file growth.
+ * Should be called periodically (e.g., on app foreground).
+ */
+export const checkpointWal = () => {
+    try {
+        if (db) {
+            db.execAsync('PRAGMA wal_checkpoint(TRUNCATE);').catch(e => {
+                console.warn('[Database] WAL checkpoint failed (async):', e);
+            });
+        }
+    } catch (e) {
+        console.warn('[Database] WAL checkpoint failed:', e);
+    }
+};
 
 export const getAssetCache = async (entityId: string) => {
     if (!db) return null;

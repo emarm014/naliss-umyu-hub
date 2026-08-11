@@ -20,9 +20,33 @@ try {
 } catch (e) {}
 
 const saveGlobalCache = () => {
-    try {
-        setSyncItem('global_image_cache', JSON.stringify(globalMemoryCache));
-    } catch (e) {}
+    scheduleCacheFlush();
+};
+
+// Debounced async MMKV cache flush — prevents main thread freezing
+let cacheFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingCacheData: string | null = null;
+
+const scheduleCacheFlush = () => {
+    // Snapshot the current cache synchronously (fast — just a reference copy)
+    pendingCacheData = JSON.stringify(globalMemoryCache);
+    
+    if (cacheFlushTimer) clearTimeout(cacheFlushTimer);
+    
+    cacheFlushTimer = setTimeout(() => {
+        if (pendingCacheData) {
+            // Write to MMKV asynchronously — won't block the main thread
+            (async () => {
+                try {
+                    await setSyncItem('global_image_cache', pendingCacheData!);
+                } catch (e) {
+                    console.warn('[CachedImage] Failed to flush memory cache to MMKV:', e);
+                }
+                pendingCacheData = null;
+            })();
+        }
+        cacheFlushTimer = null;
+    }, 2000); // Wait 2 seconds after last image load before writing
 };
 
 export type AssetType = 'user' | 'executive' | 'lecturer' | 'gallery' | 'gallery_cover' | 'avatar' | 'chat_media' | 'fyb_poster' | 'announcement_cover' | 'news_image' | (string & {});

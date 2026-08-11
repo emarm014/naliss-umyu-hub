@@ -60,7 +60,7 @@ export default function SecuritySettingsScreen() {
             if (error) throw error;
             if (data) {
                 // Map the data to add 'is_current' flag based on the deviceId
-                const mappedSessions = data.map(session => ({
+                const mappedSessions = data.map((session: any) => ({
                     ...session,
                     is_current: session.device_id === (deviceId || currentDeviceId)
                 }));
@@ -161,16 +161,17 @@ export default function SecuritySettingsScreen() {
                 text: 'Logout All', style: 'destructive', onPress: async () => {
                     setIsRevokingSessions(true);
                     try {
+                        if (!storeProfile?.id) return;
                         if (includeCurrentDevice) {
-                            await supabase.from('device_sessions').delete().eq('user_id', storeProfile?.id);
+                            await (supabase.from('device_sessions').delete() as any).eq('user_id', storeProfile.id);
                             await supabase.auth.signOut({ scope: 'global' } as any).catch(() => supabase.auth.signOut());
                             useAuthStore.getState().setSession(null);
                             useAuthStore.getState().setUser(null);
                             useAuthStore.getState().setIsProfileComplete(null);
                             useAuthStore.getState().setProfile(null);
-                            router.replace('/(auth)/sign-in');
+                            router.replace('/auth/login' as any);
                         } else {
-                            await supabase.from('device_sessions').delete().eq('user_id', storeProfile?.id).neq('device_id', currentDeviceId);
+                            await (supabase.from('device_sessions').delete() as any).eq('user_id', storeProfile.id).neq('device_id', currentDeviceId as string);
                         }
                         fetchDeviceSessions();
                         // Note: Assuming showToast implementation or replace with Alert
@@ -194,7 +195,8 @@ export default function SecuritySettingsScreen() {
         }
 
         try {
-            await supabase.from('device_sessions').delete().eq('device_id', sessionToTerminate.device_id).eq('user_id', storeProfile?.id);
+            if (!storeProfile?.id) return;
+            await (supabase.from('device_sessions').delete() as any).eq('device_id', sessionToTerminate.device_id).eq('user_id', storeProfile.id);
             setDeviceSessions(prev => prev.filter(s => s.device_id !== sessionToTerminate.device_id));
             setSessionToTerminate(null);
             Alert.alert('Success', 'Session revoked successfully.');
@@ -402,6 +404,21 @@ export default function SecuritySettingsScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
                             <Text style={{ fontFamily: 'Inter-Medium', color: colors.textSecondary, fontSize: 13 }}>Include this device</Text>
                             <Switch value={includeCurrentDevice} onValueChange={setIncludeCurrentDevice} trackColor={{ false: '#94a3b8', true: '#ef4444' }} />
+                        </View>
+                    </View>
+                    
+                    <View style={{ marginTop: 32, marginBottom: 20 }}>
+                        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>DANGER ZONE</Text>
+                        <View style={[styles.card, { borderColor: '#fef2f2', backgroundColor: isDark ? 'rgba(239, 68, 68, 0.05)' : '#fff5f5' }]}>
+                            <TouchableOpacity style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }} onPress={() => router.push('/profile/delete-account' as any)}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                                        <Ionicons name="warning-outline" size={18} color="#ef4444" />
+                                    </View>
+                                    <Text style={{ fontFamily: 'Inter-SemiBold', color: '#ef4444', fontSize: 15 }}>Delete Account</Text>
+                                </View>
+                                <Ionicons name="chevron-forward" size={20} color="#ef4444" />
+                            </TouchableOpacity>
                         </View>
                     </View>
                 </ScrollView>

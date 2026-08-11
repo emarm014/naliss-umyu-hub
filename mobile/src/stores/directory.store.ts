@@ -59,7 +59,41 @@ export const useDirectoryStore = create<DirectoryState>()(
                         .order('display_order', { ascending: true, nullsFirst: false });
 
                     if (error) throw error;
-                    const sortedData = sortHierarchically(data || [], 'lecturer');
+                    let sortedData = sortHierarchically(data || [], 'lecturer');
+                    
+                    const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+                    const { prefetchAsset } = require('../utils/prefetchAsset');
+                    
+                    sortedData = await Promise.all(sortedData.map(async (lecturer: any) => {
+                        let localAvatar = lecturer.local_avatar_path;
+                        if (lecturer.avatar_url) {
+                            const urlHash = lecturer.avatar_url.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
+                            const localUri = await UnifiedDownloadEngine.download(
+                                lecturer.avatar_url,
+                                `lecturer_avatar_${lecturer.id}_${urlHash}`,
+                                undefined,
+                                'user_avatar'
+                            );
+                            if (localUri) localAvatar = localUri;
+                        }
+                        return { ...lecturer, local_avatar_path: localAvatar || null };
+                    }));
+
+                    const lecturerIds = sortedData.map((l: any) => l.id);
+                    if (lecturerIds.length > 0) {
+                        try {
+                            const { data: photos } = await (supabase as any).from('photos').select('*').eq('entity_type', 'lecturer').in('entity_id', lecturerIds);
+                            if (photos && photos.length > 0) {
+                                photos.forEach((photo: any) => {
+                                    if (photo.url) {
+                                        const posterEntityId = `photo_${photo.id}`;
+                                        prefetchAsset(posterEntityId, photo.url, 'gallery');
+                                    }
+                                });
+                            }
+                        } catch(e) {}
+                    }
+
                     const { cacheEntityList } = require('../lib/database');
                     cacheEntityList('lecturers', sortedData, '').catch(() => {});
                     set({ lecturers: (sortedData as unknown) as Lecturer[], isLoading: false, lastFetchLecturers: Date.now() });
@@ -96,7 +130,42 @@ export const useDirectoryStore = create<DirectoryState>()(
                         .order('display_order', { ascending: true, nullsFirst: false });
 
                     if (error) throw error;
-                    const sortedData = sortHierarchically(data || [], 'executive');
+                    let sortedData = sortHierarchically(data || [], 'executive');
+                    
+                    const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+                    const { prefetchAsset } = require('../utils/prefetchAsset');
+                    
+                    sortedData = await Promise.all(sortedData.map(async (executive: any) => {
+                        let localAvatar = executive.local_avatar_path;
+                        const avatarUrl = executive.avatar_url || executive.user?.avatar_url;
+                        if (avatarUrl) {
+                            const urlHash = avatarUrl.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
+                            const localUri = await UnifiedDownloadEngine.download(
+                                avatarUrl,
+                                `executive_avatar_${executive.id}_${urlHash}`,
+                                undefined,
+                                'user_avatar'
+                            );
+                            if (localUri) localAvatar = localUri;
+                        }
+                        return { ...executive, local_avatar_path: localAvatar || null };
+                    }));
+
+                    const execIds = sortedData.map((e: any) => e.id);
+                    if (execIds.length > 0) {
+                        try {
+                            const { data: photos } = await (supabase as any).from('photos').select('*').eq('entity_type', 'executive').in('entity_id', execIds);
+                            if (photos && photos.length > 0) {
+                                photos.forEach((photo: any) => {
+                                    if (photo.url) {
+                                        const posterEntityId = `photo_${photo.id}`;
+                                        prefetchAsset(posterEntityId, photo.url, 'gallery');
+                                    }
+                                });
+                            }
+                        } catch(e) {}
+                    }
+
                     const { cacheEntityList } = require('../lib/database');
                     cacheEntityList('executives', sortedData, '').catch(() => {});
                     set({ executives: sortedData as any, isLoading: false, lastFetchExecutives: Date.now() });

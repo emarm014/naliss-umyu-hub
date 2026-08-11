@@ -476,6 +476,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   const [isSaved, setIsSaved] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isSharing, setIsSharing] = React.useState(false);
 
   if (!isVisible) return null;
 
@@ -510,6 +511,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   };
 
   const shareFile = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
     try {
       trackViewerEvent({ stage: 'share', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
       const uriToShare = activeItem.uri.startsWith('file://') ? activeItem.uri : `file://${activeItem.uri}`;
@@ -518,6 +521,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     } catch (err: any) {
       captureViewerError('share', err, { uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
       Alert.alert('Error', 'Could not share this file.');
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -676,9 +681,17 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 </TouchableOpacity>
               )}
               {showShare && (
-                <TouchableOpacity style={styles.footerAction} onPress={shareFile}>
-                  <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
-                  <Text style={styles.footerActionText}>Share</Text>
+                <TouchableOpacity
+                  style={[styles.footerAction, isSharing && { opacity: 0.5 }]}
+                  onPress={shareFile}
+                  disabled={isSharing}
+                >
+                  {isSharing ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
+                  )}
+                  <Text style={styles.footerActionText}>{isSharing ? 'Sharing…' : 'Share'}</Text>
                 </TouchableOpacity>
               )}
               {onViewProfile && (

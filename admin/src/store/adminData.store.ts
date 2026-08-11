@@ -67,6 +67,7 @@ interface AdminDataState {
   analytics: SystemStats | null;
   cloudinaryStorageBytes: number | null;
   students: User[];
+  deletedAccounts: any[];
   materials: Material[];
   pastQuestions: PastQuestion[];
   lecturers: Lecturer[];
@@ -146,6 +147,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
   analytics: null,
   cloudinaryStorageBytes: null,
   students: [],
+  deletedAccounts: [],
   materials: [],
   pastQuestions: [],
   lecturers: [],
@@ -244,6 +246,13 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
           }),
           async () => ({
             students: await safeFetch('students', () => fetchAllUsers(), get().students, 5 * 60 * 1000)
+          }),
+          async () => ({
+            deletedAccounts: await safeFetch('deleted_accounts', async () => {
+              const { data, error } = await supabase.from('deleted_accounts').select('*').order('deleted_at', { ascending: false });
+              if (error) throw error;
+              return data || [];
+            }, get().deletedAccounts, 5 * 60 * 1000)
           }),
           async () => ({
             departments: await safeFetch('departments', async () => {

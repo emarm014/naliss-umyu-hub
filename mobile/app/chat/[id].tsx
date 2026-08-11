@@ -19,6 +19,7 @@ import {
     PanResponder,
     Linking,
     Modal,
+    AppState,
 } from 'react-native';
 import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -121,9 +122,9 @@ export default function ChatScreen() {
     const initialName = params.name;
     const initialAvatar = params.avatar;
     const router = useRouter();
-    const { user: currentUser, profile } = useAuthStore();
-    const { readOnlyMode } = useSettingsStore();
-    const messageStore = useMessageStore();
+    const currentUser = useAuthStore(s => s.user);
+    const profile = useAuthStore(s => s.profile);
+    const readOnlyMode = useSettingsStore(s => s.readOnlyMode);
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
 
@@ -159,11 +160,8 @@ export default function ChatScreen() {
         }
     };
 
-    const [messages, setMessages] = useState<any[]>(() => {
-        try {
-            return useMessageStore.getState().getMessages(id) || [];
-        } catch { return []; }
-    });
+    // Subscribe ONLY to messages for this chat
+    const messages = useMessageStore(state => state.messages[id] || []);
     const groupFromStore = useGroupStore(s => s.groups.find((g: any) => g.id === id));
     const [group, setGroup] = useState<any>(null);
     const activeGroup = groupFromStore || group;
@@ -207,11 +205,7 @@ export default function ChatScreen() {
 
 
     const [expandedAvatarUrl, setExpandedAvatarUrl] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(() => {
-        try {
-            return (useMessageStore.getState().getMessages(id) || []).length === 0;
-        } catch { return true; }
-    });
+    const [isLoading, setIsLoading] = useState(messages.length === 0);
     const [showSearch, setShowSearch] = useState(false);
     const [searchParams, setSearchParams] = useState({
         username: '',
@@ -228,6 +222,13 @@ export default function ChatScreen() {
     const flatListRef = useRef<FlatList>(null);
     const realtimeChannelRef = useRef<any>(null);
     const isMounted = useRef(true);
+
+    // Stable refs for realtime callbacks to avoid stale closures
+    const idRef = useRef(id);
+    const currentUserRef = useRef(currentUser);
+    useEffect(() => { idRef.current = id; }, [id]);
+    useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
     // Refs to latest function versions — prevents stale closures in callbacks
     const setupRealtimeRef = useRef<() => void>(() => {});
     const fetchMissedMessagesRef = useRef<() => Promise<void>>(async () => {});
@@ -243,7 +244,9 @@ export default function ChatScreen() {
         isNearBottomRef.current = distanceFromBottom < 120;
     };
 
-    const { markGroupAsRead, setGroupMembers, getGroupMembers } = useGroupStore();
+    const markGroupAsRead = useGroupStore(s => s.markGroupAsRead);
+    const setGroupMembers = useGroupStore(s => s.setGroupMembers);
+    const getGroupMembers = useGroupStore(s => s.getGroupMembers);
 
     const openMediaViewer = (msg: Message) => {
         try {
@@ -362,13 +365,38 @@ export default function ChatScreen() {
             }
         };
 
+        let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+        let appStateSub: any = null;
+
+        const startHeartbeat = () => {
+            if (heartbeatInterval) return;
+            heartbeatInterval = setInterval(() => { markActive().catch(() => {}); }, 30000);
+        };
+
+        const stopHeartbeat = () => {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+        };
+
         markActive().catch(() => {});
-        // Keep presence alive every 30 seconds while in chat (more responsive than 2 min)
-        const heartbeat = setInterval(() => { markActive().catch(() => {}); }, 30000);
+        startHeartbeat();
+
+        // Pause/resume based on app state
+        appStateSub = AppState.addEventListener('change', (nextState) => {
+            if (nextState === 'active') {
+                startHeartbeat();
+            } else if (nextState === 'background' || nextState === 'inactive') {
+                stopHeartbeat();
+            }
+        });
 
         return () => {
             isMounted.current = false;
-            clearInterval(heartbeat);
+            stopHeartbeat();
+            if (appStateSub) appStateSub.remove();
+            
             if (clickTimeoutRef.current) {
                 clearTimeout(clickTimeoutRef.current);
             }
@@ -416,14 +444,43 @@ export default function ChatScreen() {
     // preventing stale closures when navigating between chats.
     useEffect(() => {
         const { registerOnlineCallback } = require('../../src/stores/network.store');
-        const unregister = registerOnlineCallback(() => {
-            // Re-establish the realtime channel for this chat
-            setupRealtimeRef.current();
-            // Fetch messages that arrived during the offline period
-            fetchMissedMessagesRef.current();
+        let reconnecting = false;
+
+        const handleReconnect = () => {
+            const { useNetworkStore } = require('../../src/stores/network.store');
+            if (!useNetworkStore.getState().isOnline) return;
+
+            if (reconnecting) return;
+            reconnecting = true;
+            if (setupRealtimeRef.current) setupRealtimeRef.current();
+            if (fetchMissedMessagesRef.current) fetchMissedMessagesRef.current();
+            // Reset guard after a short delay to allow future reconnects
+            setTimeout(() => { reconnecting = false; }, 3000);
+        };
+
+        const unregisterNetwork = registerOnlineCallback(handleReconnect);
+
+        const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+            if (nextState === 'active') {
+                handleReconnect();
+            }
         });
-        return unregister;
+
+        return () => {
+            unregisterNetwork();
+            appStateSubscription.remove();
+        };
     }, [id]); // eslint-disable-line
+
+    useFocusEffect(
+        React.useCallback(() => {
+            // Chat screen just gained focus — ensure socket is alive
+            if (setupRealtimeRef.current) {
+                setupRealtimeRef.current();
+            }
+        }, [id])
+    );
+
 
     const fetchGroupDetails = async () => {
         try {
@@ -631,11 +688,11 @@ export default function ChatScreen() {
         }
 
         const channel = supabase
-            .channel(`chat:${id}:${Date.now()}`)
+            .channel(`chat:${idRef.current}:${Date.now()}`)
             // ── Messages: new / edit / delete ────────────────────────────────
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: 'messages', filter: `group_id=eq.${id}` },
+                { event: '*', schema: 'public', table: 'messages', filter: `group_id=eq.${idRef.current}` },
                 async (payload) => {
                     if (payload.eventType === 'INSERT') {
                         const newMsg = payload.new as any;
@@ -668,10 +725,9 @@ export default function ChatScreen() {
                                     status: 'sent',
                                     isEdited: false,
                                     // Keep local URI for images until Cloudinary URL is loaded
-                                    content: newMsg.content || tempMsg.content,
                                 };
                                 // Side effect outside state updater to avoid double-call issues
-                                setTimeout(() => messageStore.updateMessage(id, tempMsg.id, confirmed), 0);
+                                setTimeout(() => messageStore.updateMessage(idRef.current, tempMsg.id, confirmed), 0);
                                 return prev.map(m => m.id === tempMsg.id ? confirmed : m);
                             }
 
@@ -701,12 +757,12 @@ export default function ChatScreen() {
                                 user: memberInfo || newMsg.user || null,
                                 replyTo: replyToData
                             };
-                            setTimeout(() => messageStore.addMessage(id, formatted), 0);
+                            setTimeout(() => messageStore.addMessage(idRef.current, formatted), 0);
                             return [...prev, formatted];
                         });
 
                         // Background: enrich sender profile and fetch joined reply details
-                        const isOurs = newMsg.sender_id === currentUser?.id;
+                        const isOurs = newMsg.sender_id === currentUserRef.current?.id;
                         if (!isOurs) {
                             const { data: fullData } = await (supabase as any).from('messages')
                                 .select(`
@@ -732,7 +788,7 @@ export default function ChatScreen() {
                                 };
                                 setMessages(prev => {
                                     const updated = prev.map(m => m.id === newMsg.id ? formatted : m);
-                                    setTimeout(() => messageStore.updateMessage(id, newMsg.id, formatted), 0);
+                                    setTimeout(() => messageStore.updateMessage(idRef.current, newMsg.id, formatted), 0);
                                     return updated;
                                 });
                             }
@@ -744,7 +800,7 @@ export default function ChatScreen() {
                             setMessages(prev => prev.map(m =>
                                 m.id === payload.new.id ? { ...m, ...updates } : m
                             ));
-                            messageStore.updateMessage(id, payload.new.id, updates);
+                            messageStore.updateMessage(idRef.current, payload.new.id, updates);
                         } else {
                             const updates = { 
                                 content: payload.new.content, 
@@ -755,18 +811,18 @@ export default function ChatScreen() {
                             setMessages(prev => prev.map(m =>
                                 m.id === payload.new.id ? { ...m, ...updates } : m
                             ));
-                            messageStore.updateMessage(id, payload.new.id, updates);
+                            messageStore.updateMessage(idRef.current, payload.new.id, updates);
                         }
                     } else if (payload.eventType === 'DELETE') {
                         setMessages(prev => prev.filter(m => m.id !== payload.old.id));
-                        messageStore.removeMessage(id, payload.old.id);
+                        messageStore.removeMessage(idRef.current, payload.old.id);
                     }
                 }
             )
             // ── Group metadata: name / DP / chat_enabled changes ─────────────
             .on(
                 'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'groups', filter: `id=eq.${id}` },
+                { event: 'UPDATE', schema: 'public', table: 'groups', filter: `id=eq.${idRef.current}` },
                 (payload) => {
                     // Instantly update the local group state — header re-renders immediately
                     setGroup((prev: any) => prev ? { ...prev, ...payload.new } : payload.new);
@@ -775,13 +831,13 @@ export default function ChatScreen() {
             // ── Group members: someone added or removed ───────────────────────
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: 'group_members', filter: `group_id=eq.${id}` },
+                { event: '*', schema: 'public', table: 'group_members', filter: `group_id=eq.${idRef.current}` },
                 async (payload) => {
                     if (payload.eventType === 'DELETE') {
                         const removedUserId = (payload.old as any).user_id;
                         const updated = membersRef.current.filter(m => m.id !== removedUserId);
                         setMembersWithRef(updated);
-                        setGroupMembers(id, updated);
+                        setGroupMembers(idRef.current, updated);
                     } else if (payload.eventType === 'INSERT') {
                         // Fetch the new member's profile and add to list
                         const newUserId = (payload.new as any).user_id;
@@ -795,7 +851,7 @@ export default function ChatScreen() {
                                 userProfile,
                             ];
                             setMembersWithRef(updated);
-                            setGroupMembers(id, updated);
+                            setGroupMembers(idRef.current, updated);
                         }
                     }
                 }
@@ -830,14 +886,14 @@ export default function ChatScreen() {
                         return { ...m, isOnline };
                     });
                     setMembersWithRef(updatedMembers);
-                    setGroupMembers(id, updatedMembers);
+                    setGroupMembers(idRef.current, updatedMembers);
                 }
             )
             .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
-                    if (currentUser?.id) {
+                    if (currentUserRef.current?.id) {
                         await channel.track({
-                            user_id: currentUser.id,
+                            user_id: currentUserRef.current.id,
                             online_at: new Date().toISOString()
                         });
                     }
@@ -1512,18 +1568,21 @@ export default function ChatScreen() {
         );
         const shouldGroupMessages = isConsecutive && isWithinTimeThreshold;
 
+        const isMedia = item.message_type === 'image' || item.message_type === 'video' || item.message_type === 'audio' || item.isAlbum || item.message_type === 'document';
+        const Wrapper = isMedia ? View : Pressable;
+        const wrapperProps = isMedia ? {} : {
+            onLongPress: () => setLongPressedMessage(item),
+            delayLongPress: 400,
+            onPress: () => {
+                if (item.message_type === 'text' || item.message_type === 'system' || item.isAlbum) {
+                    handleDoubleTapReply(item);
+                }
+            }
+        };
+
         return (
-            <Pressable
-                onLongPress={() => setLongPressedMessage(item)}
-                delayLongPress={400}
-                onPress={() => {
-                    // Only fire double-tap reply for text/system messages.
-                    // Media messages (image, video, document, audio) handle their own onPress
-                    // via inner TouchableOpacity to open the Universal Viewer.
-                    if (item.message_type === 'text' || item.message_type === 'system' || item.isAlbum) {
-                        handleDoubleTapReply(item);
-                    }
-                }}
+            <Wrapper
+                {...wrapperProps}
             >
                 <View style={[
                     styles.messageWrapper, 
@@ -1749,9 +1808,7 @@ export default function ChatScreen() {
                                                     key={child.id}
                                                     style={[itemStyle, { position: 'relative' }]}
                                                     activeOpacity={0.8}
-                                                    delayLongPress={400}
                                                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                                    onLongPress={() => setLongPressedMessage(item)}
                                                     onPress={() => {
                                                         handleOpenSwipeableMedia(child.id, item.albumItems);
                                                     }}
@@ -1857,9 +1914,7 @@ export default function ChatScreen() {
                         ) : item.message_type === 'image' ? (
                             <TouchableOpacity
                                 activeOpacity={0.92}
-                                delayLongPress={400}
                                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                onLongPress={() => setLongPressedMessage(item)}
                                 onPress={() => {
                                     if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
                                         handleDownloadMedia(item.id, item.content, item.metadata?.name || `image_${item.id}.jpg`);
@@ -1935,9 +1990,7 @@ export default function ChatScreen() {
                                     <TouchableOpacity
                                         activeOpacity={0.92}
                                         style={styles.videoThumbContainer}
-                                        delayLongPress={400}
                                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                        onLongPress={() => setLongPressedMessage(item)}
                                         onPress={() => {
                                             if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
                                                 handleDownloadMedia(item.id, item.content, item.metadata?.name || `video_${item.id}.mp4`);
@@ -2030,9 +2083,7 @@ export default function ChatScreen() {
                                         <TouchableOpacity
                                         style={[styles.documentActionArea, { width: 260 }]}
                                         activeOpacity={0.8}
-                                        delayLongPress={400}
                                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                        onLongPress={() => setLongPressedMessage(item)}
                                         onPress={() => {
                                             const fileName = item.metadata?.name || (
                                                 item.message_type === 'audio' ? `audio_${item.id}.mp3` : `document_${item.id}.pdf`
@@ -2131,7 +2182,7 @@ export default function ChatScreen() {
                         )}
                     </View>
                 </View>
-            </Pressable>
+            </Wrapper>
         );
     };
 
@@ -2817,7 +2868,9 @@ export default function ChatScreen() {
                 initialNumToRender={20}
                 maxToRenderPerBatch={10}
                 windowSize={10}
-                removeClippedSubviews={Platform.OS === 'android'}
+                removeClippedSubviews={true}
+                updateCellsBatchingPeriod={50}
+                keyboardShouldPersistTaps="handled"
             />
 
             {/* Long-press context menu */}

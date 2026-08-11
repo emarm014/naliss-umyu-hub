@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabase';
 import {
   Crown, Star, Trophy, Plus, Search, Edit, Trash2, Eye, EyeOff,
   CheckCircle, X, Users, Calendar, Sparkles, Heart,
-  ChevronLeft, ChevronRight, Clock, Send
+  ChevronLeft, ChevronRight, Clock, Send,
+  Zap, Flame, Shield, Award, Medal, Rocket, Diamond,
+  Target, GraduationCap, MapPin, Feather, Compass
 } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import FileUpload from '../lib/FileUpload';
@@ -17,6 +19,8 @@ type FeaturedStudent = {
   type: 'event_winner' | 'student_of_the_week' | 'legend_of_the_month';
   scope: 'department' | 'faculty' | 'university';
   title: string;
+  icon?: string;
+  color?: string;
   subtitle: string | null;
   description: string | null;
   custom_image_url: string | null;
@@ -38,10 +42,31 @@ type SearchUser = {
   department_id: string | null;
 };
 
-const TYPE_OPTIONS = [
-  { value: 'student_of_the_week', label: 'Student of the Week', icon: Star, color: 'text-amber-500', bg: 'bg-amber-50' },
-  { value: 'legend_of_the_month', label: 'Legend of the Month', icon: Crown, color: 'text-purple-500', bg: 'bg-purple-50' },
-  { value: 'event_winner', label: 'Event Winner', icon: Trophy, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+const ICON_OPTIONS = [
+  { value: 'star', label: 'Star', icon: Star },
+  { value: 'crown', label: 'Crown', icon: Crown },
+  { value: 'trophy', label: 'Trophy', icon: Trophy },
+  { value: 'award', label: 'Award', icon: Award },
+  { value: 'medal', label: 'Medal', icon: Medal },
+  { value: 'sparkles', label: 'Sparkles', icon: Sparkles },
+  { value: 'heart', label: 'Heart', icon: Heart },
+  { value: 'zap', label: 'Zap', icon: Zap },
+  { value: 'flame', label: 'Flame', icon: Flame },
+  { value: 'shield', label: 'Shield', icon: Shield },
+  { value: 'rocket', label: 'Rocket', icon: Rocket },
+  { value: 'diamond', label: 'Diamond', icon: Diamond },
+  { value: 'graduation-cap', label: 'Graduation', icon: GraduationCap },
+];
+
+const COLOR_OPTIONS = [
+  { value: '#059669', label: 'Emerald' },
+  { value: '#d97706', label: 'Gold' },
+  { value: '#2563eb', label: 'Blue' },
+  { value: '#7c3aed', label: 'Purple' },
+  { value: '#e11d48', label: 'Rose' },
+  { value: '#4f46e5', label: 'Indigo' },
+  { value: '#0891b2', label: 'Cyan' },
+  { value: '#0f172a', label: 'Slate' },
 ];
 
 const SCOPE_OPTIONS = [
@@ -66,9 +91,11 @@ export default function FeaturedStudentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const { showModal, setShowModal, formData, setFormData, clearDraft } = useFormDraft('featured_draft', {
-    formType: 'student_of_the_week',
-    formScope: 'department',
+    formType: 'student_of_the_week', // Fallback for DB enum
     formTitle: 'Student of the Week',
+    formIcon: 'star',
+    formColor: '#059669',
+    formScope: 'department',
     formSubtitle: '',
     formDescription: '',
     formImageUrl: '',
@@ -174,6 +201,8 @@ export default function FeaturedStudentsPage() {
       formType: item.type,
       formScope: item.scope,
       formTitle: item.title,
+      formIcon: item.icon || 'star',
+      formColor: item.color || '#059669',
       formSubtitle: item.subtitle || '',
       formDescription: item.description || '',
       formImageUrl: item.custom_image_url || '',
@@ -205,6 +234,8 @@ export default function FeaturedStudentsPage() {
         type: formData.formType,
         scope: formData.formScope,
         title: formData.formTitle.trim(),
+        icon: formData.formIcon,
+        color: formData.formColor,
         subtitle: formData.formSubtitle.trim() || `${formData.formSelectedUser.level || ''} Level`.trim(),
         description: formData.formDescription.trim() || null,
         custom_image_url: formData.formImageUrl || null,
@@ -397,11 +428,10 @@ export default function FeaturedStudentsPage() {
                 }`}
               >
                 {/* Top Banner Gradient */}
-                <div className={`h-2 ${
-                  item.type === 'legend_of_the_month' ? 'bg-gradient-to-r from-purple-500 via-pink-500 to-amber-500' :
-                  item.type === 'student_of_the_week' ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500' :
-                  'bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500'
-                }`} />
+                <div 
+                  className="h-2 opacity-80"
+                  style={{ backgroundColor: item.color || '#059669' }} 
+                />
 
                 <div className="p-6">
                   {/* Header Row */}
@@ -433,11 +463,16 @@ export default function FeaturedStudentsPage() {
                     </div>
 
                     {/* Type Badge */}
-                    <div className={`px-3 py-1.5 ${typeInfo.bg} rounded-full flex items-center gap-1.5`}>
-                      <TypeIcon className={`w-3.5 h-3.5 ${typeInfo.color}`} />
-                      <span className={`text-[10px] font-black uppercase tracking-wider ${typeInfo.color}`}>
-                        {item.type === 'student_of_the_week' ? 'FYB' :
-                         item.type === 'legend_of_the_month' ? 'Legend' : 'Winner'}
+                    <div 
+                      className="px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm"
+                      style={{ backgroundColor: `${item.color || '#059669'}15`, color: item.color || '#059669' }}
+                    >
+                      {(() => {
+                        const IconComp = ICON_OPTIONS.find(o => o.value === (item.icon || 'star'))?.icon || Star;
+                        return <IconComp className="w-3.5 h-3.5" />;
+                      })()}
+                      <span className="text-[10px] font-black uppercase tracking-wider">
+                        {item.title}
                       </span>
                     </div>
                   </div>
@@ -602,39 +637,64 @@ export default function FeaturedStudentsPage() {
                 )}
               </div>
 
-              {/* Type Selector */}
-              <div className="space-y-3">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Recognition Type</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {TYPE_OPTIONS.map(opt => {
-                    const Icon = opt.icon;
-                    const isSelected = formData.formType === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          setFormData(prev => {
-                            let title = prev.formTitle;
-                            if (opt.value === 'student_of_the_week') title = 'Student of the Week';
-                            else if (opt.value === 'legend_of_the_month') title = 'Legend of the Month';
-                            else title = 'Event Pool Winner';
-                            return { ...prev, formType: opt.value, formTitle: title };
-                          });
-                        }}
-                        className={`p-4 rounded-2xl border-2 transition-all text-center ${
-                          isSelected
-                            ? 'border-primary-950 bg-primary-50 shadow-lg shadow-primary-950/10'
-                            : 'border-transparent bg-slate-50 hover:border-slate-200'
-                        }`}
-                      >
-                        <Icon className={`w-6 h-6 mx-auto mb-2 ${isSelected ? 'text-primary-600' : opt.color}`} />
-                        <p className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-primary-950' : 'text-slate-500'}`}>
-                          {opt.label}
-                        </p>
-                      </button>
-                    );
-                  })}
+              {/* Custom Icon & Title Setup */}
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Recognition Title</label>
+                  <input
+                    type="text"
+                    value={formData.formTitle}
+                    onChange={e => setFormData(prev => ({ ...prev, formTitle: e.target.value }))}
+                    className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900"
+                    placeholder="e.g. Developer of the Year"
+                  />
+                  <p className="text-xs text-slate-400 font-medium ml-1">Type any custom recognition title you want.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Icon</label>
+                  <div className="grid grid-cols-5 sm:grid-cols-7 gap-3">
+                    {ICON_OPTIONS.map(opt => {
+                      const Icon = opt.icon;
+                      const isSelected = formData.formIcon === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, formIcon: opt.value }))}
+                          className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-1 ${
+                            isSelected
+                              ? 'border-primary-950 bg-primary-50 shadow-md'
+                              : 'border-transparent bg-slate-50 hover:border-slate-200'
+                          }`}
+                        >
+                          <Icon className={`w-5 h-5 ${isSelected ? 'text-primary-600' : 'text-slate-400'}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Badge Color</label>
+                  <div className="flex flex-wrap gap-3">
+                    {COLOR_OPTIONS.map(opt => {
+                      const isSelected = formData.formColor === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, formColor: opt.value }))}
+                          style={{ backgroundColor: opt.value }}
+                          className={`w-10 h-10 rounded-full transition-all flex items-center justify-center shadow-sm hover:scale-110 active:scale-95 ${
+                            isSelected ? 'ring-4 ring-offset-2 ring-primary-950' : 'ring-1 ring-black/10'
+                          }`}
+                        >
+                          {isSelected && <CheckCircle className="w-5 h-5 text-white" />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -659,18 +719,8 @@ export default function FeaturedStudentsPage() {
                 </div>
               </div>
 
-              {/* Title & Subtitle */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Title</label>
-                  <input
-                    type="text"
-                    value={formData.formTitle}
-                    onChange={e => setFormData(prev => ({ ...prev, formTitle: e.target.value }))}
-                    className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900"
-                    placeholder="e.g. Student of the Week"
-                  />
-                </div>
+              {/* Subtitle */}
+              <div className="grid grid-cols-1 gap-6">
                 <div className="space-y-2">
                   <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Subtitle</label>
                   <input

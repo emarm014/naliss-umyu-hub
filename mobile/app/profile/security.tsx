@@ -50,8 +50,27 @@ export default function SecuritySettingsScreen() {
     }, []);
 
     const fetchDeviceSessions = async (deviceId?: string) => {
-        // Session listing not supported via client-side Supabase Auth without custom table
-        setIsLoadingSessions(false);
+        setIsLoadingSessions(true);
+        try {
+            const { data, error } = await supabase
+                .from('device_sessions')
+                .select('*')
+                .order('last_active_at', { ascending: false });
+            
+            if (error) throw error;
+            if (data) {
+                // Map the data to add 'is_current' flag based on the deviceId
+                const mappedSessions = data.map(session => ({
+                    ...session,
+                    is_current: session.device_id === (deviceId || currentDeviceId)
+                }));
+                setDeviceSessions(mappedSessions);
+            }
+        } catch (err) {
+            console.error('Failed to fetch sessions:', err);
+        } finally {
+            setIsLoadingSessions(false);
+        }
     };
 
     // --- PASSWORD LOGIC ---
@@ -143,26 +162,46 @@ export default function SecuritySettingsScreen() {
                     setIsRevokingSessions(true);
                     try {
                         if (includeCurrentDevice) {
+                            await supabase.from('device_sessions').delete().eq('user_id', storeProfile?.id);
                             await supabase.auth.signOut({ scope: 'global' } as any).catch(() => supabase.auth.signOut());
                             useAuthStore.getState().setSession(null);
                             useAuthStore.getState().setUser(null);
                             useAuthStore.getState().setIsProfileComplete(null);
                             useAuthStore.getState().setProfile(null);
-                            router.replace('/auth/login');
+                            router.replace('/(auth)/sign-in');
                         } else {
-                            await supabase.auth.signOut({ scope: 'others' } as any);
-                            setIncludeCurrentDevice(false);
-                            fetchDeviceSessions(currentDeviceId!);
-                            Alert.alert('Success', 'Successfully logged out of all other devices.');
+                            await supabase.from('device_sessions').delete().eq('user_id', storeProfile?.id).neq('device_id', currentDeviceId);
                         }
+                        fetchDeviceSessions();
+                        // Note: Assuming showToast implementation or replace with Alert
+                        Alert.alert('Success', 'Sessions revoked successfully.');
                     } catch (err: any) {
-                        Alert.alert('Error', err.message || 'Failed to revoke sessions. Please try again.');
+                        captureUIError('SecurityScreen.handleRevokeAllSessions', err);
+                        Alert.alert('Error', 'Failed to revoke sessions. Please try again.');
                     } finally {
                         setIsRevokingSessions(false);
                     }
                 }
             }
         ]);
+    };
+
+    const handleRevokeSingleSession = async () => {
+        if (!sessionToTerminate) return;
+        if (sessionToTerminate.is_current) {
+            Alert.alert('Error', 'Cannot revoke current session this way. Use the main log out option.');
+            return;
+        }
+
+        try {
+            await supabase.from('device_sessions').delete().eq('device_id', sessionToTerminate.device_id).eq('user_id', storeProfile?.id);
+            setDeviceSessions(prev => prev.filter(s => s.device_id !== sessionToTerminate.device_id));
+            setSessionToTerminate(null);
+            Alert.alert('Success', 'Session revoked successfully.');
+        } catch (err) {
+            console.error('Failed to revoke single session:', err);
+            Alert.alert('Error', 'Failed to revoke session. Please try again.');
+        }
     };
 
     const handleConfirmTerminateSession = async () => {

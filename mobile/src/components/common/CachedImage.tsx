@@ -65,7 +65,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         if (!uriToSave) return;
         const result = await saveMediaToDevice(uriToSave, 'image');
         if (result.success) {
-            showToast('âœ“ Saved to Device');
+            showToast('✓ Saved to Device');
         } else {
             Alert.alert('Save Failed', result.error || 'Could not save the image to your device.');
         }
@@ -100,6 +100,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                         saveGlobalCache();
                         if (isMounted) {
                             setLocalUri(cached.local_path);
+                            setHasError(false); // ← CRITICAL: reset error so cached image can render
                             setLoading(false);
                         }
                         return;
@@ -110,12 +111,23 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 if (!remoteUrl.startsWith('http://') && !remoteUrl.startsWith('https://')) {
                     if (isMounted) {
                         setLocalUri(remoteUrl.startsWith('file://') ? remoteUrl : `file://${remoteUrl}`);
+                        setHasError(false);
                         setLoading(false);
                     }
                     return;
                 }
 
-                // 3. Download if not found or URL changed
+                // 3. If offline, don't attempt download — the SQLite check above was our best shot
+                const { useNetworkStore } = require('../../stores/network.store');
+                if (!useNetworkStore.getState().isOnline) {
+                    if (isMounted) {
+                        // No cached file and offline — show fallback gracefully
+                        setLoading(false);
+                    }
+                    return;
+                }
+
+                // 4. Download if not found or URL changed (online only)
                 // Use a short hash of the remoteUrl to ensure the filename changes when the avatar updates,
                 // forcing React Native to render the new image.
                 const urlHash = remoteUrl.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
@@ -130,13 +142,14 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 const result = await FileSystem.downloadAsync(remoteUrl, fileUri);
                 
                 if (result.status === 200) {
-                    // 4. Save to SQLite
+                    // 5. Save to SQLite
                     await upsertAssetCache(entityId, remoteUrl, result.uri, assetType);
                     
                     globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: result.uri });
                     saveGlobalCache();
                     if (isMounted) {
                         setLocalUri(result.uri);
+                        setHasError(false); // ← CRITICAL: reset error so downloaded image can render
                     }
                 }
             } catch (err: any) {
@@ -162,7 +175,39 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
 
     const initials = fallbackInitials || (fallbackName ? fallbackName.slice(0, 2).toUpperCase() : null);
 
-    if ((!localUri && !remoteUrl) || hasError) {
+    // OFFLINE-SAFE RENDER: If we have a localUri, ALWAYS use it — even if hasError was set
+    // by a previous failed network attempt. localUri from SQLite cache is authoritative.
+    if (localUri) {
+        return (
+            <TouchableOpacity 
+                style={[style, { overflow: 'hidden' }]} 
+                onLongPress={handleLongPress}
+                onPress={() => onPress?.(localUri)}
+                activeOpacity={0.9}
+            >
+                <Image
+                    source={{ uri: localUri }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode={resizeMode}
+                    blurRadius={blurRadius}
+                    onLoad={() => { setLoading(false); setHasError(false); }}
+                    onError={() => { 
+                        // Local file is corrupt/missing — clear it so fallback shows
+                        setLocalUri(null); 
+                        setLoading(false); 
+                        setHasError(true); 
+                    }}
+                />
+                {loading && (
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? 'rgba(15,23,42,0.5)' : 'rgba(241,245,249,0.5)' }}>
+                        <ActivityIndicator color="#059669" size="small" />
+                    </View>
+                )}
+            </TouchableOpacity>
+        );
+    }
+
+    if (!remoteUrl || hasError) {
         let fallbackIcon = "person";
         if (assetType === 'announcement_cover') fallbackIcon = "megaphone-outline";
         else if (assetType === 'event_cover') fallbackIcon = "calendar-outline";
@@ -187,6 +232,8 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         );
     }
 
+    // Only reach here when localUri is null AND remoteUrl exists AND no error yet
+    // This means we're still loading from cache or network
     return (
         <TouchableOpacity 
             style={[style, { overflow: 'hidden' }]} 
@@ -195,7 +242,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
             activeOpacity={0.9}
         >
             <Image
-                source={{ uri: localUri || remoteUrl! }}
+                source={{ uri: remoteUrl }}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode={resizeMode}
                 blurRadius={blurRadius}

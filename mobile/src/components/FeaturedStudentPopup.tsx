@@ -22,6 +22,8 @@ type FeaturedStudent = {
     user_id: string;
     type: 'event_winner' | 'student_of_the_week' | 'legend_of_the_month';
     title: string;
+    icon?: string;
+    color?: string;
     subtitle: string | null;
     description: string | null;
     custom_image_url: string | null;
@@ -360,33 +362,36 @@ export function FeaturedStudentPopup() {
         text: string;
         bannerText: string;
     } => {
-        switch (feature.type) {
-            case 'legend_of_the_month':
-                return { 
-                    gradient: ['#005A36', '#059669'], 
-                    color: '#059669', 
-                    icon: 'medal', 
-                    text: '👑 Legend of the Month',
-                    bannerText: isSelf ? '👑 YOU ARE THE FEATURED LEGEND!' : 'HIGH HONOR & RECOGNITION'
-                };
-            case 'event_winner':
-                return { 
-                    gradient: ['#047857', '#10b981'], 
-                    color: '#10b981', 
-                    icon: 'trophy', 
-                    text: '🏆 Event Winner',
-                    bannerText: isSelf ? '🏆 YOU ARE THE CHAMPION!' : 'CHAMPIONSHIP VICTORY'
-                };
-            case 'student_of_the_week':
-            default:
-                return { 
-                    gradient: ['#059669', '#d97706'], 
-                    color: '#059669', 
-                    icon: 'star', 
-                    text: '✨ Student of the Week',
-                    bannerText: isSelf ? '🌟 YOU ARE THE FEATURED STUDENT!' : 'ACADEMIC EXCELLENCE'
-                };
-        }
+        const customColor = feature.color || '#059669';
+        const customIcon = feature.icon || 'star';
+        const customTitle = feature.title || 'Featured Student';
+        
+        // Map Admin Lucide icon names to Ionicons names for mobile
+        const iconMap: Record<string, string> = {
+            'star': 'star',
+            'crown': 'ribbon', // Ionicons doesn't have a crown, ribbon is a good substitute
+            'trophy': 'trophy',
+            'award': 'ribbon',
+            'medal': 'medal',
+            'sparkles': 'sparkles',
+            'heart': 'heart',
+            'zap': 'flash',
+            'flame': 'flame',
+            'shield': 'shield',
+            'rocket': 'rocket',
+            'diamond': 'diamond',
+            'graduation-cap': 'school',
+        };
+
+        const ioniconName = iconMap[customIcon] || 'star';
+        
+        return { 
+            gradient: [customColor, '#022c22'], 
+            color: customColor, 
+            icon: ioniconName as any, 
+            text: `✨ ${customTitle}`,
+            bannerText: isSelf ? `🌟 YOU ARE THE ${customTitle.toUpperCase()}!` : `${customTitle.toUpperCase()}`
+        };
     };
     
     const badge = getBadgeConfig();
@@ -394,7 +399,8 @@ export function FeaturedStudentPopup() {
     return (
         <>
             <Modal transparent visible={isVisible} animationType="none" statusBarTranslucent>
-                <BlurView intensity={isDark ? 65 : 45} style={styles.overlay} tint={isDark ? 'dark' : 'light'}>
+                <View style={styles.overlay}>
+                    <BlurView intensity={isDark ? 65 : 45} style={StyleSheet.absoluteFillObject} tint={isDark ? 'dark' : 'light'} />
                     
                     {/* CONTINUOUS FLOATING MOTION STARS & LOVE EMOJIS */}
                     <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
@@ -494,6 +500,20 @@ export function FeaturedStudentPopup() {
                             <Ionicons name="sparkles" size={14} color="#FFF" />
                         </LinearGradient>
 
+                        {/* Badge and Stats Row */}
+                        <View style={[styles.statsRow, { backgroundColor: isDark ? '#111827' : '#f8fafc' }]}>
+                            <View style={[styles.badge, { backgroundColor: badge.color }]}>
+                                <Ionicons name={badge.icon as any} size={14} color="#fff" />
+                                <Text style={styles.badgeText}>{badge.text}</Text>
+                            </View>
+                            
+                            {/* Congratulations Heart Count in RED */}
+                            <View style={styles.congratsCountBadge}>
+                                <Ionicons name="heart" size={15} color="#ef4444" />
+                                <Text style={styles.congratsCountText}>{feature.total_congratulations}</Text>
+                            </View>
+                        </View>
+
                         {/* Header Image Area */}
                         <View style={styles.imageHeader}>
                             {bgImage ? (
@@ -508,20 +528,7 @@ export function FeaturedStudentPopup() {
                                 <View style={[styles.coverImage, { backgroundColor: badge.color, opacity: 0.15 }]} />
                             )}
                             
-                            <LinearGradient colors={['rgba(0,0,0,0.2)', 'transparent', 'rgba(0,0,0,0.85)']} style={styles.imageOverlay}>
-                                <View style={styles.overlayTopRow}>
-                                    <View style={[styles.badge, { backgroundColor: badge.color }]}>
-                                        <Ionicons name={badge.icon as any} size={14} color="#fff" />
-                                        <Text style={styles.badgeText}>{badge.text}</Text>
-                                    </View>
-                                    
-                                    {/* Congratulations Heart Count in RED */}
-                                    <View style={styles.congratsCountBadge}>
-                                        <Ionicons name="heart" size={15} color="#ef4444" />
-                                        <Text style={styles.congratsCountText}>{feature.total_congratulations}</Text>
-                                    </View>
-                                </View>
-
+                            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.imageOverlay}>
                                 <View style={styles.overlayBottomRow}>
                                     <Text style={styles.studentNameOverlay} numberOfLines={1}>
                                         {isSelf ? `${feature.users?.full_name || 'You'} (YOU)` : (feature.users?.full_name || 'Featured Student')}
@@ -532,8 +539,8 @@ export function FeaturedStudentPopup() {
 
                         {/* Content Area */}
                         <View style={styles.content}>
-                            <Text style={[styles.mainTitle, { color: colors.text }]} numberOfLines={2}>
-                                {isSelf ? `CONGRATULATIONS ${profile?.full_name || profile?.username}! YOU ARE FEATURED!` : feature.title}
+                            <Text style={styles.classicMainTitle}>
+                                Congratulations {isSelf ? (profile?.full_name || profile?.username) : (feature.users?.full_name || 'Student')} you are featured as a {badge.text.replace(/[^a-zA-Z ]/g, '').trim().toLowerCase()}
                             </Text>
                             
                             {feature.subtitle && (
@@ -594,7 +601,7 @@ export function FeaturedStudentPopup() {
                             </TouchableOpacity>
                         </View>
                     </Animated.View>
-                </BlurView>
+                </View>
             </Modal>
 
             {/* REALTIME INCOMING CONGRATULATION TOAST MODAL FOR FEATURED STUDENT */}
@@ -791,6 +798,24 @@ const styles = StyleSheet.create({
         padding: 20,
         paddingBottom: 16,
         alignItems: 'center',
+    },
+    classicMainTitle: {
+        fontSize: 24,
+        fontWeight: '800',
+        fontStyle: 'italic',
+        color: '#059669',
+        textAlign: 'center',
+        marginBottom: 8,
+        lineHeight: 32,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.05)',
     },
     mainTitle: {
         fontSize: 20,

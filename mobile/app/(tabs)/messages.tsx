@@ -109,7 +109,7 @@ export default function MessagesScreen() {
         ) : (
           <>
             {levelGroups.length > 0 && (
-              <View style={[styles.sectionHeader, { backgroundColor: colors.primary }]}>
+              <View style={[styles.sectionHeader, { backgroundColor: isDark ? '#064e3b' : colors.primary }]}>
                 <Ionicons name="school-outline" size={18} color="#FFFFFF" />
                 <Text style={[styles.sectionTitle, { color: '#FFFFFF' }]}>LEVEL GROUPS</Text>
               </View>
@@ -132,7 +132,7 @@ export default function MessagesScreen() {
             ))}
 
             {generalGroups.length > 0 && (
-              <View style={[styles.sectionHeader, { marginTop: 12, backgroundColor: colors.primary }]}>
+              <View style={[styles.sectionHeader, { marginTop: 12, backgroundColor: isDark ? '#064e3b' : colors.primary }]}>
                 <Ionicons name="people-outline" size={18} color="#FFFFFF" />
                 <Text style={[styles.sectionTitle, { color: '#FFFFFF' }]}>GENERAL GROUPS</Text>
               </View>

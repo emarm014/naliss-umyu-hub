@@ -241,7 +241,7 @@ export default function ArchiveScreen() {
           </View>
         </View>
 
-        <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#2D3748' : '#F8FAFC', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: isDark ? '#4A5568' : '#E2E8F0' }, isDownloaded && { borderColor: '#005A36', backgroundColor: isDark ? '#1C4532' : '#F0FDF4' }]}>
+        <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#1e293b' : '#F8FAFC', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }, isDownloaded && { borderColor: isDark ? '#059669' : '#005A36', backgroundColor: isDark ? '#022c22' : '#F0FDF4' }]}>
           <View style={[styles.iconBox, { backgroundColor: iconConfig.bg }]}>
             <Ionicons name={iconConfig.icon as any} size={20} color={iconConfig.color} />
           </View>
@@ -253,9 +253,9 @@ export default function ArchiveScreen() {
             <View style={styles.metaRow}>
               {item.file_size ? <Text style={[styles.metaText, { color: textMuted }]}>{item.file_size}</Text> : null}
               {isDownloaded && (
-                <View style={[styles.offlinePill, { marginLeft: 6 }]}>
-                  <Ionicons name="checkmark-circle" size={10} color="#166534" />
-                  <Text style={styles.offlineText}>Saved</Text>
+                <View style={[styles.offlinePill, { marginLeft: 6, backgroundColor: isDark ? '#064e3b' : '#DCFCE7' }]}>
+                  <Ionicons name="checkmark-circle" size={10} color={isDark ? "#6ee7b7" : "#166534"} />
+                  <Text style={[styles.offlineText, { color: isDark ? "#6ee7b7" : "#166534" }]}>Saved</Text>
                 </View>
               )}
             </View>
@@ -272,22 +272,22 @@ export default function ArchiveScreen() {
           </View>
 
           <View style={[styles.resActions, { marginLeft: 8 }]}>
-            <TouchableOpacity onPress={() => handleRead(item)} style={[styles.actionBtn, { backgroundColor: isDownloaded ? (isDark ? '#22543D' : '#DCFCE7') : (isDark ? '#0284c7' : '#f1f5f9') }]}>
-              <Ionicons name={isDownloaded ? 'book' : 'eye-outline'} size={16} color={isDownloaded ? '#166534' : (isDark ? '#ffffff' : '#475569')} />
+            <TouchableOpacity onPress={() => handleRead(item)} style={[styles.actionBtn, { backgroundColor: isDownloaded ? (isDark ? '#064e3b' : '#DCFCE7') : (isDark ? '#0284c7' : '#f1f5f9') }]}>
+              <Ionicons name={isDownloaded ? 'book' : 'eye-outline'} size={16} color={isDownloaded ? (isDark ? '#6ee7b7' : '#166534') : (isDark ? '#ffffff' : '#475569')} />
             </TouchableOpacity>
             
             <TouchableOpacity
               onPress={() => handleDownload(item)}
               disabled={isDownloaded || isDownloading}
-              style={[styles.actionBtn, { marginLeft: 8 }, isDownloading ? { backgroundColor: '#D1FAE5' } : isDownloaded ? { backgroundColor: isDark ? '#22543D' : '#DCFCE7' } : { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+              style={[styles.actionBtn, { marginLeft: 8 }, isDownloading ? { backgroundColor: isDark ? '#064e3b' : '#D1FAE5' } : isDownloaded ? { backgroundColor: isDark ? '#064e3b' : '#DCFCE7' } : { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
             >
               {isDownloading ? (
-                <ActivityIndicator size="small" color="#10B981" />
+                <ActivityIndicator size="small" color={isDark ? "#6ee7b7" : "#10B981"} />
               ) : (
                 <Ionicons 
                   name={isDownloaded ? 'checkmark-circle' : 'cloud-download'} 
                   size={16} 
-                  color={isDownloaded ? '#166534' : '#10B981'}
+                  color={isDownloaded ? (isDark ? '#6ee7b7' : '#166534') : '#10B981'}
                 />
               )}
             </TouchableOpacity>

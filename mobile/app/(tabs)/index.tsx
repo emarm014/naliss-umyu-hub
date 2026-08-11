@@ -309,7 +309,23 @@ export default function HomeScreen() {
     }
   };
 
-  const theme = LEVEL_THEMES[user?.level || ''] || DEFAULT_THEME;
+  const baseTheme = LEVEL_THEMES[user?.level || ''] || DEFAULT_THEME;
+  const theme = React.useMemo(() => {
+    if (!isDark) return baseTheme;
+    // Premium dark mode adaptations
+    return {
+      ...baseTheme,
+      // Sleek, deep dark gradient instead of the heavy vibrant gradient
+      gradient: ['#0f172a', '#020617', '#0f172a'] as [string, string, string],
+      // Use the vibrant accent color for motifs and badges to make it pop beautifully
+      motifColor: baseTheme.accentColor + '15',
+      badgeBg: baseTheme.accentColor + '20',
+      badgeText: baseTheme.accentColor,
+      rankColor: baseTheme.accentColor,
+      accentBg: baseTheme.accentColor + '20',
+      statusBorderColor: baseTheme.accentColor,
+    };
+  }, [baseTheme, isDark]);
 
   const userPoints = React.useMemo(() =>
     materials.reduce((t, m) => t + 10 + (m.download_count || 0), 0),
@@ -551,7 +567,7 @@ export default function HomeScreen() {
               <View style={styles.sectionHeader}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Featured Students</Text>
                 <TouchableOpacity onPress={() => router.push('/fyb' as any)}>
-                  <Text style={[styles.seeAllText, { color: theme.gradient[2] }]}>See All</Text>
+                  <Text style={[styles.seeAllText, { color: isDark ? theme.accentColor : theme.gradient[2] }]}>See All</Text>
                 </TouchableOpacity>
               </View>
               {activePinnedFeatured.map((item: any) => (
@@ -564,7 +580,7 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Announcements</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/announcements')}>
-              <Text style={[styles.seeAllText, { color: theme.gradient[2] }]}>See All</Text>
+              <Text style={[styles.seeAllText, { color: isDark ? theme.accentColor : theme.gradient[2] }]}>See All</Text>
             </TouchableOpacity>
           </View>
 

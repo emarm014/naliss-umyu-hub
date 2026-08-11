@@ -1202,7 +1202,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           <View style={styles.restrictionLogoRow}>
             <NalissLogo size={42} />
           </View>
-          <View style={[styles.restrictionCard, styles.suspendedCard, { borderColor: '#f59e0b', paddingHorizontal: 16 }]}>
+          <View style={[styles.restrictionCard, styles.suspendedCard, { borderColor: '#f59e0b', paddingHorizontal: 16, flexShrink: 1 }]}>
             <View style={[styles.restrictionIconCircle, styles.suspendedIconCircle, { borderColor: 'rgba(245,158,11,0.3)' }]}>
               <Ionicons name="shield-outline" size={40} color="#f59e0b" />
             </View>
@@ -1213,7 +1213,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             
             <View style={styles.restrictionDivider} />
             
-            <ScrollView style={{ width: '100%', maxHeight: 280, marginTop: 10 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ width: '100%', maxHeight: 280, marginTop: 10, flexShrink: 1 }} showsVerticalScrollIndicator={false}>
               {exceededSessions.map((s) => {
                 const dateObj = s.last_active_at ? new Date(s.last_active_at) : new Date();
                 const isRemoving = isRemovingDevice === s.device_id;

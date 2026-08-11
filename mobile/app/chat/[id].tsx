@@ -245,6 +245,58 @@ export default function ChatScreen() {
 
     const { markGroupAsRead, setGroupMembers, getGroupMembers } = useGroupStore();
 
+    const openMediaViewer = (msg: Message) => {
+        try {
+            Sentry.addBreadcrumb({
+                category: 'ui.interaction',
+                message: 'Tapped media in chat to open viewer',
+                data: {
+                    messageId: msg.id,
+                    messageType: msg.message_type,
+                    hasImageUrl: !!msg.image_url,
+                    hasVideoUrl: !!msg.video_url,
+                    hasDocUrl: !!msg.document_url,
+                    isSender: msg.sender_id === user?.id
+                },
+                level: 'info'
+            });
+
+            if (!msg.image_url && !msg.video_url && !msg.document_url) {
+                Sentry.captureMessage('Blocked media viewer: No valid media URL found on message', {
+                    extra: { messageId: msg.id, messageType: msg.message_type }
+                });
+                return;
+            }
+
+            // Get all media items for the gallery
+            const mediaMessages = messages.filter(m => m.image_url || m.video_url || m.document_url);
+            const initialIndex = mediaMessages.findIndex(m => m.id === msg.id);
+
+            setMediaItems(mediaMessages.map(m => ({
+                id: m.id,
+                type: m.message_type as 'image' | 'video' | 'document',
+                url: (m.image_url || m.video_url || m.document_url)!,
+                caption: m.content || '',
+                fileName: m.file_name,
+                fileSize: m.file_size
+            })));
+            setInitialMediaIndex(initialIndex >= 0 ? initialIndex : 0);
+            setIsMediaViewerVisible(true);
+            
+            Sentry.addBreadcrumb({
+                category: 'ui.action',
+                message: 'Media viewer opened successfully',
+                data: { initialIndex, totalItems: mediaMessages.length },
+                level: 'info'
+            });
+        } catch (error) {
+            Sentry.captureException(error, {
+                extra: { action: 'openMediaViewer', messageId: msg.id }
+            });
+            console.error('Failed to open media viewer:', error);
+        }
+    };
+
     useEffect(() => {
         // Reset mount flag — required when id changes (navigating between chats)
         isMounted.current = true;

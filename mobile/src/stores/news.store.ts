@@ -89,13 +89,20 @@ export const useNewsStore = create<NewsState>()(
           
           if (data && data.length > 0) {
               // Background prefetch covers for offline
-              const { getOptimizedCloudinaryUrl } = require('../lib/cloudinary');
               const { prefetchAsset } = require('../utils/prefetchAsset');
               data.forEach((item: any) => {
-                  if (item.cover_image_url) {
-                      const homeUrl = getOptimizedCloudinaryUrl(item.cover_image_url, 600, 400);
-                      const posterEntityId = 'poster_' + homeUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
-                      prefetchAsset(posterEntityId, homeUrl, 'poster');
+                  const hasFiles = item.files && Array.isArray(item.files) && item.files.length > 0;
+                  const imageUrls: string[] = hasFiles 
+                      ? item.files.map((f: any) => typeof f === 'string' ? f : (f.uri || f.url)).filter(Boolean)
+                      : (item.image_url ? [item.image_url] : []);
+                  
+                  if (imageUrls.length === 1) {
+                      prefetchAsset(`${item.id}_hero_0`, imageUrls[0], 'news_image');
+                  } else if (imageUrls.length > 1) {
+                      // Only prefetch the first 4 for the album grid to save bandwidth/space
+                      imageUrls.slice(0, 4).forEach((url, index) => {
+                          prefetchAsset(`${item.id}_album_${index}`, url, 'news_image');
+                      });
                   }
               });
           }

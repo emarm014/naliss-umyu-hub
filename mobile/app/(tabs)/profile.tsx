@@ -647,7 +647,7 @@ export default function ProfileScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <LinearGradient
-        colors={[COLORS.primary, COLORS.secondary]}
+        colors={isDark ? ['#0f172a', '#020617'] : [COLORS.primary, COLORS.secondary]}
         style={[styles.header, { paddingTop: insets.top + 12 }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.5 }}

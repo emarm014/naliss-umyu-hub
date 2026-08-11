@@ -55,11 +55,16 @@ export const useArchiveStore = create<ArchiveState>()(
       },
 
       fetchArchives: async (pageIndex = 0, force = false) => {
-        const { archives, hasMore, isFetchingMore } = get();
+        const { archives, hasMore, isFetchingMore, lastFetch } = get();
         
         if (pageIndex > 0 && (!hasMore || isFetchingMore)) return;
+
+        // Freshness check (parity with other stores)
+        const CACHE_TTL = Infinity;
+        const isFresh = lastFetch && Date.now() - lastFetch < CACHE_TTL && archives.length > 0;
+        if (!force && pageIndex === 0 && isFresh) return;
         
-        // LOCAL-FIRST: read from SQLite cache immediately (always works — even on new device)
+        // LOCAL-FIRST: read from SQLite cache immediately (always works)
         if (!force && pageIndex === 0 && archives.length === 0) {
           try {
             const { getCachedEntityList } = require('../lib/database');
@@ -70,8 +75,11 @@ export const useArchiveStore = create<ArchiveState>()(
           } catch { /* fall through to server fetch */ }
         }
 
-        if (!force && pageIndex === 0 && archives.length > 0 && !useNetworkStore.getState().isOnline) {
-          // Strictly offline reliable, never load
+        // STRICT OFFLINE GUARD: if offline, data from SQLite is already displayed.
+        // Never attempt network request if offline, even on pull-to-refresh.
+        const { useNetworkStore } = require('./network.store');
+        if (!useNetworkStore.getState().isOnline) {
+          set({ isLoading: false, isFetchingMore: false });
           return;
         }
 

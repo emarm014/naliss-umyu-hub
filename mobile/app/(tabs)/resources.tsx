@@ -845,7 +845,7 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
   };
 
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? '#2D3748' : '#F8FAFC', padding: 12, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: theme.isDark ? '#4A5568' : '#E2E8F0' }, localDownloaded && { borderColor: '#005A36', backgroundColor: theme.isDark ? '#1C4532' : '#F0FDF4' }]}>
+    <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? '#1e293b' : '#F8FAFC', padding: 12, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: theme.isDark ? '#334155' : '#E2E8F0' }, localDownloaded && { borderColor: theme.isDark ? '#059669' : '#005A36', backgroundColor: theme.isDark ? '#022c22' : '#F0FDF4' }]}>
       <View style={[{ backgroundColor: fileTypeConfig.bg, width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }]}>
         <Ionicons name={fileTypeConfig.icon as any} size={20} color={fileTypeConfig.color} />
       </View>
@@ -855,9 +855,9 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
           <Text style={[{ fontFamily: 'Inter-Medium', fontSize: 12, color: theme.isDark ? theme.textMuted : '#64748b' }]}>{fileSizeMB} MB</Text>
           {localDownloaded && (
-            <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, gap: 2, marginLeft: 6 }]}>
-              <Ionicons name="checkmark-circle" size={10} color="#166534" />
-              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 9, color: '#166534' }}>Saved</Text>
+            <View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? '#064e3b' : '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, gap: 2, marginLeft: 6 }]}>
+              <Ionicons name="checkmark-circle" size={10} color={theme.isDark ? "#6ee7b7" : "#166534"} />
+              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 9, color: theme.isDark ? "#6ee7b7" : "#166534" }}>Saved</Text>
             </View>
           )}
         </View>
@@ -874,22 +874,22 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
       </View>
 
       <View style={[{ flexDirection: 'row', alignItems: 'center', marginLeft: 8 }]}>
-        <TouchableOpacity onPress={handleBookPress} style={[{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: localDownloaded ? (theme.isDark ? '#22543D' : '#DCFCE7') : (theme.isDark ? '#0284c7' : '#f1f5f9') }]}>
-          <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? '#166534' : (theme.isDark ? '#ffffff' : '#475569')} />
+        <TouchableOpacity onPress={handleBookPress} style={[{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: localDownloaded ? (theme.isDark ? '#064e3b' : '#DCFCE7') : (theme.isDark ? '#0284c7' : '#f1f5f9') }]}>
+          <Ionicons name={localDownloaded ? 'book' : 'eye-outline'} size={16} color={localDownloaded ? (theme.isDark ? '#6ee7b7' : '#166534') : (theme.isDark ? '#ffffff' : '#475569')} />
         </TouchableOpacity>
         
         <TouchableOpacity
           onPress={handleDownloadPress}
           disabled={downloadProgress !== null || localDownloaded}
-          style={[{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }, downloadProgress !== null ? { backgroundColor: '#D1FAE5' } : localDownloaded ? { backgroundColor: theme.isDark ? '#22543D' : '#DCFCE7' } : { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+          style={[{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 }, downloadProgress !== null ? { backgroundColor: theme.isDark ? '#064e3b' : '#D1FAE5' } : localDownloaded ? { backgroundColor: theme.isDark ? '#064e3b' : '#DCFCE7' } : { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
         >
           {downloadProgress !== null ? (
-            <ActivityIndicator size="small" color="#10B981" />
+            <ActivityIndicator size="small" color={theme.isDark ? "#6ee7b7" : "#10B981"} />
           ) : (
             <Ionicons 
               name={localDownloaded ? 'checkmark-circle' : 'cloud-download'} 
               size={16} 
-              color={localDownloaded ? '#166534' : '#10B981'}
+              color={localDownloaded ? (theme.isDark ? '#6ee7b7' : '#166534') : '#10B981'}
             />
           )}
         </TouchableOpacity>

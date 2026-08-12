@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { getDB } from '../lib/database';
 
 const CACHE_MAX_AGE_DAYS = 30; // Delete cached media older than 30 days

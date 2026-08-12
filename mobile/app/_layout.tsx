@@ -1,5 +1,43 @@
 import * as Sentry from '@sentry/react-native';
 import { ErrorUtils } from 'react-native';
+import { useEffect, useState } from 'react';
+import { LogBox } from 'react-native';
+import { Stack, router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as Font from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
+import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
+import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
+import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
+import { GroupMembershipHandler } from '../src/components/GroupMembershipHandler';
+import { useNetworkStore, registerOnlineCallback } from '../src/stores/network.store';
+import { useGlobalSyncStore } from '../src/stores/globalSync.store';
+import { useMessageStore } from '../src/stores/message.store';
+import { useGroupStore } from '../src/stores/group.store';
+import { View, Text, AppState, AppStateStatus, Appearance } from 'react-native';
+import { ThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
+import { NalissLogo } from '../src/components/NalissLogo';
+import { initDB, checkpointWal } from '../src/lib/database';
+import { useAuthStore } from '../src/stores/auth.store';
+import { ProtectedRoute } from '../src/components/ProtectedRoute';
+import { supabase } from '../src/api/supabase/client';
+import { usePushNotifications } from '../src/hooks/usePushNotifications';
+import { useHeartbeat, HeartbeatBanner } from '../src/hooks/useHeartbeat';
+import { OverlayManager } from '../src/components/common/overlays';
+import { FeaturedStudentPopup } from '../src/components/FeaturedStudentPopup';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSignupStore } from '../src/stores/signup.store';
+import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
+import { useThemeStore } from '../src/stores/theme.store';
+import * as Notifications from 'expo-notifications';
+import { NotificationRouter } from '../src/services/notificationRouter';
+import { runCacheMaintenance } from '../src/utils/cacheMaintenance';
 
 // Catch any unhandled promise rejections globally
 if (typeof globalThis !== 'undefined' && !(globalThis as any)._rejectHandlerInstalled) {
@@ -126,8 +164,8 @@ console.error = (...args) => {
 (globalThis as any).onunhandledrejection = (id: any, error: any) => {
     console.error('Captured Unhandled Promise Rejection:', error);
 };
-import { useEffect, useState } from 'react';
-import { LogBox } from 'react-native';
+// Start global setups
+
 LogBox.ignoreLogs([
   'getInfoAsync is deprecated',
   'expo-file-system: getInfoAsync is deprecated'
@@ -140,48 +178,11 @@ if (typeof (globalThis as any).WeakRef === 'undefined') {
     deref() { return this.ref; }
   };
 }
-import { Stack, router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Font from 'expo-font';
-import * as SplashScreen from 'expo-splash-screen';
-import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
-import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
-import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
-import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
-import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
-import { GroupMembershipHandler } from '../src/components/GroupMembershipHandler';
-import { useNetworkStore, registerOnlineCallback } from '../src/stores/network.store';
-import { useGlobalSyncStore } from '../src/stores/globalSync.store';
-import { useMessageStore } from '../src/stores/message.store';
-import { useGroupStore } from '../src/stores/group.store';
-import { View, Text, AppState, AppStateStatus, Appearance } from 'react-native';
-import { ThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
-import { NalissLogo } from '../src/components/NalissLogo';
-import { initDB } from '../src/lib/database';
-import { useAuthStore } from '../src/stores/auth.store';
 
 // CRITICAL: Required for OAuth redirects to work correctly on Android.
 // Without this, the browser closes immediately after the OAuth redirect
 // because the app never signals that the auth session is complete.
 WebBrowser.maybeCompleteAuthSession();
-import { ProtectedRoute } from '../src/components/ProtectedRoute';
-import { supabase } from '../src/api/supabase/client';
-import { usePushNotifications } from '../src/hooks/usePushNotifications';
-import { useHeartbeat, HeartbeatBanner } from '../src/hooks/useHeartbeat';
-import { OverlayManager } from '../src/components/common/overlays';
-import { FeaturedStudentPopup } from '../src/components/FeaturedStudentPopup';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useSignupStore } from '../src/stores/signup.store';
-import { cleanupIncompleteSignup } from '../src/utils/signup-cleanup';
-import { useThemeStore } from '../src/stores/theme.store';
-import * as Notifications from 'expo-notifications';
-import { NotificationRouter } from '../src/services/notificationRouter';
-import { runCacheMaintenance } from '../src/utils/cacheMaintenance';
-import { checkpointWal } from '../src/lib/database';
 
 // ── Kill detection key ────────────────────────────────────────────────────────
 // Written to AsyncStorage when app goes to background during an active signup.

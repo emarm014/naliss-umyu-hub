@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../../src/api/supabase/client';
 import { useAuthStore } from '../../src/stores/auth.store';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 
 export default function DeleteAccountScreen() {

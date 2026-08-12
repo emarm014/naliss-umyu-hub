@@ -26,6 +26,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
+import * as Sentry from '@sentry/react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../src/constants/Colors';
@@ -161,8 +162,21 @@ export default function ChatScreen() {
     };
 
     // Subscribe ONLY to messages for this chat
-    const messages = useMessageStore(state => state.messages[id] || []);
+    const messages = useMessageStore(state => state.cache[id] || []);
     const groupFromStore = useGroupStore(s => s.groups.find((g: any) => g.id === id));
+    
+    // Add legacy support wrappers for over-engineered breakage
+    const messageStore = useMessageStore.getState();
+    const setMessages = React.useCallback((updater: any) => {
+        const ms = useMessageStore.getState();
+        const currentMessages = ms.getMessages(id);
+        if (typeof updater === 'function') {
+            ms.setMessages(id, updater(currentMessages));
+        } else {
+            ms.setMessages(id, updater);
+        }
+    }, [id]);
+
     const [group, setGroup] = useState<any>(null);
     const activeGroup = groupFromStore || group;
     const isMediaLocked = activeGroup?.allow_media === false;
@@ -275,7 +289,7 @@ export default function ChatScreen() {
             const mediaMessages = messages.filter(m => m.image_url || m.video_url || m.document_url);
             const initialIndex = mediaMessages.findIndex(m => m.id === msg.id);
 
-            setMediaItems(mediaMessages.map(m => ({
+            setViewerMediaList(mediaMessages.map(m => ({
                 id: m.id,
                 type: m.message_type as 'image' | 'video' | 'document',
                 url: (m.image_url || m.video_url || m.document_url)!,
@@ -283,8 +297,8 @@ export default function ChatScreen() {
                 fileName: m.file_name,
                 fileSize: m.file_size
             })));
-            setInitialMediaIndex(initialIndex >= 0 ? initialIndex : 0);
-            setIsMediaViewerVisible(true);
+            setViewerInitialIndex(initialIndex >= 0 ? initialIndex : 0);
+            setViewerVisible(true);
             
             Sentry.addBreadcrumb({
                 category: 'ui.action',

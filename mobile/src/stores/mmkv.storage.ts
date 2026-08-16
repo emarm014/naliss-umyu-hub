@@ -144,5 +144,19 @@ export const migrateAsyncStorageToMMKV = async () => {
   }
 };
 
-// Trigger migration check immediately on module load and store promise
-migrationPromise = migrateAsyncStorageToMMKV().catch((err) => console.error('[MMKV] migration failed:', err));
+// Safety timeout helper: unblocks callers after timeoutMs even if the promise hasn't settled.
+// The original promise continues running in the background — only the *wait* is capped.
+const withMigrationTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T | void> => {
+  return Promise.race([
+    promise,
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+};
+
+// Trigger migration check immediately on module load and store promise.
+// Capped at 3 seconds so that Zustand store hydration (which awaits migrationPromise
+// inside getItem/setItem) is never blocked indefinitely on slow devices.
+migrationPromise = withMigrationTimeout(
+  migrateAsyncStorageToMMKV().catch((err) => console.error('[MMKV] migration failed:', err)),
+  3000
+);

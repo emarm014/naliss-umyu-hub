@@ -154,14 +154,4 @@ export const useNetworkStatus = () => {
   return { isOnline, isOffline: !isOnline, checkNetworkStatus };
 };
 
-// Replay queued offline mutations automatically upon online recovery
-registerOnlineCallback(async () => {
-  try {
-    // Fix: Process queues sequentially to avoid database lock contention
-    await useMutationQueueStore.getState().processQueue();
-    // Then flush message queue after mutation queue completes
-    await useMessageStore.getState().flushUnsentMessageQueue();
-  } catch (error) {
-    console.error('Failed to process offline queues:', error);
-  }
-});
+

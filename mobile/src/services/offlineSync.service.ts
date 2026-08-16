@@ -1,4 +1,4 @@
-﻿import { supabase } from '../api/supabase/client';
+import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
 import { trackOfflineSync, captureStoreError } from '../utils/sentry';
 import { useAuthStore } from '../stores/auth.store';
@@ -329,10 +329,10 @@ export const OfflineSyncService = {
             await useOfflineSearchStore.getState().rebuildIndex();
 
             trackOfflineSync('bootstrap', 'completed');
-            Logger.info('offline-sync', 'Bootstrap complete. Launching queue downloader.');
+            Logger.info('offline-sync', 'Bootstrap complete. Media attachments will load on-demand.');
 
-            // Trigger background queue downloader
-
+            // Chat media attachments are downloaded on-demand when viewed to save bandwidth and storage.
+            // Explicitly tracked downloads are restored via DownloadTracker.
         } catch (e: any) {
             Logger.error('offline-sync', 'Error running bootstrap synchronization', e);
             trackOfflineSync('bootstrap', 'failed', undefined, { error: e.message || String(e) });

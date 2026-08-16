@@ -27,7 +27,7 @@ interface CloudResource {
   uploaded_by: string | null;
   uploader_name: string | null;
   created_at: string;
-  origin_table: 'resource' | 'material' | 'past_question' | 'announcement' | 'event' | 'personnel';
+  origin_table: 'resource' | 'material' | 'past_question' | 'announcement' | 'event' | 'personnel' | 'user_avatar' | 'group_chat' | 'gallery_topic' | 'gallery_media' | 'featured_student' | 'news' | 'archive' | 'personnel_gallery' | 'group_avatar' | 'notepad';
 }
 
 // Raw Cloudinary asset (from the cloudinary-assets edge function)
@@ -75,12 +75,22 @@ function getFileType(fileName: string) {
 }
 
 const ORIGIN_LABELS: Record<string, { label: string; color: string }> = {
-  resource:      { label: 'Vault',          color: 'bg-primary-100 text-primary-700' },
-  material:      { label: 'Material',       color: 'bg-blue-100 text-blue-700' },
-  past_question: { label: 'Past Question',  color: 'bg-amber-100 text-amber-700' },
-  announcement:  { label: 'Announcement',   color: 'bg-emerald-100 text-emerald-700' },
-  event:         { label: 'Event',          color: 'bg-purple-100 text-purple-700' },
-  personnel:     { label: 'Personnel',      color: 'bg-rose-100 text-rose-700' },
+  resource:          { label: 'Vault',              color: 'bg-primary-100 text-primary-700' },
+  material:          { label: 'Material',           color: 'bg-blue-100 text-blue-700' },
+  past_question:     { label: 'Past Question',      color: 'bg-amber-100 text-amber-700' },
+  announcement:      { label: 'Announcement',       color: 'bg-emerald-100 text-emerald-700' },
+  event:             { label: 'Event',              color: 'bg-purple-100 text-purple-700' },
+  personnel:         { label: 'Personnel',          color: 'bg-rose-100 text-rose-700' },
+  user_avatar:       { label: 'User Avatar',        color: 'bg-sky-100 text-sky-700' },
+  group_chat:        { label: 'Group Chat',         color: 'bg-indigo-100 text-indigo-700' },
+  gallery_topic:     { label: 'Gallery Topic',      color: 'bg-teal-100 text-teal-700' },
+  gallery_media:     { label: 'Gallery Media',      color: 'bg-cyan-100 text-cyan-700' },
+  featured_student:  { label: 'Featured Student',   color: 'bg-yellow-100 text-yellow-700' },
+  news:              { label: 'News',               color: 'bg-orange-100 text-orange-700' },
+  archive:           { label: 'Archive',            color: 'bg-stone-100 text-stone-700' },
+  personnel_gallery: { label: 'Personnel Gallery',  color: 'bg-pink-100 text-pink-700' },
+  group_avatar:      { label: 'Group Avatar',       color: 'bg-violet-100 text-violet-700' },
+  notepad:           { label: 'Notepad',             color: 'bg-lime-100 text-lime-700' },
 };
 
 export default function ResourcesPage() {

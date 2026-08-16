@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Logger } from '../utils/logger';
 import { getDB, upsertMediaManifest } from '../lib/database';
@@ -137,13 +137,7 @@ export const useOfflineStorageStore = create<OfflineStorageState>((set, get) => 
                 return { status: 'ready', progress: 100 };
             }
 
-            const { useCrossDeviceSyncStore } = require('./crossDeviceSync.store');
-            const syncJob = useCrossDeviceSyncStore.getState().syncJob;
-            const isSyncing = syncJob && syncJob.status === 'running';
-
-            if (isSyncing) {
-                return { status: 'syncing', progress };
-            } else if (downloaded > 0) {
+            if (downloaded > 0) {
                 return { status: 'partial', progress };
             } else {
                 return { status: 'waiting', progress: 0 };

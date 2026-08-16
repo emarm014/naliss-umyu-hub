@@ -77,7 +77,7 @@ async function cleanupOldVaultFiles() {
         for (const file of files) {
             try {
                 const filePath = vaultDir + file;
-                const fileInfo = await FileSystem.getInfoAsync(filePath, { md5: false, size: true });
+                const fileInfo = await FileSystem.getInfoAsync(filePath, { md5: false });
                 
                 // @ts-ignore
                 if (fileInfo.modificationTime && Number(fileInfo.modificationTime) * 1000 < cutoff) {

@@ -89,32 +89,15 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
   },
 
   syncAll: async (force = false) => {
-    // Skip network calls when offline â€” cached data is already in stores
+    // Skip network calls when offline — cached data is already in stores
     const isOnline = useNetworkStore.getState().isOnline;
     if (!isOnline) return;
 
     const authStore = useAuthStore.getState();
     if (!authStore.user) return;
 
-    const level = authStore.profile?.level;
-
-    // Priority 1: User-visible content first (groups, announcements, events)
-    // Priority 2: Secondary content (materials, courses, directory) â€” slightly deferred
-    // This makes the app feel faster â€” the most important screens load first
-    const [p1] = await Promise.allSettled([
-      useGroupStore.getState().fetchGroups(force),
-      useAnnouncementStore.getState().fetchAnnouncements(level, force),
-      useEventStore.getState().fetchUpcomingEvents(level, force),
-    ]);
-
-    // Secondary content â€” fire and forget, don't block
-    Promise.allSettled([
-      useResourceStore.getState().fetchMaterials({ level: level as any }, force),
-      useResourceStore.getState().fetchPastQuestions({ level: level as any }, force),
-      useResourceStore.getState().fetchCourses(level as any, force),
-      useDirectoryStore.getState().fetchLecturers(force),
-      useDirectoryStore.getState().fetchExecutives(force),
-    ]);
+    const { OfflineSyncService } = require('../services/offlineSync.service');
+    await OfflineSyncService.syncAll(force);
   },
 
   /**
@@ -208,28 +191,7 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
       get().syncAll(false); // respect TTL â€” only re-fetches if stale
     }, BG_SYNC_INTERVAL);
 
-    let lastBackgroundTime = 0;
-
-    // AppState listener â€” re-sync when app comes back to foreground (only if online)
-    const appStateSub = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
-      if (nextState === 'background') {
-        lastBackgroundTime = Date.now();
-      } else if (nextState === 'active') {
-        // Force a fresh network check before syncing to avoid spamming failed requests
-        const isOnline = await useNetworkStore.getState().checkNetworkStatus();
-        if (isOnline) {
-          const timeInBackground = lastBackgroundTime ? Date.now() - lastBackgroundTime : 0;
-          // Only force sync if backgrounded for more than 2 minutes (120,000 ms)
-          const forceSync = timeInBackground > 120000;
-
-          // Thundering herd prevention for app foreground transitions
-          const jitterDelay = Math.random() * 5000;
-          setTimeout(() => get().syncAll(forceSync), jitterDelay);
-        }
-      }
-    });
-
-    set({ _bgTimer: timer, _appStateSubscription: appStateSub });
+    set({ _bgTimer: timer, _appStateSubscription: null });
   },
 
   _stopBackgroundSync: () => {

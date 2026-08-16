@@ -107,6 +107,8 @@ interface SelectedFile {
     caption?: string;
 }
 
+const EMPTY_ARRAY: any[] = [];
+
 export default function ChatScreen() {
     useSentryScreen('ChatScreen');
     const params = useLocalSearchParams();
@@ -162,7 +164,7 @@ export default function ChatScreen() {
     };
 
     // Subscribe ONLY to messages for this chat
-    const messages = useMessageStore(state => state.cache[id] || []);
+    const messages = useMessageStore(state => state.cache[id] || EMPTY_ARRAY);
     const groupFromStore = useGroupStore(s => s.groups.find((g: any) => g.id === id));
     
     // Add legacy support wrappers for over-engineered breakage

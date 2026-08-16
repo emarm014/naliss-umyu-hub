@@ -73,6 +73,17 @@ interface BurstParticle {
     anim: Animated.Value;
 }
 
+interface RevealParticle {
+    id: number;
+    angle: number;
+    distanceX: number;
+    peakY: number;
+    size: number;
+    color: string;
+    symbol: string;
+    anim: Animated.Value;
+}
+
 export function FeaturedStudentPopup() {
     const { colors, isDark } = useTheme();
     const { profile, isProfileComplete } = useAuthStore();
@@ -96,7 +107,10 @@ export function FeaturedStudentPopup() {
     // Particle arrays
     const particlesRef = useRef<FloatingParticle[]>([]);
     const burstParticlesRef = useRef<BurstParticle[]>([]);
+    const revealParticlesRef = useRef<RevealParticle[]>([]);
+    
     const [isBursting, setIsBursting] = useState(false);
+    const [isRevealing, setIsRevealing] = useState(false);
 
     // Initialize 42 continuous tiny floating motion particles
     if (particlesRef.current.length === 0) {
@@ -132,6 +146,27 @@ export function FeaturedStudentPopup() {
             });
         }
         burstParticlesRef.current = burst;
+    }
+
+    // Initialize 35 grand reveal particles for a trophy-win opening
+    if (revealParticlesRef.current.length === 0) {
+        const reveal: RevealParticle[] = [];
+        for (let i = 0; i < 35; i++) {
+            const angle = -Math.PI + Math.random() * Math.PI; // Top half hemisphere
+            const distanceX = Math.cos(angle) * (80 + Math.random() * 220);
+            const peakY = Math.sin(angle) * (150 + Math.random() * 200);
+            reveal.push({
+                id: i,
+                angle,
+                distanceX,
+                peakY,
+                size: Math.floor(Math.random() * 24) + 16, // Extra large for grand reveal
+                color: Math.random() > 0.5 ? '#fbbf24' : STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)], // Bias towards gold
+                symbol: STAR_SYMBOLS[Math.floor(Math.random() * STAR_SYMBOLS.length)],
+                anim: new Animated.Value(0),
+            });
+        }
+        revealParticlesRef.current = reveal;
     }
 
     useEffect(() => {
@@ -271,6 +306,21 @@ export function FeaturedStudentPopup() {
                         useNativeDriver: true,
                     }),
                 ]).start();
+
+                // Start Grand Reveal
+                setIsRevealing(true);
+                revealParticlesRef.current.forEach((p) => {
+                    p.anim.setValue(0);
+                    Animated.timing(p.anim, {
+                        toValue: 1,
+                        duration: 2500 + Math.random() * 1500,
+                        easing: Easing.out(Easing.cubic),
+                        useNativeDriver: true,
+                    }).start();
+                });
+                
+                // Hide reveal after it finishes
+                setTimeout(() => setIsRevealing(false), 4500);
             }
         } catch (e) {
             console.log('No active featured student or error fetching:', e);
@@ -404,6 +454,49 @@ export function FeaturedStudentPopup() {
                     
                     {/* CONTINUOUS FLOATING MOTION STARS & LOVE EMOJIS */}
                     <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+                        {/* GRAND REVEAL PARTICLES ON OPEN */}
+                        {isRevealing && revealParticlesRef.current.map((r) => {
+                            const translateX = r.anim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, r.distanceX],
+                            });
+                            const translateY = r.anim.interpolate({
+                                inputRange: [0, 0.4, 1],
+                                outputRange: [0, r.peakY, height / 2], 
+                            });
+                            const rotation = r.anim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['0deg', `${r.distanceX > 0 ? 720 : -720}deg`],
+                            });
+                            const opacity = r.anim.interpolate({
+                                inputRange: [0, 0.8, 1],
+                                outputRange: [1, 1, 0],
+                            });
+                            const scale = r.anim.interpolate({
+                                inputRange: [0, 0.1, 0.8, 1],
+                                outputRange: [0, 1.5, 1, 0.5],
+                            });
+
+                            return (
+                                <Animated.Text
+                                    key={`reveal-p-${r.id}`}
+                                    style={[
+                                        styles.revealParticle,
+                                        {
+                                            left: width / 2 - 10,
+                                            top: height / 2 - 50,
+                                            fontSize: r.size,
+                                            color: r.color,
+                                            opacity,
+                                            transform: [{ translateX }, { translateY }, { rotate: rotation }, { scale }],
+                                        },
+                                    ]}
+                                >
+                                    {r.symbol}
+                                </Animated.Text>
+                            );
+                        })}
+
                         {particlesRef.current.map((p) => {
                             const translateY = p.anim.interpolate({
                                 inputRange: [0, 1],
@@ -485,89 +578,168 @@ export function FeaturedStudentPopup() {
                         })}
                     </View>
 
-                    {/* ELEGANT FEATURED POPUP CONTAINER */}
-                    <Animated.View 
-                        style={[
-                            styles.popupContainer, 
-                            { backgroundColor: colors.card, borderColor: colors.border },
-                            { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }
-                        ]}
-                    >
-                        {/* Glowing Top Banner */}
-                        <LinearGradient colors={badge.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.topHonorBanner}>
-                            <Ionicons name="sparkles" size={14} color="#FFF" />
-                            <Text style={styles.topHonorText}>{badge.bannerText}</Text>
-                            <Ionicons name="sparkles" size={14} color="#FFF" />
-                        </LinearGradient>
-
-                        {/* Badge and Stats Row */}
-                        <View style={[styles.statsRow, { backgroundColor: isDark ? '#111827' : '#f8fafc' }]}>
-                            <View style={[styles.badge, { backgroundColor: badge.color }]}>
-                                <Ionicons name={badge.icon as any} size={14} color="#fff" />
-                                <Text style={styles.badgeText}>{badge.text}</Text>
-                            </View>
-                            
-                            {/* Congratulations Heart Count in RED */}
-                            <View style={styles.congratsCountBadge}>
-                                <Ionicons name="heart" size={15} color="#ef4444" />
-                                <Text style={styles.congratsCountText}>{feature.total_congratulations}</Text>
-                            </View>
-                        </View>
-
-                        {/* Header Image Area */}
-                        <View style={styles.imageHeader}>
-                            {bgImage ? (
-                                <CachedImage 
-                                    remoteUrl={bgImage} 
-                                    style={styles.coverImage as any} 
-                                    resizeMode="cover" 
-                                    entityId={feature.id} 
-                                    assetType="featured_student"
-                                />
-                            ) : (
-                                <View style={[styles.coverImage, { backgroundColor: badge.color, opacity: 0.15 }]} />
-                            )}
-                            
-                            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.imageOverlay}>
-                                <View style={styles.overlayBottomRow}>
-                                    <Text style={styles.studentNameOverlay} numberOfLines={1}>
-                                        {isSelf ? `${feature.users?.full_name || 'You'} (YOU)` : (feature.users?.full_name || 'Featured Student')}
-                                    </Text>
-                                </View>
+                    {/* ═══════════════════════════════════════════════════════════ */}
+                    {/* SELECTED STUDENT'S OWN AWARD POPUP — Personal celebration */}
+                    {/* ═══════════════════════════════════════════════════════════ */}
+                    {isSelf ? (
+                        <Animated.View 
+                            style={[
+                                styles.popupContainer, 
+                                { backgroundColor: colors.card, borderColor: badge.color },
+                                { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }
+                            ]}
+                        >
+                            {/* Golden Award Banner */}
+                            <LinearGradient colors={['#fbbf24', '#f59e0b', '#d97706']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.selfAwardBanner}>
+                                <Ionicons name="trophy" size={18} color="#fff" />
+                                <Text style={styles.selfAwardBannerText}>🏆 YOU HAVE BEEN SELECTED! 🏆</Text>
+                                <Ionicons name="trophy" size={18} color="#fff" />
                             </LinearGradient>
-                        </View>
 
-                        {/* Content Area */}
-                        <View style={styles.content}>
-                            <Text style={styles.classicMainTitle}>
-                                Congratulations {isSelf ? (profile?.full_name || profile?.username) : (feature.users?.full_name || 'Student')} you are featured as a {badge.text.replace(/[^a-zA-Z ]/g, '').trim().toLowerCase()}
-                            </Text>
-                            
-                            {feature.subtitle && (
-                                <Text style={[styles.subtitle, { color: badge.color }]} numberOfLines={1}>
-                                    {feature.subtitle}
-                                </Text>
-                            )}
-
-                            {feature.description && (
-                                <View style={[styles.quoteBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
-                                    <Text style={[styles.description, { color: colors.text }]} numberOfLines={4}>
-                                        "{feature.description}"
+                            {/* Your Photo */}
+                            <View style={styles.selfAwardImageWrap}>
+                                {bgImage ? (
+                                    <CachedImage 
+                                        remoteUrl={bgImage} 
+                                        style={styles.selfAwardImage as any} 
+                                        resizeMode="cover" 
+                                        entityId={feature.id} 
+                                        assetType="featured_student"
+                                    />
+                                ) : (
+                                    <View style={[styles.selfAwardImage, { backgroundColor: badge.color, opacity: 0.15 }]} />
+                                )}
+                                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.selfAwardImageOverlay}>
+                                    <Text style={styles.selfAwardYourName} numberOfLines={1}>
+                                        {feature.users?.full_name || 'You'}
                                     </Text>
-                                </View>
-                            )}
-                        </View>
+                                </LinearGradient>
+                            </View>
 
-                        {/* Action Area */}
-                        <View style={[styles.actions, { borderTopColor: colors.border }]}>
-                            {isSelf ? (
+                            {/* Award Title & Description */}
+                            <View style={styles.selfAwardContent}>
+                                <View style={[styles.selfAwardBadge, { backgroundColor: badge.color }]}>
+                                    <Ionicons name={badge.icon as any} size={16} color="#fff" />
+                                    <Text style={styles.selfAwardBadgeText}>{badge.text}</Text>
+                                </View>
+
+                                <Text style={[styles.selfAwardTitle, { color: badge.color }]}>
+                                    You have been featured as{'\n'}{badge.text.replace(/[^a-zA-Z ]/g, '').trim()}!
+                                </Text>
+
+                                <Text style={[styles.selfAwardSubtitle, { color: colors.textMuted }]}>
+                                    The admin has recognized your outstanding contribution and selected you for this honor. Fellow students can now congratulate you! 🎉
+                                </Text>
+
+                                {feature.subtitle && (
+                                    <Text style={[styles.subtitle, { color: badge.color }]} numberOfLines={1}>
+                                        {feature.subtitle}
+                                    </Text>
+                                )}
+
+                                {feature.description && (
+                                    <View style={[styles.quoteBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                        <Text style={[styles.description, { color: colors.text }]} numberOfLines={4}>
+                                            "{feature.description}"
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            {/* Congrats Counter + Dismiss */}
+                            <View style={[styles.selfAwardFooter, { borderTopColor: colors.border }]}>
                                 <View style={styles.selfCongratsCard}>
                                     <Ionicons name="heart" size={20} color="#ef4444" />
                                     <Text style={styles.selfCongratsCardText}>
-                                        You have received {feature.total_congratulations} Congratulations from fellow students! 💕
+                                        {feature.total_congratulations} Congratulations received so far! 💕
                                     </Text>
                                 </View>
-                            ) : (
+
+                                <TouchableOpacity style={styles.dismissBtn} onPress={handleDismiss} activeOpacity={0.7}>
+                                    <Text style={[styles.dismissBtnText, { color: colors.textMuted }]}>
+                                        Dismiss
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </Animated.View>
+                    ) : (
+                        /* ═══════════════════════════════════════════════════════════ */
+                        /* OTHER USERS' CONGRATULATE POPUP — Social engagement        */
+                        /* ═══════════════════════════════════════════════════════════ */
+                        <Animated.View 
+                            style={[
+                                styles.popupContainer, 
+                                { backgroundColor: colors.card, borderColor: colors.border },
+                                { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }
+                            ]}
+                        >
+                            {/* Glowing Top Banner */}
+                            <LinearGradient colors={badge.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.topHonorBanner}>
+                                <Ionicons name="sparkles" size={14} color="#FFF" />
+                                <Text style={styles.topHonorText}>{badge.bannerText}</Text>
+                                <Ionicons name="sparkles" size={14} color="#FFF" />
+                            </LinearGradient>
+
+                            {/* Badge and Stats Row */}
+                            <View style={[styles.statsRow, { backgroundColor: isDark ? '#111827' : '#f8fafc' }]}>
+                                <View style={[styles.badge, { backgroundColor: badge.color }]}>
+                                    <Ionicons name={badge.icon as any} size={14} color="#fff" />
+                                    <Text style={styles.badgeText}>{badge.text}</Text>
+                                </View>
+                                
+                                {/* Congratulations Heart Count in RED */}
+                                <View style={styles.congratsCountBadge}>
+                                    <Ionicons name="heart" size={15} color="#ef4444" />
+                                    <Text style={styles.congratsCountText}>{feature.total_congratulations}</Text>
+                                </View>
+                            </View>
+
+                            {/* Header Image Area */}
+                            <View style={styles.imageHeader}>
+                                {bgImage ? (
+                                    <CachedImage 
+                                        remoteUrl={bgImage} 
+                                        style={styles.coverImage as any} 
+                                        resizeMode="cover" 
+                                        entityId={feature.id} 
+                                        assetType="featured_student"
+                                    />
+                                ) : (
+                                    <View style={[styles.coverImage, { backgroundColor: badge.color, opacity: 0.15 }]} />
+                                )}
+                                
+                                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.imageOverlay}>
+                                    <View style={styles.overlayBottomRow}>
+                                        <Text style={styles.studentNameOverlay} numberOfLines={1}>
+                                            {feature.users?.full_name || 'Featured Student'}
+                                        </Text>
+                                    </View>
+                                </LinearGradient>
+                            </View>
+
+                            {/* Content Area */}
+                            <View style={styles.content}>
+                                <Text style={styles.classicMainTitle}>
+                                    Congratulations {feature.users?.full_name || 'Student'} you are featured as a {badge.text.replace(/[^a-zA-Z ]/g, '').trim().toLowerCase()}
+                                </Text>
+                                
+                                {feature.subtitle && (
+                                    <Text style={[styles.subtitle, { color: badge.color }]} numberOfLines={1}>
+                                        {feature.subtitle}
+                                    </Text>
+                                )}
+
+                                {feature.description && (
+                                    <View style={[styles.quoteBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                        <Text style={[styles.description, { color: colors.text }]} numberOfLines={4}>
+                                            "{feature.description}"
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            {/* Action Area — Congratulate Button */}
+                            <View style={[styles.actions, { borderTopColor: colors.border }]}>
                                 <TouchableOpacity 
                                     style={[
                                         styles.congratulateBtn, 
@@ -592,15 +764,15 @@ export function FeaturedStudentPopup() {
                                         </>
                                     )}
                                 </TouchableOpacity>
-                            )}
 
-                            <TouchableOpacity style={styles.dismissBtn} onPress={handleDismiss} activeOpacity={0.7}>
-                                <Text style={[styles.dismissBtnText, { color: colors.textMuted }]}>
-                                    Stop seeing this
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </Animated.View>
+                                <TouchableOpacity style={styles.dismissBtn} onPress={handleDismiss} activeOpacity={0.7}>
+                                    <Text style={[styles.dismissBtnText, { color: colors.textMuted }]}>
+                                        Stop seeing this
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </Animated.View>
+                    )}
                 </View>
             </Modal>
 
@@ -683,6 +855,14 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.5)',
         padding: 20,
     },
+    revealParticle: {
+        position: 'absolute',
+        fontWeight: 'bold',
+        textShadowColor: 'rgba(255, 215, 0, 0.6)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 10,
+        zIndex: 10,
+    },
     floatingParticle: {
         position: 'absolute',
         fontWeight: 'bold',
@@ -697,6 +877,92 @@ const styles = StyleSheet.create({
         textShadowOffset: { width: 0, height: 0 },
         textShadowRadius: 6,
     },
+    // ── Selected Student Award Popup Styles ──
+    selfAwardBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        gap: 8,
+    },
+    selfAwardBannerText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '900',
+        letterSpacing: 1.5,
+        textTransform: 'uppercase',
+        textShadowColor: 'rgba(0,0,0,0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+    },
+    selfAwardImageWrap: {
+        height: 240,
+        width: '100%',
+        position: 'relative',
+        backgroundColor: '#1f2937',
+    },
+    selfAwardImage: {
+        width: '100%',
+        height: '100%',
+    },
+    selfAwardImageOverlay: {
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        justifyContent: 'flex-end',
+        padding: 16,
+    },
+    selfAwardYourName: {
+        color: '#FFFFFF',
+        fontSize: 24,
+        fontWeight: '900',
+        textShadowColor: 'rgba(0, 0, 0, 0.8)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 6,
+    },
+    selfAwardContent: {
+        padding: 20,
+        paddingBottom: 16,
+        alignItems: 'center',
+    },
+    selfAwardBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderRadius: 20,
+        gap: 6,
+        marginBottom: 12,
+    },
+    selfAwardBadgeText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    selfAwardTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        textAlign: 'center',
+        marginBottom: 8,
+        lineHeight: 30,
+    },
+    selfAwardSubtitle: {
+        fontSize: 14,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 12,
+    },
+    selfAwardFooter: {
+        padding: 20,
+        paddingTop: 16,
+        gap: 10,
+        alignItems: 'center',
+        borderTopWidth: 1,
+    },
+
+    // ── Other Users Congratulate Popup Styles ──
     popupContainer: {
         width: '100%',
         maxWidth: 400,

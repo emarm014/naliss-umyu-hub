@@ -392,9 +392,16 @@ function RootLayoutNav() {
         useSignupStore.getState();
         useNetworkStore.getState();
 
-        // Initialize Local Database and Hydrate Profile Cache BEFORE Supabase Session
-        await initDB();
-        await useAuthStore.getState().hydrateFromSQLite();
+        // Initialize Local Database and Hydrate Profile Cache BEFORE Supabase Session.
+        // Safety timeout: if SQLite init stalls (NPE, corrupted DB, etc.), don't block
+        // the boot sequence forever — the app can still function without local cache.
+        await Promise.race([
+          (async () => {
+            await initDB();
+            await useAuthStore.getState().hydrateFromSQLite();
+          })(),
+          new Promise((resolve) => setTimeout(resolve, 5000)),
+        ]);
       } catch (error) {
         console.warn("Silent Boot Warning: Isolated local configuration anomaly.", error);
       } finally {
@@ -458,9 +465,17 @@ function RootLayoutNav() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return; // Session expired — auth flow will handle redirect
 
-      // 1. Re-open realtime channels and force-sync all stores
-      useGlobalSyncStore.getState().resubscribe();
+      // 1. Process offline mutations BEFORE fetching new data to prevent collisions
+      try {
+        const { useMutationQueueStore } = require('../stores/mutationQueue.store');
+        await useMutationQueueStore.getState().processQueue();
+        await useMessageStore.getState().flushUnsentMessageQueue();
+      } catch (e) {
+        console.error('Failed to process offline queues:', e);
+      }
 
+      // 2. Re-open realtime channels and force-sync all stores
+      useGlobalSyncStore.getState().resubscribe();
       // 2. Fetch missed messages for ALL cached groups (delta fetch since lastSeenAt)
       // This runs in parallel for all groups — fast and efficient
       const messageStore = useMessageStore.getState();

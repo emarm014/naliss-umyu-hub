@@ -147,10 +147,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             setDeviceSessionChecked(true);
           }
         } catch (err: any) {
-          // Ignore RLS/Auth errors caused by expired sessions during component unmount
-          if (err?.code === '42501' || err?.status === 401 || !isSubscribed) return;
+          // If we hit an RLS/Auth error or the query fails, we must still allow the app to render
+          // otherwise the user is permanently stuck on the splash screen.
           console.error('Device session verification failed:', err);
-          // robust offline-first fallback: let them proceed if offline or query fails
           if (isSubscribed) {
             setSessionError(null);
             setDeviceSessionChecked(true);
@@ -343,9 +342,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         const { useOfflineAssetStore } = require('../stores/offlineAsset.store');
         useOfflineAssetStore.getState().initialize();
 
-        const { OfflineSyncService } = require('../services/offlineSync.service');
-        safeFire(OfflineSyncService.syncAll(), 'OfflineSync');
-        
         const { IntegrityService } = require('../services/integrity.service');
         // Execute database health checks and auto-healing scans
         safeFire(
@@ -861,10 +857,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   // 3. Navigation Guard
   useEffect(() => {
-    // Skip the very first synchronous render â€” store hasn't hydrated yet
+    // Skip the very first synchronous render — store hasn't hydrated yet.
+    // BUT if hydration already completed (MMKV is synchronous), process
+    // navigation immediately — otherwise the guard never fires because
+    // its dependencies won't change again.
     if (!isMounted.current) {
       isMounted.current = true;
-      return;
+      if (!_hasHydrated) return;
     }
 
     // Never navigate while a restriction screen is showing

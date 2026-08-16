@@ -296,7 +296,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
           }),
           async () => ({
             resources: await safeFetch('resources', async () => {
-              const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(300);
+              const { data, error } = await supabase.from('cloud_archive').select('*').order('created_at', { ascending: false }).limit(10000);
               if (error) throw error;
               return (data || []).map((r: any) => ({ ...r, file_size: r.file_size || 0, file_type: r.file_type || null }));
             }, get().resources, 5 * 60 * 1000)

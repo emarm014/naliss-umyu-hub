@@ -1,5 +1,4 @@
 import * as Sentry from '@sentry/react-native';
-import { ErrorUtils } from 'react-native';
 import { useEffect, useState } from 'react';
 import { LogBox } from 'react-native';
 import { Stack, router } from 'expo-router';
@@ -39,32 +38,28 @@ import * as Notifications from 'expo-notifications';
 import { NotificationRouter } from '../src/services/notificationRouter';
 import { runCacheMaintenance } from '../src/utils/cacheMaintenance';
 
-// Catch any unhandled promise rejections globally
+// Catch any unhandled errors globally via React Native's global ErrorUtils.
+// NOTE: ErrorUtils is NOT a named export of the 'react-native' package — it is
+// injected into the global scope by the RN runtime. We must access it via `global`.
 if (typeof globalThis !== 'undefined' && !(globalThis as any)._rejectHandlerInstalled) {
     (globalThis as any)._rejectHandlerInstalled = true;
-    
-    const originalHandler = ErrorUtils.getGlobalHandler?.();
-    ErrorUtils.setGlobalHandler((error, isFatal) => {
-        console.error('[Global Error]', isFatal ? 'FATAL' : 'NON-FATAL', error);
-        // Report to Sentry if available
-        if (typeof require !== 'undefined') {
-            try {
-                const SentryLocal = require('@sentry/react-native');
-                if (SentryLocal.captureException) {
-                    SentryLocal.captureException(error);
-                }
-            } catch (e) { /* Sentry not available */ }
-        }
-        // Call original handler if it exists
-        if (originalHandler) originalHandler(error, isFatal);
-    });
 
-    // Handle unhandled promise rejections specifically
-    if (globalThis && !(globalThis as any).__PromiseRejectHandler) {
-        (globalThis as any).__PromiseRejectHandler = true;
-        // The above global ErrorUtils handles most RN uncaught errors
+    const RNErrorUtils = (globalThis as any).ErrorUtils;
+    if (RNErrorUtils) {
+        const originalHandler = RNErrorUtils.getGlobalHandler?.();
+        RNErrorUtils.setGlobalHandler((error: any, isFatal: boolean) => {
+            console.error('[Global Error]', isFatal ? 'FATAL' : 'NON-FATAL', error);
+            // Report to Sentry if available
+            try {
+                Sentry.captureException(error);
+            } catch (_e) { /* Sentry not ready */ }
+            // Call original handler if it exists
+            if (originalHandler) originalHandler(error, isFatal);
+        });
     }
-}// ── Sentry: initialised before everything else so it catches all boot errors ──
+}
+
+// ── Sentry: initialised before everything else so it catches all boot errors ──
 const IS_PROD = process.env.EXPO_PUBLIC_APP_ENV === 'production';
 
 Sentry.init({
@@ -159,12 +154,6 @@ console.error = (...args) => {
     Sentry.captureMessage(args.map(safeStringifyArg).join(' '), 'error');
   }
 };
-
-// Inject explicit global async exception handlers
-(globalThis as any).onunhandledrejection = (id: any, error: any) => {
-    console.error('Captured Unhandled Promise Rejection:', error);
-};
-// Start global setups
 
 LogBox.ignoreLogs([
   'getInfoAsync is deprecated',

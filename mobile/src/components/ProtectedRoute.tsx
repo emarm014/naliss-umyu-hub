@@ -1092,13 +1092,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Still waiting for profile check AND not yet unblocked by offline timeout
+  // Show a minimal loader instead of the full app UI to prevent tab bar flash
   if (session && isProfileComplete === null && !offlineUnblocked) {
-    return <>{children}</>;
+    return <MinimalLoader />;
   }
 
   // BLOCK: Wait for device session check to complete
   if (session && isProfileComplete === true && !deviceSessionChecked) {
-    return <>{children}</>;
+    return <MinimalLoader />;
   }
 
   // BLOCK: 5-Device limit exceeded screen

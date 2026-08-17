@@ -1,14 +1,23 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {  Text, View } from 'react-native';
 import { useTheme } from '../../src/stores/theme.store';
 import { trackScreen } from '../../src/utils/sentry';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGroupStore } from '../../src/stores/group.store';
+import { useAuthStore } from '../../src/stores/auth.store';
 
 export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // SAFETY GUARD: If there's no session, redirect to login immediately.
+  // This prevents all tab screens from rendering and making Supabase calls
+  // with an expired/missing token, which causes the app to crash.
+  const session = useAuthStore(s => s.session);
+  if (!session) {
+    return <Redirect href="/auth/login" />;
+  }
   
   // Calculate the absolute baseline safety threshold for the device's navigation style
   const safeBottomOffset = insets.bottom > 0 ? insets.bottom : 12;

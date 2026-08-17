@@ -1313,7 +1313,7 @@ export const getAssetCacheByUrl = async (remoteUrl: string): Promise<string | nu
     if (!db) return null;
     try {
         const result = await db.getFirstAsync<{ local_path: string }>(
-            'SELECT local_path FROM asset_cache WHERE remote_url = ?',
+            'SELECT local_path FROM local_assets WHERE remote_url = ?',
             [remoteUrl]
         );
         return result?.local_path || null;

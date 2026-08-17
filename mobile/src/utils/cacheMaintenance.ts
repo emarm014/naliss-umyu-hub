@@ -29,8 +29,8 @@ async function cleanupOldCachedImages() {
 
     try {
         // Get all cached assets older than the cutoff
-        const expired = await db.getAllAsync<{ local_path: string; id: string }>(
-            'SELECT local_path, id FROM asset_cache WHERE created_at < ? AND asset_type = ?',
+        const expired = await db.getAllAsync<{ local_path: string; entity_id: string }>(
+            'SELECT local_path, entity_id FROM local_assets WHERE updated_at < ? AND asset_type = ?',
             [cutoffDate.toISOString(), 'chat_media']
         );
 
@@ -43,7 +43,7 @@ async function cleanupOldCachedImages() {
                 if (info.exists) {
                     await FileSystem.deleteAsync(row.local_path, { idempotent: true });
                 }
-                await db.runAsync('DELETE FROM asset_cache WHERE id = ?', [row.id]);
+                await db.runAsync('DELETE FROM local_assets WHERE entity_id = ?', [row.entity_id]);
                 deletedCount++;
             } catch (e) {
                 // Skip individual file errors

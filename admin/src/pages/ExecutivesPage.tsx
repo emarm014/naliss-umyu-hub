@@ -5,7 +5,7 @@ import { useAdminDataStore } from '../store/adminData.store';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
-import { Crown, Search, Edit, Trash2, Globe, Linkedin, Twitter, Facebook, Plus, AlertTriangle, ShieldCheck, Mail, Phone, Users, Activity, ShieldAlert, FileText, Play, Eye, X, Loader2, User as UserIcon, Instagram } from 'lucide-react';
+import { Crown, Search, Edit, Trash2, Linkedin, Twitter, Facebook, Plus, Users, Activity, ShieldAlert, FileText, Play, Eye, X, Loader2, User as UserIcon, Instagram, ImageIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import { getValidUrl, getVideoThumbnail } from '../utils/media';
 import { useAuthStore } from '../store/auth.store';

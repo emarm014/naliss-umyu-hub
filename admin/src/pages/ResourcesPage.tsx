@@ -43,7 +43,7 @@ interface CloudinaryAsset {
   height: number | null;
   duration: number | null;
   // Computed after cross-referencing with DB
-  status?: 'in_app' | 'orphan'; // in_app = exists in DB, orphan = only on Cloudinary
+  status?: 'in_app' | 'group_chat' | 'orphan'; // in_app = vault/news, group_chat = chat media, orphan = not in DB
   db_title?: string;
   db_origin?: string;
 }
@@ -123,7 +123,7 @@ export default function ResourcesPage() {
   const [cloudAssetsLastFetch, setCloudAssetsLastFetch] = useState<Date | null>(null);
   const [cloudSearchQuery, setCloudSearchQuery] = useState('');
   const [cloudTypeFilter, setCloudTypeFilter] = useState<'all' | 'image' | 'raw' | 'video'>('all');
-  const [cloudStatusFilter, setCloudStatusFilter] = useState<'all' | 'in_app' | 'orphan'>('all');
+  const [cloudStatusFilter, setCloudStatusFilter] = useState<'all' | 'in_app' | 'group_chat' | 'orphan'>('all');
   const [cloudFolderFilter, setCloudFolderFilter] = useState<string>('all');
   const [selectedCloudIds, setSelectedCloudIds] = useState<Set<string>>(new Set());
   const [isDeletingCloud, setIsDeletingCloud] = useState(false);
@@ -172,12 +172,14 @@ export default function ResourcesPage() {
       const freshResources = dbError ? allResources : (dbData || []);
       const dbUrls = new Set(freshResources.map(r => r.file_url));
 
-      // Cross-reference: mark each asset as in_app or orphan
+      // Cross-reference: mark each asset as in_app, group_chat or orphan
       const enriched: CloudinaryAsset[] = (data.assets || []).map((asset: CloudinaryAsset) => {
         const matchingDb = freshResources.find(r => r.file_url === asset.secure_url || r.file_url.includes(asset.public_id));
+        const inDb = dbUrls.has(asset.secure_url) || !!matchingDb;
+        const isGroupChat = matchingDb?.origin_table === 'group_chat';
         return {
           ...asset,
-          status: (dbUrls.has(asset.secure_url) || matchingDb) ? 'in_app' : 'orphan',
+          status: inDb ? (isGroupChat ? 'group_chat' : 'in_app') : 'orphan',
           db_title: matchingDb?.title,
           db_origin: matchingDb?.origin_table,
         };
@@ -337,6 +339,7 @@ export default function ResourcesPage() {
   const cloudStats = useMemo(() => ({
     total: cloudAssets.length,
     inApp: cloudAssets.filter(a => a.status === 'in_app').length,
+    groupChat: cloudAssets.filter(a => a.status === 'group_chat').length,
     orphan: cloudAssets.filter(a => a.status === 'orphan').length,
     totalBytes: cloudAssets.reduce((s, a) => s + a.bytes, 0),
   }), [cloudAssets]);
@@ -762,6 +765,7 @@ export default function ResourcesPage() {
             <span>
               <strong>Direct Cloudinary view</strong> — every file stored on your Cloudinary account.
               <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-md text-[9px] font-black uppercase"><Link2 className="w-3 h-3" /> In App</span> = linked to admin/mobile.
+              <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-[9px] font-black uppercase"><MessageSquare className="w-3 h-3" /> Chat</span> = in group chats.
               <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-md text-[9px] font-black uppercase"><Link2Off className="w-3 h-3" /> Orphan</span> = on Cloudinary only, not in any page.
               Deleting here removes the file from Cloudinary permanently.
             </span>
@@ -773,10 +777,11 @@ export default function ResourcesPage() {
       {activeTab === 'cloudinary' && (
         <div className="space-y-6">
           {/* Stats bar */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             {[
               { label: 'Total on Cloudinary', value: cloudStats.total, color: 'bg-primary-950 text-white', icon: Cloud },
               { label: 'Linked to App', value: cloudStats.inApp, color: 'bg-emerald-50 text-emerald-700 border border-emerald-100', icon: Link2 },
+              { label: 'Group Chats', value: cloudStats.groupChat, color: 'bg-blue-50 text-blue-700 border border-blue-100', icon: MessageSquare },
               { label: 'Orphaned (unused)', value: cloudStats.orphan, color: 'bg-amber-50 text-amber-700 border border-amber-100', icon: Link2Off },
               { label: 'Total Size', value: formatFileSize(cloudStats.totalBytes) || '0 B', color: 'bg-gray-50 text-gray-700 border border-gray-100', icon: HardDrive },
             ].map(({ label, value, color, icon: Icon }) => (
@@ -810,14 +815,14 @@ export default function ResourcesPage() {
               </button>
             ))}
             {/* Status filter */}
-            {(['all', 'in_app', 'orphan'] as const).map(s => (
+            {(['all', 'in_app', 'group_chat', 'orphan'] as const).map(s => (
               <button key={s} onClick={() => setCloudStatusFilter(s)}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                   cloudStatusFilter === s
-                    ? s === 'orphan' ? 'bg-amber-500 text-white' : s === 'in_app' ? 'bg-emerald-600 text-white' : 'bg-primary-950 text-white'
+                    ? s === 'orphan' ? 'bg-amber-500 text-white' : s === 'in_app' ? 'bg-emerald-600 text-white' : s === 'group_chat' ? 'bg-blue-500 text-white' : 'bg-primary-950 text-white'
                     : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
                 }`}>
-                {s === 'in_app' ? <><Link2 className="w-3 h-3" /> In App</> : s === 'orphan' ? <><Link2Off className="w-3 h-3" /> Orphan</> : 'All Status'}
+                {s === 'in_app' ? <><Link2 className="w-3 h-3" /> In App</> : s === 'orphan' ? <><Link2Off className="w-3 h-3" /> Orphan</> : s === 'group_chat' ? <><MessageSquare className="w-3 h-3" /> Chat</> : 'All Status'}
               </button>
             ))}
             {/* Folder filter */}
@@ -911,6 +916,7 @@ export default function ResourcesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {filteredCloudAssets.map(asset => {
                 const isOrphan = asset.status === 'orphan';
+                const isGroupChat = asset.status === 'group_chat';
                 const isImage = asset.resource_type === 'image';
                 const isVideo = asset.resource_type === 'video';
                 const fileName = asset.public_id.split('/').pop() || asset.public_id;
@@ -919,7 +925,7 @@ export default function ResourcesPage() {
                 return (
                   <div key={asset.public_id}
                     className={`group bg-white rounded-3xl border shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col ${
-                      isSelected ? 'border-red-300 ring-2 ring-red-200' : isOrphan ? 'border-amber-200' : 'border-gray-100'
+                      isSelected ? 'border-red-300 ring-2 ring-red-200' : isOrphan ? 'border-amber-200' : isGroupChat ? 'border-blue-200' : 'border-gray-100'
                     }`}
                   >
                     {/* Color bar */}
@@ -931,10 +937,10 @@ export default function ResourcesPage() {
                         <img src={asset.secure_url} alt={fileName} className="w-full h-full object-cover" loading="lazy" />
                         {/* Status badge overlay */}
                         <div className={`absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
-                          isOrphan ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'
+                          isOrphan ? 'bg-amber-500 text-white' : isGroupChat ? 'bg-blue-500 text-white' : 'bg-emerald-500 text-white'
                         }`}>
-                          {isOrphan ? <Link2Off className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
-                          {isOrphan ? 'Orphan' : 'In App'}
+                          {isOrphan ? <Link2Off className="w-3 h-3" /> : isGroupChat ? <MessageSquare className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+                          {isOrphan ? 'Orphan' : isGroupChat ? 'Chat' : 'In App'}
                         </div>
                       </div>
                     )}
@@ -955,10 +961,10 @@ export default function ResourcesPage() {
                         {/* Status badge (for non-image cards) */}
                         {!isImage && (
                           <span className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
-                            isOrphan ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                            isOrphan ? 'bg-amber-100 text-amber-700' : isGroupChat ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
                           }`}>
-                            {isOrphan ? <Link2Off className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
-                            {isOrphan ? 'Orphan' : 'In App'}
+                            {isOrphan ? <Link2Off className="w-3 h-3" /> : isGroupChat ? <MessageSquare className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+                            {isOrphan ? 'Orphan' : isGroupChat ? 'Chat' : 'In App'}
                           </span>
                         )}
                       </div>

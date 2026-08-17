@@ -604,8 +604,5 @@ function RootLayout() {
   );
 }
 
-// Sentry.wrap instruments the root component for:
-// - JS crash reporting
-// - Unhandled promise rejections
-// - Native crash reporting (when built with EAS)
-export default Sentry.wrap(RootLayout);
+// export default Sentry.wrap(RootLayout); // DISABLED: Causing double-renders and splash screen sticking during syncAll
+export default RootLayout;

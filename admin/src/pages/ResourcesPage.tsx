@@ -10,7 +10,7 @@ import {
   HardDrive, BookOpen, HelpCircle, Megaphone, CalendarDays,
   ShieldCheck, Server, Activity, Layers, Info, AlertTriangle,
   RefreshCw, Image as ImageIcon, FileVideo, Link2,
-  Link2Off,
+  Link2Off, MessageSquare,
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import ErrorState from '../components/ui/ErrorState';
@@ -102,7 +102,7 @@ export default function ResourcesPage() {
     syncAll();
   }, [syncAll]);
 
-  const [activeTab, setActiveTab] = useState<'all' | 'vault' | 'institutional' | 'cloudinary'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'vault' | 'institutional' | 'group_chat' | 'cloudinary'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'document' | 'image' | 'video'>('all');
   const [originFilter, setOriginFilter] = useState<string>('all');
@@ -167,12 +167,14 @@ export default function ResourcesPage() {
       const data = await res.json();
       if (!res.ok) { setCloudAssetsError(data?.error || 'Failed to fetch Cloudinary assets.'); return; }
 
-      // Build a set of all URLs stored in the DB (from cloud_archive view)
-      const dbUrls = new Set(allResources.map(r => r.file_url));
+      // Fetch latest DB records directly to bypass 5-min store cache
+      const { data: dbData, error: dbError } = await supabase.from('cloud_archive').select('file_url, title, origin_table').limit(10000);
+      const freshResources = dbError ? allResources : (dbData || []);
+      const dbUrls = new Set(freshResources.map(r => r.file_url));
 
       // Cross-reference: mark each asset as in_app or orphan
       const enriched: CloudinaryAsset[] = (data.assets || []).map((asset: CloudinaryAsset) => {
-        const matchingDb = allResources.find(r => r.file_url === asset.secure_url || r.file_url.includes(asset.public_id));
+        const matchingDb = freshResources.find(r => r.file_url === asset.secure_url || r.file_url.includes(asset.public_id));
         return {
           ...asset,
           status: (dbUrls.has(asset.secure_url) || matchingDb) ? 'in_app' : 'orphan',
@@ -286,7 +288,8 @@ export default function ResourcesPage() {
     return allResources.filter(r => {
       const isVault = r.origin_table === 'resource';
       if (activeTab === 'vault' && !isVault) return false;
-      if (activeTab === 'institutional' && isVault) return false;
+      if (activeTab === 'institutional' && (isVault || r.origin_table === 'group_chat')) return false;
+      if (activeTab === 'group_chat' && r.origin_table !== 'group_chat') return false;
       if (originFilter !== 'all' && r.origin_table !== originFilter) return false;
       if (typeFilter !== 'all' && getEffectiveType(r) !== typeFilter) return false;
       if (searchQuery) {
@@ -299,14 +302,15 @@ export default function ResourcesPage() {
 
   const stats = useMemo(() => {
     const vault = allResources.filter(r => r.origin_table === 'resource');
-    const institutional = allResources.filter(r => r.origin_table !== 'resource');
+    const groupChat = allResources.filter(r => r.origin_table === 'group_chat');
+    const institutional = allResources.filter(r => r.origin_table !== 'resource' && r.origin_table !== 'group_chat');
     // Use Cloudinary real storage if cloudAssets have been loaded (sum of all asset bytes)
     // Otherwise fall back to DB file_size sum
     const cloudinaryTotal = cloudAssets.length > 0
       ? cloudAssets.reduce((s, a) => s + (a.bytes || 0), 0)
       : null;
     const totalStorage = cloudinaryTotal ?? analytics?.storage?.total ?? allResources.reduce((s, r) => s + (r.file_size || 0), 0);
-    return { vaultCount: vault.length, institutionalCount: institutional.length, totalStorage };
+    return { vaultCount: vault.length, institutionalCount: institutional.length, groupChatCount: groupChat.length, totalStorage };
   }, [allResources, analytics, cloudAssets]);
 
   const usagePct = Math.min((stats.totalStorage / STORAGE_LIMIT) * 100, 100);
@@ -609,6 +613,18 @@ export default function ResourcesPage() {
               </span>
             </button>
             <button
+              onClick={() => { setActiveTab('group_chat'); setSelectedIds(new Set()); }}
+              className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === 'group_chat' ? 'bg-white text-primary-950 shadow-md' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Group Chats
+              <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black ${activeTab === 'group_chat' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'}`}>
+                {stats.groupChatCount}
+              </span>
+            </button>
+            <button
               onClick={() => { setActiveTab('cloudinary'); setSelectedIds(new Set()); setSelectedCloudIds(new Set()); }}
               className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 activeTab === 'cloudinary' ? 'bg-white text-primary-950 shadow-md' : 'text-gray-400 hover:text-gray-600'
@@ -720,6 +736,12 @@ export default function ResourcesPage() {
           <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl text-amber-800 text-xs font-semibold">
             <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
             <span>Files in the <strong>Admin Vault</strong> are stored privately. Use <strong>Push to App</strong> to publish them without re-uploading.</span>
+          </div>
+        )}
+        {activeTab === 'group_chat' && (
+          <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-2xl text-blue-800 text-xs font-semibold">
+            <MessageSquare className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+            <span>These are media files shared within <strong>Group Chats</strong>. They are live in the app. Deleting removes them from the chat completely.</span>
           </div>
         )}
         {activeTab === 'institutional' && (

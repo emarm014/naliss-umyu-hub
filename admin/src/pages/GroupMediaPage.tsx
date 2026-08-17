@@ -105,7 +105,7 @@ export default function GroupMediaPage() {
       let query = supabase
         .from('messages')
         .select('id, content, message_type, content_type, attachment_url, created_at, deleted_at, is_deleted, deleted_by_user_id, sender_id, group_id, metadata, sender:users!messages_sender_id_fkey(full_name, username, email, role, registration_number, level), group:groups!messages_group_id_fkey(name, group_type), deleted_by:users!messages_deleted_by_user_id_fkey(full_name, username)')
-        .or('message_type.in.(image,video,document,audio,file),content.ilike.%cloudinary%,attachment_url.not.is.null')
+        .or('message_type.in.(image,video,document,audio,file),content.ilike.*cloudinary*,attachment_url.not.is.null')
         .order('created_at', { ascending: false })
         .limit(1000);
 

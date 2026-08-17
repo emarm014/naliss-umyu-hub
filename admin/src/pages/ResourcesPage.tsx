@@ -9,12 +9,13 @@ import {
   Cloud, Loader2, Video, Archive, File, CheckCircle, Database,
   HardDrive, BookOpen, HelpCircle, Megaphone, CalendarDays,
   ShieldCheck, Server, Activity, Layers, Info, AlertTriangle,
-  RefreshCw, Image as ImageIcon, FileVideo, Link2,
-  Link2Off, MessageSquare,
+  RefreshCw, Link2,
+  Link2Off, MessageSquare, Play
 } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import ErrorState from '../components/ui/ErrorState';
 import InstitutionalDocumentViewer from '../components/InstitutionalDocumentViewer';
+import { getValidUrl, getVideoThumbnail } from '../utils/media';
 import { useFormDraft } from '../hooks/useFormDraft';
 
 interface CloudResource {
@@ -931,19 +932,29 @@ export default function ResourcesPage() {
                     {/* Color bar */}
                     <div className={`h-1.5 w-full ${isImage ? 'bg-amber-400' : isVideo ? 'bg-emerald-500' : 'bg-blue-500'}`} />
 
-                    {/* Thumbnail for images */}
-                    {isImage && (
-                      <div className="h-32 bg-gray-50 overflow-hidden relative">
-                        <img src={asset.secure_url} alt={fileName} className="w-full h-full object-cover" loading="lazy" />
-                        {/* Status badge overlay */}
-                        <div className={`absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
-                          isOrphan ? 'bg-amber-500 text-white' : isGroupChat ? 'bg-blue-500 text-white' : 'bg-emerald-500 text-white'
-                        }`}>
-                          {isOrphan ? <Link2Off className="w-3 h-3" /> : isGroupChat ? <MessageSquare className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
-                          {isOrphan ? 'Orphan' : isGroupChat ? 'Chat' : 'In App'}
+                    {/* Media Thumbnail */}
+                    <div className="h-32 bg-gray-50 overflow-hidden relative group-hover:opacity-90 transition-opacity">
+                      {isImage ? (
+                        <img src={getValidUrl(asset.secure_url)} alt={fileName} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                      ) : isVideo ? (
+                        <div className="w-full h-full relative bg-purple-50">
+                          <img src={getVideoThumbnail(getValidUrl(asset.secure_url))} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                            <div className="w-10 h-10 bg-purple-600/90 rounded-full flex items-center justify-center shadow-lg"><Play className="w-4 h-4 text-white ml-1" /></div>
+                          </div>
                         </div>
+                      ) : (
+                         <div className="w-full h-full flex items-center justify-center bg-blue-50/50"><FileText className="w-10 h-10 text-blue-300 group-hover:scale-110 transition-transform duration-300" /></div>
+                      )}
+                      
+                      {/* Status badge overlay */}
+                      <div className={`absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
+                        isOrphan ? 'bg-amber-500 text-white' : isGroupChat ? 'bg-blue-500 text-white' : 'bg-emerald-500 text-white'
+                      }`}>
+                        {isOrphan ? <Link2Off className="w-3 h-3" /> : isGroupChat ? <MessageSquare className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+                        {isOrphan ? 'Orphan' : isGroupChat ? 'Chat' : 'In App'}
                       </div>
-                    )}
+                    </div>
 
                     <div className="p-5 flex flex-col flex-1 gap-3">
                       {/* Header row */}
@@ -954,19 +965,7 @@ export default function ResourcesPage() {
                             className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300 hover:border-red-400'}`}>
                             {isSelected && <X className="w-3 h-3 text-white" />}
                           </button>
-                          <div className={`p-2 rounded-xl ${isImage ? 'bg-amber-50 text-amber-500' : isVideo ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
-                            {isImage ? <ImageIcon className="w-4 h-4" /> : isVideo ? <FileVideo className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-                          </div>
                         </div>
-                        {/* Status badge (for non-image cards) */}
-                        {!isImage && (
-                          <span className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
-                            isOrphan ? 'bg-amber-100 text-amber-700' : isGroupChat ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
-                          }`}>
-                            {isOrphan ? <Link2Off className="w-3 h-3" /> : isGroupChat ? <MessageSquare className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
-                            {isOrphan ? 'Orphan' : isGroupChat ? 'Chat' : 'In App'}
-                          </span>
-                        )}
                       </div>
 
                       {/* File info */}
@@ -1076,14 +1075,35 @@ export default function ResourcesPage() {
                   effectiveType === 'video' ? 'bg-emerald-500' : 'bg-gray-300'
                 }`} />
 
-                <div className="p-6 flex flex-col flex-1 gap-4">
-                  {/* Icon + badges + checkbox */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
+                {/* Media Thumbnail */}
+                <div className="h-32 bg-gray-50 overflow-hidden relative group-hover:opacity-90 transition-opacity">
+                  {effectiveType === 'image' ? (
+                    <img src={getValidUrl(resource.file_url)} alt={resource.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                  ) : effectiveType === 'video' ? (
+                    <div className="w-full h-full relative bg-purple-50">
+                      <img src={getVideoThumbnail(getValidUrl(resource.file_url))} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                        <div className="w-10 h-10 bg-purple-600/90 rounded-full flex items-center justify-center shadow-lg"><Play className="w-4 h-4 text-white ml-1" /></div>
+                      </div>
+                    </div>
+                  ) : (
+                     <div className="w-full h-full flex items-center justify-center bg-blue-50/50"><FileText className="w-10 h-10 text-blue-300 group-hover:scale-110 transition-transform duration-300" /></div>
+                  )}
+                  
+                  {/* Status badge overlay */}
+                  <div className={`absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase ${origin.color}`}>
+                    {origin.label}
+                  </div>
+                </div>
+
+                <div className="p-5 flex flex-col flex-1 gap-4">
+                  {/* Header row */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
                       {/* Checkbox */}
                       <button
                         onClick={() => toggleSelect(resource.id)}
-                        className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${
+                        className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${
                           selectedIds.has(resource.id)
                             ? 'bg-red-500 border-red-500'
                             : 'border-gray-300 hover:border-red-400'
@@ -1091,21 +1111,7 @@ export default function ResourcesPage() {
                       >
                         {selectedIds.has(resource.id) && <X className="w-3 h-3 text-white" />}
                       </button>
-                      <div className={`p-3 rounded-2xl ${
-                        effectiveType === 'document' ? 'bg-blue-50 text-blue-600' :
-                        effectiveType === 'image' ? 'bg-amber-50 text-amber-500' :
-                        effectiveType === 'video' ? 'bg-emerald-50 text-emerald-600' :
-                        'bg-gray-50 text-gray-400'
-                      }`}>
-                        {effectiveType === 'document' ? <FileText className="w-6 h-6" /> :
-                         effectiveType === 'image' ? <File className="w-6 h-6" /> :
-                         effectiveType === 'video' ? <Video className="w-6 h-6" /> :
-                         <Archive className="w-6 h-6" />}
-                      </div>
                     </div>
-                    <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${origin.color}`}>
-                      {origin.label}
-                    </span>
                   </div>
 
                   {/* Title */}

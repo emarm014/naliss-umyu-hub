@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useSegments } from 'expo-router';
 import { supabase } from '../api/supabase/client';
 import { useTheme } from '../stores/theme.store';
 import { mmkvStorage } from '../stores/mmkv.storage';
@@ -89,6 +89,7 @@ export function FeaturedStudentPopup() {
     const { profile, isProfileComplete } = useAuthStore();
     const signupEmail = useSignupStore(s => s.email);
     const signupStep = useSignupStore(s => s.currentStep);
+    const segments = useSegments();
     
     const [feature, setFeature] = useState<FeaturedStudent | null>(null);
     const [isVisible, setIsVisible] = useState(false);
@@ -171,9 +172,10 @@ export function FeaturedStudentPopup() {
 
     useEffect(() => {
         // Only show the popup when the user has FULLY completed registration.
-        // Prevents the popup from appearing on auth/signup screens (level, identity, etc.)
+        // Prevents the popup from appearing on auth/signup screens (level, identity, etc.) or login screen
         const isInSignupFlow = !!signupEmail || (signupStep != null && signupStep > 0);
-        if (!profile || isProfileComplete !== true || isInSignupFlow) return;
+        const isNotOnTabs = segments[0] !== '(tabs)';
+        if (!profile || isProfileComplete !== true || isInSignupFlow || isNotOnTabs) return;
         
         checkForActiveFeature();
 
@@ -203,7 +205,7 @@ export function FeaturedStudentPopup() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [profile, isProfileComplete, signupEmail, signupStep]);
+    }, [profile, isProfileComplete, signupEmail, signupStep, segments[0]]);
 
     // Realtime listener for incoming congratulations on featured student device
     useEffect(() => {
@@ -628,7 +630,7 @@ export function FeaturedStudentPopup() {
                                 </Text>
 
                                 <Text style={[styles.selfAwardSubtitle, { color: colors.textMuted }]}>
-                                    The admin has recognized your outstanding contribution and selected you for this honor. Fellow students can now congratulate you! 🎉
+                                    Your outstanding performance and contributions in the Department of Library and Information Science have been recognized. Fellow students can now celebrate this achievement with you! 🎉
                                 </Text>
 
                                 {feature.subtitle && (
@@ -719,8 +721,8 @@ export function FeaturedStudentPopup() {
 
                             {/* Content Area */}
                             <View style={styles.content}>
-                                <Text style={styles.classicMainTitle}>
-                                    Congratulations {feature.users?.full_name || 'Student'} you are featured as a {badge.text.replace(/[^a-zA-Z ]/g, '').trim().toLowerCase()}
+                                <Text style={[styles.classicMainTitle, { color: isDark ? '#34d399' : '#059669' }]}>
+                                    Congratulations to {feature.users?.full_name || 'this student'} for being featured as our {badge.text.replace(/[^a-zA-Z ]/g, '').trim().toLowerCase()}! 🎉
                                 </Text>
                                 
                                 {feature.subtitle && (
@@ -964,8 +966,8 @@ const styles = StyleSheet.create({
 
     // ── Other Users Congratulate Popup Styles ──
     popupContainer: {
-        width: '100%',
-        maxWidth: 400,
+        width: '92%',
+        maxWidth: 380,
         borderRadius: 28,
         overflow: 'hidden',
         borderWidth: 1.5,
@@ -1004,7 +1006,8 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 0, left: 0, right: 0, bottom: 0,
         justifyContent: 'space-between',
-        padding: 16,
+        padding: 12,
+        paddingHorizontal: 16,
     },
     overlayTopRow: {
         flexDirection: 'row',
@@ -1012,15 +1015,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     overlayBottomRow: {
-        paddingTop: 8,
+        paddingTop: 0,
     },
     studentNameOverlay: {
-        color: '#FFFFFF',
-        fontSize: 22,
+        color: '#fbbf24', // Golden color
+        fontSize: 23,
         fontWeight: '900',
-        textShadowColor: 'rgba(0, 0, 0, 0.8)',
+        textShadowColor: 'rgba(0, 0, 0, 0.85)',
         textShadowOffset: { width: 0, height: 2 },
-        textShadowRadius: 6,
+        textShadowRadius: 8,
     },
     badge: {
         alignSelf: 'flex-start',
@@ -1066,13 +1069,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     classicMainTitle: {
-        fontSize: 24,
+        fontSize: 21,
         fontWeight: '800',
-        fontStyle: 'italic',
-        color: '#059669',
         textAlign: 'center',
         marginBottom: 8,
-        lineHeight: 32,
+        lineHeight: 28,
+        letterSpacing: 0.3,
     },
     statsRow: {
         flexDirection: 'row',

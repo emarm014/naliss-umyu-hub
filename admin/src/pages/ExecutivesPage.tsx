@@ -5,13 +5,9 @@ import { useAdminDataStore } from '../store/adminData.store';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
-import {
-  Plus, Search, Edit, Trash2, User as UserIcon,
-  Crown, X, ChevronLeft, ChevronRight,
-  Linkedin, Twitter, Instagram, Facebook, Users, Activity,
-  ShieldAlert, Loader2, Image as ImageIcon
-} from 'lucide-react';
+import { Crown, Search, Edit, Trash2, Globe, Linkedin, Twitter, Facebook, Plus, AlertTriangle, ShieldCheck, Mail, Phone, Users, Activity, ShieldAlert, FileText, Play, Eye, X, Loader2, User as UserIcon, Instagram } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
+import { getValidUrl, getVideoThumbnail } from '../utils/media';
 import { useAuthStore } from '../store/auth.store';
 import { sortHierarchically } from '../utils/hierarchy';
 
@@ -63,10 +59,10 @@ export default function ExecutivesPage() {
   let filteredExecutives = allExecutives.filter(executive => {
     const displayName = executive.full_name || executive.linked_user?.full_name || '';
     const matchesSearch = displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         executive.position.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCurrent = currentFilter === 'all' || 
-                         (currentFilter === 'current' && executive.is_current) ||
-                         (currentFilter === 'past' && !executive.is_current);
+      executive.position.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCurrent = currentFilter === 'all' ||
+      (currentFilter === 'current' && executive.is_current) ||
+      (currentFilter === 'past' && !executive.is_current);
     const matchesSession = sessionFilter === 'all' || executive.academic_session === sessionFilter;
 
     return matchesSearch && matchesCurrent && matchesSession;
@@ -145,7 +141,7 @@ export default function ExecutivesPage() {
 
   const handleArchiveTenure = async (executive: Executive) => {
     if (!window.confirm(`Are you sure you want to end the tenure for ${executive.full_name} and shift them to Alumni?`)) return;
-    
+
     try {
       const { error } = await supabase
         .from('executives')
@@ -347,8 +343,8 @@ export default function ExecutivesPage() {
         <div className="glass-card p-6 border-l-4 border-l-green-500">
           <div className="flex items-center justify-between">
             <div>
-               <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Current Executives</p>
-               <p className="text-3xl font-extrabold text-primary-950 mt-1">{executiveStats.current}</p>
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Current Executives</p>
+              <p className="text-3xl font-extrabold text-primary-950 mt-1">{executiveStats.current}</p>
             </div>
             <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
               <Activity className="w-6 h-6 text-green-600" />
@@ -358,8 +354,8 @@ export default function ExecutivesPage() {
         <div className="glass-card p-6 border-l-4 border-l-amber-500">
           <div className="flex items-center justify-between">
             <div>
-               <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Past Executives</p>
-               <p className="text-3xl font-extrabold text-primary-950 mt-1">{executiveStats.past}</p>
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Past Executives</p>
+              <p className="text-3xl font-extrabold text-primary-950 mt-1">{executiveStats.past}</p>
             </div>
             <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center">
               <ShieldAlert className="w-6 h-6 text-amber-600" />
@@ -438,18 +434,18 @@ export default function ExecutivesPage() {
                   </div>
 
                   <div className="mt-5 pt-4 border-t border-slate-100 grid grid-cols-4 gap-2">
-                     {['linkedin', 'twitter', 'instagram', 'facebook'].map(platform => {
-                        const url = (executive.social_links as Record<string, string>)?.[platform];
-                        if(!url) return null;
-                        return (
-                           <a key={platform} href={url} target="_blank" rel="noopener noreferrer" className="h-8 flex justify-center items-center bg-slate-50 border border-slate-100 rounded-lg hover:bg-primary-50 hover:text-primary-600 text-slate-400 transition-colors">
-                              {platform === 'linkedin' && <Linkedin className="w-4 h-4"/>}
-                              {platform === 'twitter' && <Twitter className="w-4 h-4"/>}
-                              {platform === 'instagram' && <Instagram className="w-4 h-4"/>}
-                              {platform === 'facebook' && <Facebook className="w-4 h-4"/>}
-                           </a>
-                        );
-                     })}
+                    {['linkedin', 'twitter', 'instagram', 'facebook'].map(platform => {
+                      const url = (executive.social_links as Record<string, string>)?.[platform];
+                      if (!url) return null;
+                      return (
+                        <a key={platform} href={url} target="_blank" rel="noopener noreferrer" className="h-8 flex justify-center items-center bg-slate-50 border border-slate-100 rounded-lg hover:bg-primary-50 hover:text-primary-600 text-slate-400 transition-colors">
+                          {platform === 'linkedin' && <Linkedin className="w-4 h-4" />}
+                          {platform === 'twitter' && <Twitter className="w-4 h-4" />}
+                          {platform === 'instagram' && <Instagram className="w-4 h-4" />}
+                          {platform === 'facebook' && <Facebook className="w-4 h-4" />}
+                        </a>
+                      );
+                    })}
                   </div>
 
                   {canManageExec(executive) && (
@@ -529,26 +525,26 @@ export default function ExecutivesPage() {
                 </div>
                 <div><label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Session</label><input type="text" value={formData.academic_session} onChange={(e) => setFormData({ ...formData, academic_session: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border rounded-xl" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Email Address</label><input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border rounded-xl" /></div>
-                
+
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Biography / Introduction</label>
-                    <div><label htmlFor="is_current" className="text-sm font-bold text-slate-900 cursor-pointer">Current Administration</label><p className="text-xs font-medium text-slate-500">Uncheck to archive this executive into legacy records.</p></div>
+                  <div><label htmlFor="is_current" className="text-sm font-bold text-slate-900 cursor-pointer">Current Administration</label><p className="text-xs font-medium text-slate-500">Uncheck to archive this executive into legacy records.</p></div>
                 </div>
               </div>
             </form>
             <div className="flex flex-col gap-3 p-6 bg-slate-50 border-t border-slate-100">
-               {formError && (
-                 <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-100 rounded-xl">
-                   <Crown className="w-4 h-4 text-red-500 shrink-0" />
-                   <p className="text-sm font-medium text-red-700">{formError}</p>
-                 </div>
-               )}
-               <div className="flex justify-end gap-3">
-               <button type="button" onClick={() => setShowModal(null)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl">Cancel</button>
-               <button 
-                  type="submit" 
-                  form="exec-form" 
-                  disabled={isSubmitting} 
+              {formError && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-100 rounded-xl">
+                  <Crown className="w-4 h-4 text-red-500 shrink-0" />
+                  <p className="text-sm font-medium text-red-700">{formError}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setShowModal(null)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl">Cancel</button>
+                <button
+                  type="submit"
+                  form="exec-form"
+                  disabled={isSubmitting}
                   className="btn-institutional px-8 py-2.5 min-w-[180px] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
@@ -563,7 +559,7 @@ export default function ExecutivesPage() {
                     </>
                   )}
                 </button>
-               </div>
+              </div>
             </div>
           </div>
         </div>
@@ -578,22 +574,21 @@ export default function ExecutivesPage() {
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">Executive Photos</h2>
                 <p className="text-sm text-slate-500 font-medium">Gallery for {selectedExecutive.full_name}</p>
               </div>
-              <button 
-                onClick={() => setShowModal(null)} 
+              <button
+                onClick={() => setShowModal(null)}
                 className="p-2 bg-white text-slate-400 hover:text-slate-600 rounded-xl shadow-sm border border-slate-200"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-6">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                 {/* Photo Upload */}
                 <div className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center p-4 group hover:border-primary-500 hover:bg-primary-50/30 transition-all duration-300">
-                  <FileUpload 
-                    accept="image/*" 
-                    isImage={true} 
-                    folder="executive-photos" 
+                  <FileUpload
+                    accept="image/*,video/*"
+                    folder="executive-photos"
                     onUploadComplete={async (url) => {
                       try {
                         const { error } = await supabase.from('photos').insert({
@@ -607,35 +602,55 @@ export default function ExecutivesPage() {
                       } catch (err: unknown) {
                         setFormError((err as Error)?.message || 'Failed to save photo.');
                       }
-                    }} 
+                    }}
                     label="Upload"
                   />
                 </div>
 
                 {/* Photo Gallery */}
-                {selectedExecutive.photos?.map((photo) => (
-                  <div key={photo.id} className="aspect-square relative group bg-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-slate-100">
-                    <img 
-                      src={photo.url} 
-                      alt="" 
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
-                    />
-                    <div className="absolute inset-0 bg-primary-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-4">
-                        <button 
-                          onClick={() => handleSetProfilePhoto(photo.url)}
-                          className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 transition-colors"
+                {selectedExecutive.photos?.map((photo) => {
+                  const isImage = photo.url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) != null;
+                  const isVideo = photo.url.match(/\.(mp4|webm|ogg|mov|avi)$/i) != null;
+                  return (
+                    <div key={photo.id} className="aspect-square relative group bg-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-slate-100">
+                      {isImage ? (
+                        <img src={getValidUrl(photo.url)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      ) : isVideo ? (
+                        <div className="w-full h-full relative bg-purple-50">
+                          <img src={getVideoThumbnail(getValidUrl(photo.url))} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                            <div className="w-10 h-10 bg-purple-600/90 rounded-full flex items-center justify-center shadow-lg"><Play className="w-4 h-4 text-white ml-1" /></div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-blue-50/50"><FileText className="w-10 h-10 text-blue-300 group-hover:scale-110 transition-transform duration-300" /></div>
+                      )}
+                      <div className="absolute inset-0 bg-primary-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-4 gap-2">
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(photo.url, '_blank'); }}
+                          className="w-full py-1.5 bg-white hover:bg-slate-50 text-slate-900 rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 transition-colors"
+                          title="Preview"
                         >
-                          <UserIcon className="w-3.5 h-3.5" /> SET AVATAR
+                          <Eye className="w-3.5 h-3.5" /> PREVIEW
                         </button>
-                        <button 
+                        {isImage && (
+                          <button
+                            onClick={() => handleSetProfilePhoto(photo.url)}
+                            className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <UserIcon className="w-3.5 h-3.5" /> SET AVATAR
+                          </button>
+                        )}
+                        <button
                           onClick={() => handleDeletePhoto(photo.id)}
                           className="w-full py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> DELETE
                         </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {(!selectedExecutive.photos || selectedExecutive.photos.length === 0) && (

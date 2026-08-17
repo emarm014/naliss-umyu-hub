@@ -636,7 +636,11 @@ export const useAuthStore = create<AuthState>()(
         localAvatarUrl: state.localAvatarUrl,
         pendingAvatarUpload: state.pendingAvatarUpload,
       }),
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error("Auth store rehydration failed", error);
+          useAuthStore.setState({ _hasHydrated: true });
+        }
         if (state) {
           state.isLoading = false;
           state._hasHydrated = true;

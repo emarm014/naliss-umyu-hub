@@ -20,33 +20,7 @@ try {
 } catch (e) {}
 
 const saveGlobalCache = () => {
-    scheduleCacheFlush();
-};
-
-// Debounced async MMKV cache flush — prevents main thread freezing
-let cacheFlushTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingCacheData: string | null = null;
-
-const scheduleCacheFlush = () => {
-    // Snapshot the current cache synchronously (fast — just a reference copy)
-    pendingCacheData = JSON.stringify(globalMemoryCache);
-    
-    if (cacheFlushTimer) clearTimeout(cacheFlushTimer);
-    
-    cacheFlushTimer = setTimeout(() => {
-        if (pendingCacheData) {
-            // Write to MMKV asynchronously — won't block the main thread
-            (async () => {
-                try {
-                    await setSyncItem('global_image_cache', pendingCacheData!);
-                } catch (e) {
-                    console.warn('[CachedImage] Failed to flush memory cache to MMKV:', e);
-                }
-                pendingCacheData = null;
-            })();
-        }
-        cacheFlushTimer = null;
-    }, 2000); // Wait 2 seconds after last image load before writing
+  setSyncItem('global_image_cache', JSON.stringify(globalMemoryCache));
 };
 
 export type AssetType = 'user' | 'executive' | 'lecturer' | 'gallery' | 'gallery_cover' | 'avatar' | 'chat_media' | 'fyb_poster' | 'announcement_cover' | 'news_image' | (string & {});
@@ -82,6 +56,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
     const [localUri, setLocalUri] = useState<string | null>(preCachedUri);
     const [loading, setLoading] = useState<boolean>(!preCachedUri);
     const [hasError, setHasError] = useState<boolean>(false);
+    const [retryCount, setRetryCount] = useState<number>(0);
     const { colors, isDark } = useThemeStore();
 
     const handleLongPress = async () => {
@@ -99,8 +74,8 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         let isMounted = true;
         setHasError(false);
         
-        // If it's already solved via memory cache, do not show loaders or run async SQLite queries
-        if (preCachedUri) {
+        // If it's already solved via memory cache, and we haven't failed yet, do not show loaders or run async SQLite queries
+        if (preCachedUri && retryCount === 0) {
             return;
         }
 
@@ -120,14 +95,19 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     // 2. Verify file exists
                     const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
                     if (fileInfo.exists) {
-                        globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: cached.local_path });
-                        saveGlobalCache();
-                        if (isMounted) {
-                            setLocalUri(cached.local_path);
-                            setHasError(false); // ← CRITICAL: reset error so cached image can render
-                            setLoading(false);
+                        if (retryCount > 0) {
+                            // File exists but failed to render (corrupt). Delete it to force re-download.
+                            try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
+                        } else {
+                            globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: cached.local_path });
+                            saveGlobalCache();
+                            if (isMounted) {
+                                setLocalUri(cached.local_path);
+                                setHasError(false); // ← CRITICAL: reset error so cached image can render
+                                setLoading(false);
+                            }
+                            return;
                         }
-                        return;
                     }
                 }
 
@@ -175,6 +155,8 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                         setLocalUri(result.uri);
                         setHasError(false); // ← CRITICAL: reset error so downloaded image can render
                     }
+                } else {
+                    if (isMounted) setHasError(true);
                 }
             } catch (err: any) {
                 // Use debug-level logging to avoid flooding Sentry breadcrumbs when offline
@@ -195,7 +177,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         return () => {
             isMounted = false;
         };
-    }, [entityId, remoteUrl, assetType]);
+    }, [entityId, remoteUrl, assetType, retryCount]);
 
     const initials = fallbackInitials || (fallbackName ? fallbackName.slice(0, 2).toUpperCase() : null);
 
@@ -216,10 +198,21 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     blurRadius={blurRadius}
                     onLoad={() => { setLoading(false); setHasError(false); }}
                     onError={() => { 
-                        // Local file is corrupt/missing — clear it so fallback shows
-                        setLocalUri(null); 
-                        setLoading(false); 
-                        setHasError(true); 
+                        if (retryCount === 0) {
+                            // Local file is corrupt or missing from new device — clear cache and retry
+                            if (entityId && globalMemoryCache[entityId]) {
+                                delete globalMemoryCache[entityId];
+                                saveGlobalCache();
+                            }
+                            setLocalUri(null); 
+                            setLoading(true); 
+                            setHasError(false); 
+                            setRetryCount(1); // Trigger useEffect to re-download
+                        } else {
+                            setLocalUri(null); 
+                            setLoading(false); 
+                            setHasError(true); 
+                        }
                     }}
                 />
                 {loading && (

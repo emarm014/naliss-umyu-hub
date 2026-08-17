@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Department } from '../types';
+import FileUpload from '../lib/FileUpload';
+import { getValidUrl, getVideoThumbnail } from '../utils/media';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import { useAuthStore } from '../store/auth.store';
@@ -27,9 +29,11 @@ import {
   ShieldAlert,
   Users,
   Building,
-  Loader2
+  Loader2,
+  Play,
+  FileText,
+  Eye
 } from 'lucide-react';
-import FileUpload from '../lib/FileUpload';
 
 import { useAdminDataStore } from '../store/adminData.store';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
@@ -890,12 +894,11 @@ export default function LecturersPage() {
                   </h3>
                         <div className="space-y-4">
                         <FileUpload
-                            accept="image/*"
-                            isImage={true}
+                            accept="image/*,video/*"
                             folder="photos"
                             onUploadComplete={(url: string) => setPhotoUrl(url)}
                             currentFileUrl={photoUrl}
-                            label="Upload Image"
+                            label="Upload Media"
                         />
                         <input
                             type="text"
@@ -935,36 +938,55 @@ export default function LecturersPage() {
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Lecturer Photos ({selectedLecturer.photos?.length || 0})</h3>
                     {selectedLecturer.photos && selectedLecturer.photos.length > 0 ? (
                         <div className="grid grid-cols-2 gap-4">
-                        {selectedLecturer.photos.map((photo) => (
-                            <div key={photo.id} className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-sm">
-                            <img
-                                src={photo.url}
-                                alt={photo.caption || ''}
-                                className="w-full h-48 object-cover"
-                            />
-                            {photo.caption && (
-                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent pt-8 pb-3 px-4">
-                                   <p className="text-white text-xs font-medium tracking-wide truncate">{photo.caption}</p>
+                        {selectedLecturer.photos.map((photo) => {
+                            const isImage = photo.url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) != null;
+                            const isVideo = photo.url.match(/\.(mp4|webm|ogg|mov|avi)$/i) != null;
+                            return (
+                                <div key={photo.id} className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-sm aspect-square bg-slate-50">
+                                    {isImage ? (
+                                        <img src={getValidUrl(photo.url)} alt={photo.caption || ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                    ) : isVideo ? (
+                                        <div className="w-full h-full relative bg-purple-50">
+                                            <img src={getVideoThumbnail(getValidUrl(photo.url))} alt={photo.caption || ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                                <div className="w-10 h-10 bg-purple-600/90 rounded-full flex items-center justify-center shadow-lg"><Play className="w-4 h-4 text-white ml-1" /></div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-blue-50/50"><FileText className="w-10 h-10 text-blue-300 group-hover:scale-110 transition-transform duration-300" /></div>
+                                    )}
+                                    {photo.caption && (
+                                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent pt-8 pb-3 px-4">
+                                           <p className="text-white text-xs font-medium tracking-wide truncate">{photo.caption}</p>
+                                        </div>
+                                    )}
+                                    {/* Hover Actions */}
+                                    <div className="absolute inset-0 bg-primary-950/80 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-3 backdrop-blur-sm">
+                                        <button
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(photo.url, '_blank'); }}
+                                            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg transition-colors w-32 shadow-lg flex items-center justify-center gap-2"
+                                            title="Preview"
+                                        >
+                                            <Eye className="w-3.5 h-3.5" /> Preview
+                                        </button>
+                                        {isImage && (
+                                            <button
+                                            onClick={() => handleSetProfilePhoto(photo.url)}
+                                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg border border-white/20 transition-colors w-32"
+                                            >
+                                            Set as Official
+                                            </button>
+                                        )}
+                                        <button
+                                        onClick={() => handleDeletePhoto(photo.id)}
+                                        className="px-4 py-2 bg-red-500/80 hover:bg-red-500 text-white text-xs font-bold rounded-lg shadow-sm transition-colors w-32"
+                                        >
+                                        Delete Photo
+                                        </button>
+                                    </div>
                                 </div>
-                            )}
-                            {/* Hover Actions */}
-                            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-3xl transition-opacity animate-in fade-in duration-500" onClick={() => setShowModal(null)}></div>
-                            <div className="absolute inset-0 bg-primary-950/80 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-3 backdrop-blur-sm">
-                                <button
-                                onClick={() => handleSetProfilePhoto(photo.url)}
-                                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg border border-white/20 transition-colors w-32"
-                                >
-                                Set as Official
-                                </button>
-                                <button
-                                onClick={() => handleDeletePhoto(photo.id)}
-                                className="px-4 py-2 bg-red-500/80 hover:bg-red-500 text-white text-xs font-bold rounded-lg shadow-sm transition-colors w-32"
-                                >
-                                Delete Photo
-                                </button>
-                            </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                         </div>
                     ) : (
                         <div className="h-64 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center bg-slate-50 text-slate-400">

@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/react-native';
 import { useRouter, useSegments, usePathname } from 'expo-router';
 import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, SafeAreaView, Platform, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore, useSettingsStore, useTheme } from '../stores';
+import { useAuthStore, useSettingsStore, useTheme, useDataRestoreStore } from '../stores';
 import MaintenanceScreen from '../../app/maintenance';
 import { useSignupStore, useGlobalSyncStore } from '../stores';
 import { cleanupIncompleteSignup } from '../utils/signup-cleanup';
@@ -67,7 +67,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           // Skip device session verification if offline — will retry on next app foreground
           const NetInfo = require('@react-native-community/netinfo').default;
           const netState = await NetInfo.fetch();
-          if (!netState.isConnected) {
+          const isOnline = !!(netState.isConnected && netState.isInternetReachable !== false);
+          if (!isOnline) {
             if (isSubscribed) {
               setDeviceSessionChecked(true); // Allow app to render from cache
             }
@@ -78,13 +79,16 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           const ipAddress = await fetchIpAddress();
           const deviceName = getDeviceName();
 
-          // 1. Fetch active sessions from the DB
-          const { data: activeSessions, error: fetchErr } = await (supabase as any)
+          // 1. Fetch active sessions from the DB with a 3-second timeout
+          const fetchPromise = (supabase as any)
             .from('user_sessions')
             .select('device_id, is_active, device_name, os, ip_address, last_active_at')
             .eq('user_id', session.user.id)
             .eq('is_active', true)
             .order('last_active_at', { ascending: false });
+
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Network timeout')), 3000));
+          const { data: activeSessions, error: fetchErr } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
           if (fetchErr) throw normalizeError(fetchErr);
           if (!isSubscribed) return;
@@ -335,9 +339,22 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // 1.1 Activate Global Ecosystem Sync when session is active
   // NOTE: We intentionally do NOT terminate on cleanup here â€” that would kill
   // realtime channels on every navigation. terminate() is only called on sign-out.
+  const restoreCompleted = useDataRestoreStore(s => s.restoreCompleted);
+  const wasSkipped = useDataRestoreStore(s => s.wasSkipped);
+
   useEffect(() => {
     if (session && (isProfileComplete === true || offlineUnblocked)) {
-      useGlobalSyncStore.getState().initialize();
+      const restoreStore = useDataRestoreStore.getState();
+      
+      // Perform synchronous device detection before we jump the gun and sync everything
+      if (!restoreStore.restoreCompleted && !restoreStore.wasSkipped) {
+        restoreStore.detectNewDevice();
+      }
+
+      // Only initialize global sync if we are NOT holding back for the data restore screen
+      if (!restoreStore.isNewDevice || restoreStore.restoreCompleted || restoreStore.wasSkipped) {
+        useGlobalSyncStore.getState().initialize();
+      }
     }
     // No cleanup / terminate here â€” channels must survive navigation
     // CRITICAL: Do NOT include store functions in dependencies

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, Plus, Search, Edit, Trash2, Calendar, Globe, Newspaper, Tag, Clock, ShieldCheck, X, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { CheckCircle, Plus, Search, Edit, Trash2, Calendar, Globe, Newspaper, Tag, Clock, ShieldCheck, X, ChevronLeft, ChevronRight, Eye, Play, FileText } from 'lucide-react';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
+import { getValidUrl, getVideoThumbnail } from '../utils/media';
 import FileUpload from '../lib/FileUpload';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useFormDraft } from '../hooks/useFormDraft';
@@ -401,30 +402,43 @@ export default function NewsManagementPage() {
               {(((item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 0) || item.image_url) && (
                 <div className="mt-4 space-y-2 border-t border-gray-50 pt-4 w-full">
                   {((item as any).files && Array.isArray((item as any).files) && (item as any).files.length > 0) ? (
-                    (item as any).files.map((file: any, idx: number) => (
-                       <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
-                         <div className="flex items-center gap-2 overflow-hidden">
-                            <img src={file.url} alt="thumbnail" className="w-8 h-8 rounded-lg object-cover" />
-                            <span className="text-xs font-medium text-slate-700 truncate">{file.name || 'Attached Image'}</span>
-                         </div>
-                         <div className="flex items-center gap-1 shrink-0">
-                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(file.url, '_blank'); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
-                           {canManageNews(item) && (
-                             <button onClick={(e) => handleDeleteIndividualFile(item, idx, e)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {(item as any).files.map((file: any, idx: number) => {
+                       const isImage = file.url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) != null;
+                       const isVideo = file.url.match(/\.(mp4|webm|ogg|mov|avi)$/i) != null;
+                       return (
+                         <div key={idx} className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-100 bg-slate-50">
+                           {isImage ? (
+                             <img src={getValidUrl(file.url)} alt="thumbnail" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                           ) : isVideo ? (
+                             <div className="w-full h-full relative bg-purple-50">
+                               <img src={getVideoThumbnail(getValidUrl(file.url))} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                               <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                 <div className="w-8 h-8 bg-purple-600/90 rounded-full flex items-center justify-center shadow-lg"><Play className="w-3 h-3 text-white ml-0.5" /></div>
+                               </div>
+                             </div>
+                           ) : (
+                             <div className="w-full h-full flex items-center justify-center bg-blue-50/50"><FileText className="w-8 h-8 text-blue-300 group-hover:scale-110 transition-transform duration-300" /></div>
                            )}
+                           <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                             <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(file.url, '_blank'); }} className="p-2 bg-white/20 hover:bg-white text-white hover:text-slate-900 rounded-full transition-colors"><Eye className="w-4 h-4" /></button>
+                             {canManageNews(item) && (
+                               <button onClick={(e) => handleDeleteIndividualFile(item, idx, e)} className="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors"><Trash2 className="w-4 h-4" /></button>
+                             )}
+                           </div>
                          </div>
-                       </div>
-                    ))
+                       );
+                    })}
+                    </div>
                   ) : item.image_url ? (
-                       <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100">
-                         <div className="flex items-center gap-2 overflow-hidden">
-                            <img src={item.image_url} alt="thumbnail" className="w-8 h-8 rounded-lg object-cover" />
-                            <span className="text-xs font-medium text-slate-700 truncate">Attached Image</span>
-                         </div>
-                         <div className="flex items-center gap-1 shrink-0">
-                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(item.image_url || '', '_blank'); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Preview"><Eye className="w-4 h-4" /></button>
-                         </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                       <div className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-100 bg-slate-50">
+                          <img src={getValidUrl(item.image_url)} alt="thumbnail" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(item.image_url || '', '_blank'); }} className="p-2 bg-white/20 hover:bg-white text-white hover:text-slate-900 rounded-full transition-colors"><Eye className="w-4 h-4" /></button>
+                          </div>
                        </div>
+                    </div>
                   ) : null}
                 </div>
               )}

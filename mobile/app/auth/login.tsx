@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import * as Sentry from '@sentry/react-native';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert, StatusBar, Dimensions,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
+  Alert, StatusBar, Dimensions, TouchableWithoutFeedback, Keyboard
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
@@ -25,6 +26,7 @@ const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   useSentryScreen('LoginScreen');
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -326,221 +328,356 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.root}>
-      <StatusBar barStyle="light-content" />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.root}>
+        <StatusBar barStyle="light-content" />
 
-      {/* Hero gradient header */}
-      <LinearGradient
-        colors={['#052e16', '#14532d', '#166534']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.hero}
-      >
-        <View style={styles.heroDeco1} />
-        <View style={styles.heroDeco2} />
-        <View style={styles.heroDeco3} />
-        <View style={styles.heroContent}>
-          <View style={styles.logoRing}>
-            <NalissLogo size={56} />
-          </View>
-          <Text style={styles.heroTitle}>NALISS UMYU HUB</Text>
-          <Text style={styles.heroTagline}>Information is Light</Text>
-        </View>
-      </LinearGradient>
+        {/* Solid Curved Background */}
+        <View style={styles.headerBg} />
 
-      {/* Form card */}
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Welcome Back</Text>
-          <Text style={styles.cardSub}>Sign in to your student account</Text>
-
-          {/* Email */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Institutional Email</Text>
-            <View style={[styles.inputRow, emailFocused && styles.inputFocused]}>
-              <Ionicons name="mail-outline" size={18} color={emailFocused ? COLORS.primary : '#94a3b8'} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="@students.umyu.edu.ng"
-                placeholderTextColor="#cbd5e1"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                textContentType="none"
-                keyboardType="email-address"
-                onFocus={() => setEmailFocused(true)}
-                onBlur={() => setEmailFocused(false)}
-              />
+        <View style={[styles.mainContent, { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20) }]}>
+          
+          {/* Header Area (Logo & Title) */}
+          <View style={styles.headerArea}>
+            <View style={styles.logoContainer}>
+              <NalissLogo size={46} />
             </View>
+            <Text style={styles.headerTitle}>NALISS UMYU HUB</Text>
+            <Text style={styles.headerTagline}>INFORMATION IS LIGHT</Text>
           </View>
 
-          {/* Password */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Password</Text>
-            <View style={[styles.inputRow, passwordFocused && styles.inputFocused]}>
-              <Ionicons name="lock-closed-outline" size={18} color={passwordFocused ? COLORS.primary : '#94a3b8'} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your password"
-                placeholderTextColor="#cbd5e1"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                onFocus={() => setPasswordFocused(true)}
-                onBlur={() => setPasswordFocused(false)}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#94a3b8" />
+          {/* Form Card */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Welcome Back</Text>
+            <Text style={styles.cardSub}>Sign in to your student account</Text>
+
+            {/* Email */}
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>INSTITUTIONAL EMAIL</Text>
+              <View style={[styles.inputRow, emailFocused && styles.inputFocused]}>
+                <Ionicons name="mail-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="@students.umyu.edu.ng"
+                  placeholderTextColor="#cbd5e1"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  textContentType="none"
+                  keyboardType="email-address"
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
+                />
+              </View>
+            </View>
+
+            {/* Password */}
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>PASSWORD</Text>
+              <View style={[styles.inputRow, passwordFocused && styles.inputFocused]}>
+                <Ionicons name="lock-closed-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#cbd5e1"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => setPasswordFocused(false)}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              {/* Forgot password */}
+              <TouchableOpacity onPress={() => router.push('/auth/reset-password')} style={styles.forgotRow}>
+                <Text style={styles.forgotLink}>Forgot password?</Text>
               </TouchableOpacity>
             </View>
-            {/* Forgot password — below input, right-aligned */}
-            <TouchableOpacity onPress={() => router.push('/auth/reset-password')} style={styles.forgotRow}>
-              <Text style={styles.forgotLink}>Forgot password?</Text>
+
+            {/* Sign In */}
+            <TouchableOpacity
+              style={[styles.primaryBtn, (isLoading || !isOnline) && styles.btnDisabled]}
+              onPress={handleLogin}
+              disabled={isLoading || isGoogleLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.primaryBtnText}>{isOnline ? 'Sign In' : 'No Connection'}</Text>
+              )}
             </TouchableOpacity>
-          </View>
 
-          {/* Sign In */}
-          <TouchableOpacity
-            style={[styles.primaryBtn, (isLoading || !isOnline) && styles.btnDisabled]}
-            onPress={handleLogin}
-            disabled={isLoading || isGoogleLoading}
-            activeOpacity={0.85}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.primaryBtnText}>{isOnline ? 'Sign In' : 'No Connection'}</Text>
-            )}
-          </TouchableOpacity>
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or continue with</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
+            {/* Google */}
+            <TouchableOpacity
+              style={[styles.googleBtn, isGoogleLoading && styles.btnDisabled]}
+              onPress={handleGoogleAuth}
+              disabled={isLoading || isGoogleLoading}
+              activeOpacity={0.85}
+            >
+              {isGoogleLoading ? (
+                <ActivityIndicator color="#ef4444" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="logo-google" size={18} color="#ef4444" />
+                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-          {/* Google */}
-          <TouchableOpacity
-            style={[styles.googleBtn, isGoogleLoading && styles.btnDisabled]}
-            onPress={handleGoogleAuth}
-            disabled={isLoading || isGoogleLoading}
-            activeOpacity={0.85}
-          >
-            {isGoogleLoading ? (
-              <ActivityIndicator color="#ef4444" size="small" />
-            ) : (
-              <>
-                <Ionicons name="logo-google" size={18} color="#ef4444" />
-                <Text style={styles.googleBtnText}>Continue with Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            {/* Register */}
+            <View style={styles.registerRow}>
+              <Text style={styles.registerText}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/auth/eligibility' as any)}>
+                <Text style={styles.registerLink}>Create Account</Text>
+              </TouchableOpacity>
+            </View>
 
-          {/* Privacy Policy */}
-          <View style={styles.policyRow}>
+            {/* Privacy Policy */}
+            <View style={styles.policyRow}>
               <TouchableOpacity onPress={() => router.push('/auth/privacy-policy' as any)}>
-                  <Text style={styles.policyLink}>Privacy Policy</Text>
+                <Text style={styles.policyLink}>PRIVACY POLICY</Text>
               </TouchableOpacity>
               <Text style={styles.policySeparator}>·</Text>
               <TouchableOpacity onPress={() => router.push('/auth/terms-of-service' as any)}>
-                  <Text style={styles.policyLink}>Terms of Service</Text>
+                <Text style={styles.policyLink}>TERMS OF SERVICE</Text>
               </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Register */}
-          <View style={styles.registerRow}>
-            <Text style={styles.registerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/auth/eligibility' as any)}>
-              <Text style={styles.registerLink}>Create Account</Text>
-            </TouchableOpacity>
+          {/* Footer Area */}
+          <View style={styles.footerArea}>
+            <Text style={styles.footerText}>NALISS UMYU HUB © 2026 • LIS DEPARTMENT</Text>
           </View>
+
         </View>
-
-        <Text style={styles.footer}>NALISS UMYU HUB © 2026 • LIS Department</Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f8fafc' },
-  hero: {
-    height: height * 0.30,
-    justifyContent: 'flex-end',
-    paddingBottom: 28,
-    overflow: 'hidden',
+  root: { 
+    flex: 1, 
+    backgroundColor: '#f8fafc' 
   },
-  heroDeco1: { position: 'absolute', top: -50, right: -50, width: 180, height: 180, borderRadius: 90, backgroundColor: 'rgba(255,255,255,0.05)' },
-  heroDeco2: { position: 'absolute', top: 10, left: -70, width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.04)' },
-  heroDeco3: { position: 'absolute', bottom: -30, right: 30, width: 110, height: 110, borderRadius: 55, backgroundColor: 'rgba(255,255,255,0.04)' },
-  heroContent: { alignItems: 'center', paddingHorizontal: 24 },
-  logoRing: {
-    width: 76, height: 76, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 14,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+  headerBg: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: height * 0.48,
+    backgroundColor: '#0a7e51',
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
   },
-  heroTitle: { fontSize: 20, fontFamily: 'Inter-Bold', color: '#fff', letterSpacing: 1.5, marginBottom: 3 },
-  heroTagline: { fontSize: 12, fontFamily: 'Inter-Medium', color: 'rgba(255,255,255,0.55)', letterSpacing: 2.5, textTransform: 'uppercase' },
-  scroll: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 32 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 28,
-    padding: 28,
-    marginTop: -22,
+  mainContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: 'space-between',
+  },
+  headerArea: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  logoContainer: {
+    width: 76,
+    height: 76,
+    backgroundColor: '#ffffff',
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.07,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
     elevation: 8,
   },
-  cardTitle: { fontSize: 22, fontFamily: 'Inter-Bold', color: '#0f172a', marginBottom: 3, textAlign: 'center' },
-  cardSub: { fontSize: 13, fontFamily: 'Inter-Regular', color: '#64748b', marginBottom: 26, textAlign: 'center' },
-  field: { marginBottom: 18 },
-  fieldLabel: { fontSize: 12, fontFamily: 'Inter-SemiBold', color: '#374151', marginBottom: 7, textTransform: 'uppercase', letterSpacing: 0.5 },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
-  forgotLink: { fontSize: 12, fontFamily: 'Inter-SemiBold', color: COLORS.primary },
-  forgotRow: { alignItems: 'flex-end', marginTop: 8 },
+  headerTitle: {
+    fontSize: 22,
+    fontFamily: 'Inter-Bold',
+    color: '#ffffff',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  headerTagline: {
+    fontSize: 11,
+    fontFamily: 'Inter-SemiBold',
+    color: '#d1fae5',
+    letterSpacing: 3,
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 10,
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  cardTitle: { 
+    fontSize: 22, 
+    fontFamily: 'Inter-Bold', 
+    color: '#1f2937', 
+    marginBottom: 6, 
+    textAlign: 'center' 
+  },
+  cardSub: { 
+    fontSize: 14, 
+    fontFamily: 'Inter-Regular', 
+    color: '#4b5563', 
+    marginBottom: 24, 
+    textAlign: 'center' 
+  },
+  field: { 
+    marginBottom: 16 
+  },
+  fieldLabel: { 
+    fontSize: 11, 
+    fontFamily: 'Inter-Bold', 
+    color: '#374151', 
+    marginBottom: 8, 
+    letterSpacing: 0.5 
+  },
   inputRow: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#f8fafc', borderRadius: 14,
-    borderWidth: 1.5, borderColor: '#e2e8f0',
-    paddingHorizontal: 14, height: 52,
+    flexDirection: 'row', 
+    alignItems: 'center',
+    backgroundColor: '#ffffff', 
+    borderRadius: 8,
+    borderWidth: 1, 
+    borderColor: '#d1d5db',
+    paddingHorizontal: 12, 
+    height: 48,
   },
-  inputFocused: { borderColor: COLORS.primary, backgroundColor: '#f0fdf4' },
-  inputIcon: { marginRight: 10 },
-  input: { flex: 1, fontSize: 15, fontFamily: 'Inter-Regular', color: '#0f172a', height: '100%' },
-  eyeBtn: { padding: 4 },
+  inputFocused: { 
+    borderColor: '#0a7e51', 
+    borderWidth: 1.5,
+  },
+  inputIcon: { 
+    marginRight: 8 
+  },
+  input: { 
+    flex: 1, 
+    fontSize: 14, 
+    fontFamily: 'Inter-Regular', 
+    color: '#1f2937', 
+    height: '100%' 
+  },
+  eyeBtn: { 
+    padding: 4 
+  },
+  forgotRow: { 
+    alignItems: 'flex-end', 
+    marginTop: 8 
+  },
+  forgotLink: { 
+    fontSize: 13, 
+    fontFamily: 'Inter-SemiBold', 
+    color: '#026a3d' 
+  },
   primaryBtn: {
-    backgroundColor: COLORS.primary, height: 52, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center', marginTop: 6,
-    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28, shadowRadius: 10, elevation: 5,
+    backgroundColor: '#026a3d', 
+    height: 48, 
+    borderRadius: 12,
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    marginTop: 8,
   },
-  primaryBtnText: { color: '#fff', fontSize: 15, fontFamily: 'Inter-Bold', letterSpacing: 0.3 },
-  btnDisabled: { opacity: 0.55 },
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 22 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#e2e8f0' },
-  dividerText: { marginHorizontal: 12, fontSize: 11, fontFamily: 'Inter-Medium', color: '#94a3b8' },
+  primaryBtnText: { 
+    color: '#ffffff', 
+    fontSize: 15, 
+    fontFamily: 'Inter-Bold', 
+    letterSpacing: 0.2 
+  },
+  btnDisabled: { 
+    opacity: 0.6 
+  },
+  divider: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginVertical: 20 
+  },
+  dividerLine: { 
+    flex: 1, 
+    height: 1, 
+    backgroundColor: '#e5e7eb' 
+  },
+  dividerText: { 
+    marginHorizontal: 12, 
+    fontSize: 12, 
+    fontFamily: 'Inter-Regular', 
+    color: '#6b7280' 
+  },
   googleBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    height: 52, borderRadius: 14, borderWidth: 1.5,
-    borderColor: '#fca5a5', backgroundColor: '#fff5f5', gap: 10,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    height: 48, 
+    borderRadius: 12, 
+    borderWidth: 1,
+    borderColor: '#fca5a5', 
+    backgroundColor: '#ffffff', 
+    gap: 8,
   },
-  googleBtnText: { fontSize: 14, fontFamily: 'Inter-SemiBold', color: '#dc2626' },
-  policyRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24, marginBottom: 4 },
-  policyLink: { fontSize: 13, color: COLORS.primary, fontFamily: 'Inter-Medium' },
-  policySeparator: { fontSize: 13, color: '#999', marginHorizontal: 12 },
-  registerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 22 },
-  registerText: { fontSize: 13, fontFamily: 'Inter-Regular', color: '#64748b' },
-  registerLink: { fontSize: 13, fontFamily: 'Inter-Bold', color: COLORS.primary },
-  footer: { textAlign: 'center', fontSize: 11, fontFamily: 'Inter-Regular', color: '#cbd5e1', marginTop: 22, letterSpacing: 0.5 },
+  googleBtnText: { 
+    fontSize: 14, 
+    fontFamily: 'Inter-SemiBold', 
+    color: '#ef4444' 
+  },
+  registerRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginTop: 20 
+  },
+  registerText: { 
+    fontSize: 13, 
+    fontFamily: 'Inter-Regular', 
+    color: '#4b5563' 
+  },
+  registerLink: { 
+    fontSize: 13, 
+    fontFamily: 'Inter-Bold', 
+    color: '#026a3d' 
+  },
+  policyRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginTop: 16 
+  },
+  policyLink: { 
+    fontSize: 11, 
+    color: '#026a3d', 
+    fontFamily: 'Inter-Bold',
+    letterSpacing: 0.5
+  },
+  policySeparator: { 
+    fontSize: 11, 
+    color: '#d1d5db', 
+    marginHorizontal: 8 
+  },
+  footerArea: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  footerText: { 
+    fontSize: 11, 
+    fontFamily: 'Inter-SemiBold', 
+    color: '#9ca3af', 
+    letterSpacing: 1 
+  },
 });

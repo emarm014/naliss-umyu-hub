@@ -34,10 +34,11 @@ interface CachedImageProps {
     fallbackName?: string | null;
     fallbackInitials?: string | null;
     blurRadius?: number;
-    onPress?: (localUri: string | null) => void;
+    onPress?: (uri?: string) => void;
+    onLongPress?: () => void;
 }
 
-export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials, blurRadius, onPress }: CachedImageProps) {
+export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials, blurRadius, onPress, onLongPress }: CachedImageProps) {
     // Initialize synchronously if the file is already cached in memory or is a local file
     const isLocalFile = remoteUrl && !remoteUrl.startsWith('http://') && !remoteUrl.startsWith('https://');
     let preCachedUri = isLocalFile ? (remoteUrl.startsWith('file://') ? remoteUrl : `file://${remoteUrl}`) : null;
@@ -60,6 +61,11 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
     const { colors, isDark } = useThemeStore();
 
     const handleLongPress = async () => {
+        if (onLongPress) {
+            onLongPress();
+            return;
+        }
+
         const uriToSave = localUri || remoteUrl;
         if (!uriToSave) return;
         const result = await saveMediaToDevice(uriToSave, 'image');
@@ -187,8 +193,8 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         return (
             <TouchableOpacity 
                 style={[style, { overflow: 'hidden' }]} 
-                onLongPress={handleLongPress}
-                onPress={() => onPress?.(localUri)}
+            onLongPress={handleLongPress}
+            onPress={() => { if (onPress) { onPress(localUri || undefined); } }}
                 activeOpacity={0.9}
             >
                 <Image
@@ -234,8 +240,8 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         return (
             <TouchableOpacity
                 style={[style, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]}
-                onLongPress={handleLongPress}
-                onPress={() => onPress?.(localUri)}
+            onLongPress={handleLongPress}
+            onPress={() => { if (onPress) { onPress(localUri || undefined); } }}
                 activeOpacity={0.9}
             >
                 {initials ? (
@@ -255,7 +261,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         <TouchableOpacity 
             style={[style, { overflow: 'hidden' }]} 
             onLongPress={handleLongPress}
-            onPress={() => onPress?.(localUri)}
+            onPress={() => { if (onPress) { onPress(localUri || undefined); } }}
             activeOpacity={0.9}
         >
             <Image

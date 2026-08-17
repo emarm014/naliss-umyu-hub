@@ -169,7 +169,7 @@ export default function ChatScreen() {
     
     // Add legacy support wrappers for over-engineered breakage
     const messageStore = useMessageStore.getState();
-    const setMessages = React.useCallback((updater: any) => {
+    const setMessages = React.useCallback((updater: any[] | ((prev: any[]) => any[])) => {
         const ms = useMessageStore.getState();
         const currentMessages = ms.getMessages(id);
         if (typeof updater === 'function') {
@@ -264,57 +264,6 @@ export default function ChatScreen() {
     const setGroupMembers = useGroupStore(s => s.setGroupMembers);
     const getGroupMembers = useGroupStore(s => s.getGroupMembers);
 
-    const openMediaViewer = (msg: Message) => {
-        try {
-            Sentry.addBreadcrumb({
-                category: 'ui.interaction',
-                message: 'Tapped media in chat to open viewer',
-                data: {
-                    messageId: msg.id,
-                    messageType: msg.message_type,
-                    hasImageUrl: !!msg.image_url,
-                    hasVideoUrl: !!msg.video_url,
-                    hasDocUrl: !!msg.document_url,
-                    isSender: msg.sender_id === user?.id
-                },
-                level: 'info'
-            });
-
-            if (!msg.image_url && !msg.video_url && !msg.document_url) {
-                Sentry.captureMessage('Blocked media viewer: No valid media URL found on message', {
-                    extra: { messageId: msg.id, messageType: msg.message_type }
-                });
-                return;
-            }
-
-            // Get all media items for the gallery
-            const mediaMessages = messages.filter(m => m.image_url || m.video_url || m.document_url);
-            const initialIndex = mediaMessages.findIndex(m => m.id === msg.id);
-
-            setViewerMediaList(mediaMessages.map(m => ({
-                id: m.id,
-                type: m.message_type as 'image' | 'video' | 'document',
-                url: (m.image_url || m.video_url || m.document_url)!,
-                caption: m.content || '',
-                fileName: m.file_name,
-                fileSize: m.file_size
-            })));
-            setViewerInitialIndex(initialIndex >= 0 ? initialIndex : 0);
-            setViewerVisible(true);
-            
-            Sentry.addBreadcrumb({
-                category: 'ui.action',
-                message: 'Media viewer opened successfully',
-                data: { initialIndex, totalItems: mediaMessages.length },
-                level: 'info'
-            });
-        } catch (error) {
-            Sentry.captureException(error, {
-                extra: { action: 'openMediaViewer', messageId: msg.id }
-            });
-            console.error('Failed to open media viewer:', error);
-        }
-    };
 
     useEffect(() => {
         // Reset mount flag — required when id changes (navigating between chats)
@@ -1585,8 +1534,11 @@ export default function ChatScreen() {
         const shouldGroupMessages = isConsecutive && isWithinTimeThreshold;
 
         const isMedia = item.message_type === 'image' || item.message_type === 'video' || item.message_type === 'audio' || item.isAlbum || item.message_type === 'document';
-        const Wrapper = isMedia ? View : Pressable;
-        const wrapperProps = isMedia ? {} : {
+        const Wrapper = Pressable;
+        const wrapperProps = isMedia ? {
+            onLongPress: () => setLongPressedMessage(item),
+            delayLongPress: 400,
+        } : {
             onLongPress: () => setLongPressedMessage(item),
             delayLongPress: 400,
             onPress: () => {
@@ -1624,6 +1576,7 @@ export default function ChatScreen() {
                                     entityId={`msg_avatar_${item.sender_id}`} 
                                     assetType="user" 
                                     fallbackName={displayUser?.full_name || displayUser?.username} 
+                                    onLongPress={() => {}}
                                 />
                                 {/* Crown badge for moderators */}
                                 {(displayUser?.role === 'moderator' || displayUser?.role === 'super_admin') && (
@@ -1761,6 +1714,7 @@ export default function ChatScreen() {
                                                 style={{ width: 36, height: 36, borderRadius: 4, marginRight: 8, marginVertical: 4 }} 
                                                 entityId={`chat_media_${item.id}`}
                                                 assetType="chat_media"
+                                                onLongPress={() => {}}
                                             />
                                         );
                                     }
@@ -1820,14 +1774,9 @@ export default function ChatScreen() {
                                                 mediaUrl = child.fileUri;
                                             }
                                             return (
-                                                <TouchableOpacity 
+                                                <View 
                                                     key={child.id}
                                                     style={[itemStyle, { position: 'relative' }]}
-                                                    activeOpacity={0.8}
-                                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                                    onPress={() => {
-                                                        handleOpenSwipeableMedia(child.id, item.albumItems);
-                                                    }}
                                                 >
                                                     <CachedImage 
                                                         remoteUrl={mediaUrl}
@@ -1836,6 +1785,10 @@ export default function ChatScreen() {
                                                         entityId={`chat_media_${child.id}`}
                                                         assetType="chat_media"
                                                         blurRadius={(!isMe && !isDownloaded) ? 3 : 0}
+                                                        onPress={() => {
+                                                            handleOpenSwipeableMedia(child.id, item.albumItems);
+                                                        }}
+                                                        onLongPress={() => setLongPressedMessage(item)}
                                                     />
                                                     
                                                     {isVideo && (
@@ -1928,17 +1881,7 @@ export default function ChatScreen() {
                                 </View>
                             </View>
                         ) : item.message_type === 'image' ? (
-                            <TouchableOpacity
-                                activeOpacity={0.92}
-                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                onPress={() => {
-                                    if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
-                                        handleDownloadMedia(item.id, item.content, item.metadata?.name || `image_${item.id}.jpg`);
-                                    } else {
-                                        handleOpenSwipeableMedia(item.id);
-                                    }
-                                }}
-                            >
+                            <View hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <CachedImage
@@ -1948,6 +1891,14 @@ export default function ChatScreen() {
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
                                         entityId={`chat_media_${item.id}`}
                                         assetType="chat_media"
+                                        onPress={() => {
+                                            if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
+                                                handleDownloadMedia(item.id, item.content, item.metadata?.name || `image_${item.id}.jpg`);
+                                            } else {
+                                                handleOpenSwipeableMedia(item.id);
+                                            }
+                                        }}
+                                        onLongPress={() => setLongPressedMessage(item)}
                                     />
 
                                     {/* Upload/Download Overlay */}
@@ -1993,7 +1944,7 @@ export default function ChatScreen() {
                                         {isMe && <StatusIcon status={item.status} uploadProgress={uploadingIds[item.id]} messageId={item.id} />}
                                     </View>
                                 </View>
-                            </TouchableOpacity>
+                            </View>
                             ) : (
                                 <View style={[
                                 item.message_type === 'video' ? styles.imageMessageContainer : styles.messageBubble,
@@ -2007,6 +1958,7 @@ export default function ChatScreen() {
                                         activeOpacity={0.92}
                                         style={styles.videoThumbContainer}
                                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                        onLongPress={() => setLongPressedMessage(item)}
                                         onPress={() => {
                                             if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
                                                 handleDownloadMedia(item.id, item.content, item.metadata?.name || `video_${item.id}.mp4`);
@@ -2038,6 +1990,7 @@ export default function ChatScreen() {
                                                         resizeMode="cover"
                                                         entityId={`chat_media_${item.id}`}
                                                         assetType="chat_media"
+                                                        onLongPress={() => {}}
                                                     />
                                                 );
                                             }
@@ -2753,6 +2706,7 @@ export default function ChatScreen() {
                                     style={{ width: 36, height: 36, borderRadius: 10 }}
                                     entityId={`group_avatar_${id}`}
                                     assetType="avatar"
+                                    onLongPress={() => {}}
                                 />
                             ) : (
                                 <NalissLogo size={30} />

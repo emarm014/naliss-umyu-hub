@@ -389,7 +389,7 @@ function RootLayoutNav() {
             await initDB();
             await useAuthStore.getState().hydrateFromSQLite();
           })(),
-          new Promise((resolve) => setTimeout(resolve, 5000)),
+          new Promise((resolve) => setTimeout(resolve, 2500)),
         ]);
       } catch (error) {
         console.warn("Silent Boot Warning: Isolated local configuration anomaly.", error);
@@ -456,7 +456,7 @@ function RootLayoutNav() {
 
       // 1. Process offline mutations BEFORE fetching new data to prevent collisions
       try {
-        const { useMutationQueueStore } = require('../stores/mutationQueue.store');
+        const { useMutationQueueStore } = require('../src/stores/mutationQueue.store');
         await useMutationQueueStore.getState().processQueue();
         await useMessageStore.getState().flushUnsentMessageQueue();
       } catch (e) {

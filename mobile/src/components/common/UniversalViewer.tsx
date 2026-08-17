@@ -305,7 +305,7 @@ function ViewerItemSlide({
           }
         }
 
-        const { getAssetCacheByUrl } = require('../../../lib/database');
+        const { getAssetCacheByUrl } = require('../../lib/database');
         const cachedSqlitePath = await getAssetCacheByUrl(item.uri);
         if (cachedSqlitePath) {
           const sqliteFileInfo = await FileSystem.getInfoAsync(cachedSqlitePath);

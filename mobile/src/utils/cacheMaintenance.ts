@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { getDB } from '../lib/database';
 
-const CACHE_MAX_AGE_DAYS = 30; // Delete cached media older than 30 days
+const CACHE_MAX_AGE_DAYS = 100; // Delete cached media older than 100 days
 
 /**
  * Run cache maintenance on app startup (call once in _layout.tsx)

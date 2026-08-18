@@ -28,6 +28,7 @@ import { getOptimizedCloudinaryUrl } from '../../src/lib/cloudinary';
 import { Material, Course, Lecturer,  AcademicLevel } from '../../src/types';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { openDocumentWith } from '../../src/utils/documentOpener';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/Colors';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -733,55 +734,7 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
 
   const fileSizeMB = ((fileAsset.size || 0) / 1024 / 1024).toFixed(1);
 
-  const openExternalDocument = async (vaultPath: string, rawMime: string, fileName: string) => {
-    try {
-      const fileUri = vaultPath.startsWith('file://') ? vaultPath : `file://${vaultPath}`;
-      const nameLower = (fileName || vaultPath).toLowerCase();
 
-      // Deduce precise MIME type for Android ACTION_VIEW intent so only supported viewer apps are presented
-      let mimeType = rawMime || 'application/octet-stream';
-      if (nameLower.endsWith('.pdf')) mimeType = 'application/pdf';
-      else if (nameLower.endsWith('.doc')) mimeType = 'application/msword';
-      else if (nameLower.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      else if (nameLower.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
-      else if (nameLower.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      else if (nameLower.endsWith('.ppt')) mimeType = 'application/vnd.ms-powerpoint';
-      else if (nameLower.endsWith('.pptx')) mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-      else if (nameLower.endsWith('.txt')) mimeType = 'text/plain';
-      else if (nameLower.endsWith('.csv')) mimeType = 'text/csv';
-
-      if (Platform.OS === 'android') {
-        const IntentLauncher = require('expo-intent-launcher');
-        const FileSystem = require('expo-file-system');
-
-        // Convert file:// URI to content:// URI so target app is granted read permissions
-        const contentUri = await FileSystem.getContentUriAsync(fileUri);
-
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-          type: mimeType,
-        });
-      } else {
-        const Sharing = require('expo-sharing');
-        const isAvail = await Sharing.isAvailableAsync();
-        if (!isAvail) {
-          Alert.alert(
-            'No App Available',
-            'No app available on your device supports opening this file format. Please use the In-App Viewer.'
-          );
-          return;
-        }
-        await Sharing.shareAsync(fileUri, { mimeType });
-      }
-    } catch (err: any) {
-      console.warn('Failed to open with external app:', err);
-      Alert.alert(
-        'No App Available',
-        'No app available on your device supports opening this file format. Please use the In-App Viewer.'
-      );
-    }
-  };
 
   const handleBookPress = async () => {
     try {
@@ -796,14 +749,12 @@ function FileAssetItem({ material, fileAsset, isDownloaded, onDownload, onDownlo
       const displayName = fileAsset.name || extractName(fileAsset.url, material.id);
       const vaultPath = getVaultPath(material.id, displayName, fileAsset.url);
       
-      Alert.alert('Open File', displayName, [
-        { text: 'Open in App', onPress: () => onRead() },
-        {
-          text: 'Open with Other App',
-          onPress: () => openExternalDocument(vaultPath, mime, displayName),
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
+      openDocumentWith({
+        localUri: vaultPath,
+        fileType: 'document',
+        fileName: displayName,
+        onOpenInApp: () => onRead()
+      });
     } catch (err) {
       console.warn('Error in handleBookPress:', err);
       onRead(); // Fallback to in-app viewer if anything fails

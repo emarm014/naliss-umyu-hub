@@ -18,6 +18,7 @@ import { useTheme } from '../../src/stores/theme.store';
 import { useNetworkStore } from '../../src/stores/network.store';
 import { downloadFile, extractFileNameFromUrl, checkFileExists, getVaultFilePath } from '../../src/utils/download';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { openDocumentWith } from '../../src/utils/documentOpener';
 import { router } from 'expo-router';
 
 import { cacheEntityList, getCachedEntityList } from '../../src/lib/database';
@@ -150,11 +151,24 @@ export default function ArchiveScreen() {
         // Vault check failed — fall back to Cloudinary URL (requires internet)
       }
 
-      setReaderUrl(fileUri);
-      setReaderFileType(fileType);
-      setReaderTitle(displayName);
-      setReaderId(item.id);
-      setViewerVisible(true);
+      const openInViewer = () => {
+        setReaderUrl(fileUri);
+        setReaderFileType(fileType);
+        setReaderTitle(displayName);
+        setReaderId(item.id);
+        setViewerVisible(true);
+      };
+
+      if (fileType === 'image' || fileType === 'video' || fileType === 'audio') {
+        openInViewer();
+      } else {
+        openDocumentWith({
+          localUri: fileUri,
+          fileType: 'document',
+          fileName: displayName,
+          onOpenInApp: () => openInViewer()
+        });
+      }
 
     } catch (err) {
       console.warn('Error in Archive handleRead:', err);

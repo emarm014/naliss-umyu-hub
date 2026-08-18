@@ -148,38 +148,7 @@ export default function GalleryTopicScreen() {
     );
   };
 
-  const renderFullScreenItem = ({ item }: { item: any }) => {
-    const isVideo = item.media_type === 'video';
-    return (
-      <View style={{ width, height: height - 100, justifyContent: 'center', alignItems: 'center' }}>
-        {isVideo ? (
-          <Video
-            source={{ uri: item.media_url }}
-            style={{ width, height: width * (16 / 9) }}
-            useNativeControls
-            resizeMode={ResizeMode.CONTAIN}
-            isLooping
-          />
-        ) : (
-          <ScrollView
-            maximumZoomScale={3}
-            minimumZoomScale={1}
-            contentContainerStyle={styles.scrollContent}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-          >
-            <CachedImage
-              remoteUrl={item.media_url}
-              style={{ width, height: height - 100 } as any}
-              resizeMode="contain"
-              entityId={item.id}
-              assetType="gallery"
-            />
-          </ScrollView>
-        )}
-      </View>
-    );
-  };
+
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

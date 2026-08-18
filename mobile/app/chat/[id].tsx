@@ -54,6 +54,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getCleanAvatarUrl } from '../../src/utils';
 import { WhatsAppMediaEditor, FinalizedMedia } from '../../src/components/messaging/WhatsAppMediaEditor';
+import { openDocumentWith } from '../../src/utils/documentOpener';
 
 const MAX_CHARS = 500;
 
@@ -1576,7 +1577,6 @@ export default function ChatScreen() {
                                     entityId={`msg_avatar_${item.sender_id}`} 
                                     assetType="user" 
                                     fallbackName={displayUser?.full_name || displayUser?.username} 
-                                    onLongPress={() => {}}
                                 />
                                 {/* Crown badge for moderators */}
                                 {(displayUser?.role === 'moderator' || displayUser?.role === 'super_admin') && (
@@ -1714,7 +1714,6 @@ export default function ChatScreen() {
                                                 style={{ width: 36, height: 36, borderRadius: 4, marginRight: 8, marginVertical: 4 }} 
                                                 entityId={`chat_media_${item.id}`}
                                                 assetType="chat_media"
-                                                onLongPress={() => {}}
                                             />
                                         );
                                     }
@@ -1812,7 +1811,7 @@ export default function ChatScreen() {
                                                             <Text style={styles.albumMoreText}>+{totalItems - 4}</Text>
                                                         </View>
                                                     )}
-                                                </TouchableOpacity>
+                                                </View>
                                             );
                                         })}
                                     </View>
@@ -1990,7 +1989,6 @@ export default function ChatScreen() {
                                                         resizeMode="cover"
                                                         entityId={`chat_media_${item.id}`}
                                                         assetType="chat_media"
-                                                        onLongPress={() => {}}
                                                     />
                                                 );
                                             }
@@ -2466,53 +2464,7 @@ export default function ChatScreen() {
         }
     };
 
-    const openExternalDocumentInChat = async (localUri: string, rawMime: string, fileName: string) => {
-        try {
-            const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
-            const nameLower = (fileName || localUri).toLowerCase();
 
-            let mimeType = rawMime || 'application/octet-stream';
-            if (nameLower.endsWith('.pdf')) mimeType = 'application/pdf';
-            else if (nameLower.endsWith('.doc')) mimeType = 'application/msword';
-            else if (nameLower.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-            else if (nameLower.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
-            else if (nameLower.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            else if (nameLower.endsWith('.ppt')) mimeType = 'application/vnd.ms-powerpoint';
-            else if (nameLower.endsWith('.pptx')) mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-            else if (nameLower.endsWith('.txt')) mimeType = 'text/plain';
-            else if (nameLower.endsWith('.csv')) mimeType = 'text/csv';
-
-            if (Platform.OS === 'android') {
-                const IntentLauncher = require('expo-intent-launcher');
-                const FileSystem = require('expo-file-system');
-
-                const contentUri = await FileSystem.getContentUriAsync(fileUri);
-
-                await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-                    data: contentUri,
-                    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-                    type: mimeType,
-                });
-            } else {
-                const Sharing = require('expo-sharing');
-                const isAvail = await Sharing.isAvailableAsync();
-                if (!isAvail) {
-                    Alert.alert(
-                        'No App Available',
-                        'No app available on your device supports opening this file format. Please use the In-App Viewer.'
-                    );
-                    return;
-                }
-                await Sharing.shareAsync(fileUri, { mimeType });
-            }
-        } catch (err: any) {
-            console.warn('Failed to open document with external app:', err);
-            Alert.alert(
-                'No App Available',
-                'No app available on your device supports opening this file format. Please use the In-App Viewer.'
-            );
-        }
-    };
 
     // Open media — only from local vault, never from remote URL
     const handleOpenMedia = async (messageId: string, url: string, type: any, customName?: string) => {
@@ -2535,20 +2487,15 @@ export default function ChatScreen() {
         }
 
         // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
-        Alert.alert('Open File', name, [
-            {
-                text: 'Open in App',
-                onPress: () => {
-                    setViewerFile({ uri: localUri, type: 'document', name });
-                    setViewerVisible(true);
-                },
-            },
-            {
-                text: 'Open with Other App',
-                onPress: () => openExternalDocumentInChat(localUri, type, name),
-            },
-            { text: 'Cancel', style: 'cancel' },
-        ]);
+        openDocumentWith({
+            localUri,
+            fileType: 'document',
+            fileName: name,
+            onOpenInApp: (file) => {
+                setViewerFile({ uri: file.uri, type: file.type as any, name: file.name });
+                setViewerVisible(true);
+            }
+        });
     };
 
     const handleSaveMessageMedia = async (msg: any) => {
@@ -2706,7 +2653,6 @@ export default function ChatScreen() {
                                     style={{ width: 36, height: 36, borderRadius: 10 }}
                                     entityId={`group_avatar_${id}`}
                                     assetType="avatar"
-                                    onLongPress={() => {}}
                                 />
                             ) : (
                                 <NalissLogo size={30} />

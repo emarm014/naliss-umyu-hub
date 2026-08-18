@@ -10,6 +10,7 @@ import { useAuthStore } from '../../src/stores/auth.store';
 import { useResourceStore } from '../../src/stores/resource.store';
 import { SafeOverlayContainer } from '../../src/components/common/overlays';
 import { CachedImage } from '../../src/components/common/CachedImage';
+import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 export default function CreateNoteScreen() {
     const router = useRouter();
@@ -43,8 +44,7 @@ export default function CreateNoteScreen() {
     const [queuePreviewIndex, setQueuePreviewIndex] = useState(0);
 
     // General Image Slider Modal State (for saved images)
-    const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-    const [isImageModalVisible, setIsImageModalVisible] = useState(false);
+    const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
     const { width: windowWidth } = Dimensions.get('window');
 
     const activeLevel = courseLevel.replace('L', '');
@@ -594,7 +594,7 @@ export default function CreateNoteScreen() {
                         <ScrollView horizontal style={styles.mediaScroll} showsHorizontalScrollIndicator={false}>
                             {mediaPaths.map((uri, idx) => (
                                 <View key={idx} style={styles.mediaItemContainer}>
-                                    <TouchableOpacity activeOpacity={0.8} onPress={() => { setSelectedImageIndex(idx); setIsImageModalVisible(true); }}>
+                                    <TouchableOpacity activeOpacity={0.8} onPress={() => setSelectedImageIndex(idx)}>
                                         <CachedImage remoteUrl={uri} style={styles.mediaItem} entityId={`note_att_${idx}`} assetType="note_image" />
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.removeMediaBtn} onPress={() => removeMedia(idx)}>
@@ -655,34 +655,30 @@ export default function CreateNoteScreen() {
                 )}
             </View>
 
-            {/* General Media Viewer Modal (for fully saved/attached media) */}
-            <SafeOverlayContainer
-                visible={isImageModalVisible}
-                onClose={() => setIsImageModalVisible(false)}
-                animationType="fade"
-                overlayStyle={styles.modalBackground}
-                useNativeModal={false}
-            >
-                <TouchableOpacity style={[styles.modalCloseBtn, { top: Math.max(top + 10, 40) }]} onPress={() => setIsImageModalVisible(false)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
-                    <Ionicons name="close" size={32} color="#FFFFFF" />
-                </TouchableOpacity>
-                {mediaPaths.length > 0 && (
-                    <FlatList
-                        data={mediaPaths}
-                        keyExtractor={(_, index) => index.toString()}
-                        horizontal
-                        pagingEnabled
-                        showsHorizontalScrollIndicator={false}
-                        initialScrollIndex={selectedImageIndex}
-                        getItemLayout={(_, index) => ({ length: windowWidth, offset: windowWidth * index, index })}
-                        renderItem={({ item, index }) => (
-                            <View style={{ width: windowWidth, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                                <CachedImage remoteUrl={item} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} entityId={`note_modal_${index}`} assetType="note_image" />
-                            </View>
-                        )}
+            {/* Universal Media Viewer */}
+            {(() => {
+                const viewerMediaList = mediaPaths.map((m: string, idx: number) => ({
+                    id: `note_media_${idx}`,
+                    uri: m,
+                    type: 'image' as any,
+                    name: `Attachment ${idx + 1}`,
+                    title: `Attachment ${idx + 1}`
+                }));
+                const currentMedia = selectedImageIndex !== null && mediaPaths[selectedImageIndex] ? mediaPaths[selectedImageIndex] : null;
+                return (
+                    <UniversalViewer
+                        isVisible={selectedImageIndex !== null}
+                        onClose={() => setSelectedImageIndex(null)}
+                        fileUri={currentMedia || ''}
+                        fileType={'image'}
+                        fileName={`Attachment ${selectedImageIndex !== null ? selectedImageIndex + 1 : 1}`}
+                        mediaList={viewerMediaList}
+                        initialIndex={selectedImageIndex || 0}
+                        showDownload={false}
+                        showShare={false}
                     />
-                )}
-            </SafeOverlayContainer>
+                );
+            })()}
         </KeyboardAvoidingView>
     );
 }

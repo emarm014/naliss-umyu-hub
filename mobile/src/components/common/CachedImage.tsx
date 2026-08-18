@@ -187,15 +187,21 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
 
     const initials = fallbackInitials || (fallbackName ? fallbackName.slice(0, 2).toUpperCase() : null);
 
+    const hasTouchHandler = !!onPress || !!onLongPress;
+    const TouchWrapper = hasTouchHandler ? TouchableOpacity : (View as any);
+    const touchProps = hasTouchHandler ? {
+        activeOpacity: 0.9,
+        onPress: () => { if (onPress) { onPress(localUri || undefined); } },
+        onLongPress: handleLongPress,
+    } : {};
+
     // OFFLINE-SAFE RENDER: If we have a localUri, ALWAYS use it — even if hasError was set
     // by a previous failed network attempt. localUri from SQLite cache is authoritative.
     if (localUri) {
         return (
-            <TouchableOpacity 
+            <TouchWrapper 
                 style={[style, { overflow: 'hidden' }]} 
-            onLongPress={handleLongPress}
-            onPress={() => { if (onPress) { onPress(localUri || undefined); } }}
-                activeOpacity={0.9}
+                {...touchProps}
             >
                 <Image
                     source={{ uri: localUri }}
@@ -226,7 +232,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                         <ActivityIndicator color="#059669" size="small" />
                     </View>
                 )}
-            </TouchableOpacity>
+            </TouchWrapper>
         );
     }
 
@@ -238,11 +244,9 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
         else if (assetType !== 'user' && assetType !== 'user_avatar') fallbackIcon = "image-outline";
 
         return (
-            <TouchableOpacity
+            <TouchWrapper
                 style={[style, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]}
-            onLongPress={handleLongPress}
-            onPress={() => { if (onPress) { onPress(localUri || undefined); } }}
-                activeOpacity={0.9}
+                {...touchProps}
             >
                 {initials ? (
                     <Text style={{ fontSize: Math.min((style as any)?.width || 48, 48) * 0.4, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8' }}>
@@ -251,18 +255,16 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 ) : (
                     <Ionicons name={fallbackIcon as any} size={Math.min((style as any)?.width || 48, 48) * 0.5} color={isDark ? '#475569' : '#94a3b8'} />
                 )}
-            </TouchableOpacity>
+            </TouchWrapper>
         );
     }
 
     // Only reach here when localUri is null AND remoteUrl exists AND no error yet
     // This means we're still loading from cache or network
     return (
-        <TouchableOpacity 
+        <TouchWrapper 
             style={[style, { overflow: 'hidden' }]} 
-            onLongPress={handleLongPress}
-            onPress={() => { if (onPress) { onPress(localUri || undefined); } }}
-            activeOpacity={0.9}
+            {...touchProps}
         >
             <Image
                 source={{ uri: remoteUrl }}
@@ -277,6 +279,6 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     <ActivityIndicator color="#059669" size="small" />
                 </View>
             )}
-        </TouchableOpacity>
+        </TouchWrapper>
     );
 }

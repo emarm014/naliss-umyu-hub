@@ -44,7 +44,34 @@ export function trackUserAction(action: string, category: string, extra?: Record
   });
 }
 
+export function isNetworkError(error: any): boolean {
+  if (!error) return false;
+  
+  const errStr = typeof error === 'object' ? String((error as Error).message || error) : String(error);
+  const lowerErrStr = errStr.toLowerCase();
+  
+  if (
+    lowerErrStr.includes('network request failed') || 
+    lowerErrStr.includes('failed to fetch') || 
+    lowerErrStr.includes('timeout') ||
+    lowerErrStr.includes('timed out') ||
+    lowerErrStr.includes('software caused connection abort') ||
+    lowerErrStr.includes('unable to resolve host') ||
+    lowerErrStr.includes('networkerror')
+  ) {
+    return true;
+  }
+
+  if ((error as any).status === 401) return true;
+
+  return false;
+}
+
 export function captureStoreError(storeName: string, op: string, error: unknown, extra?: Record<string, any>) {
+  if (isNetworkError(error)) {
+    console.warn(`[Store Network Error] ${storeName}.${op}:`, error);
+    return;
+  }
   const normErr = error instanceof Error ? error : new Error(String(error));
   Sentry.captureException(normErr, {
     tags: { service: storeName, operation: op, location: 'store.admin' },

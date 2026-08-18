@@ -315,9 +315,13 @@ export function captureDatabaseError(op: string, error: unknown, extra?: Record<
       for (const [key, value] of Object.entries(extra)) {
         if (typeof value === 'function') continue;
         if (key === 'args' && Array.isArray(value)) {
-          safeExtra.args = value.map(arg => typeof arg === 'function' ? '[Function]' : (arg && typeof arg === 'object') ? String(arg) : arg);
+          safeExtra.args = value.map(arg => typeof arg === 'function' ? '[Function]' : (arg && typeof arg === 'object') ? (function(){ try { return JSON.stringify(arg); } catch { return String(arg); } })() : arg);
         } else if (typeof value === 'object' && value !== null) {
-          safeExtra[key] = String(value);
+          try {
+            safeExtra[key] = JSON.stringify(value);
+          } catch {
+            safeExtra[key] = String(value);
+          }
         } else {
           safeExtra[key] = value;
         }

@@ -344,6 +344,17 @@ function ViewerItemSlide({
           return;
         }
 
+        // For video and audio, skip full file download to allow instant streaming playback
+        if (item.type === 'video' || item.type === 'audio') {
+          if (!cancelled) {
+            trackViewerEvent({ stage: 'stream_start', uri: viewerUrl, fileType: item.type, fileName: item.name });
+            setLocalUri(viewerUrl);
+            setIsOffline(false); // It's streaming from network
+            setIsDownloading(false);
+          }
+          return;
+        }
+
         const destDir = destinationPath.substring(0, destinationPath.lastIndexOf('/') + 1);
         const dirInfo = await FileSystem.getInfoAsync(destDir);
         if (!dirInfo.exists) {
@@ -498,9 +509,10 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     try {
       setIsSaving(true);
       trackViewerEvent({ stage: 'save', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
-      const uriToSave = activeItem.uri.startsWith('file://') ? activeItem.uri : `file://${activeItem.uri}`;
+      
       const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
-      const result = await saveMediaToDevice(uriToSave, mimeType, activeItem.name);
+      const result = await saveMediaToDevice(activeItem.uri, mimeType, activeItem.name);
+      
       if (result.success) {
         setIsSaved(true);
         showToast('✓ Saved to Device');
@@ -521,9 +533,10 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     setIsSharing(true);
     try {
       trackViewerEvent({ stage: 'share', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
-      const uriToShare = activeItem.uri.startsWith('file://') ? activeItem.uri : `file://${activeItem.uri}`;
+      
       const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
-      await shareMedia(uriToShare, mimeType, activeItem.name);
+      await shareMedia(activeItem.uri, mimeType, activeItem.name);
+      
     } catch (err: any) {
       captureViewerError('share', err, { uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
       Alert.alert('Error', 'Could not share this file.');

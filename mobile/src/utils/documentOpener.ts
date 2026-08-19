@@ -22,9 +22,21 @@ export interface DocumentOpenOptions {
     onOpenInApp?: (file: { uri: string; type: string; name: string }) => void;
 }
 
+const getUTI = (mimeType: string): string => {
+    const mime = mimeType.toLowerCase();
+    if (mime.includes('pdf')) return 'com.adobe.pdf';
+    if (mime.includes('msword') || mime.includes('wordprocessingml')) return 'com.microsoft.word.doc';
+    if (mime.includes('powerpoint') || mime.includes('presentationml')) return 'com.microsoft.powerpoint.ppt';
+    if (mime.includes('excel') || mime.includes('spreadsheetml')) return 'com.microsoft.excel.xls';
+    if (mime.includes('text/plain')) return 'public.plain-text';
+    if (mime.includes('csv')) return 'public.comma-separated-values-text';
+    return 'public.data';
+};
+
 const launchExternal = async (localUri: string, fileName: string) => {
-    const ext = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
-    const mimeType = MIME_MAP[ext] || 'application/octet-stream';
+    const extMatch = fileName.match(/\.[0-9a-z]+$/i);
+    const ext = extMatch ? extMatch[0].toLowerCase() : '';
+    const mimeType = MIME_MAP[ext] || 'application/pdf'; // Default to PDF for unknown documents rather than octet-stream to force document viewers
 
     if (Platform.OS === 'android') {
         const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
@@ -44,7 +56,13 @@ const launchExternal = async (localUri: string, fileName: string) => {
             );
             return;
         }
-        await Sharing.shareAsync(fileUri, { mimeType });
+        
+        const uti = getUTI(mimeType);
+        await Sharing.shareAsync(fileUri, { 
+            mimeType, 
+            UTI: uti, 
+            dialogTitle: `Open ${fileName}` 
+        });
     }
 };
 

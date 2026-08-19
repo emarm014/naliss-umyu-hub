@@ -130,13 +130,14 @@ export default function ArchiveScreen() {
 
       // Use local vault file if already downloaded — works offline, faster
       let fileUri = item.file_url;
+      let isFileInVault = false;
       try {
         const { getVaultFilePath, checkFileExists } = require('../../src/utils/download');
         const safeName = displayName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
         const vaultFileName = `${item.id}_${safeName}`;
-        const isInVault = await checkFileExists(vaultFileName, item.file_url, item.id);
+        isFileInVault = await checkFileExists(vaultFileName, item.file_url, item.id);
         
-        if (!isInVault && !isOnline) {
+        if (!isFileInVault && !isOnline) {
           Alert.alert(
             'Offline Mode',
             "This reference resource hasn't been saved to your device yet. Please connect to the internet to download."
@@ -144,7 +145,7 @@ export default function ArchiveScreen() {
           return;
         }
         
-        if (isInVault) {
+        if (isFileInVault) {
           fileUri = getVaultFilePath(item.id, displayName, item.file_url);
         }
       } catch {
@@ -159,15 +160,23 @@ export default function ArchiveScreen() {
         setViewerVisible(true);
       };
 
+      // Images, Videos, Audio MUST open directly in the in-app viewer
       if (fileType === 'image' || fileType === 'video' || fileType === 'audio') {
         openInViewer();
       } else {
-        openDocumentWith({
-          localUri: fileUri,
-          fileType: 'document',
-          fileName: displayName,
-          onOpenInApp: () => openInViewer()
-        });
+        // For Documents (PDF, Word, etc.)
+        if (isFileInVault) {
+          // If downloaded (book icon), ask user to open in-app or open with another app
+          openDocumentWith({
+            localUri: fileUri,
+            fileType: 'document',
+            fileName: displayName,
+            onOpenInApp: () => openInViewer()
+          });
+        } else {
+          // If streaming (eye icon), open directly in viewer
+          openInViewer();
+        }
       }
 
     } catch (err) {

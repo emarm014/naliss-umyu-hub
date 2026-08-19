@@ -115,15 +115,49 @@ export default function DataRestoreScreen() {
     }
   };
 
-  const handleSkip = () => {
+  const handleBackgroundRestore = () => {
     if (restoreInProgress) {
       Alert.alert(
         'Restore in Progress',
-        'Data is being downloaded. Are you sure you want to skip?',
+        'Data is being downloaded. It will continue in the background.',
         [
-          { text: 'Continue Restoring', style: 'cancel' },
+          { text: 'Wait here', style: 'cancel' },
           {
-            text: 'Skip Anyway',
+            text: 'Continue to App',
+            style: 'default',
+            onPress: () => {
+              useDataRestoreStore.getState().skipRestore();
+              router.replace('/(tabs)' as any);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    // Start restore in the background
+    useDataRestoreStore.getState().startRestore();
+    useGlobalSyncStore.getState().restoreAllData((prog, step) => {
+      useDataRestoreStore.getState().setProgress(prog, step);
+    }).then(() => {
+      useDataRestoreStore.getState().completeRestore();
+    }).catch(() => {
+      // silently ignore background restore errors
+    });
+
+    useDataRestoreStore.getState().skipRestore();
+    router.replace('/(tabs)' as any);
+  };
+
+  const handleCancel = () => {
+    if (restoreInProgress) {
+      Alert.alert(
+        'Cancel Restore',
+        'Are you sure you want to cancel? You will start fresh on this device.',
+        [
+          { text: 'Wait here', style: 'cancel' },
+          {
+            text: 'Cancel Restore',
             style: 'destructive',
             onPress: () => {
               useDataRestoreStore.getState().skipRestore();
@@ -233,8 +267,12 @@ export default function DataRestoreScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.skipBtn} onPress={handleSkip} activeOpacity={0.7}>
-                  <Text style={styles.skipBtnText}>Skip for now</Text>
+                <TouchableOpacity style={styles.skipBtn} onPress={handleBackgroundRestore} activeOpacity={0.7}>
+                  <Text style={styles.skipBtnText}>Continue and restore in the background</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} activeOpacity={0.7}>
+                  <Text style={styles.cancelBtnText}>Cancel and start fresh</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -411,6 +449,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     fontSize: 14,
     color: 'rgba(255,255,255,0.5)',
+    textDecorationLine: 'underline',
+  },
+  cancelBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginTop: -8,
+  },
+  cancelBtnText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
+    color: 'rgba(239, 68, 68, 0.7)',
     textDecorationLine: 'underline',
   },
   warningText: {

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 export default function TermsOfServiceScreen() {
@@ -10,7 +10,7 @@ export default function TermsOfServiceScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style="dark" />
       
       {/* Header */}
@@ -35,7 +35,7 @@ export default function TermsOfServiceScreen() {
             <Text style={styles.sectionTitle}>1. Eligibility & Access</Text>
           </View>
           <Text style={styles.paragraph}>
-            Access to this platform is strictly limited to verified, enrolled students and staff of the Department of Library and Information Science at Umaru Musa Yar'adua University. Attempting to bypass registration controls or use unauthorized institutional emails is prohibited.
+            Access to this platform is strictly limited to verified, enrolled students of the Department of Library and Information Science at Umaru Musa Yar'adua University. Attempting to bypass registration controls or use unauthorized institutional emails is prohibited.
           </Text>
         </View>
 
@@ -49,7 +49,7 @@ export default function TermsOfServiceScreen() {
           </Text>
           <View style={styles.bulletList}>
             <Text style={styles.bulletItem}>• Do not upload malicious files to the Cloud Archive.</Text>
-            <Text style={styles.bulletItem}>• Respect fellow students and staff in all interactions.</Text>
+            <Text style={styles.bulletItem}>• Respect fellow students, administrators, and moderators in all interactions.</Text>
             <Text style={styles.bulletItem}>• Do not share your account credentials with external parties.</Text>
             <Text style={styles.bulletItem}>• Report any bugs or vulnerabilities to the administration.</Text>
           </View>
@@ -82,7 +82,7 @@ export default function TermsOfServiceScreen() {
           </Text>
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

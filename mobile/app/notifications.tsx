@@ -171,11 +171,11 @@ export default function NotificationsScreen() {
 
   const getIconConfig = (type: string) => {
     switch (type) {
-      case 'resource':   return { name: 'folder',       color: isDark ? '#c084fc' : '#8B5CF6', bg: colors.actionPurple };
-      case 'announcement': return { name: 'megaphone',  color: isDark ? '#34d399' : colors.primary, bg: colors.actionMint };
-      case 'event':      return { name: 'calendar',     color: isDark ? '#38bdf8' : '#3B82F6', bg: colors.actionBlue };
-      case 'chat':       return { name: 'chatbubbles',  color: isDark ? '#34d399' : colors.primary, bg: colors.actionMint };
-      case 'message':    return { name: 'chatbubbles',  color: isDark ? '#34d399' : colors.primary, bg: colors.actionMint };
+      case 'resource':   return { name: 'folder',       color: isDark ? (colors as any).actionPurpleIcon : '#8B5CF6', bg: (colors as any).actionPurple };
+      case 'announcement': return { name: 'megaphone',  color: isDark ? (colors as any).actionMintIcon : colors.primary, bg: (colors as any).actionMint };
+      case 'event':      return { name: 'calendar',     color: isDark ? (colors as any).actionBlueIcon : '#3B82F6', bg: (colors as any).actionBlue };
+      case 'chat':       return { name: 'chatbubbles',  color: isDark ? (colors as any).actionMintIcon : colors.primary, bg: (colors as any).actionMint };
+      case 'message':    return { name: 'chatbubbles',  color: isDark ? (colors as any).actionMintIcon : colors.primary, bg: (colors as any).actionMint };
       default:           return { name: 'notifications', color: colors.textMuted, bg: colors.surface };
     }
   };

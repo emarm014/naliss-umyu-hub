@@ -282,6 +282,7 @@ function ViewerItemSlide({
     }
 
     let cancelled = false;
+    let downloadResumed: FileSystem.DownloadResumable | null = null;
     setIsDownloading(true);
     setDownloadError(null);
     setLocalUri(null);
@@ -368,7 +369,7 @@ function ViewerItemSlide({
           }
         };
 
-        const downloadResumed = FileSystem.createDownloadResumable(viewerUrl, destinationPath, {}, callback);
+        downloadResumed = FileSystem.createDownloadResumable(viewerUrl, destinationPath, {}, callback);
         const result = await downloadResumed.downloadAsync();
 
         if (!cancelled) {
@@ -398,7 +399,12 @@ function ViewerItemSlide({
     };
 
     resolve();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (downloadResumed) {
+        downloadResumed.pauseAsync().catch(() => {});
+      }
+    };
   }, [item.uri, isVisible, retryKey]);
 
   return (

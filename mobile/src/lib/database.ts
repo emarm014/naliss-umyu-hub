@@ -63,35 +63,38 @@ async function withSafeTransactionAsync(
   database: SQLite.SQLiteDatabase,
   task: () => Promise<void>
 ): Promise<void> {
-  // Attempt to begin the transaction
+  let began = false;
   try {
     await database.execAsync('BEGIN');
+    began = true;
   } catch (beginErr: any) {
-    const msg = beginErr?.message || String(beginErr);
-    if (msg.includes('cannot start a transaction within a transaction')) {
-      // An abandoned transaction is blocking; roll it back and retry
-      console.warn('withSafeTransactionAsync: clearing abandoned transaction before retry');
-      try {
-        await database.execAsync('ROLLBACK');
-      } catch (_rollbackErr) {
-        // Swallow – the rollback may itself fail if the native state is inconsistent
-      }
-      // Retry BEGIN after cleanup
+    // If BEGIN itself fails, check for abandoned transaction and recover
+    console.warn('[DB] BEGIN failed, attempting recovery:', beginErr?.message);
+    try {
+      await database.execAsync('COMMIT'); // close any abandoned transaction
+    } catch (_) {}
+    try {
       await database.execAsync('BEGIN');
-    } else {
-      throw beginErr;
+      began = true;
+    } catch (retryErr) {
+      throw retryErr;
     }
   }
 
-  // Execute the task and commit/rollback
   try {
     await task();
     await database.execAsync('COMMIT');
   } catch (taskErr) {
-    try {
-      await database.execAsync('ROLLBACK');
-    } catch (_rollbackErr) {
-      // Swallow – avoid masking the original error
+    if (began) {
+      try {
+        await database.execAsync('ROLLBACK');
+      } catch (rollbackErr) {
+        // CRITICAL: ROLLBACK failed — connection is corrupted.
+        // Force recovery by closing and reopening the transaction state.
+        console.error('[DB] ROLLBACK FAILED — forcing recovery:', rollbackErr);
+        captureDatabaseError('execAsync (ROLLBACK)', rollbackErr, { originalError: taskErr });
+        recoverDatabase().catch(e => console.error('Recovery failed', e));
+      }
     }
     throw taskErr;
   }
@@ -520,15 +523,15 @@ export const getDB = () => db;
  * Should be called periodically (e.g., on app foreground).
  */
 export const checkpointWal = () => {
-    try {
-        if (db) {
-            db.execAsync('PRAGMA wal_checkpoint(TRUNCATE);').catch(e => {
-                console.warn('[Database] WAL checkpoint failed (async):', e);
-            });
+    enqueueTransaction(async () => {
+        try {
+            if (db) {
+                await db.execAsync('PRAGMA wal_checkpoint(TRUNCATE);');
+            }
+        } catch (e) {
+            console.warn('[Database] WAL checkpoint failed (async):', e);
         }
-    } catch (e) {
-        console.warn('[Database] WAL checkpoint failed:', e);
-    }
+    }).catch(e => console.warn('[Database] WAL checkpoint queue error:', e));
 };
 
 export const getAssetCache = async (entityId: string) => {

@@ -220,7 +220,7 @@ Deno.serve(async (req: Request) => {
     const payloadPriority = data?.priority ?? "high";
     let expoPriority: "default" | "normal" | "high" = "high";
     let expoSound: string | null = "default";
-    let expoChannelId = "default_v2";
+    let expoChannelId = "urgent_alerts_v1";
     let isSilent = false;
 
     if (payloadPriority === "silent") {
@@ -234,7 +234,7 @@ Deno.serve(async (req: Request) => {
       expoChannelId = "low_priority";
     } else if (payloadPriority === "normal") {
       expoPriority = "default";
-      expoChannelId = "default_v2";
+      expoChannelId = "urgent_alerts_v1";
     }
 
     // Map custom categories

@@ -102,27 +102,30 @@ export const useMessageStore = create<MessageState>()(
                     ? messages[messages.length - 1]?.created_at
                     : null;
 
-                // Redesign: Transactional sequential insertion to guarantee SQLite owns the message before state update
-                const enhancedMessages: any[] = [];
-                for (const msg of messages) {
-                    const enhancedMsg = await interceptAndDownloadMedia(msg);
-                    enhancedMessages.push(enhancedMsg);
-                }
-                await batchInsertMessages(enhancedMessages, groupId);
+                // Insert raw messages instantly so UI renders immediately
+                await batchInsertMessages(messages, groupId);
 
                 set((state) => ({
-                    cache: { ...state.cache, [groupId]: enhancedMessages },
+                    cache: { ...state.cache, [groupId]: messages },
                     lastSeenAt: latest
                         ? { ...state.lastSeenAt, [groupId]: latest }
                         : state.lastSeenAt,
                 }));
+
+                // Process media downloads sequentially in the background without blocking the UI
+                setTimeout(async () => {
+                    for (const msg of messages) {
+                        if (msg.media_url && !msg.local_media_path) {
+                            await interceptAndDownloadMedia(msg);
+                        }
+                    }
+                }, 500);
             },
 
             addMessage: async (groupId, message) => {
                 Logger.info('message.store', 'addMessage called', { groupId, messageId: message.id, status: message.status });
                 
-                const enhancedMsg = await interceptAndDownloadMedia(message);
-                await insertOrReplaceMessage(enhancedMsg, groupId);
+                await insertOrReplaceMessage(message, groupId);
 
                 set((state) => {
                     const existing = state.cache[groupId] || [];
@@ -131,10 +134,15 @@ export const useMessageStore = create<MessageState>()(
                         return state;
                     }
 
-                    const updated = [...existing, enhancedMsg]
+                    const updated = [...existing, message]
                         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
 
                     const isConfirmed = message.id && !String(message.id).startsWith('temp-');
+
+                    // Process media in background
+                    if (message.media_url && !message.local_media_path) {
+                        setTimeout(() => interceptAndDownloadMedia(message), 100);
+                    }
 
                     // Update group last message preview instantly (online or offline or pending)
                     try {

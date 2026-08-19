@@ -70,8 +70,8 @@ export const OfflineSyncService = {
 
                 if (grpError) throw grpError;
 
-                // Sync Zustand
-                useGroupStore.setState({ groups: groupsResult });
+                // Sync Zustand with properly formatted groups (including last_message)
+                await useGroupStore.getState().fetchGroups(true);
 
                 // Sync SQLite manifest
                 for (const group of groupsResult) {

@@ -52,9 +52,10 @@ export default function SecuritySettingsScreen() {
     const fetchDeviceSessions = async (deviceId?: string) => {
         setIsLoadingSessions(true);
         try {
-            const { data, error } = await supabase
-                .from('device_sessions')
-                .select('*')
+            const { data, error } = await (supabase
+                .from('user_sessions')
+                .select('device_id, device_name, os, ip_address, is_active, last_active_at') as any)
+                .eq('is_active', true)
                 .order('last_active_at', { ascending: false });
             
             if (error) throw error;
@@ -163,7 +164,7 @@ export default function SecuritySettingsScreen() {
                     try {
                         if (!storeProfile?.id) return;
                         if (includeCurrentDevice) {
-                            await (supabase.from('device_sessions').delete() as any).eq('user_id', storeProfile.id);
+                            await (supabase.from('user_sessions').delete() as any).eq('user_id', storeProfile.id);
                             await supabase.auth.signOut({ scope: 'global' } as any).catch(() => supabase.auth.signOut());
                             useAuthStore.getState().setSession(null);
                             useAuthStore.getState().setUser(null);
@@ -171,7 +172,7 @@ export default function SecuritySettingsScreen() {
                             useAuthStore.getState().setProfile(null);
                             router.replace('/auth/login' as any);
                         } else {
-                            await (supabase.from('device_sessions').delete() as any).eq('user_id', storeProfile.id).neq('device_id', currentDeviceId as string);
+                            await (supabase.from('user_sessions').delete() as any).eq('user_id', storeProfile.id).neq('device_id', currentDeviceId as string);
                         }
                         fetchDeviceSessions();
                         // Note: Assuming showToast implementation or replace with Alert
@@ -196,7 +197,7 @@ export default function SecuritySettingsScreen() {
 
         try {
             if (!storeProfile?.id) return;
-            await (supabase.from('device_sessions').delete() as any).eq('device_id', sessionToTerminate.device_id).eq('user_id', storeProfile.id);
+            await (supabase.from('user_sessions').delete() as any).eq('device_id', sessionToTerminate.device_id).eq('user_id', storeProfile.id);
             setDeviceSessions(prev => prev.filter(s => s.device_id !== sessionToTerminate.device_id));
             setSessionToTerminate(null);
             Alert.alert('Success', 'Session revoked successfully.');

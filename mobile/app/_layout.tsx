@@ -317,8 +317,12 @@ function RootLayoutNav() {
 
     const sub = AppState.addEventListener('change', (state) => {
         if (state === 'active') {
-            // Checkpoint WAL when user returns to the app (fast operation)
-            checkpointWal();
+            try {
+                // Checkpoint WAL when user returns to the app (fast operation)
+                checkpointWal();
+            } catch (e) {
+                console.warn('checkpointWal failed on active state', e);
+            }
 
             // Run periodic cache maintenance if enough time has passed
             if (Date.now() - lastMaintenanceRun > MIN_MAINTENANCE_INTERVAL) {

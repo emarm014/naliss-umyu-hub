@@ -112,6 +112,8 @@ export function FeaturedStudentPopup() {
     
     const [isBursting, setIsBursting] = useState(false);
     const [isRevealing, setIsRevealing] = useState(false);
+    
+    const isShowingRef = useRef(false);
 
     // Initialize 42 continuous tiny floating motion particles
     if (particlesRef.current.length === 0) {
@@ -267,6 +269,7 @@ export function FeaturedStudentPopup() {
     }, [isVisible]);
 
     const checkForActiveFeature = async () => {
+        if (isShowingRef.current) return;
         try {
             const { data, error } = await supabase
                 .from('featured_students')
@@ -275,29 +278,37 @@ export function FeaturedStudentPopup() {
                     users!featured_students_user_id_fkey ( full_name, username, avatar_url, department_id )
                 `)
                 .eq('is_active', true as any)
-                .order('published_at', { ascending: false })
-                .limit(1)
-                .single();
+                .order('published_at', { ascending: false });
 
-            if (error || !data) return;
+            if (error || !data || data.length === 0) return;
 
-            const currentFeature = data as any as FeaturedStudent;
+            let nextFeature = null;
+            for (const item of (data as any[])) {
+                const dismissedKey = `dismissed_featured_${item.id}`;
+                const isDismissed = await mmkvStorage.getItem(dismissedKey);
+                if (!isDismissed) {
+                    nextFeature = item;
+                    break;
+                }
+            }
 
-            const dismissedKey = `dismissed_featured_${currentFeature.id}`;
-            const isDismissed = await mmkvStorage.getItem(dismissedKey);
+            if (!nextFeature) return;
+
+            isShowingRef.current = true;
+            const currentFeature = nextFeature as any as FeaturedStudent;
+
+            const congratsKey = `congratulated_${currentFeature.id}`;
+            const didCongratulate = await mmkvStorage.getItem(congratsKey);
             
-            if (!isDismissed) {
-                const congratsKey = `congratulated_${currentFeature.id}`;
-                const didCongratulate = await mmkvStorage.getItem(congratsKey);
-                
-                if (didCongratulate) setHasCongratulated(true);
+            if (didCongratulate) setHasCongratulated(true);
+            else setHasCongratulated(false);
 
-                setFeature(currentFeature);
-                setIsVisible(true);
-                
-                Animated.parallel([
-                    Animated.spring(scaleAnim, {
-                        toValue: 1,
+            setFeature(currentFeature);
+            setIsVisible(true);
+            
+            Animated.parallel([
+                Animated.spring(scaleAnim, {
+                    toValue: 1,
                         tension: 60,
                         friction: 8,
                         useNativeDriver: true,
@@ -323,7 +334,6 @@ export function FeaturedStudentPopup() {
                 
                 // Hide reveal after it finishes
                 setTimeout(() => setIsRevealing(false), 4500);
-            }
         } catch (e) {
             console.log('No active featured student or error fetching:', e);
         }
@@ -347,6 +357,13 @@ export function FeaturedStudentPopup() {
             }),
         ]).start(() => {
             setIsVisible(false);
+            setFeature(null);
+            isShowingRef.current = false;
+            
+            // Queue the next feature check after 1 minute
+            setTimeout(() => {
+                checkForActiveFeature();
+            }, 60000);
         });
     };
 

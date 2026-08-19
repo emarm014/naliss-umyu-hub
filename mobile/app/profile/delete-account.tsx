@@ -14,9 +14,13 @@ import { supabase } from '../../src/api/supabase/client';
 import { useAuthStore } from '../../src/stores/auth.store';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../src/stores/theme.store';
 
 export default function DeleteAccountScreen() {
     const router = useRouter();
+    const { colors } = useTheme();
     const [confirmationText, setConfirmationText] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
     const user = useAuthStore(state => state.profile);
@@ -119,8 +123,17 @@ export default function DeleteAccountScreen() {
     };
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-            <Text style={styles.title}>Delete Account</Text>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+            <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                    <Ionicons name="arrow-back" size={24} color={colors.text} />
+                </TouchableOpacity>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Delete Account</Text>
+                <View style={{ width: 32 }} />
+            </View>
+
+            <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+                <Text style={styles.title}>Delete Account</Text>
             <Text style={styles.warning}>
                 This action is permanent and cannot be undone. The following data will be
                 permanently deleted:
@@ -162,7 +175,8 @@ export default function DeleteAccountScreen() {
                     <Text style={styles.deleteButtonText}>Delete My Account</Text>
                 )}
             </TouchableOpacity>
-        </ScrollView>
+            </ScrollView>
+        </SafeAreaView>
     );
 }
 
@@ -176,7 +190,23 @@ function DataItem({ icon, text }: { icon: string; text: string }) {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1 },
+    scrollView: { flex: 1 },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+    },
+    backButton: {
+        padding: 4,
+    },
+    headerTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
     content: { padding: 24 },
     title: { fontSize: 24, fontWeight: '700', color: '#d32f2f', marginBottom: 16 },
     warning: { fontSize: 15, color: '#666', lineHeight: 22, marginBottom: 24 },

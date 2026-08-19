@@ -146,6 +146,13 @@ export function usePushNotifications() {
   const { user } = useAuthStore();
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
+
+  useEffect(() => {
+    if (lastNotificationResponse) {
+      NotificationRouter.handleNotificationResponse(lastNotificationResponse);
+    }
+  }, [lastNotificationResponse]);
 
   // Telemetry Helper
   async function logTelemetry(notifId: string, type: string, status: 'delivered' | 'opened' | 'dismissed' | 'failed') {
@@ -225,14 +232,7 @@ export function usePushNotifications() {
         }
       });
 
-      // Check for Cold-Start notification tap response
-      Notifications.getLastNotificationResponseAsync()
-        .then((lastResponse) => {
-          if (lastResponse) {
-            NotificationRouter.handleNotificationResponse(lastResponse);
-          }
-        })
-        .catch(() => {});
+
 
       // Register background fetch
       BackgroundFetch.getStatusAsync().then(status => {
@@ -538,7 +538,7 @@ async function registerForPushNotificationsAsync() {
     }
 
     // High Priority (respect DND)
-    await Notifications.setNotificationChannelAsync('default_v2', {
+    await Notifications.setNotificationChannelAsync('urgent_alerts_v1', {
       name: 'Default Alerts',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],

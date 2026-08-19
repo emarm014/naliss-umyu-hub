@@ -4,7 +4,7 @@
  */
 
 const tintColorLight = '#059669'; // Emerald Green Accent
-const tintColorDark = '#38bdf8';  // Sky 400
+const tintColorDark = '#34d399';  // Emerald 400 (Unified Dark Theme)
 
 export const Colors = {
     light: {
@@ -74,20 +74,20 @@ export const Colors = {
         glass: 'rgba(15, 23, 42, 0.7)',
         glassSubtle: 'rgba(15, 23, 42, 0.3)',
         shadow: 'rgba(0, 0, 0, 0.3)',
-        // Quick Action Backgrounds (Dark Mode Muted)
-        actionMint: '#064e3b',   // Emerald 900
-        actionBlue: '#0c4a6e',   // Sky 900
-        actionOrange: '#7c2d12', // Orange 900
-        actionPurple: '#4c1d95', // Purple 900
-        actionRed: '#7f1d1d',    // Red 900
-        actionCyan: '#164e63',   // Cyan 900
-        // Quick Action Icons (Dark Mode - High Contrast Vibrant)
+        // Quick Action Backgrounds (Dark Mode Muted - Unified Emerald)
+        actionMint: 'rgba(52, 211, 153, 0.15)',
+        actionBlue: 'rgba(52, 211, 153, 0.15)',
+        actionOrange: 'rgba(52, 211, 153, 0.15)',
+        actionPurple: 'rgba(52, 211, 153, 0.15)',
+        actionRed: 'rgba(52, 211, 153, 0.15)',
+        actionCyan: 'rgba(52, 211, 153, 0.15)',
+        // Quick Action Icons (Dark Mode - Unified Emerald)
         actionMintIcon: '#34d399',
-        actionBlueIcon: '#38bdf8',
-        actionOrangeIcon: '#fbbf24',
-        actionPurpleIcon: '#c084fc',
-        actionRedIcon: '#f87171',
-        actionCyanIcon: '#22d3ee',
+        actionBlueIcon: '#34d399',
+        actionOrangeIcon: '#34d399',
+        actionPurpleIcon: '#34d399',
+        actionRedIcon: '#34d399',
+        actionCyanIcon: '#34d399',
     },
 };
 

@@ -114,12 +114,12 @@ import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { supabase } from '../../src/api/supabase/client';
 
 const quickActions = [
-  { id: 'notepad', name: 'Notepad', icon: 'document-text', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: '#064e3b', route: '/notepad' },
-  { id: 'news', name: 'News', icon: 'newspaper', lightColor: '#0284c7', darkColor: '#38bdf8', lightBg: '#f0f9ff', darkBg: '#0c4a6e', route: '/news' },
-  { id: 'archive', name: 'Archive', icon: 'library', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: '#064e3b', route: '/archive' },
-  { id: 'fyb', name: 'FYB', icon: 'star', lightColor: '#d97706', darkColor: '#fbbf24', lightBg: '#fffbeb', darkBg: '#7c2d12', route: '/fyb' },
-  { id: 'event_pool', name: 'Event Pool', icon: 'trophy', lightColor: '#d97706', darkColor: '#fbbf24', lightBg: '#fffbeb', darkBg: '#7c2d12', route: '/event-pool' },
-  { id: 'gallery', name: 'Gallery', icon: 'images', lightColor: '#8b5cf6', darkColor: '#c084fc', lightBg: '#faf5ff', darkBg: '#4c1d95', route: '/gallery' },
+  { id: 'notepad', name: 'Notepad', icon: 'document-text', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/notepad' },
+  { id: 'news', name: 'News', icon: 'newspaper', lightColor: '#0284c7', darkColor: '#34d399', lightBg: '#f0f9ff', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/news' },
+  { id: 'archive', name: 'Archive', icon: 'library', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/archive' },
+  { id: 'fyb', name: 'FYB', icon: 'star', lightColor: '#d97706', darkColor: '#34d399', lightBg: '#fffbeb', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/fyb' },
+  { id: 'event_pool', name: 'Event Pool', icon: 'trophy', lightColor: '#d97706', darkColor: '#34d399', lightBg: '#fffbeb', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/event-pool' },
+  { id: 'gallery', name: 'Gallery', icon: 'images', lightColor: '#8b5cf6', darkColor: '#34d399', lightBg: '#faf5ff', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/gallery' },
 ];
 
 export default function HomeScreen() {
@@ -312,18 +312,21 @@ export default function HomeScreen() {
   const baseTheme = LEVEL_THEMES[user?.level || ''] || DEFAULT_THEME;
   const theme = React.useMemo(() => {
     if (!isDark) return baseTheme;
-    // Premium dark mode adaptations
+    
+    // Premium dark mode adaptations matching the new announcement cards
+    const emeraldAccent = '#34d399';
     return {
       ...baseTheme,
-      // Sleek, deep dark gradient instead of the heavy vibrant gradient
-      gradient: ['#0f172a', '#020617', '#0f172a'] as [string, string, string],
-      // Use the vibrant accent color for motifs and badges to make it pop beautifully
-      motifColor: baseTheme.accentColor + '15',
-      badgeBg: baseTheme.accentColor + '20',
-      badgeText: baseTheme.accentColor,
-      rankColor: baseTheme.accentColor,
-      accentBg: baseTheme.accentColor + '20',
-      statusBorderColor: baseTheme.accentColor,
+      // Deep slate gradient to match the card background
+      gradient: ['#1e293b', '#0f172a', '#020617'] as [string, string, string],
+      // Override level-specific colors with the emerald accent in dark mode for consistency
+      accentColor: emeraldAccent,
+      motifColor: 'rgba(52, 211, 153, 0.05)', // Very subtle motif
+      badgeBg: 'rgba(52, 211, 153, 0.15)',
+      badgeText: emeraldAccent,
+      rankColor: emeraldAccent,
+      accentBg: 'rgba(52, 211, 153, 0.15)',
+      statusBorderColor: emeraldAccent,
     };
   }, [baseTheme, isDark]);
 
@@ -598,7 +601,7 @@ export default function HomeScreen() {
                   return (
                     <TouchableOpacity
                       key={`ann-${item.id}`}
-                      style={styles.posterCard}
+                      style={[styles.posterCard, { borderColor: isDark ? 'rgba(52, 211, 153, 0.15)' : 'rgba(0,0,0,0.05)', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
                       onPress={() => {
                         markAsRead(item.id).catch(() => {});
                         router.push({ pathname: '/announcement/[id]', params: { id: item.id } } as any);
@@ -619,31 +622,19 @@ export default function HomeScreen() {
                           setViewerVisible(true);
                         }}
                       />
-                      <LinearGradient colors={['transparent', 'rgba(12,74,110,0.95)']} style={styles.posterGradient} />
+                      <LinearGradient colors={['rgba(15,23,42,0.1)', 'rgba(15,23,42,0.95)']} style={styles.posterGradient} />
                       <View style={styles.posterContent}>
                         <View style={styles.posterTagRow}>
-                          <View style={[styles.posterTag, !isRead && { backgroundColor: theme.gradient[2] }]}>
-                            <Text style={styles.posterTagText}>{item.category?.toUpperCase() || 'INFO'}</Text>
+                          <View style={[styles.posterTag, !isRead ? styles.posterTagUnread : styles.posterTagRead]}>
+                            <Text style={[styles.posterTagText, !isRead ? { color: '#34d399' } : { color: '#ffffff' }]}>{item.category?.toUpperCase() || 'GENERAL'}</Text>
                           </View>
                         </View>
                         <Text style={styles.posterTitle} numberOfLines={2}>{item.title}</Text>
                         <View style={styles.posterFooter}>
                           <Text style={styles.posterDate}>{item.created_at ? (() => { try { return format(new Date(item.created_at), 'MMMM d, yyyy'); } catch { return ''; } })() : ''}</Text>
-                          <Text style={styles.posterSeeMore}>See more →</Text>
+                          <Text style={[styles.posterSeeMore, !isRead ? { color: '#34d399' } : { color: '#ffffff' }]}>See more →</Text>
                         </View>
                       </View>
-                      <View
-                        pointerEvents="none"
-                        style={[
-                          StyleSheet.absoluteFillObject,
-                          {
-                            borderWidth: 2,
-                            borderColor: isRead ? 'transparent' : theme.accentColor,
-                            borderRadius: 24,
-                            zIndex: 10,
-                          }
-                        ]}
-                      />
                     </TouchableOpacity>
                   );
                 } else {
@@ -894,7 +885,8 @@ const styles = StyleSheet.create({
   posterGrid: { gap: 14, paddingHorizontal: 4, paddingBottom: 4 },
   posterCard: {
     width: '100%', height: 200,
-    borderRadius: 24, overflow: 'hidden', backgroundColor: '#FFF',
+    borderRadius: 16, overflow: 'hidden', backgroundColor: '#FFF',
+    borderWidth: 1, borderColor: '#F1F5F9',
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1, shadowRadius: 10,
   },
@@ -911,8 +903,16 @@ const styles = StyleSheet.create({
   },
   posterTagRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   posterTag: {
-    backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 16, borderWidth: 1,
+  },
+  posterTagUnread: {
+    backgroundColor: 'rgba(52, 211, 153, 0.15)',
+    borderColor: 'rgba(52, 211, 153, 0.5)',
+  },
+  posterTagRead: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   posterTagText: { fontFamily: 'Inter-Bold', fontSize: 10, color: '#FFF' },
   unreadDot: { width: 8, height: 8, borderRadius: 4 },

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
@@ -21,7 +22,7 @@ interface Payload {
   is_cron?: boolean;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   try {
     const payload: Payload = await req.json();
 
@@ -97,7 +98,7 @@ serve(async (req) => {
         body: notifBody,
         data: { type: 'event', id: pool.id, pool_id: pool.id },
         priority: 'high',
-        channelId: 'default_v2',
+        channelId: 'urgent_alerts_v1',
         badge: 1,
         categoryIdentifier: categoryId,
         threadId: threadId,

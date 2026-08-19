@@ -427,88 +427,68 @@ const overlayStyles = StyleSheet.create({
 
 function AnnouncementCard({ announcement, user, onDelete, onApply, onImagePress }: { announcement: any, user: any, onDelete: (id: string) => void, onApply?: () => void, onImagePress?: (localUri: string | null) => void }) {
     const cat = CATEGORY_CONFIG[(announcement.category || 'general').toLowerCase()] || DEFAULT_CAT;
-    const priority = PRIORITY_CONFIG[announcement.priority] || PRIORITY_CONFIG.normal;
     const timeAgo = announcement.created_at
-        ? (() => { try { return formatDistanceToNow(new Date(announcement.created_at), { addSuffix: true }); } catch { return ''; } })()
+        ? (() => { try { return format(new Date(announcement.created_at), 'MMMM d, yyyy'); } catch { return ''; } })()
         : '';
     const canDelete = user?.role === 'super_admin' || user?.role === 'moderator';
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+    const readIds = useAnnouncementStore(s => s.readIds) || [];
+    const isRead = readIds.includes(announcement.id);
+    const markAsRead = useAnnouncementStore(s => s.markAsRead);
 
     return (
         <TouchableOpacity
-            style={styles.annCard}
-            onPress={() => router.push({ pathname: '/announcement/[id]', params: { id: announcement.id } } as any)}
+            style={[styles.posterCard, { borderColor: isDark ? 'rgba(52, 211, 153, 0.15)' : 'rgba(0,0,0,0.05)', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+            onPress={() => {
+                markAsRead(announcement.id).catch(() => {});
+                router.push({ pathname: '/announcement/[id]', params: { id: announcement.id } } as any);
+            }}
             activeOpacity={0.92}
         >
-            {/* Full-bleed cover or gradient header */}
-            <View style={styles.annCardTop}>
-                <PosterImage
-                    uri={announcement.cover_image_url ? getOptimizedCloudinaryUrl(announcement.cover_image_url, 800) : undefined}
-                    fallbackUri={announcement.cover_image_url || undefined}
-                    style={StyleSheet.absoluteFillObject}
-                    gradientColors={cat.gradient}
-                    onPress={announcement.cover_image_url ? onImagePress : undefined}
-                />
-                {/* Dark overlay for text readability */}
-                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.72)']} style={styles.annCardOverlay} />
-
-                {/* Top row: category + priority + pinned */}
-                <View style={styles.annCardTopRow}>
-                    <View style={[styles.annCatBadge, { backgroundColor: cat.chipBg + 'ee' }]}>
-                        <Ionicons name={cat.icon as any} size={10} color={cat.chipText} />
-                        <Text style={[styles.annCatText, { color: cat.chipText }]}>{cat.label}</Text>
+            <PosterImage
+                uri={announcement.cover_image_url ? getOptimizedCloudinaryUrl(announcement.cover_image_url, 600, 400) : undefined}
+                fallbackUri={announcement.cover_image_url || undefined}
+                style={styles.posterImage}
+                gradientColors={['#0f172a', '#1e293b']}
+                onPress={announcement.cover_image_url ? onImagePress : undefined}
+            />
+            <LinearGradient colors={['rgba(15,23,42,0.1)', 'rgba(15,23,42,0.95)']} style={styles.posterGradient} />
+            <View style={styles.posterContent}>
+                <View style={styles.posterTagRow}>
+                    <View style={[styles.posterTag, !isRead ? styles.posterTagUnread : styles.posterTagRead]}>
+                        <Text style={[styles.posterTagText, !isRead ? { color: '#34d399' } : { color: '#ffffff' }]}>{cat.label}</Text>
                     </View>
-                    <View style={styles.annTopRight}>
-                        {priority.color !== 'transparent' && (
-                            <View style={[styles.priorityBadge, { backgroundColor: priority.color }]}>
-                                <Ionicons name={priority.icon as any} size={9} color='#fff' />
-                                <Text style={styles.priorityText}>{priority.label}</Text>
-                            </View>
-                        )}
-                        {announcement.is_pinned && (
-                            <View style={styles.pinnedBadge}>
-                                <Ionicons name='pin' size={9} color='#fff' />
-                                <Text style={styles.pinnedText}>PINNED</Text>
-                            </View>
-                        )}
-                    </View>
+                    {canDelete && (
+                        <TouchableOpacity 
+                            style={{ marginLeft: 'auto', backgroundColor: 'rgba(239, 68, 68, 0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.5)' }}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                Alert.alert('Delete', 'Remove this announcement?', [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    { text: 'Delete', style: 'destructive', onPress: () => onDelete(announcement.id) }
+                                ]);
+                            }}
+                        >
+                            <Ionicons name='trash-outline' size={14} color='#fca5a5' />
+                        </TouchableOpacity>
+                    )}
                 </View>
-
-                {/* Bottom: title + date */}
-                <View style={styles.annCardBottom}>
-                    <Text style={styles.annCardTitle} numberOfLines={2}>{announcement.title}</Text>
-                    <Text style={styles.annCardTime}>{timeAgo}</Text>
-                </View>
-            </View>
-
-            {/* Body */}
-            <View style={[styles.annCardBody, { borderLeftWidth: 3, borderLeftColor: cat.accent, backgroundColor: colors.card }]}>
-                <Text style={[styles.annCardExcerpt, { color: colors.textSecondary }]} numberOfLines={3}>{announcement.content}</Text>
-                <View style={styles.annCardFooter}>
-                    <View style={styles.annReadBtn}>
-                        <Text style={[styles.annReadText, { color: cat.chipText }]}>Read more</Text>
-                        <Ionicons name='arrow-forward' size={14} color={cat.chipText} />
-                    </View>
-                    {announcement.pool_id && (
+                <Text style={styles.posterTitle} numberOfLines={2}>{announcement.title}</Text>
+                <View style={styles.posterFooter}>
+                    <Text style={styles.posterDate}>{timeAgo}</Text>
+                    {announcement.pool_id ? (
                         <TouchableOpacity
-                            style={{ backgroundColor: '#10b981', marginLeft: 'auto', marginRight: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, flexDirection: 'row', alignItems: 'center' }}
-                            onPress={() => {
-                                // We check if there's a pool, then trigger onApply which opens the modal overlay
+                            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#10b981', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}
+                            onPress={(e) => {
+                                e.stopPropagation();
                                 onApply?.();
                             }}
                         >
                             <Ionicons name='clipboard-outline' size={14} color='#fff' />
-                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 }}>Participate / View</Text>
+                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 }}>Participate</Text>
                         </TouchableOpacity>
-                    )}
-                    {canDelete && (
-                        <TouchableOpacity style={styles.deleteBtn}
-                            onPress={() => Alert.alert('Delete', 'Remove this announcement?', [
-                                { text: 'Cancel', style: 'cancel' },
-                                { text: 'Delete', style: 'destructive', onPress: () => onDelete(announcement.id) }
-                            ])}>
-                            <Ionicons name='trash-outline' size={16} color='#ef4444' />
-                        </TouchableOpacity>
+                    ) : (
+                        <Text style={[styles.posterSeeMore, !isRead ? { color: '#34d399' } : { color: '#ffffff' }]}>See more →</Text>
                     )}
                 </View>
             </View>
@@ -687,26 +667,46 @@ const styles = StyleSheet.create({
     contentContainer: { paddingTop: 16, paddingBottom: 60 },
 
     // Announcement card
-    annCard: { backgroundColor: '#fff', borderRadius: 20, marginBottom: 20, overflow: 'hidden', shadowColor: '#1B5E20', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4 },
-    annCardTop: { height: 200, position: 'relative', justifyContent: 'space-between', padding: 14 },
-    annCardOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '70%' },
-    annCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-    annCatBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
-    annCatText: { fontFamily: 'Inter-Bold', fontSize: 9, letterSpacing: 1 },
-    annTopRight: { flexDirection: 'row', gap: 6 },
-    priorityBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
-    priorityText: { fontFamily: 'Inter-Bold', fontSize: 8, color: '#fff', letterSpacing: 0.5 },
-    pinnedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.5)' },
-    pinnedText: { fontFamily: 'Inter-Bold', fontSize: 8, color: '#fff', letterSpacing: 0.5 },
-    annCardBottom: { gap: 4 },
-    annCardTitle: { fontFamily: 'Inter-Bold', fontSize: 18, color: '#fff', lineHeight: 24, textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
-    annCardTime: { fontFamily: 'Inter-Medium', fontSize: 11, color: 'rgba(255,255,255,0.7)' },
-    annCardBody: { padding: 16, paddingLeft: 14 },
-    annCardExcerpt: { fontFamily: 'Inter-Regular', fontSize: 14, color: '#475569', lineHeight: 21, marginBottom: 12 },
-    annCardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    annReadBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    annReadText: { fontFamily: 'Inter-SemiBold', fontSize: 13 },
-    deleteBtn: { padding: 8, backgroundColor: '#fef2f2', borderRadius: 10 },
+    posterCard: {
+        width: '100%', height: 200,
+        borderRadius: 16, overflow: 'hidden', backgroundColor: '#FFF',
+        borderWidth: 1, borderColor: '#F1F5F9',
+        marginBottom: 20,
+        elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1, shadowRadius: 10,
+    },
+    posterImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    posterGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 },
+    posterContent: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        justifyContent: 'flex-end',
+        padding: 20,
+    },
+    posterTagRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+    posterTag: {
+        paddingHorizontal: 12, paddingVertical: 6,
+        borderRadius: 16, borderWidth: 1,
+    },
+    posterTagUnread: {
+        backgroundColor: 'rgba(52, 211, 153, 0.15)',
+        borderColor: 'rgba(52, 211, 153, 0.5)',
+    },
+    posterTagRead: {
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    posterTagText: { fontFamily: 'Inter-Bold', fontSize: 10, color: '#FFF' },
+    posterTitle: {
+        fontFamily: 'Inter-Bold', fontSize: 20, color: '#FFF', marginBottom: 4,
+        textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+    },
+    posterDate: { fontFamily: 'Inter-Medium', fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+    posterFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+    posterSeeMore: { fontFamily: 'Inter-Bold', fontSize: 12, color: 'rgba(255,255,255,0.9)' },
 
     // Event card
     eventCard: { backgroundColor: '#fff', borderRadius: 20, marginBottom: 20, overflow: 'hidden', shadowColor: '#1e3a8a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 4 },

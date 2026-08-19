@@ -399,6 +399,7 @@ type ViewerStage =
   | 'vault_hit'     // File found in local vault (offline)
   | 'vault_miss'    // File not in vault, will download
   | 'cache_hit'     // File found in viewer cache
+  | 'stream_start'  // Video/audio streaming started directly without full download
   | 'download_start'// Download started
   | 'download_ok'   // Download completed successfully
   | 'download_fail' // Download failed

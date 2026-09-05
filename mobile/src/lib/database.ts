@@ -4,10 +4,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { trackSqlTransaction, captureDatabaseError } from '../utils/sentry';
 
 let db: SQLite.SQLiteDatabase | null = null;
+let readDb: SQLite.SQLiteDatabase | null = null; // Dedicated read-only connection
 let recoveryPromise: Promise<boolean> | null = null;
 let currentRawDb: SQLite.SQLiteDatabase | null = null;
 let isRecovering = false;
 let activeDbName = 'chat.db';
+let _queueDepth = 0; // Track how many writes are pending in the queue
 
 // Global queue to prevent "cannot start a transaction within a transaction" errors
 const _global = globalThis as any;
@@ -15,14 +17,104 @@ if (!_global.sqliteTransactionQueue) {
     _global.sqliteTransactionQueue = Promise.resolve();
 }
 export function enqueueTransaction<T>(task: () => Promise<T>): Promise<T> {
+    _queueDepth++;
     const queue = _global.sqliteTransactionQueue;
-    const taskPromise = queue.then(() => task());
+    const taskPromise = queue.then(() => task()).finally(() => { _queueDepth--; });
     
     _global.sqliteTransactionQueue = taskPromise.catch((err: any) => {
         console.error('SQLite queued transaction error:', err);
     });
     
     return taskPromise;
+}
+
+/** Returns true when the write queue has no pending operations. */
+export function isWriteQueueIdle(): boolean {
+    return _queueDepth === 0;
+}
+
+/**
+ * Open a second, DEDICATED read-only connection to the same database file.
+ * WAL mode allows multiple connections — one writer + many readers —
+ * so reads on this connection are NEVER blocked by writes on the main `db`.
+ *
+ * This is the definitive fix for the "1 second freeze on SELECT local_assets"
+ * problem identified by Sentry Seer: the old readQuery() bypassed the JS queue
+ * but still used the same native connection, which expo-sqlite serializes internally.
+ */
+async function initReadConnection(): Promise<SQLite.SQLiteDatabase | null> {
+    try {
+        if (readDb) {
+            // Verify it's alive
+            try { await readDb.execAsync('SELECT 1'); return readDb; } catch (_) {}
+        }
+        const rawReadDb = await SQLite.openDatabaseAsync(activeDbName);
+        await rawReadDb.execAsync('PRAGMA busy_timeout = 3000;');
+        await rawReadDb.execAsync('PRAGMA journal_mode = WAL;');
+        await rawReadDb.execAsync('PRAGMA query_only = ON;'); // Safety: prevent accidental writes
+        await rawReadDb.execAsync('PRAGMA cache_size = -4000;');
+        readDb = rawReadDb;
+        return readDb;
+    } catch (e) {
+        console.warn('[DB] Failed to open read connection:', e);
+        return null;
+    }
+}
+
+/**
+ * Execute a READ-ONLY query on a DEDICATED read connection.
+ *
+ * This connection is completely separate from the write connection (`db`),
+ * so reads never block behind sync writes at the native level.
+ * WAL mode guarantees readers see a consistent snapshot without locking writers.
+ *
+ * Falls back to the main `db` if the read connection isn't available.
+ */
+export async function readQuery<T>(queryFn: (database: SQLite.SQLiteDatabase) => Promise<T>): Promise<T | null> {
+    // Wait for DB to be initialized, but don't wait for the write queue
+    if (initDbPromise) await initDbPromise;
+    
+    // Prefer the dedicated read connection
+    let activeReadDb = readDb;
+    if (!activeReadDb) {
+        activeReadDb = await initReadConnection();
+    }
+    // Fall back to main db if read connection failed
+    if (!activeReadDb) activeReadDb = db;
+    if (!activeReadDb) return null;
+    
+    try {
+        return await queryFn(activeReadDb);
+    } catch (e: any) {
+        if (isNativeNpe(e)) {
+            // Read connection lost — close and re-create it next time
+            try { readDb?.closeAsync?.(); } catch (_) {}
+            readDb = null;
+            // Also trigger main DB recovery if needed
+            recoverDatabase().catch(() => {});
+        }
+        console.warn('[DB] readQuery failed:', e?.message || e);
+        return null;
+    }
+}
+
+/**
+ * writeQuery enqueues a database write operation into the global transaction queue.
+ * This guarantees that we never execute multiple writes concurrently or execute
+ * writes while the database is attempting a WAL checkpoint, preventing SQLITE_BUSY crashes.
+ */
+export function writeQuery<T>(queryFn: (database: SQLite.SQLiteDatabase) => Promise<T>): Promise<T | null> {
+    return enqueueTransaction(async () => {
+        if (initDbPromise) await initDbPromise;
+        const activeDb = db;
+        if (!activeDb) return null;
+        try {
+            return await queryFn(activeDb);
+        } catch (e: any) {
+            console.error('[DB] writeQuery failed:', e);
+            return null;
+        }
+    });
 }
 
 function isNativeNpe(error: any): boolean {
@@ -108,7 +200,9 @@ async function recoverDatabase(): Promise<boolean> {
     console.warn('SQLite attempting database recovery...');
     try {
       try { await (db as any)?.closeAsync?.(); } catch (_) {}
+      try { await (readDb as any)?.closeAsync?.(); } catch (_) {}
       db = null;
+      readDb = null;
       currentRawDb = null;
       try {
         await SQLite.deleteDatabaseAsync(activeDbName);
@@ -129,6 +223,8 @@ async function recoverDatabase(): Promise<boolean> {
       
       const newDb = await initDB();
       if (newDb) {
+        // Also re-create the read connection
+        initReadConnection().catch(() => {});
         console.warn('SQLite recovery successful');
         return true;
       }
@@ -458,6 +554,9 @@ export const initDB = async () => {
             CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON offline_download_telemetry (timestamp);
         `);
 
+        // Index for getAssetCacheByUrl() — eliminates full table scan on every file open
+        await db.execAsync('CREATE INDEX IF NOT EXISTS idx_assets_remote_url ON local_assets (remote_url);');
+
         // Helper to safely add columns if they don't exist
         const ensureColumn = async (table: string, column: string, typeDef: string) => {
             try {
@@ -506,6 +605,9 @@ export const initDB = async () => {
             await db.execAsync('CREATE INDEX IF NOT EXISTS idx_manifest_content_hash ON local_media_manifest (content_hash);');
         } catch (_) {}
 
+        // Eagerly open the dedicated read connection now that the DB is ready
+        initReadConnection().catch(() => {});
+
         return db;
     } catch (e) {
         console.warn('Failed to initialize SQLite DB:', e);
@@ -521,15 +623,28 @@ export const getDB = () => db;
 /**
  * Run WAL checkpoint to prevent unbounded WAL file growth.
  * Should be called periodically (e.g., on app foreground).
+ *
+ * CRITICAL: Only runs when the write queue is IDLE. If writes are in progress,
+ * the checkpoint is silently skipped — it will be retried next time the app
+ * returns to foreground. This prevents the "database table is locked" crash
+ * that Sentry captured when checkpoint collided with sync writes.
  */
 export const checkpointWal = () => {
+    // Skip immediately if the write queue is busy — don't even enqueue
+    if (!isWriteQueueIdle()) {
+        console.log('[Database] Skipping WAL checkpoint — write queue busy');
+        return;
+    }
     enqueueTransaction(async () => {
         try {
             if (db) {
-                await db.execAsync('PRAGMA wal_checkpoint(TRUNCATE);');
+                // Double-check: another write may have entered the queue between
+                // our idle check and when this task actually runs
+                await db.execAsync('PRAGMA wal_checkpoint(PASSIVE);');
             }
         } catch (e) {
-            console.warn('[Database] WAL checkpoint failed (async):', e);
+            // Gracefully swallow lock errors — PASSIVE checkpoint can be retried later
+            console.warn('[Database] WAL checkpoint failed (non-fatal):', e);
         }
     }).catch(e => console.warn('[Database] WAL checkpoint queue error:', e));
 };
@@ -549,17 +664,14 @@ export const getAssetCache = async (entityId: string) => {
 };
 
 export const upsertAssetCache = async (entityId: string, remoteUrl: string, localPath: string, assetType: string) => {
-    if (!db) return;
-    try {
+    return writeQuery(async (database) => {
         const updatedAt = new Date().toISOString();
-        await db.runAsync(
+        await database.runAsync(
             `INSERT OR REPLACE INTO local_assets (entity_id, remote_url, local_path, asset_type, updated_at) 
              VALUES (?, ?, ?, ?, ?)`,
             [entityId, remoteUrl, localPath, assetType, updatedAt]
         );
-    } catch (e) {
-        console.error('SQLite upsertAssetCache error:', e);
-    }
+    });
 };
 
 export function safeJsonStringify(obj: any): string | null {
@@ -583,13 +695,12 @@ export function safeJsonStringify(obj: any): string | null {
 }
 
 export const saveLocalUserSession = async (profile: any) => {
-    if (!db || !profile?.id) return;
-    try {
+    if (!profile?.id) return;
+    return writeQuery(async (database) => {
         const updatedAt = profile.updated_at || new Date().toISOString();
-        const lastSyncedAt = profile.last_synced_at || new Date().toISOString();
         const profileJson = safeJsonStringify(profile);
         
-        await db.runAsync(
+        await database.runAsync(
             `INSERT OR REPLACE INTO local_user_session (
                 id, username, email, level, department_id, raw_profile_json, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -603,9 +714,7 @@ export const saveLocalUserSession = async (profile: any) => {
                 updatedAt
             ]
         );
-    } catch (e) {
-        console.error('SQLite streamlined saveLocalUserSession error:', e);
-    }
+    });
 };
 
 export const getLocalUserSession = async () => {
@@ -638,12 +747,9 @@ export const getLocalUserSession = async () => {
 };
 
 export const clearLocalUserSession = async () => {
-    if (!db) return;
-    try {
-        await db.runAsync('DELETE FROM local_user_session');
-    } catch (e) {
-        console.error('SQLite clearLocalUserSession error:', e);
-    }
+    return writeQuery(async (database) => {
+        await database.runAsync('DELETE FROM local_user_session');
+    });
 };
 
 export const getMessagesByGroup = async (groupId: string, limit = 100000) => {
@@ -656,7 +762,7 @@ export const getMessagesByGroup = async (groupId: string, limit = 100000) => {
              ) ORDER BY created_at ASC`,
             [groupId, limit]
         );
-        return result.map(row => {
+        return result.map((row: any) => {
             try {
                 const msg = JSON.parse(row.raw_data);
                 // Hydrate local_media_path dynamically into the object if it exists
@@ -675,20 +781,17 @@ export const getMessagesByGroup = async (groupId: string, limit = 100000) => {
 };
 
 export const insertOrReplaceMessage = async (msg: any, groupId: string) => {
-    if (!db) return;
-    try {
+    return writeQuery(async (database) => {
         const rawData = safeJsonStringify(msg);
         const createdAt = msg.created_at || new Date().toISOString();
         const localMediaPath = msg.local_media_path || null;
         
-        await db.runAsync(
+        await database.runAsync(
             `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
              VALUES (?, ?, ?, ?, ?)`,
             [msg.id, groupId, createdAt, rawData, localMediaPath]
         );
-    } catch (e) {
-        console.error('SQLite insert error:', e);
-    }
+    });
 };
 
 export const batchInsertMessages = async (messages: any[], groupId: string) => {
@@ -736,9 +839,8 @@ export const batchInsertMessages = async (messages: any[], groupId: string) => {
 };
 
 export const updateLocalMessage = async (id: string, updates: any) => {
-    if (!db) return;
-    try {
-        const result = await db.getFirstAsync<{ raw_data: string }>('SELECT raw_data FROM local_messages WHERE id = ?', [id]);
+    return writeQuery(async (database) => {
+        const result = await database.getFirstAsync<{ raw_data: string }>('SELECT raw_data FROM local_messages WHERE id = ?', [id]);
         if (result) {
             const parsed = JSON.parse(result.raw_data);
             const merged = { ...parsed, ...updates };
@@ -746,41 +848,30 @@ export const updateLocalMessage = async (id: string, updates: any) => {
             const newId = updates.id || id;
             const safeMerged = safeJsonStringify(merged);
             if (newId !== id) {
-                await db.runAsync('UPDATE local_messages SET id = ?, raw_data = ? WHERE id = ?', [newId, safeMerged, id]);
+                await database.runAsync('UPDATE local_messages SET id = ?, raw_data = ? WHERE id = ?', [newId, safeMerged, id]);
             } else {
-                await db.runAsync('UPDATE local_messages SET raw_data = ? WHERE id = ?', [safeMerged, id]);
+                await database.runAsync('UPDATE local_messages SET raw_data = ? WHERE id = ?', [safeMerged, id]);
             }
         }
-    } catch (e) {
-        console.error('SQLite update error:', e);
-    }
+    });
 };
 
 export const deleteLocalMessage = async (id: string) => {
-    if (!db) return;
-    try {
-        await db.runAsync('DELETE FROM local_messages WHERE id = ?', [id]);
-    } catch (e) {
-        console.error('SQLite delete error:', e);
-    }
+    return writeQuery(async (database) => {
+        await database.runAsync('DELETE FROM local_messages WHERE id = ?', [id]);
+    });
 };
 
 export const clearAllMessages = async () => {
-    if (!db) return;
-    try {
-        await db.runAsync('DELETE FROM local_messages');
-    } catch (e) {
-        console.error('SQLite clear error:', e);
-    }
+    return writeQuery(async (database) => {
+        await database.runAsync('DELETE FROM local_messages');
+    });
 };
 
 export const updateLocalMediaPath = async (id: string, localPath: string) => {
-    if (!db) return;
-    try {
-        await db.runAsync('UPDATE local_messages SET local_media_path = ? WHERE id = ?', [localPath, id]);
-    } catch (e) {
-        console.error('SQLite update local_media_path error:', e);
-    }
+    return writeQuery(async (database) => {
+        await database.runAsync('UPDATE local_messages SET local_media_path = ? WHERE id = ?', [localPath, id]);
+    });
 };
 
 export const getMaxTimestampByGroup = async (groupId: string): Promise<string | null> => {
@@ -797,10 +888,9 @@ export const getMaxTimestampByGroup = async (groupId: string): Promise<string | 
 };
 
 export const upsertMediaManifest = async (manifest: any) => {
-    if (!db) return;
-    try {
+    return writeQuery(async (database) => {
         const now = new Date().toISOString();
-        await db.runAsync(
+        await database.runAsync(
             `INSERT OR REPLACE INTO local_media_manifest (
                 id, message_id, user_id, group_id, file_url, local_path, 
                 media_type, mime_type, file_size, sha256, downloaded, 
@@ -827,9 +917,7 @@ export const upsertMediaManifest = async (manifest: any) => {
                 manifest.device_id || null
             ]
         );
-    } catch (e) {
-        console.error('SQLite upsertMediaManifest error:', e);
-    }
+    });
 };
 
 export const getMediaManifest = async (id: string): Promise<any | null> => {
@@ -860,7 +948,7 @@ export const getMediaManifestsForGroup = async (groupId: string): Promise<any[]>
             'SELECT * FROM local_media_manifest WHERE group_id = ?',
             [groupId]
         );
-        return rows.map(row => ({
+        return rows.map((row: any) => ({
             ...row,
             downloaded: row.downloaded === 1,
             verified: row.verified === 1
@@ -877,7 +965,7 @@ export const getAllPendingMediaManifests = async (): Promise<any[]> => {
         const rows = await db.getAllAsync<any>(
             'SELECT * FROM local_media_manifest WHERE downloaded = 0'
         );
-        return rows.map(row => ({
+        return rows.map((row: any) => ({
             ...row,
             downloaded: row.downloaded === 1,
             verified: row.verified === 1
@@ -889,10 +977,9 @@ export const getAllPendingMediaManifests = async (): Promise<any[]> => {
 };
 
 export const updateMediaSyncJob = async (job: any) => {
-    if (!db) return;
-    try {
+    return writeQuery(async (database) => {
         const now = new Date().toISOString();
-        await db.runAsync(
+        await database.runAsync(
             `INSERT OR REPLACE INTO media_sync_jobs (
                 job_id, user_id, device_id, total_files, completed, 
                 failed, pending, progress, started_at, finished_at, status
@@ -911,9 +998,7 @@ export const updateMediaSyncJob = async (job: any) => {
                 job.status || 'pending'
             ]
         );
-    } catch (e) {
-        console.error('SQLite updateMediaSyncJob error:', e);
-    }
+    });
 };
 
 export const getMediaSyncJob = async (jobId: string): Promise<any | null> => {
@@ -993,10 +1078,9 @@ export const verifyDatabaseIntegrity = async (): Promise<{healthy: boolean; issu
 };
 
 export const upsertSyncJournal = async (entry: any) => {
-    if (!db) return;
-    try {
+    return writeQuery(async (database) => {
         const now = new Date().toISOString();
-        await db.runAsync(
+        await database.runAsync(
             `INSERT INTO sync_journal (
                 device_id, user_id, stage, entity_id, retry_count, 
                 bytes_downloaded, total_bytes, status, started_at, completed_at, error_message
@@ -1015,9 +1099,7 @@ export const upsertSyncJournal = async (entry: any) => {
                 entry.error_message || null
             ]
         );
-    } catch (e) {
-        console.error('SQLite upsertSyncJournal error:', e);
-    }
+    });
 };
 
 export const getLastJournalEntry = async (deviceId: string, stage: string): Promise<any | null> => {
@@ -1034,10 +1116,9 @@ export const getLastJournalEntry = async (deviceId: string, stage: string): Prom
 };
 
 export const upsertContentManifest = async (entry: any) => {
-    if (!db) return;
-    try {
+    return writeQuery(async (database) => {
         const now = new Date().toISOString();
-        await db.runAsync(
+        await database.runAsync(
             `INSERT OR REPLACE INTO content_manifest (
                 id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -1051,9 +1132,50 @@ export const upsertContentManifest = async (entry: any) => {
                 entry.local_updated_at || now
             ]
         );
-    } catch (e) {
-        console.error('SQLite streamlined upsertContentManifest error:', e);
-    }
+    });
+};
+
+/**
+ * Batch-upsert content manifest entries in a SINGLE queued transaction.
+ * This replaces the per-item upsertContentManifest loop that was creating
+ * N separate queue entries per sync stage (the "write storm" identified by Sentry Seer).
+ *
+ * Example: syncing 50 announcements now = 1 transaction instead of 50.
+ */
+export const batchUpsertContentManifest = async (entries: any[]) => {
+    if (!entries.length) return;
+    return enqueueTransaction(async () => {
+        if (initDbPromise) await initDbPromise;
+        const activeDb = db;
+        if (!activeDb) return;
+        try {
+            await withSafeTransactionAsync(activeDb, async () => {
+                const statement = await activeDb.prepareAsync(
+                    `INSERT OR REPLACE INTO content_manifest (
+                        id, content_type, content_id, user_id, raw_data, server_updated_at, local_updated_at
+                    ) VALUES ($id, $contentType, $contentId, $userId, $rawData, $serverUpdatedAt, $localUpdatedAt)`
+                );
+                try {
+                    const now = new Date().toISOString();
+                    for (const entry of entries) {
+                        await statement.executeAsync({
+                            $id: `${entry.content_type}_${entry.content_id}`,
+                            $contentType: entry.content_type,
+                            $contentId: entry.content_id,
+                            $userId: entry.user_id || null,
+                            $rawData: entry.raw_data ? safeJsonStringify(entry.raw_data) : null,
+                            $serverUpdatedAt: entry.server_updated_at || null,
+                            $localUpdatedAt: entry.local_updated_at || now
+                        });
+                    }
+                } finally {
+                    await statement.finalizeAsync();
+                }
+            });
+        } catch (e: any) {
+            console.error('[DB] batchUpsertContentManifest error:', e);
+        }
+    });
 };
 
 export const getContentManifest = async (contentType: string, contentId: string): Promise<any | null> => {
@@ -1083,7 +1205,7 @@ export const getContentManifestsByType = async (contentType: string): Promise<an
             'SELECT * FROM content_manifest WHERE content_type = ?',
             [contentType]
         );
-        return rows.map(row => ({
+        return rows.map((row: any) => ({
             ...row,
             raw_data: row.raw_data ? JSON.parse(row.raw_data) : null
         }));
@@ -1108,14 +1230,13 @@ export const getSyncCheckpoint = async (deviceId: string, userId: string): Promi
 };
 
 export const updateSyncCheckpoint = async (id: string, stageUpdates: any) => {
-    if (!db) return;
-    try {
-        const existing = await db.getFirstAsync<any>('SELECT * FROM sync_checkpoint WHERE id = ?', [id]);
+    return writeQuery(async (database) => {
+        const existing = await database.getFirstAsync<any>('SELECT * FROM sync_checkpoint WHERE id = ?', [id]);
         const now = new Date().toISOString();
         if (!existing) {
             const deviceId = id.split('_')[0];
             const userId = id.split('_')[1];
-            await db.runAsync(
+            await database.runAsync(
                 `INSERT INTO sync_checkpoint (
                     id, device_id, user_id, stage_groups, stage_messages, stage_announcements,
                     stage_events, stage_materials, stage_past_questions, stage_courses,
@@ -1156,14 +1277,12 @@ export const updateSyncCheckpoint = async (id: string, stageUpdates: any) => {
             fields.push('updated_at = ?');
             values.push(now);
             values.push(id);
-            await db.runAsync(
+            await database.runAsync(
                 `UPDATE sync_checkpoint SET ${fields.join(', ')} WHERE id = ?`,
                 values
             );
         }
-    } catch (e) {
-        console.error('SQLite updateSyncCheckpoint error:', e);
-    }
+    });
 };
 
 export const getMediaByContentHash = async (hash: string): Promise<any | null> => {
@@ -1188,33 +1307,27 @@ export const getMediaByContentHash = async (hash: string): Promise<any | null> =
 };
 
 export const incrementReferenceCount = async (manifestId: string) => {
-    if (!db) return;
-    try {
-        await db.runAsync(
+    return writeQuery(async (database) => {
+        await database.runAsync(
             'UPDATE local_media_manifest SET reference_count = reference_count + 1 WHERE id = ?',
             [manifestId]
         );
-    } catch (e) {
-        console.error('SQLite incrementReferenceCount error:', e);
-    }
+    });
 };
 
 export const decrementReferenceCount = async (manifestId: string): Promise<number> => {
-    if (!db) return 0;
-    try {
-        await db.runAsync(
+    const res = await writeQuery(async (database) => {
+        await database.runAsync(
             'UPDATE local_media_manifest SET reference_count = MAX(0, reference_count - 1) WHERE id = ?',
             [manifestId]
         );
-        const row = await db.getFirstAsync<{ reference_count: number }>(
+        const row = await database.getFirstAsync<{ reference_count: number }>(
             'SELECT reference_count FROM local_media_manifest WHERE id = ?',
             [manifestId]
         );
         return row?.reference_count ?? 0;
-    } catch (e) {
-        console.error('SQLite decrementReferenceCount error:', e);
-        return 0;
-    }
+    });
+    return res ?? 0;
 };
 
 export const indexEntity = async (
@@ -1229,10 +1342,9 @@ export const indexEntity = async (
         created_at?: string; 
     }
 ) => {
-    if (!db) return;
-    try {
-        await db.runAsync('DELETE FROM offline_search_index WHERE entity_id = ?', [entityId]);
-        await db.runAsync(
+    return writeQuery(async (database) => {
+        await database.runAsync('DELETE FROM offline_search_index WHERE entity_id = ?', [entityId]);
+        await database.runAsync(
             `INSERT INTO offline_search_index (
                 entity_id, entity_type, group_id, sender_name, content, file_name, caption, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1247,9 +1359,7 @@ export const indexEntity = async (
                 fields.created_at || new Date().toISOString()
             ]
         );
-    } catch (e) {
-        console.error('SQLite indexEntity error:', e);
-    }
+    });
 };
 
 export const searchOffline = async (query: string, filters?: { type?: string; groupId?: string }): Promise<any[]> => {
@@ -1279,10 +1389,9 @@ export const searchOffline = async (query: string, filters?: { type?: string; gr
 };
 
 export const updateSyncState = async (userId: string, state: any) => {
-    if (!db) return;
-    try {
+    return writeQuery(async (database) => {
         const now = new Date().toISOString();
-        await db.runAsync(
+        await database.runAsync(
             `INSERT OR REPLACE INTO offline_sync_state (
                 user_id, last_sync, last_asset_sync, schema_version, bootstrap_completed
             ) VALUES (?, ?, ?, ?, ?)`,
@@ -1294,9 +1403,7 @@ export const updateSyncState = async (userId: string, state: any) => {
                 state.bootstrap_completed || 0
             ]
         );
-    } catch (e) {
-        console.error('SQLite updateSyncState error:', e);
-    }
+    });
 };
 
 export const getSyncState = async (userId: string): Promise<any | null> => {
@@ -1313,16 +1420,16 @@ export const getSyncState = async (userId: string): Promise<any | null> => {
 };
 
 export const getAssetCacheByUrl = async (remoteUrl: string): Promise<string | null> => {
-    if (!db) return null;
-    try {
-        const result = await db.getFirstAsync<{ local_path: string }>(
+    // Use readQuery to bypass the write transaction queue — this is the #1 fix
+    // for the viewer freeze. Previously this call was blocked behind batch
+    // message inserts during sync, causing 10-30s freezes.
+    const result = await readQuery(async (database) => {
+        return database.getFirstAsync<{ local_path: string }>(
             'SELECT local_path FROM local_assets WHERE remote_url = ?',
             [remoteUrl]
         );
-        return result?.local_path || null;
-    } catch (e) {
-        return null;
-    }
+    });
+    return result?.local_path || null;
 };
 
 // â”€â”€ Local-first entity cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

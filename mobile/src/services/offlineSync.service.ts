@@ -13,13 +13,37 @@ import {
     initDB,
     updateSyncState,
     getSyncState,
-    upsertContentManifest,
+    batchUpsertContentManifest,
     getMaxTimestampByGroup,
     batchInsertMessages,
     getContentManifestsByType
 } from '../lib/database';
 
 const SCHEMA_VERSION = 1;
+
+/**
+ * Per-stage timeout: if any single sync stage takes longer than 15s
+ * (e.g., slow network, large payload), it times out and the sync moves
+ * to the next stage. This prevents a stalled query from blocking the
+ * entire sync chain and the SQLite transaction queue.
+ */
+const STAGE_TIMEOUT_MS = 15000;
+async function withStageTimeout<T>(stage: string, task: () => Promise<T>): Promise<T | null> {
+    try {
+        return await Promise.race([
+            task(),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error(`Stage timed out after ${STAGE_TIMEOUT_MS}ms`)), STAGE_TIMEOUT_MS)
+            ),
+        ]);
+    } catch (e: any) {
+        Logger.warn('offline-sync', `${stage}: ${e.message || String(e)} — skipping stage`);
+        return null;
+    }
+}
+
+/** Yield to the JS event loop so UI renders and media reads can execute between stages */
+const yieldToUI = () => new Promise<void>(r => setTimeout(r, 20));
 
 export const OfflineSyncService = {
     /**
@@ -54,268 +78,285 @@ export const OfflineSyncService = {
             // Stage 1: Sync Groups
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 1/14: Syncing group memberships');
-            const { data: memberships, error: memError } = await ((supabase as any).from('group_members')
-                .select('group_id')
-                .eq('user_id', userId) as any);
+            await withStageTimeout('Stage 1: Groups', async () => {
+                const { data: memberships, error: memError } = await ((supabase as any).from('group_members')
+                    .select('group_id')
+                    .eq('user_id', userId) as any);
 
-            if (memError) throw memError;
-            // Fix: Add null check to prevent crash if memberships is null
-            const groupIds = (memberships || []).map((m: any) => m.group_id);
+                if (memError) throw memError;
+                const groupIds = (memberships || []).map((m: any) => m.group_id);
 
-            if (groupIds.length > 0) {
-                const { data: groupsResult, error: grpError } = await ((supabase as any).from('groups')
-                    .select('*')
-                    .in('id', groupIds)
-                    .eq('is_active', true) as any);
+                if (groupIds.length > 0) {
+                    const { data: groupsResult, error: grpError } = await ((supabase as any).from('groups')
+                        .select('*')
+                        .in('id', groupIds)
+                        .eq('is_active', true) as any);
 
-                if (grpError) throw grpError;
+                    if (grpError) throw grpError;
 
-                // Sync Zustand with properly formatted groups (including last_message)
-                await useGroupStore.getState().fetchGroups(true);
+                    await useGroupStore.getState().fetchGroups(true);
 
-                // Sync SQLite manifest
-                for (const group of groupsResult) {
-                    await upsertContentManifest({
+                    // Batch-upsert all groups in a single transaction (was N transactions before)
+                    await batchUpsertContentManifest(groupsResult.map((group: any) => ({
                         content_type: 'group',
                         content_id: group.id,
                         user_id: userId,
                         raw_data: group,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 2: User profiles (Directory cache)
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 2/14: Syncing user profiles');
-            const { data: usersResult, error: usrError } = await ((supabase as any).from('users')
-                .select('id, username, full_name, avatar_url, level, role') as any);
+            await withStageTimeout('Stage 2: User profiles', async () => {
+                const { data: usersResult, error: usrError } = await ((supabase as any).from('users')
+                    .select('id, username, full_name, avatar_url, level, role') as any);
 
-            if (!usrError && usersResult) {
-                for (const user of usersResult) {
-                    await upsertContentManifest({
+                if (!usrError && usersResult) {
+                    await batchUpsertContentManifest(usersResult.map((user: any) => ({
                         content_type: 'user_profile',
                         content_id: user.id,
                         user_id: userId,
                         raw_data: user,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 3: Messages (Differential sync)
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 3/14: Syncing messages');
-            const localGroups = await getContentManifestsByType('group');
-            const activeGroupIds = localGroups.map(g => g.content_id);
+            await withStageTimeout('Stage 3: Messages', async () => {
+                const localGroups = await getContentManifestsByType('group');
+                const activeGroupIds = localGroups.map(g => g.content_id);
 
-            for (const gId of activeGroupIds) {
-                const lastLocalTimestamp = await getMaxTimestampByGroup(gId);
-                
-                let query = (supabase as any).from('messages')
-                    .select(`
-                        *,
-                        user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                        reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
-                    `)
-                    .eq('group_id', gId)
-                    .eq('is_deleted', false);
+                for (const gId of activeGroupIds) {
+                    const lastLocalTimestamp = await getMaxTimestampByGroup(gId);
+                    
+                    let query = (supabase as any).from('messages')
+                        .select(`
+                            *,
+                            user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
+                            reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
+                        `)
+                        .eq('group_id', gId)
+                        .eq('is_deleted', false);
 
-                if (lastLocalTimestamp) {
-                    query = query.gt('created_at', lastLocalTimestamp);
-                }
+                    if (lastLocalTimestamp) {
+                        query = query.gt('created_at', lastLocalTimestamp);
+                    }
 
-                query = query.order('created_at', { ascending: true }).limit(1000);
-                const { data: serverMsgs, error: msgsError } = await (query as any);
+                    query = query.order('created_at', { ascending: true }).limit(1000);
+                    const { data: serverMsgs, error: msgsError } = await (query as any);
 
-                if (!msgsError && serverMsgs && serverMsgs.length > 0) {
-                    const formatted = (serverMsgs as any[]).map(msg => ({
-                        ...msg,
-                        isEdited: msg.is_edited || false,
-                        replyTo: msg.reply_to_message ? {
-                            id: msg.reply_to_message.id,
-                            username: msg.reply_to_message.user?.username,
-                            full_name: msg.reply_to_message.user?.full_name,
-                            content_type: msg.reply_to_message.message_type,
-                            content: msg.reply_to_message.content?.substring(0, 50),
-                            is_deleted: msg.reply_to_message.is_deleted
-                        } : null,
-                        status: 'sent',
-                        isOnline: false
-                    }));
+                    if (!msgsError && serverMsgs && serverMsgs.length > 0) {
+                        const formatted = (serverMsgs as any[]).map(msg => ({
+                            ...msg,
+                            isEdited: msg.is_edited || false,
+                            replyTo: msg.reply_to_message ? {
+                                id: msg.reply_to_message.id,
+                                username: msg.reply_to_message.user?.username,
+                                full_name: msg.reply_to_message.user?.full_name,
+                                content_type: msg.reply_to_message.message_type,
+                                content: msg.reply_to_message.content?.substring(0, 50),
+                                is_deleted: msg.reply_to_message.is_deleted
+                            } : null,
+                            status: 'sent',
+                            isOnline: false
+                        }));
 
-                    await batchInsertMessages(formatted, gId);
+                        await batchInsertMessages(formatted, gId);
 
-                    // Update message store
-                    const messageStore = useMessageStore.getState();
-                    const existing = messageStore.getMessages(gId);
-                    const existingIds = new Set(existing.map(m => m.id));
-                    const newOnes = formatted.filter(m => !existingIds.has(m.id));
-                    if (newOnes.length > 0) {
-                        const merged = [...existing, ...newOnes]
-                            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-                        messageStore.setMessages(gId, merged);
+                        const messageStore = useMessageStore.getState();
+                        const existing = messageStore.getMessages(gId);
+                        const existingIds = new Set(existing.map(m => m.id));
+                        const newOnes = formatted.filter(m => !existingIds.has(m.id));
+                        if (newOnes.length > 0) {
+                            const merged = [...existing, ...newOnes]
+                                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                            messageStore.setMessages(gId, merged);
+                        }
                     }
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 4: Sync Announcements
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 4/14: Syncing announcements');
-            const { data: serverAnnouncements, error: annError } = await ((supabase as any).from('announcements')
-                .select('*')
-                .eq('is_published', true) as any);
+            await withStageTimeout('Stage 4: Announcements', async () => {
+                const { data: serverAnnouncements, error: annError } = await ((supabase as any).from('announcements')
+                    .select('*')
+                    .eq('is_published', true) as any);
 
-            if (!annError && serverAnnouncements) {
-                useAnnouncementStore.setState({ announcements: serverAnnouncements });
-                for (const ann of serverAnnouncements) {
-                    await upsertContentManifest({
+                if (!annError && serverAnnouncements) {
+                    useAnnouncementStore.setState({ announcements: serverAnnouncements });
+                    await batchUpsertContentManifest(serverAnnouncements.map((ann: any) => ({
                         content_type: 'announcement',
                         content_id: ann.id,
                         user_id: userId,
                         raw_data: ann,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 5: Sync Events
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 5/14: Syncing events');
-            const { data: serverEvents, error: evtError } = await ((supabase as any).from('events')
-                .select('*, event_pools(id)')
-                .in('status', ['published', 'ongoing']) as any);
+            await withStageTimeout('Stage 5: Events', async () => {
+                const { data: serverEvents, error: evtError } = await ((supabase as any).from('events')
+                    .select('*, event_pools(id)')
+                    .in('status', ['published', 'ongoing']) as any);
 
-            if (!evtError && serverEvents) {
-                useEventStore.setState({ events: serverEvents });
-                for (const evt of serverEvents) {
-                    await upsertContentManifest({
+                if (!evtError && serverEvents) {
+                    useEventStore.setState({ events: serverEvents });
+                    await batchUpsertContentManifest(serverEvents.map((evt: any) => ({
                         content_type: 'event',
                         content_id: evt.id,
                         user_id: userId,
                         raw_data: evt,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 6: Sync Study Materials
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 6/14: Syncing study materials');
-            const { data: serverMaterials, error: matError } = await ((supabase as any).from('materials')
-                .select('*')
-                .eq('is_active', true) as any);
+            await withStageTimeout('Stage 6: Materials', async () => {
+                const { data: serverMaterials, error: matError } = await ((supabase as any).from('materials')
+                    .select('*')
+                    .eq('is_active', true) as any);
 
-            if (!matError && serverMaterials) {
-                useResourceStore.setState({ materials: serverMaterials });
-                for (const mat of serverMaterials) {
-                    await upsertContentManifest({
+                if (!matError && serverMaterials) {
+                    useResourceStore.setState({ materials: serverMaterials });
+                    await batchUpsertContentManifest(serverMaterials.map((mat: any) => ({
                         content_type: 'material',
                         content_id: mat.id,
                         user_id: userId,
                         raw_data: mat,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 7: Sync Past Questions
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 7/14: Syncing past questions');
-            const { data: serverQuestions, error: qError } = await ((supabase as any).from('past_questions')
-                .select('*, course:course_id(*)')
-                .eq('is_public', true) as any);
+            await withStageTimeout('Stage 7: Past questions', async () => {
+                const { data: serverQuestions, error: qError } = await ((supabase as any).from('past_questions')
+                    .select('*, course:course_id(*)')
+                    .eq('is_public', true) as any);
 
-            if (!qError && serverQuestions) {
-                useResourceStore.setState({ pastQuestions: serverQuestions });
-                for (const q of serverQuestions) {
-                    await upsertContentManifest({
+                if (!qError && serverQuestions) {
+                    useResourceStore.setState({ pastQuestions: serverQuestions });
+                    await batchUpsertContentManifest(serverQuestions.map((q: any) => ({
                         content_type: 'past_question',
                         content_id: q.id,
                         user_id: userId,
                         raw_data: q,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 8: Sync Courses
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 8/14: Syncing courses');
-            const { data: serverCourses, error: cError } = await ((supabase as any).from('courses')
-                .select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)')
-                .eq('is_active', true) as any);
+            await withStageTimeout('Stage 8: Courses', async () => {
+                const { data: serverCourses, error: cError } = await ((supabase as any).from('courses')
+                    .select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)')
+                    .eq('is_active', true) as any);
 
-            if (!cError && serverCourses) {
-                useResourceStore.setState({ courses: serverCourses });
-                for (const c of serverCourses) {
-                    await upsertContentManifest({
+                if (!cError && serverCourses) {
+                    useResourceStore.setState({ courses: serverCourses });
+                    await batchUpsertContentManifest(serverCourses.map((c: any) => ({
                         content_type: 'course',
                         content_id: c.id,
                         user_id: userId,
                         raw_data: c,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 9: Sync Lecturers directory
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 9/14: Syncing lecturers');
-            const { data: serverLecturers, error: lecError } = await ((supabase as any).from('lecturers')
-                .select('*')
-                .eq('is_active', true) as any);
+            await withStageTimeout('Stage 9: Lecturers', async () => {
+                const { data: serverLecturers, error: lecError } = await ((supabase as any).from('lecturers')
+                    .select('*')
+                    .eq('is_active', true) as any);
 
-            if (!lecError && serverLecturers) {
-                useDirectoryStore.setState({ lecturers: serverLecturers });
-                for (const lec of serverLecturers) {
-                    await upsertContentManifest({
+                if (!lecError && serverLecturers) {
+                    useDirectoryStore.setState({ lecturers: serverLecturers });
+                    await batchUpsertContentManifest(serverLecturers.map((lec: any) => ({
                         content_type: 'lecturer',
                         content_id: lec.id,
                         user_id: userId,
                         raw_data: lec,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
+
+            await yieldToUI();
 
             // ----------------------------------------------------
             // Stage 10: Sync Executives directory
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 10/14: Syncing executives');
-            const { data: serverExecutives, error: execError } = await ((supabase as any).from('executives')
-                .select('*, user:users(full_name, avatar_url)')
-                .eq('is_active', true) as any);
+            await withStageTimeout('Stage 10: Executives', async () => {
+                const { data: serverExecutives, error: execError } = await ((supabase as any).from('executives')
+                    .select('*, user:users(full_name, avatar_url)')
+                    .eq('is_active', true) as any);
 
-            if (!execError && serverExecutives) {
-                useDirectoryStore.setState({ executives: serverExecutives });
-                for (const exec of serverExecutives) {
-                    await upsertContentManifest({
+                if (!execError && serverExecutives) {
+                    useDirectoryStore.setState({ executives: serverExecutives });
+                    await batchUpsertContentManifest(serverExecutives.map((exec: any) => ({
                         content_type: 'executive',
                         content_id: exec.id,
                         user_id: userId,
                         raw_data: exec,
                         sync_version: 1,
                         device_id: deviceId
-                    });
+                    })));
                 }
-            }
+            });
 
             // Update Sync state metadata
             await updateSyncState(userId, {

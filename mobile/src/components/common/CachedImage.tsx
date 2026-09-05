@@ -6,6 +6,7 @@ import { useThemeStore } from '../../stores/theme.store';
 import { saveMediaToDevice } from '../../utils/mediaSaver';
 import { showToast } from './overlays';
 import { Ionicons } from '@expo/vector-icons';
+import { useNetworkStore } from '../../stores/network.store';
 
 import { getSyncItem, setSyncItem } from '../../stores/mmkv.storage';
 
@@ -128,7 +129,6 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 }
 
                 // 3. If offline, don't attempt download — the SQLite check above was our best shot
-                const { useNetworkStore } = require('../../stores/network.store');
                 if (!useNetworkStore.getState().isOnline) {
                     if (isMounted) {
                         // No cached file and offline — show fallback gracefully

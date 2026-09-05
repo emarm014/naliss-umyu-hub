@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { Logger } from '../utils/logger';
 import { indexEntity, searchOffline, getDB } from '../lib/database';
 
@@ -49,7 +49,10 @@ export const useOfflineSearchStore = create<OfflineSearchState>((set) => ({
         Logger.info('offline-search', 'Rebuilding full-text search index from local databases.');
         try {
             // Clear FTS index
-            await db.runAsync('DELETE FROM offline_search_index');
+            const { enqueueTransaction } = require('../lib/database');
+            await enqueueTransaction(async () => {
+                await db.runAsync('DELETE FROM offline_search_index');
+            });
 
             // 1. Index messages
             let msgOffset = 0;

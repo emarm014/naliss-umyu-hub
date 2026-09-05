@@ -570,24 +570,26 @@ export const useAuthStore = create<AuthState>()(
         await clearLocalUserSession();
         
         // Clear all SQLite tables
-        const { getDB } = require('../lib/database');
-        const activeDb = getDB();
-        if (activeDb) {
-            try {
-                await activeDb.runAsync('DELETE FROM local_messages');
-                await activeDb.runAsync('DELETE FROM local_assets');
-                await activeDb.runAsync('DELETE FROM local_media_manifest');
-                await activeDb.runAsync('DELETE FROM offline_download_jobs');
-                await activeDb.runAsync('DELETE FROM offline_download_telemetry');
-                await activeDb.runAsync('DELETE FROM sync_checkpoint');
-                await activeDb.runAsync('DELETE FROM sync_journal');
-                await activeDb.runAsync('DELETE FROM media_sync_jobs');
-                await activeDb.runAsync('DELETE FROM offline_sync_state');
-                Logger.info('auth.store', 'SQLite database completely wiped.');
-            } catch (e) {
-                console.error('Failed to wipe SQLite database:', e);
+        const { getDB, enqueueTransaction } = require('../lib/database');
+        await enqueueTransaction(async () => {
+            const activeDb = getDB();
+            if (activeDb) {
+                try {
+                    await activeDb.runAsync('DELETE FROM local_messages');
+                    await activeDb.runAsync('DELETE FROM local_assets');
+                    await activeDb.runAsync('DELETE FROM local_media_manifest');
+                    await activeDb.runAsync('DELETE FROM offline_download_jobs');
+                    await activeDb.runAsync('DELETE FROM offline_download_telemetry');
+                    await activeDb.runAsync('DELETE FROM sync_checkpoint');
+                    await activeDb.runAsync('DELETE FROM sync_journal');
+                    await activeDb.runAsync('DELETE FROM media_sync_jobs');
+                    await activeDb.runAsync('DELETE FROM offline_sync_state');
+                    Logger.info('auth.store', 'SQLite database completely wiped.');
+                } catch (e) {
+                    console.error('Failed to wipe SQLite database:', e);
+                }
             }
-        }
+        });
         
         // Clear all files inside naliss_vault
         try {

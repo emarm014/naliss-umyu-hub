@@ -40,12 +40,29 @@ const launchExternal = async (localUri: string, fileName: string) => {
 
     if (Platform.OS === 'android') {
         const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
-        const contentUri = await FileSystem.getContentUriAsync(fileUri);
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-            data: contentUri,
-            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-            type: mimeType,
-        });
+
+        // Wrap native bridge calls in a timeout to prevent indefinite hangs.
+        // If ProGuard strips FileProvider or IntentLauncher native classes,
+        // getContentUriAsync/startActivityAsync hang forever on the native bridge.
+        const NATIVE_TIMEOUT_MS = 10000;
+
+        const contentUri = await Promise.race([
+            FileSystem.getContentUriAsync(fileUri),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('getContentUriAsync timed out — native module may be missing')), NATIVE_TIMEOUT_MS)
+            ),
+        ]);
+
+        await Promise.race([
+            IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+                data: contentUri,
+                flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+                type: mimeType,
+            }),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('IntentLauncher timed out — native module may be missing')), NATIVE_TIMEOUT_MS)
+            ),
+        ]);
     } else {
         const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
         const isAvail = await Sharing.isAvailableAsync();

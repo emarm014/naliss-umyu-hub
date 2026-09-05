@@ -27,6 +27,7 @@ import { SafeOverlayContainer, showToast } from './overlays';
 import {  saveMediaToDevice, shareMedia } from '../../utils/mediaSaver';
 import Pdf from 'react-native-pdf';
 import { CustomVideoPlayer } from './CustomVideoPlayer';
+import { getAssetCacheByUrl } from '../../lib/database';
 
 const { width, height } = Dimensions.get('window');
 
@@ -306,7 +307,6 @@ function ViewerItemSlide({
           }
         }
 
-        const { getAssetCacheByUrl } = require('../../lib/database');
         const cachedSqlitePath = await getAssetCacheByUrl(item.uri);
         if (cachedSqlitePath) {
           const sqliteFileInfo = await FileSystem.getInfoAsync(cachedSqlitePath);
@@ -824,6 +824,22 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
   const [zoom, setZoom] = React.useState(scaleMultiplier);
   const [hasError, setHasError] = React.useState(false);
 
+  // FREEZE-2 fix: Timeout for native PDF load. react-native-pdf can crash or
+  // stall at the native level (bypassing JS error boundaries entirely).
+  // If the PDF doesn't fire onLoadComplete within 15s, we show an error state
+  // instead of leaving the user frozen on a blank screen.
+  const [pdfLoaded, setPdfLoaded] = React.useState(false);
+  React.useEffect(() => {
+    if (pdfLoaded || hasError) return;
+    const timer = setTimeout(() => {
+      if (!pdfLoaded && !hasError) {
+        console.warn('[PDF] Load timeout — native renderer may be unresponsive');
+        setHasError(true);
+      }
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [pdfLoaded, hasError]);
+
   let source;
   if (localUri) {
     source = { uri: localUri.startsWith('file://') ? localUri : `file://${localUri}`, cache: true };
@@ -869,7 +885,7 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
           enablePaging={false}
           fitPolicy={0}
           spacing={16}
-          onLoadComplete={(count) => { setNumPages(count); setHasError(false); }}
+          onLoadComplete={(count) => { setNumPages(count); setPdfLoaded(true); setHasError(false); }}
           onPageChanged={(page) => { setCurrentPage(page); }}
           onPageSingleTap={() => onSingleTap?.()}
           onError={(error) => {

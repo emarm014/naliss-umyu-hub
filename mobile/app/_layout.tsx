@@ -120,6 +120,7 @@ Sentry.init({
 
 // ── Global console.error interception ──────────────────────────────────────
 // Force all manual console.error() calls to be reported to Sentry as exceptions
+// Rate-limited to prevent JS thread starvation when native modules spam errors
 const originalConsoleError = console.error;
 const safeStringifyArg = (a: any) => {
   if (typeof a === 'object' && a !== null) {
@@ -131,6 +132,12 @@ const safeStringifyArg = (a: any) => {
   }
   return String(a);
 };
+
+// Rate limiter: max 5 Sentry captures per 10-second window
+let _sentryErrorCount = 0;
+let _sentryErrorWindowStart = Date.now();
+const SENTRY_ERROR_WINDOW_MS = 10000;
+const SENTRY_ERROR_MAX_PER_WINDOW = 5;
 
 console.error = (...args) => {
   originalConsoleError(...args); // Keep logging to terminal/bundler
@@ -144,6 +151,15 @@ console.error = (...args) => {
       strArgs.includes('software caused connection abort')) {
     return;
   }
+
+  // Rate limit: if we've exceeded the cap in this window, skip Sentry capture
+  const now = Date.now();
+  if (now - _sentryErrorWindowStart > SENTRY_ERROR_WINDOW_MS) {
+    _sentryErrorCount = 0;
+    _sentryErrorWindowStart = now;
+  }
+  if (_sentryErrorCount >= SENTRY_ERROR_MAX_PER_WINDOW) return;
+  _sentryErrorCount++;
 
   // Find if an actual Error object was passed
   const err = args.find(a => a instanceof Error);
@@ -306,28 +322,36 @@ function RootLayoutNav() {
   useHeartbeat();
 
   // ── Cache Maintenance & Database WAL Checkpoint ────────────────────────────
+  // IMPORTANT: CacheMaintenance must NOT run during the initial sync bootstrap.
+  // The startup delay (60s) ensures syncAll has time to complete before any
+  // checkpoint or cleanup runs. This prevents the "database table is locked"
+  // crash that Sentry captured when checkpoint collided with sync writes.
   useEffect(() => {
-    // Run cache maintenance in the background (delayed by 10s so it doesn't block startup)
+    // Defer cache maintenance until well after sync has had time to complete
     const timer = setTimeout(() => {
         runCacheMaintenance();
-    }, 10000);
+    }, 60000); // 60s — sync typically finishes in 10-30s
 
     let lastMaintenanceRun = 0;
     const MIN_MAINTENANCE_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
 
     const sub = AppState.addEventListener('change', (state) => {
         if (state === 'active') {
-            try {
-                // Checkpoint WAL when user returns to the app (fast operation)
-                checkpointWal();
-            } catch (e) {
-                console.warn('checkpointWal failed on active state', e);
-            }
+            // Delay checkpoint by 5s after foregrounding to let any pending
+            // sync writes settle before attempting WAL merge
+            setTimeout(() => {
+                try {
+                    checkpointWal();
+                } catch (e) {
+                    console.warn('checkpointWal failed on active state', e);
+                }
+            }, 5000);
 
             // Run periodic cache maintenance if enough time has passed
             if (Date.now() - lastMaintenanceRun > MIN_MAINTENANCE_INTERVAL) {
                 lastMaintenanceRun = Date.now();
-                runCacheMaintenance();
+                // Also delay maintenance on foreground
+                setTimeout(() => runCacheMaintenance(), 5000);
             }
         }
     });

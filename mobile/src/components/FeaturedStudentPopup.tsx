@@ -114,6 +114,7 @@ export function FeaturedStudentPopup() {
     const [isRevealing, setIsRevealing] = useState(false);
     
     const isShowingRef = useRef(false);
+    const sessionSuppressedRef = useRef(false);
 
     // Initialize 42 continuous tiny floating motion particles
     if (particlesRef.current.length === 0) {
@@ -270,6 +271,7 @@ export function FeaturedStudentPopup() {
 
     const checkForActiveFeature = async () => {
         if (isShowingRef.current) return;
+        if (sessionSuppressedRef.current) return;
         try {
             const { data, error } = await supabase
                 .from('featured_students')
@@ -343,6 +345,7 @@ export function FeaturedStudentPopup() {
         if (!feature) return;
         
         await mmkvStorage.setItem(`dismissed_featured_${feature.id}`, 'true');
+        sessionSuppressedRef.current = true;
         
         Animated.parallel([
             Animated.timing(scaleAnim, {
@@ -359,11 +362,6 @@ export function FeaturedStudentPopup() {
             setIsVisible(false);
             setFeature(null);
             isShowingRef.current = false;
-            
-            // Queue the next feature check after 1 minute
-            setTimeout(() => {
-                checkForActiveFeature();
-            }, 60000);
         });
     };
 
@@ -668,9 +666,9 @@ export function FeaturedStudentPopup() {
                             {/* Congrats Counter + Dismiss */}
                             <View style={[styles.selfAwardFooter, { borderTopColor: colors.border }]}>
                                 <View style={styles.selfCongratsCard}>
-                                    <Ionicons name="heart" size={20} color="#ef4444" />
+                                    <Ionicons name="heart" size={22} color="#ef4444" />
                                     <Text style={styles.selfCongratsCardText}>
-                                        {feature.total_congratulations} Congratulations received so far! 💕
+                                        {feature.total_congratulations}
                                     </Text>
                                 </View>
 
@@ -869,10 +867,9 @@ export function FeaturedStudentPopup() {
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        justifyContent: 'center',
+        justifyContent: 'flex-end',
         alignItems: 'center',
         backgroundColor: 'rgba(0,0,0,0.5)',
-        padding: 20,
     },
     revealParticle: {
         position: 'absolute',
@@ -916,7 +913,7 @@ const styles = StyleSheet.create({
         textShadowRadius: 2,
     },
     selfAwardImageWrap: {
-        height: 240,
+        height: 160,
         width: '100%',
         position: 'relative',
         backgroundColor: '#1f2937',
@@ -933,49 +930,49 @@ const styles = StyleSheet.create({
     },
     selfAwardYourName: {
         color: '#FFFFFF',
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: '900',
         textShadowColor: 'rgba(0, 0, 0, 0.8)',
         textShadowOffset: { width: 0, height: 2 },
         textShadowRadius: 6,
     },
     selfAwardContent: {
-        padding: 20,
-        paddingBottom: 16,
+        padding: 16,
+        paddingBottom: 12,
         alignItems: 'center',
     },
     selfAwardBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 7,
-        borderRadius: 20,
-        gap: 6,
-        marginBottom: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        gap: 4,
+        marginBottom: 10,
     },
     selfAwardBadgeText: {
         color: '#fff',
-        fontSize: 13,
+        fontSize: 11,
         fontWeight: '800',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
     selfAwardTitle: {
-        fontSize: 22,
+        fontSize: 17,
         fontWeight: '900',
         textAlign: 'center',
-        marginBottom: 8,
-        lineHeight: 30,
+        marginBottom: 6,
+        lineHeight: 24,
     },
     selfAwardSubtitle: {
-        fontSize: 14,
+        fontSize: 13,
         textAlign: 'center',
-        lineHeight: 20,
-        marginBottom: 12,
+        lineHeight: 18,
+        marginBottom: 10,
     },
     selfAwardFooter: {
-        padding: 20,
-        paddingTop: 16,
+        padding: 16,
+        paddingTop: 12,
         gap: 10,
         alignItems: 'center',
         borderTopWidth: 1,
@@ -983,16 +980,20 @@ const styles = StyleSheet.create({
 
     // ── Other Users Congratulate Popup Styles ──
     popupContainer: {
-        width: '92%',
-        maxWidth: 380,
-        borderRadius: 28,
+        width: '100%',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
         overflow: 'hidden',
         borderWidth: 1.5,
+        borderBottomWidth: 0,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.3,
+        shadowOffset: { width: 0, height: -8 },
+        shadowOpacity: 0.15,
         shadowRadius: 24,
-        elevation: 12,
+        elevation: 24,
+        paddingBottom: Platform.OS === 'ios' ? 20 : 0,
     },
     topHonorBanner: {
         flexDirection: 'row',
@@ -1010,7 +1011,7 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
     },
     imageHeader: {
-        height: 230,
+        height: 160,
         width: '100%',
         position: 'relative',
         backgroundColor: '#1f2937',
@@ -1036,7 +1037,7 @@ const styles = StyleSheet.create({
     },
     studentNameOverlay: {
         color: '#fbbf24', // Golden color
-        fontSize: 23,
+        fontSize: 19,
         fontWeight: '900',
         textShadowColor: 'rgba(0, 0, 0, 0.85)',
         textShadowOffset: { width: 0, height: 2 },
@@ -1046,18 +1047,18 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start',
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 16,
+        gap: 4,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.2,
         shadowRadius: 4,
     },
     badgeText: {
         color: '#fff',
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '800',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
@@ -1066,32 +1067,32 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: 'rgba(255,255,255,0.95)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 16,
+        gap: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
     },
     congratsCountText: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '900',
         color: '#ef4444',
     },
     content: {
-        padding: 20,
-        paddingBottom: 16,
+        padding: 16,
+        paddingBottom: 12,
         alignItems: 'center',
     },
     classicMainTitle: {
-        fontSize: 21,
+        fontSize: 17,
         fontWeight: '800',
         textAlign: 'center',
-        marginBottom: 8,
-        lineHeight: 28,
-        letterSpacing: 0.3,
+        marginBottom: 6,
+        lineHeight: 24,
+        letterSpacing: 0.2,
     },
     statsRow: {
         flexDirection: 'row',
@@ -1110,56 +1111,55 @@ const styles = StyleSheet.create({
         lineHeight: 26,
     },
     subtitle: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '700',
         textAlign: 'center',
-        marginBottom: 12,
+        marginBottom: 10,
     },
     quoteBox: {
         width: '100%',
-        padding: 12,
-        borderRadius: 14,
+        padding: 10,
+        borderRadius: 12,
         marginTop: 4,
     },
     description: {
-        fontSize: 14,
+        fontSize: 13,
         textAlign: 'center',
-        lineHeight: 20,
+        lineHeight: 18,
         fontStyle: 'italic',
     },
     actions: {
-        padding: 20,
+        padding: 16,
         paddingTop: 0,
         gap: 10,
         alignItems: 'center',
     },
     selfCongratsCard: {
-        width: '100%',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-        borderRadius: 16,
+        paddingVertical: 8,
+        paddingHorizontal: 20,
+        borderRadius: 24,
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         borderWidth: 1.5,
-        borderColor: '#ef4444',
-        gap: 8,
+        borderColor: 'rgba(239, 68, 68, 0.3)',
+        gap: 6,
+        alignSelf: 'center',
     },
     selfCongratsCardText: {
-        fontSize: 14,
-        fontWeight: '800',
+        fontSize: 16,
+        fontWeight: '900',
         color: '#ef4444',
         textAlign: 'center',
-        flex: 1,
     },
     congratulateBtn: {
         width: '100%',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 15,
-        borderRadius: 16,
+        paddingVertical: 12,
+        borderRadius: 14,
         gap: 8,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
@@ -1176,7 +1176,7 @@ const styles = StyleSheet.create({
     },
     btnText: {
         color: '#fff',
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '800',
     },
     dismissBtn: {

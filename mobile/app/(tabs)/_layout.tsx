@@ -38,7 +38,7 @@ export default function TabsLayout() {
         width: 46,
         height: 46,
         borderRadius: 23,
-        backgroundColor: focused ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)') : 'transparent',
+        backgroundColor: focused ? (isDark ? colors.actionMint : 'rgba(0, 0, 0, 0.05)') : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
@@ -62,7 +62,7 @@ export default function TabsLayout() {
       }}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: isDark ? '#2ea6ff' : colors.primary,
+        tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: isDark ? '#64748b' : colors.textMuted,
         
         tabBarStyle: {
@@ -72,10 +72,10 @@ export default function TabsLayout() {
           backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: isDark ? '#334155' : '#E2E8F0',
-          elevation: 8,
+          elevation: isDark ? 0 : 8,
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.05,
+          shadowOpacity: isDark ? 0 : 0.05,
           shadowRadius: 8,
         },
         tabBarItemStyle: {

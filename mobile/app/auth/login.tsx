@@ -40,12 +40,39 @@ export default function LoginScreen() {
   const checkNetworkStatus = useNetworkStore(s => s.checkNetworkStatus);
   const setError = useAuthStore(s => s.setError);
 
+  const doLogin = async (emailToUse: string): Promise<'ok' | 'google' | 'graduated' | 'incomplete' | 'not_found'> => {
+    const { data: provider, error: providerError } = await (supabase as any).rpc('check_existing_account', { email_addr: emailToUse });
+
+    if (!providerError) {
+      if (provider === 'google') return 'google';
+      if (provider === 'graduated') return 'graduated';
+      if (provider === 'incomplete') return 'incomplete';
+      if (provider === 'none') return 'not_found';
+    }
+
+    await AuthGuardian.clearFailures(emailToUse);
+    const { error } = await supabase.auth.signInWithPassword({ email: emailToUse, password });
+    if (error) throw error;
+    
+    return 'ok';
+  };
+
   const handleLogin = async () => {
-    trackUserAction('login.submit', { email: email.trim().toLowerCase() });
-    if (!email.trim() || !password) {
+    const emailToUse = email.trim().toLowerCase();
+    trackUserAction('login.submit', { email: emailToUse });
+    
+    if (!emailToUse || !password) {
       Alert.alert('Missing Fields', 'Please enter both email and password');
       return;
     }
+
+    // Prevent double-login on reopening after background success
+    try {
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession) {
+        return; // ProtectedRoute will route automatically
+      }
+    } catch { /* silent */ }
 
     const online = await checkNetworkStatus();
     if (!online) {
@@ -53,14 +80,14 @@ export default function LoginScreen() {
       return;
     }
 
-    const banMinutes = await AuthGuardian.checkBanStatus(email.trim().toLowerCase());
+    const banMinutes = await AuthGuardian.checkBanStatus(emailToUse);
     if (banMinutes) {
       Alert.alert('Account Locked', `Too many invalid attempts. Try again in ${banMinutes} minute${banMinutes > 1 ? 's' : ''}.`);
       return;
     }
 
-    if (!INSTITUTIONAL_EMAIL_REGEX.test(email)) {
-      const attempts = await AuthGuardian.recordFailure(email.trim().toLowerCase());
+    if (!INSTITUTIONAL_EMAIL_REGEX.test(emailToUse)) {
+      const attempts = await AuthGuardian.recordFailure(emailToUse);
       const remaining = Math.max(0, 5 - attempts);
       if (remaining <= 0) {
         Alert.alert('Lockout', 'Device locked for 30 minutes due to multiple invalid attempts.');
@@ -71,36 +98,28 @@ export default function LoginScreen() {
     }
 
     setIsLoading(true);
-    const finishTransaction = startTransaction('auth.login', { email: email.trim().toLowerCase() });
+    const finishTransaction = startTransaction('auth.login', { email: emailToUse });
+    
+    const TOTAL_LOGIN_TIMEOUT = 20_000;
+    const masterTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Login timed out. Please check your connection and try again.')), TOTAL_LOGIN_TIMEOUT)
+    );
+
     try {
-      const { data: provider, error: providerError } = await (supabase as any).rpc('check_existing_account', { email_addr: email.trim().toLowerCase() });
-
-      // Only block on known provider responses — if RPC errors, fall through to normal auth
-      if (!providerError) {
-        // Sentry: log what check_existing_account returned
-        Sentry.addBreadcrumb({
-          category: 'auth.rpc',
-          message: `check_existing_account result: ${provider}`,
-          data: { provider, email: email.trim().toLowerCase() },
-          level: 'info',
-        });
-        if (provider === 'google') {
+      const result = await Promise.race([doLogin(emailToUse), masterTimeout]);
+      
+      switch (result) {
+        case 'google':
           Alert.alert('Use Google Sign-In', 'This account is linked to Google. Please use "Continue with Google" below.');
-          setIsLoading(false);
-          return;
-        }
-
-        if (provider === 'graduated') {
+          break;
+        case 'graduated':
           Alert.alert(
             'Account Graduated',
             'This email belongs to a graduated student. The NALISS UMYU Hub is only for currently enrolled students.\n\nYour alumni record is preserved in the system.',
             [{ text: 'OK', style: 'default' }]
           );
-          setIsLoading(false);
-          return;
-        }
-
-        if (provider === 'incomplete') {
+          break;
+        case 'incomplete':
           Alert.alert(
             'Registration Incomplete',
             'Your account registration was not completed. Please create an account to finish setting up your profile.',
@@ -109,11 +128,8 @@ export default function LoginScreen() {
               { text: 'Create Account', onPress: () => router.push('/auth/eligibility' as any) },
             ]
           );
-          setIsLoading(false);
-          return;
-        }
-
-        if (provider === 'none') {
+          break;
+        case 'not_found':
           Alert.alert(
             'Account Not Found',
             'No account found with this email. Would you like to sign up?',
@@ -122,45 +138,39 @@ export default function LoginScreen() {
               { text: 'Create Account', onPress: () => router.push('/auth/eligibility' as any) },
             ]
           );
-          setIsLoading(false);
-          return;
-        }
+          break;
+        case 'ok':
+          finishTransaction('ok');
+          Sentry.addBreadcrumb({
+            category: 'auth',
+            message: 'Login successful',
+            data: { email: emailToUse, method: 'email' },
+            level: 'info',
+          });
+          // Log successful login (best-effort, fire-and-forget)
+          (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${emailToUse}`, metadata: { email: emailToUse, method: 'email' } }); } catch (_) {} })();
+          break;
       }
-
-      await AuthGuardian.clearFailures(email);
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 15000);
-      });
-      const signInPromise = supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-      const { error } = await Promise.race([signInPromise, timeoutPromise]) as any;
-      if (error) throw error;
-      finishTransaction('ok');
-      // Sentry: breadcrumb for successful login
-      Sentry.addBreadcrumb({
-        category: 'auth',
-        message: 'Login successful',
-        data: { email: email.trim().toLowerCase(), method: 'email' },
-        level: 'info',
-      });
-      // Navigation handled by ProtectedRoute's onAuthStateChange
-
-      // Log successful login (best-effort, fire-and-forget)
-      (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), method: 'email' } }); } catch (_) {} })();
-
     } catch (err: any) {
       finishTransaction('error');
       const msg = err.message || 'Login failed. Please try again.';
-      // Sentry: capture login errors with full context
+      
       Sentry.captureException(err, {
         tags: { location: 'LoginScreen.handleLogin' },
-        extra: { email: email.trim().toLowerCase(), errorMessage: msg },
+        extra: { email: emailToUse, errorMessage: msg },
       });
 
       // Log failed login attempt server-side (best-effort, fire-and-forget)
-      (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${email.trim().toLowerCase()}`, metadata: { email: email.trim().toLowerCase(), reason: msg, method: 'email' } }); } catch (_) {} })();
+      (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${emailToUse}`, metadata: { email: emailToUse, reason: msg, method: 'email' } }); } catch (_) {} })();
 
-      if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials') || msg.includes('Invalid password') || msg.includes('invalid password')) {
-        const attempts = await AuthGuardian.recordFailure(email.trim().toLowerCase());
+      if (msg.includes('timed out') || msg.includes('timeout')) {
+        Alert.alert(
+            'Connection Slow',
+            'Your login is taking too long. Check your network and try again.\n\nIf this keeps happening, you may already be logged in — try reopening the app.',
+            [{ text: 'Try Again', onPress: () => {} }, { text: 'OK' }]
+        );
+      } else if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials') || msg.includes('Invalid password') || msg.includes('invalid password')) {
+        const attempts = await AuthGuardian.recordFailure(emailToUse);
         const remaining = Math.max(0, 5 - attempts);
         if (remaining <= 0) {
           Alert.alert('Account Locked', 'Too many invalid login attempts. Device locked for 30 minutes.');

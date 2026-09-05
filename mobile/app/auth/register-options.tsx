@@ -74,23 +74,48 @@ export default function RegisterOptions() {
     };
   }, []);
 
+  const handleEmailSignup = async () => {
+    try {
+      // Check if this device had a previous orphan record from a reinstall or back navigation
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && !useAuthStore.getState().isProfileComplete) {
+        await (supabase as any).rpc('delete_incomplete_signup');
+        await supabase.auth.signOut();
+      } else if (session) {
+        await supabase.auth.signOut();
+      }
+    } catch { /* silent */ }
+    useSignupStore.getState().reset();
+    router.push('/auth/register-email');
+  };
+
   const handleGoogleAuth = async () => {
     if (isGoogleLoading) return;
     setIsGoogleLoading(true);
     trackFeature('signup', 'google_oauth_start');
 
+    const store = useSignupStore.getState();
+    store.setIsGoogleDelaying(true);
+    store.touchActivity();
+
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await supabase.auth.signOut(); // clear any lingering orphan session
+      }
+
       const { isOnline } = useNetworkStore.getState();
       if (!isOnline) {
+        store.setIsGoogleDelaying(false);
         Alert.alert('No Connection', 'You need an internet connection to sign up with Google.');
         if (isMounted.current) setIsGoogleLoading(false);
         return;
       }
 
-      const store = useSignupStore.getState();
       const limiter = useRegistrationLimiter.getState();
 
       if (limiter.checkLimit()) {
+        store.setIsGoogleDelaying(false);
         const mins = limiter.getRemainingTime() || 60;
         Alert.alert(
           '⚠️ Registration attempt limit reached',
@@ -100,21 +125,9 @@ export default function RegisterOptions() {
         return;
       }
 
-      // Pre-enrollment garbage collection: If they started an email flow, backed out, and chose Google,
-      // purge the incomplete email auth record to prevent provider identity collisions during OAuth.
-      const cachedEmail = store.email;
-      if (cachedEmail) {
-        try {
-          const { data: status } = await (supabase as any).rpc('check_existing_account', { email_addr: cachedEmail });
-          if (status === 'incomplete') {
-            Sentry.addBreadcrumb({ category: 'signup.google', message: 'Pre-purging incomplete cached email', level: 'info' });
-            await (supabase as any).rpc('purge_incomplete_account', { email_addr: cachedEmail });
-          }
-        } catch { /* silent best-effort */ }
-      }
+
 
       store.reset();
-      store.touchActivity();
 
       // Track the attempt
       limiter.incrementAttempt();
@@ -130,14 +143,29 @@ export default function RegisterOptions() {
       if (error) throw error;
       if (!data.url) throw new Error('No OAuth URL returned');
 
-      store.setIsGoogleDelaying(true);
-
       // ── STEP 2: Open browser ──────────────────────────────────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 2: Opening OAuth browser', level: 'info' });
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 
-      // Check if session got set in the background during deep link redirect
-      const { data: { session: activeSession } } = await supabase.auth.getSession();
+      // Wait for auth state to settle (max 3s) to eliminate race condition
+      const activeSession = await new Promise<any | null>((resolve) => {
+          const timeout = setTimeout(() => resolve(null), 3000);
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+              if (event === 'SIGNED_IN' && session) {
+                  clearTimeout(timeout);
+                  subscription.unsubscribe();
+                  resolve(session);
+              }
+          });
+          // Also check immediately in case it's already set
+          supabase.auth.getSession().then(({ data }) => {
+              if (data.session) {
+                  clearTimeout(timeout);
+                  subscription.unsubscribe();
+                  resolve(data.session);
+              }
+          });
+      });
 
       if ((result.type !== 'success' || !(result as any).url) && !activeSession) {
         Sentry.addBreadcrumb({ category: 'signup.google', message: 'OAuth cancelled by user', level: 'info' });
@@ -212,6 +240,16 @@ export default function RegisterOptions() {
 
       if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
 
+      // ── Clean up any previous abandoned signup for this exact Google email ─────
+      try {
+        const { data: existingStatus } = await (supabase as any).rpc('check_existing_account', { email_addr: user.email });
+        if (existingStatus === 'incomplete') {
+          await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email });
+        } else if (existingStatus === 'email' && user?.app_metadata?.provider !== 'email') {
+          await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email });
+        }
+      } catch (e) { /* silent best-effort */ }
+
       // ── STEP 6: Check account status & profile completion ──────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 6: Checking account status', level: 'info' });
       let isFullyRegistered = false;
@@ -272,8 +310,8 @@ export default function RegisterOptions() {
 
       if (isMounted.current) {
         setIsGoogleLoading(false);
-        router.replace('/auth/identity' as any);
       }
+      router.replace('/auth/identity' as any);
 
     } catch (err: any) {
       useSignupStore.getState().setIsGoogleDelaying(false);
@@ -343,7 +381,7 @@ export default function RegisterOptions() {
               {/* Email option */}
               <TouchableOpacity
                 style={styles.optionCard}
-                onPress={() => allowRegistration && router.push('/auth/register-email')}
+                onPress={() => allowRegistration && handleEmailSignup()}
                 disabled={!allowRegistration}
                 activeOpacity={0.75}
               >

@@ -55,7 +55,7 @@ export function PosterImage({
             const cached = await getAssetCache(entityId);
             if (cached?.local_path && cached.remote_url === targetUri) {
                 const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
-                if (fileInfo.exists) {
+                if (fileInfo.exists && (fileInfo as any).size > 0) {
                     globalPosterMemoryCache[entityId] = cached.local_path;
                     if (isMounted) {
                         setLocalUri(cached.local_path);
@@ -75,7 +75,13 @@ export function PosterImage({
                 return;
             }
 
-            // 3. Download from network
+            // 3. If offline, don't attempt download — let the UI fall back to remoteUrl
+            if (!useNetworkStore.getState().isOnline) {
+                if (isMounted) setLocalUri(null);
+                return;
+            }
+
+            // 4. Download from network
             const fileUri = `${FileSystem.documentDirectory}${entityId}.jpg`;
             const result = await FileSystem.downloadAsync(targetUri, fileUri);
             
@@ -87,14 +93,14 @@ export function PosterImage({
                     setStatus('loaded');
                 }
             } else {
-                if (isMounted) setStatus('error');
+                if (isMounted) setLocalUri(null); // Fallback to remote URL
             }
         } catch (err: any) {
             const isNet = err?.message?.includes('Network') || err?.message?.includes('Unable to resolve host');
             if (!isNet) {
                 console.warn('[PosterImage] Failed to load poster:', err);
             }
-            if (isMounted) setStatus('error');
+            if (isMounted) setLocalUri(null); // Fallback to remote URL
         }
     };
 

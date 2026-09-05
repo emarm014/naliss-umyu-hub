@@ -1518,3 +1518,91 @@ export const getCachedEntityList = async (contentType: string): Promise<any[]> =
         return [];
     }
 };
+
+/**
+ * Reconciles existing on-disk image files with the SQLite local_assets table.
+ * Called once after login to re-link files that survived a logout or reinstall.
+ * Uses a single batched transaction — compliant with the write queue architecture.
+ */
+export const reconcileAssetCache = async () => {
+    const db = getDB();
+    if (!db) return;
+
+    try {
+        const docDir = FileSystem.documentDirectory;
+        if (!docDir) return;
+
+        const files = await FileSystem.readDirectoryAsync(docDir);
+
+        // Only re-register files that were written by CachedImage / PosterImage
+        const KNOWN_PREFIXES = [
+            'user_', 'avatar_', 'announcement_', 'event_',
+            'poster_', 'fyb_', 'gallery_', 'news_', 'executive_',
+            'lecturer_', 'group_', 'chat_media_'
+        ];
+
+        const imageFiles = files.filter(f =>
+            f.endsWith('.jpg') &&
+            KNOWN_PREFIXES.some(prefix => f.startsWith(prefix))
+        );
+
+        if (imageFiles.length === 0) return;
+
+        // Validate all files exist and are non-empty BEFORE opening the transaction
+        type AssetEntry = { entityId: string; localPath: string; assetType: string };
+        const validEntries: AssetEntry[] = [];
+
+        for (const file of imageFiles) {
+            const localPath = `${docDir}${file}`;
+            try {
+                const info = await FileSystem.getInfoAsync(localPath);
+                if (!info.exists || (info as any).size === 0) continue;
+
+                // Reconstruct entityId and assetType from filename: assetType_entityId_urlHash.jpg
+                const nameWithoutExt = file.replace('.jpg', '');
+                const parts = nameWithoutExt.split('_');
+                if (parts.length < 3) continue; // Needs at least: type, entityId, hash
+
+                const assetType = parts[0];
+                // entityId is everything between first and last underscore segment
+                const entityId = parts.slice(1, -1).join('_');
+                if (!entityId) continue;
+
+                validEntries.push({ entityId, localPath, assetType });
+            } catch {
+                continue; // Skip unreadable files silently
+            }
+        }
+
+        if (validEntries.length === 0) return;
+
+        // ONE transaction for all entries — same pattern as batchUpsertContentManifest
+        await enqueueTransaction(async () => {
+            await withSafeTransactionAsync(db, async () => {
+                const stmt = await db.prepareAsync(
+                    `INSERT OR IGNORE INTO local_assets
+                        (entity_id, remote_url, local_path, asset_type, updated_at)
+                     VALUES (?, ?, ?, ?, ?)`
+                );
+                try {
+                    const now = new Date().toISOString();
+                    for (const entry of validEntries) {
+                        await stmt.executeAsync([
+                            entry.entityId,
+                            '',           // remote_url unknown at reconciliation time
+                            entry.localPath,
+                            entry.assetType,
+                            now,
+                        ]);
+                    }
+                } finally {
+                    await stmt.finalizeAsync();
+                }
+            });
+        });
+
+        console.log(`[AssetCache] Reconciled ${validEntries.length} cached files into SQLite`);
+    } catch (e) {
+        console.warn('[AssetCache] Reconciliation failed (non-fatal):', e);
+    }
+};

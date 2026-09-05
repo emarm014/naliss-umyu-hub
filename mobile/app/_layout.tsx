@@ -238,19 +238,23 @@ export function NetworkStatusDot() {
 
 // ── Deep Link Session Handler ─────────────────────────────────────────────────
 // Extracts Supabase auth tokens from redirect URLs (e.g. after OAuth or reset)
-function extractSessionFromUrl(url: string) {
+function extractSessionFromUrl(url: string): { access_token: string; refresh_token: string; type?: string } | null {
   const fragment = url.split('#')[1];
   if (!fragment) return null;
 
   try {
     const params = fragment.split('&').reduce((acc, current) => {
       const [key, value] = current.split('=');
-      acc[key] = decodeURIComponent(value);
+      if (key && value) acc[key] = decodeURIComponent(value);
       return acc;
     }, {} as Record<string, string>);
 
     if (params.access_token && params.refresh_token) {
-      return { access_token: params.access_token, refresh_token: params.refresh_token };
+      return { 
+        access_token: params.access_token, 
+        refresh_token: params.refresh_token,
+        type: params.type 
+      };
     }
   } catch {
     // silent — deep link session parse failure
@@ -544,7 +548,14 @@ function RootLayoutNav() {
           // (register-options.tsx handles its own setSession to avoid double-firing)
           const signupState = useSignupStore.getState();
           if (!signupState.isGoogleDelaying) {
-            await supabase.auth.setSession(tokens);
+            await supabase.auth.setSession({
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token,
+            });
+            
+            if (tokens.type === 'recovery') {
+              setTimeout(() => router.replace('/auth/update-password'), 0);
+            }
           }
         } else {
           handleDeepLink(initialUrl);
@@ -560,7 +571,14 @@ function RootLayoutNav() {
         // Only set session from deep link if NOT in an active Google signup flow
         const signupState = useSignupStore.getState();
         if (!signupState.isGoogleDelaying) {
-          await supabase.auth.setSession(tokens);
+          await supabase.auth.setSession({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+          });
+
+          if (tokens.type === 'recovery') {
+            setTimeout(() => router.replace('/auth/update-password'), 0);
+          }
         }
       } else {
         handleDeepLink(event.url);

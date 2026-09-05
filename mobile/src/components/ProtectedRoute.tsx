@@ -351,12 +351,15 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         restoreStore.detectNewDevice();
       }
 
+      // Re-read FRESH state
+      const freshRestoreState = useDataRestoreStore.getState();
+
       // Only initialize global sync if we are NOT holding back for the data restore screen
-      if (!restoreStore.isNewDevice || restoreStore.restoreCompleted || restoreStore.wasSkipped) {
+      if (!freshRestoreState.isNewDevice || freshRestoreState.restoreCompleted || freshRestoreState.wasSkipped) {
         useGlobalSyncStore.getState().initialize();
       }
     }
-    // No cleanup / terminate here â€” channels must survive navigation
+    // No cleanup / terminate here — channels must survive navigation
     // CRITICAL: Do NOT include store functions in dependencies
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, isProfileComplete, offlineUnblocked]);
@@ -963,7 +966,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           // Only detect once per login session
           if (!restoreStore.restoreCompleted && !restoreStore.wasSkipped) {
             restoreStore.detectNewDevice();
-            if (restoreStore.isNewDevice) {
+            // Re-read FRESH state after detectNewDevice() has run
+            const freshRestoreState = useDataRestoreStore.getState();
+            if (freshRestoreState.isNewDevice) {
               safeNavigate.current('/auth/data-restore');
               return;
             }

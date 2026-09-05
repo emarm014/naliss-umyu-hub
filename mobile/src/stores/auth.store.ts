@@ -100,7 +100,7 @@ export const useAuthStore = create<AuthState>()(
       setSession: (session) => set({ session, isLoading: false }),
       setUser: (user) => set({ user }),
 
-      hydrateFromSQLite: async () => {
+    hydrateFromSQLite: async () => {
         const localProfile = await getLocalUserSession();
         if (localProfile) {
           set({ 
@@ -111,6 +111,10 @@ export const useAuthStore = create<AuthState>()(
           // Run self-healing check on hydrate
           safeFire(get().verifyAndRepairProfile(), 'verifyProfile');
         }
+        
+        // Re-link existing files to SQLite after SQLite initialization
+        const { reconcileAssetCache } = require('../lib/database');
+        await reconcileAssetCache();
       },
 
       fetchProfile: async (force = false) => {
@@ -424,6 +428,9 @@ export const useAuthStore = create<AuthState>()(
         const userId = user?.id;
         
         if (userId) {
+          const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+          await AsyncStorage.removeItem(`download_restore_${userId}`).catch(() => {});
+          await AsyncStorage.removeItem(`download_restore_progress_${userId}`).catch(() => {});
           // Delete ONLY this device's token — other devices keep receiving notifications.
           // The old approach set users.push_token = null, which triggered
           // sync_push_token_from_users() and cascade-deleted ALL device tokens.
@@ -576,7 +583,7 @@ export const useAuthStore = create<AuthState>()(
             if (activeDb) {
                 try {
                     await activeDb.runAsync('DELETE FROM local_messages');
-                    await activeDb.runAsync('DELETE FROM local_assets');
+                    // Removed: DELETE FROM local_assets (keep device cache intact across logouts)
                     await activeDb.runAsync('DELETE FROM local_media_manifest');
                     await activeDb.runAsync('DELETE FROM offline_download_jobs');
                     await activeDb.runAsync('DELETE FROM offline_download_telemetry');

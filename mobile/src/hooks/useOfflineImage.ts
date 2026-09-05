@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import * as FileSystem from 'expo-file-system/legacy';
 import { mmkvStorage } from '../stores/mmkv.storage';
 
@@ -169,7 +169,12 @@ export const useOfflineImage = (remoteUrl: string | null | undefined): string =>
         return () => { mountedRef.current = false; };
     }, []);
 
+    const prevUrlRef = useRef<string | undefined>(undefined);
+
     useEffect(() => {
+        if (remoteUrl === prevUrlRef.current) return;
+        prevUrlRef.current = remoteUrl || undefined;
+
         if (!remoteUrl) {
             setImgSource('');
             return;

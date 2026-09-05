@@ -26,22 +26,34 @@ export default function UpdatePassword() {
   // Verify there is a valid recovery session before allowing password update.
   // The reset link from email sets a session automatically via deep link handler.
   useEffect(() => {
-    const checkSession = async () => {
-      try {
-        // Give the deep link handler in _layout.tsx a moment to set the session
-        // before we check — the URL fragment tokens need to be processed first
-        await new Promise(resolve => setTimeout(resolve, 800));
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error || !session) {
-          setSessionError(true);
-        } else {
-          setSessionReady(true);
+    // Check immediately in case session is already set
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+            setSessionReady(true);
+            return;
         }
-      } catch {
-        setSessionError(true);
-      }
+    });
+
+    // Listen for the recovery event — fires when setSession() completes in _layout.tsx
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+            setSessionReady(true);
+        } else if (event === 'SIGNED_OUT') {
+            setSessionError(true);
+        }
+    });
+
+    // Safety timeout — only as last resort (5s, not 800ms)
+    const fallback = setTimeout(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!session) setSessionError(true);
+        });
+    }, 5000);
+
+    return () => {
+        subscription.unsubscribe();
+        clearTimeout(fallback);
     };
-    checkSession();
   }, []);
 
   const handleUpdate = async () => {

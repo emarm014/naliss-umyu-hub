@@ -33,13 +33,13 @@ export const useHeartbeatStore = create<HeartbeatState>((set) => ({
  * are online simultaneously during Event Pools.
  */
 export function useHeartbeat() {
-    const session = useAuthStore(state => state.session);
-    const user = useAuthStore(state => state.user);
+    const sessionId = useAuthStore(state => state.session?.access_token);
+    const userId = useAuthStore(state => state.user?.id);
     const appState = useRef(AppState.currentState);
     const setActiveAlert = useHeartbeatStore(state => state.setActiveAlert);
 
     useEffect(() => {
-        if (!session || !user) return;
+        if (!sessionId || !userId) return;
 
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -63,7 +63,7 @@ export function useHeartbeat() {
                     await (supabase as any)
                         .from('users')
                         .update({ last_active_at: new Date().toISOString() })
-                        .eq('id', user.id);
+                        .eq('id', userId);
                 } else if (data && typeof data === 'object') {
                     if ('active_alert' in data) {
                         const alert = (data as any).active_alert;
@@ -112,7 +112,7 @@ export function useHeartbeat() {
             stopPing();
             subscription.remove();
         };
-    }, [session, user, setActiveAlert]);
+    }, [sessionId, userId, setActiveAlert]);
 }
 
 export function HeartbeatBanner() {

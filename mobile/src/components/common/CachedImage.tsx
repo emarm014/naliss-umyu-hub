@@ -51,7 +51,12 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 preCachedUri = parsed.path;
             }
         } catch (e) {
-            // Legacy cache (just a string path). We must miss the cache so SQLite can verify the URL.
+            // Legacy cache (just a string path). Migrate it by clearing it so SQLite takes over.
+            const legacyPath = globalMemoryCache[entityId];
+            if (typeof legacyPath === 'string') {
+                delete globalMemoryCache[entityId];
+                saveGlobalCache();
+            }
         }
     }
     
@@ -101,7 +106,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 if (cached?.local_path && cached.remote_url === remoteUrl) {
                     // 2. Verify file exists
                     const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
-                    if (fileInfo.exists) {
+                    if (fileInfo.exists && (fileInfo as any).size > 0) {
                         if (retryCount > 0) {
                             // File exists but failed to render (corrupt). Delete it to force re-download.
                             try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
@@ -128,10 +133,11 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                     return;
                 }
 
-                // 3. If offline, don't attempt download — the SQLite check above was our best shot
+                // 3. If offline, don't attempt download — let the UI fall back to remoteUrl
                 if (!useNetworkStore.getState().isOnline) {
                     if (isMounted) {
-                        // No cached file and offline — show fallback gracefully
+                        setLocalUri(null); // Force remote URL fallback
+                        // Don't set hasError yet, let Image.onError handle it
                         setLoading(false);
                     }
                     return;
@@ -143,26 +149,38 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 const urlHash = remoteUrl.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
                 const filename = `${assetType}_${entityId}_${urlHash}.jpg`;
                 const fileUri = `${FileSystem.documentDirectory}${filename}`;
+                const tempUri = `${FileSystem.documentDirectory}tmp_${Date.now()}_${filename}`;
                 
-                // Clean up the old file if it exists and is different to prevent disk clutter
-                if (cached?.local_path && cached.local_path !== fileUri) {
-                    try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
-                }
-
-                const result = await FileSystem.downloadAsync(remoteUrl, fileUri);
+                // Download to a temp file first (Atomic Swap)
+                const result = await FileSystem.downloadAsync(remoteUrl, tempUri);
                 
                 if (result.status === 200) {
-                    // 5. Save to SQLite
-                    await upsertAssetCache(entityId, remoteUrl, result.uri, assetType);
-                    
-                    globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: result.uri });
-                    saveGlobalCache();
-                    if (isMounted) {
-                        setLocalUri(result.uri);
-                        setHasError(false); // ← CRITICAL: reset error so downloaded image can render
+                    const info = await FileSystem.getInfoAsync(tempUri);
+                    if (info.exists && (info as any).size > 0) {
+                        // Clean up the old file if it exists and is different
+                        if (cached?.local_path && cached.local_path !== fileUri) {
+                            try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
+                        }
+                        // Move temp file to final destination
+                        await FileSystem.moveAsync({ from: tempUri, to: fileUri });
+
+                        // 5. Save to SQLite
+                        await upsertAssetCache(entityId, remoteUrl, fileUri, assetType);
+                        
+                        globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: fileUri });
+                        saveGlobalCache();
+                        if (isMounted) {
+                            setLocalUri(fileUri);
+                            setHasError(false);
+                        }
+                    } else {
+                        // Download succeeded but file is empty/invalid
+                        try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch (e) {}
+                        if (isMounted) setLocalUri(null); // Fallback to remote URL
                     }
                 } else {
-                    if (isMounted) setHasError(true);
+                    // Download failed (e.g. 404, offline midway)
+                    if (isMounted) setLocalUri(null); // Fallback to remote URL
                 }
             } catch (err: any) {
                 // Use debug-level logging to avoid flooding Sentry breadcrumbs when offline
@@ -170,7 +188,7 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
                 if (!isNet) {
                     console.warn('[CachedImage] Failed to load image:', err);
                 }
-                if (isMounted) setHasError(true);
+                if (isMounted) setLocalUri(null); // Fallback to remote URL
             } finally {
                 if (isMounted) {
                     setLoading(false);

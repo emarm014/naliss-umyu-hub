@@ -1,8 +1,7 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, SafeAreaView,
-    TouchableOpacity, Image, Linking, Platform, Alert, Dimensions,
-} from 'react-native';
+    View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking, Platform, Alert, Dimensions } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';

@@ -5,7 +5,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as TaskManager from 'expo-task-manager';
-import * as BackgroundFetch from 'expo-background-fetch';
+import * as BackgroundTask from 'expo-background-task';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationStore } from '../stores/notification.store';
@@ -116,9 +116,9 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
         useNotificationStore.getState().addNotifications(localList);
       }
     }
-    return BackgroundFetch.BackgroundFetchResult.NewData;
+    return BackgroundTask.BackgroundTaskResult.Success;
   } catch {
-    return BackgroundFetch.BackgroundFetchResult.Failed;
+    return BackgroundTask.BackgroundTaskResult.Failed;
   }
 });
 
@@ -147,10 +147,20 @@ export function usePushNotifications() {
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
+  const handledNotificationId = useRef<string | null>(null);
 
+  // Cold-start handler: useLastNotificationResponse covers the case where the
+  // app was killed and the user tapped a notification to launch it. The ref
+  // guard ensures we only handle each notification ONCE — without it, React
+  // enters an infinite re-render loop (useLayoutEffect → setState →
+  // re-render → useLayoutEffect → "Maximum update depth exceeded").
   useEffect(() => {
     if (lastNotificationResponse) {
-      NotificationRouter.handleNotificationResponse(lastNotificationResponse);
+      const id = lastNotificationResponse.notification.request.identifier;
+      if (id !== handledNotificationId.current) {
+        handledNotificationId.current = id;
+        NotificationRouter.handleColdStartResponse(lastNotificationResponse);
+      }
     }
   }, [lastNotificationResponse]);
 
@@ -234,16 +244,10 @@ export function usePushNotifications() {
 
 
 
-      // Register background fetch
-      BackgroundFetch.getStatusAsync().then(status => {
-        if (status === BackgroundFetch.BackgroundFetchStatus.Available) {
-          BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
-            minimumInterval: 15 * 60,
-            stopOnTerminate: false,
-            startOnBoot: true,
-          }).catch((err) => console.error('[PushNotifications] background fetch registration failed:', err));
-        }
-      });
+      // Register background task
+      BackgroundTask.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+        minimumInterval: 15 * 60,
+      }).catch((err) => console.error('[PushNotifications] background task registration failed:', err));
     }
 
     // Fired when a notification is received while the app is foregrounded
@@ -348,7 +352,7 @@ export function usePushNotifications() {
       } else if (actionId === 'dismiss') {
       } else {
         // Default tap action — delegate to NotificationRouter for deterministic, gated routing
-        NotificationRouter.handleNotificationResponse(response);
+        NotificationRouter.handleTapResponse(response);
       }
     });
 

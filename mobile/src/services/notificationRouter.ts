@@ -199,15 +199,24 @@ class NotificationRouterService {
     this.pendingIntent = null; // Clear before navigating to prevent double execution
 
     try {
-      router.push(intent.path as any);
+      // Defer navigation to next event loop tick — safe regardless of
+      // whether this runs during React's commit phase (useLayoutEffect).
+      // Without this, a notification handled mid-render can schedule a
+      // state update and trigger "Maximum update depth exceeded".
+      setTimeout(() => {
+        try {
+          router.push(intent.path as any);
+        } catch (err) {
+          captureStoreError('notificationRouter', 'flushIntent', err, { intent });
+          try {
+            router.push('/(tabs)' as any);
+          } catch {
+            // silent
+          }
+        }
+      }, 0);
     } catch (err) {
       captureStoreError('notificationRouter', 'flushIntent', err, { intent });
-      // Fallback navigation
-      try {
-        router.push('/(tabs)' as any);
-      } catch {
-        // silent
-      }
     }
   }
 
@@ -223,6 +232,31 @@ class NotificationRouterService {
    */
   public clearPendingIntent(): void {
     this.pendingIntent = null;
+  }
+
+  /**
+   * Cold-start entry point: called from useLastNotificationResponse.
+   * App was killed, user tapped a notification to launch it.
+   * Delegates to the shared handler — named separately for clarity
+   * and to prevent accidental double-invocation with handleTapResponse.
+   */
+  public handleColdStartResponse(
+    response: Notifications.NotificationResponse,
+    currentPathname?: string
+  ): void {
+    this.handleNotificationResponse(response, currentPathname);
+  }
+
+  /**
+   * Live-tap entry point: called from addNotificationResponseReceivedListener.
+   * App was in foreground or background, user tapped a notification.
+   * Delegates to the shared handler — named separately for clarity.
+   */
+  public handleTapResponse(
+    response: Notifications.NotificationResponse,
+    currentPathname?: string
+  ): void {
+    this.handleNotificationResponse(response, currentPathname);
   }
 }
 

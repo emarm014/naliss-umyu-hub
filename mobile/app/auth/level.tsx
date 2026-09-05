@@ -1,8 +1,7 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  StyleSheet, View, Text, TouchableOpacity, SafeAreaView,
-  Alert, Platform, ScrollView, StatusBar, Animated, Easing,
-} from 'react-native';
+  StyleSheet, View, Text, TouchableOpacity, Alert, Platform, ScrollView, StatusBar, Animated, Easing } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/api/supabase/client';

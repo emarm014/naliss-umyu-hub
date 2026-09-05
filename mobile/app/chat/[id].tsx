@@ -7,7 +7,6 @@ import {
     TouchableOpacity,
     TouchableWithoutFeedback,
     KeyboardAvoidingView,
-    SafeAreaView,
     Keyboard,
     Platform,
     FlatList,
@@ -19,8 +18,7 @@ import {
     PanResponder,
     Linking,
     Modal,
-    AppState,
-} from 'react-native';
+    AppState } from 'react-native';
 import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';

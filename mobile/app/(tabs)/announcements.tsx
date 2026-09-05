@@ -1,9 +1,9 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    TextInput, SafeAreaView, Platform, ActivityIndicator,
-    Image, RefreshControl, Alert, Dimensions,
-} from 'react-native';
+    TextInput, Platform, ActivityIndicator,
+    Image, RefreshControl, Alert, Dimensions } from 'react-native';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';

@@ -1,8 +1,9 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useRef } from 'react';
 import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
   Dimensions, ActivityIndicator, Modal, ScrollView,
-  SafeAreaView, Alert, Platform, Pressable
+  Alert, Platform, Pressable
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';

@@ -1,6 +1,7 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 ﻿import React from 'react';
 import * as Sentry from '@sentry/react-native';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/Colors';
 

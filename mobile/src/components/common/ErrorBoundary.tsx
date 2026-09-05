@@ -1,6 +1,7 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 ﻿import React from 'react';
 import * as Sentry from '@sentry/react-native';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
 import { NalissLogo } from '../NalissLogo';

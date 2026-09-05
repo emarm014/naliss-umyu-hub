@@ -1,11 +1,11 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError } from '../../src/utils/sentry';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
-  ScrollView, ActivityIndicator, Alert, SafeAreaView, StatusBar, AppState, AppStateStatus,
-  Platform,
-} from 'react-native';
+  ScrollView, ActivityIndicator, Alert, StatusBar, AppState, AppStateStatus,
+  Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';

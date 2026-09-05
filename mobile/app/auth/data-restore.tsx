@@ -1,3 +1,4 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -5,13 +6,11 @@ import {
   StyleSheet,
   Animated,
   Easing,
-  SafeAreaView,
   TouchableOpacity,
   Alert,
   StatusBar,
   Dimensions,
-  BackHandler,
-} from 'react-native';
+  BackHandler } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../../src/components/NalissLogo';

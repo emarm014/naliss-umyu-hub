@@ -109,4 +109,3 @@ module.exports = function withProguardRules(config) {
     return config;
   });
 };
-`, "Description": "FREEZE-5: Created an Expo config plugin that generates comprehensive ProGuard keep rules for all native modules used in the app. This prevents R8/ProGuard from stripping classes that are required at runtime — the most likely cause of the 'works in dev but freezes in EAS build' behavior.", "Overwrite": false, "TargetFile": "c:\\Users\\Emerm\\Desktop\\naliss-umyu-hub\\mobile\\plugins\\withProguardRules.js", "toolAction": "Creating ProGuard plugin", "toolSummary": "ProGuard keep rules plugin"}

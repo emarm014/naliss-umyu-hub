@@ -616,15 +616,15 @@ export const useAuthStore = create<AuthState>()(
         try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}
         try { require('./group.store').useGroupStore.getState().clearGroups(); } catch {}
         try { require('./globalSync.store').useGlobalSyncStore.getState().terminate(); } catch {}
-        try { require('./announcement.store').useAnnouncementStore.getState().clearCache(); } catch {}
-        try { require('./event.store').useEventStore.getState().clearCache(); } catch {}
-        try { require('./resource.store').useResourceStore.getState().clearCache(); } catch {}
-        try { require('./directory.store').useDirectoryStore.getState().clearCache(); } catch {}
-        try { require('./news.store').useNewsStore.getState().clearCache(); } catch {}
-        try { require('./archive.store').useArchiveStore.getState().clearCache(); } catch {}
-        try { require('./fyb.store').useFYBStore.getState().clearCache(); } catch {}
-        try { require('./gallery.store').useGalleryStore.getState().clearCache(); } catch {}
-        try { require('./event-pool.store').useEventPoolStore.getState().clearCache(); } catch {}
+        try { require('./announcement.store').useAnnouncementStore.getState().clearUserData(); } catch {}
+        try { require('./event.store').useEventStore.getState().clearUserData(); } catch {}
+        try { require('./resource.store').useResourceStore.getState().clearUserData(); } catch {}
+        try { require('./directory.store').useDirectoryStore.getState().clearUserData(); } catch {}
+        try { require('./news.store').useNewsStore.getState().clearUserData(); } catch {}
+        try { require('./archive.store').useArchiveStore.getState().clearUserData(); } catch {}
+        try { require('./fyb.store').useFYBStore.getState().clearUserData(); } catch {}
+        try { require('./gallery.store').useGalleryStore.getState().clearUserData(); } catch {}
+        try { require('./event-pool.store').useEventPoolStore.getState().clearUserData(); } catch {}
         try { require('./signup.store').useSignupStore.getState().reset(); } catch {}
         try { require('./notification.store').useNotificationStore.getState().clearNotifications(); } catch {}
         try { require('./data-restore.store').useDataRestoreStore.getState().reset(); } catch {}

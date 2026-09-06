@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -27,6 +27,8 @@ interface ResourceState {
     refreshDownloadedStatus: () => Promise<void>;
     clearError: () => void;
     clearCache: () => void;
+    clearUserData: () => void;
+    clearContentCache: () => void;
 }
 
 const CACHE_TTL = Infinity; // No TTL â€” materials/courses/past questions available offline indefinitely
@@ -304,6 +306,13 @@ export const useResourceStore = create<ResourceState>()(
                 pastQuestions: [],
                 courses: [],
                 downloadedIds: [],
+                lastFetchMaterials: null,
+                lastFetchPastQuestions: null,
+                lastFetchCourses: null,
+                error: null,
+            }),
+            clearUserData: () => set({ downloadedIds: [] }),
+            clearContentCache: () => set({
                 lastFetchMaterials: null,
                 lastFetchPastQuestions: null,
                 lastFetchCourses: null,

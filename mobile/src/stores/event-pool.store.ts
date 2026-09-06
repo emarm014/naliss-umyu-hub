@@ -35,6 +35,8 @@ interface EventPoolState {
   fetchPools: (force?: boolean) => Promise<void>;
   fetchServerTimeOffset: () => Promise<void>;
   clearCache: () => void;
+  clearUserData: () => void;
+  clearContentCache: () => void;
 }
 
 export const useEventPoolStore = create<EventPoolState>()(
@@ -46,6 +48,8 @@ export const useEventPoolStore = create<EventPoolState>()(
       serverTimeOffset: 0,
 
       clearCache: () => set({ pools: [], lastFetch: null }),
+      clearUserData: () => set({}),
+      clearContentCache: () => set({ lastFetch: null }),
 
       fetchServerTimeOffset: async () => {
         try {

@@ -32,6 +32,8 @@ interface AnnouncementState {
   markAsRead: (announcementId: string) => Promise<void>;
   markAllAsRead: (level?: string | null) => Promise<void>;
   clearCache: () => void;
+  clearUserData: () => void;
+  clearContentCache: () => void;
 }
 
 // No TTL — cached data never expires. Always available offline indefinitely.
@@ -179,6 +181,8 @@ export const useAnnouncementStore = create<AnnouncementState>()(
       },
 
       clearCache: () => set({ announcements: [], readIds: [], lastFetch: null, error: null }),
+      clearUserData: () => set({ readIds: [] }),
+      clearContentCache: () => set({ lastFetch: null, error: null }),
     }),
     {
       name: 'announcement-storage',

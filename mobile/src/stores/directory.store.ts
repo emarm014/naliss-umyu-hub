@@ -18,6 +18,8 @@ interface DirectoryState {
     fetchExecutives: (force?: boolean) => Promise<void>;
     clearError: () => void;
     clearCache: () => void;
+    clearUserData: () => void;
+    clearContentCache: () => void;
 }
 
 const CACHE_TTL = Infinity; // No TTL â€” directory available offline indefinitely
@@ -182,6 +184,12 @@ export const useDirectoryStore = create<DirectoryState>()(
                 error: null,
                 lastFetchLecturers: null,
                 lastFetchExecutives: null,
+            }),
+            clearUserData: () => set({}),
+            clearContentCache: () => set({
+                lastFetchLecturers: null,
+                lastFetchExecutives: null,
+                error: null,
             }),
         }),
         {

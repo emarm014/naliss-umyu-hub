@@ -10,6 +10,7 @@ let currentRawDb: SQLite.SQLiteDatabase | null = null;
 let isRecovering = false;
 let activeDbName = 'chat.db';
 let _queueDepth = 0; // Track how many writes are pending in the queue
+let readonlyFailCount = 0; // Track consecutive readonly errors
 
 // Global queue to prevent "cannot start a transaction within a transaction" errors
 const _global = globalThis as any;
@@ -48,15 +49,11 @@ async function initReadConnection(): Promise<SQLite.SQLiteDatabase | null> {
             // Verify it's alive
             try { await readDb.execAsync('SELECT 1'); return readDb; } catch (_) {}
         }
-        const rawReadDb = await SQLite.openDatabaseAsync(activeDbName);
+        const rawReadDb = await SQLite.openDatabaseAsync(activeDbName, { useNewConnection: true });
         await rawReadDb.execAsync('PRAGMA busy_timeout = 3000;');
         await rawReadDb.execAsync('PRAGMA journal_mode = WAL;');
-        // NOTE: Do NOT set PRAGMA query_only = ON here.
-        // On Android, openDatabaseAsync() with the same filename can return objects
-        // backed by the SAME underlying native connection (Android's SQLiteDatabase
-        // connection pool). Setting query_only = ON on readDb poisons the shared
-        // native connection, causing SQLITE_READONLY on ALL writes via `db`.
-        // The write queue architecture already prevents accidental writes to readDb.
+        // Safely set query_only = ON since we are using a brand new native connection
+        await rawReadDb.execAsync('PRAGMA query_only = ON;');
         await rawReadDb.execAsync('PRAGMA cache_size = -4000;');
         readDb = rawReadDb;
         return readDb;
@@ -92,6 +89,12 @@ export async function readQuery<T>(queryFn: (database: SQLite.SQLiteDatabase) =>
         return await queryFn(activeReadDb);
     } catch (e: any) {
         if (isNativeNpe(e) || isReadonlyError(e)) {
+            if (isReadonlyError(e)) {
+                readonlyFailCount++;
+                if (readonlyFailCount >= 5) {
+                    require('../utils/storageErrorAlert').showStorageErrorAlert();
+                }
+            }
             // Read connection lost or poisoned — close and re-create it next time
             try { readDb?.closeAsync?.(); } catch (_) {}
             readDb = null;
@@ -285,6 +288,12 @@ function wrapStatementMethods(stmt: any): void {
       return await origExecute(...args);
     } catch (error) {
       if (isNativeNpe(error) || isReadonlyError(error)) {
+        if (isReadonlyError(error)) {
+            readonlyFailCount++;
+            if (readonlyFailCount >= 5) {
+                require('../utils/storageErrorAlert').showStorageErrorAlert();
+            }
+        }
         let recovered = false;
         if (isRecovering && recoveryPromise) recovered = await recoveryPromise;
         else if (!isRecovering) recovered = await recoverDatabase();
@@ -299,6 +308,12 @@ function wrapStatementMethods(stmt: any): void {
       return await origFinalize(...args);
     } catch (error) {
       if (isNativeNpe(error) || isReadonlyError(error)) {
+        if (isReadonlyError(error)) {
+            readonlyFailCount++;
+            if (readonlyFailCount >= 5) {
+                require('../utils/storageErrorAlert').showStorageErrorAlert();
+            }
+        }
         let recovered = false;
         if (isRecovering && recoveryPromise) recovered = await recoveryPromise;
         else if (!isRecovering) recovered = await recoverDatabase();
@@ -377,6 +392,10 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
           // SQLITE_READONLY: the write connection is poisoned or storage became read-only.
           // Trigger the same recovery path as NPE — close everything and reopen fresh.
           if (isReadonlyError(error)) {
+            readonlyFailCount++;
+            if (readonlyFailCount >= 5) {
+                require('../utils/storageErrorAlert').showStorageErrorAlert();
+            }
             let recovered = false;
             if (isRecovering && recoveryPromise) {
                 recovered = await recoveryPromise;

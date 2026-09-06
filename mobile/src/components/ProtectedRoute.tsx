@@ -448,6 +448,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         if (useSignupStore.getState().isGoogleDelaying) {
           return;
         }
+
+        if (useSignupStore.getState().isRecoveryFlow) {
+          return; // Don't route away during password recovery — let update-password screen handle it
+        }
         
         // Domain validation â€” block non-institutional emails
         // Google OAuth users in the middle of signup are allowed through temporarily
@@ -900,7 +904,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const inAuthGroup = segments[0] === 'auth';
     const currentScreen = segments[1] as string;
 
-    // â”€â”€ SIGNUP LOCK â€” checked FIRST, before everything else â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (useSignupStore.getState().isRecoveryFlow) {
+      return; // Don't navigate away — user is on the password update screen
+    }
+
+    // ── SIGNUP LOCK — checked FIRST, before everything else ──────────────────────────
     const signupScreens = ['register-email', 'register-otp', 'register-password', 'identity', 'level', 'register-options', 'eligibility'];
     if (signupScreens.includes(currentScreen)) {
       if (isProfileComplete === true) {

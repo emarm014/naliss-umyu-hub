@@ -161,6 +161,8 @@ export default function EventPoolRoom() {
 
     const handleFinalSubmit = async (autoSubmitted: boolean = false, customPayload?: any) => {
         if (!pool || !user) return;
+        if (pool.type === 'voting' || pool.type === 'talent') return; // Handled in dedicated engines
+        
         setIsSubmitting(true);
         try {
             let answersPayload: any = {};

@@ -35,6 +35,8 @@ interface FYBState {
   fetchUnreadCount: () => Promise<void>;
   markAsRead: () => void;
   clearCache: () => void;
+  clearUserData: () => void;
+  clearContentCache: () => void;
 }
 
 export const useFYBStore = create<FYBState>()(
@@ -47,6 +49,8 @@ export const useFYBStore = create<FYBState>()(
       lastOpenedAt: null,
 
       clearCache: () => set({ entries: [], lastFetch: null, unreadCount: 0 }),
+      clearUserData: () => set({ unreadCount: 0, lastOpenedAt: null }),
+      clearContentCache: () => set({ lastFetch: null }),
 
       fetchUnreadCount: async () => {
         try {
@@ -69,7 +73,10 @@ export const useFYBStore = create<FYBState>()(
       },
 
       fetchFeatured: async (force = false) => {
-        const { entries } = get();
+        const { entries, lastFetch } = get();
+
+        const isFresh = lastFetch && entries.length > 0;
+        if (!force && isFresh) return;
 
         // LOCAL-FIRST: read from SQLite cache immediately (always works — even on new device)
         if (!force && entries.length === 0) {
@@ -83,8 +90,8 @@ export const useFYBStore = create<FYBState>()(
         }
 
         const { useNetworkStore } = require('./network.store');
-        if (!force && get().entries.length > 0 && !useNetworkStore.getState().isOnline) {
-          // If offline and we have cache, NEVER load/spin.
+        if (!useNetworkStore.getState().isOnline) {
+          set({ isLoading: false });
           return;
         }
 

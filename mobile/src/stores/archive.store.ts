@@ -18,6 +18,8 @@ interface ArchiveState {
   fetchUnreadCount: () => Promise<void>;
   markAsRead: () => void;
   clearCache: () => void;
+  clearUserData: () => void;
+  clearContentCache: () => void;
 }
 
 export const useArchiveStore = create<ArchiveState>()(
@@ -33,6 +35,8 @@ export const useArchiveStore = create<ArchiveState>()(
       lastOpenedAt: null,
 
       clearCache: () => set({ archives: [], lastFetch: null, unreadCount: 0, page: 0, hasMore: true }),
+      clearUserData: () => set({ unreadCount: 0, lastOpenedAt: null }),
+      clearContentCache: () => set({ lastFetch: null }),
 
       fetchUnreadCount: async () => {
         try {

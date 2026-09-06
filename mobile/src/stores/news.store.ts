@@ -15,6 +15,8 @@ interface NewsState {
   markAsRead: () => void;
   fetchNews: (force?: boolean) => Promise<void>;
   clearCache: () => void;
+  clearUserData: () => void;
+  clearContentCache: () => void;
 }
 
 const CACHE_TTL = Infinity;
@@ -113,7 +115,9 @@ export const useNewsStore = create<NewsState>()(
         }
       },
 
-      clearCache: () => set({ news: [], lastFetchNews: null, unreadCount: 0 })
+      clearCache: () => set({ news: [], lastFetchNews: null, unreadCount: 0 }),
+      clearUserData: () => set({ unreadCount: 0, lastOpenedAt: null }),
+      clearContentCache: () => set({ lastFetchNews: null })
     }),
     {
       name: 'news-storage',

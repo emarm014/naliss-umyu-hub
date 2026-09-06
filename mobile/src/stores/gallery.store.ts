@@ -37,6 +37,8 @@ interface GalleryState {
   fetchTopicDetails: (topicId: string) => Promise<GalleryTopic | null>;
   fetchMedia: (topicId: string, force?: boolean) => Promise<void>;
   clearCache: () => void;
+  clearUserData: () => void;
+  clearContentCache: () => void;
 }
 
 export const useGalleryStore = create<GalleryState>()(
@@ -52,6 +54,8 @@ export const useGalleryStore = create<GalleryState>()(
       isLoadingMedia: {},
 
       clearCache: () => set({ topics: [], lastFetchTopics: null, topicDetails: {}, mediaByTopic: {}, isLoadingMedia: {} }),
+      clearUserData: () => set({}), // No user data in gallery
+      clearContentCache: () => set({ lastFetchTopics: null }),
 
       fetchTopics: async (force = false) => {
         const { topics } = get();
@@ -67,7 +71,8 @@ export const useGalleryStore = create<GalleryState>()(
           } catch { /* fall through to server fetch */ }
         }
 
-        if (!force && get().topics.length > 0 && !useNetworkStore.getState().isOnline) {
+        if (!useNetworkStore.getState().isOnline) {
+          set({ isLoadingTopics: false });
           return;
         }
 
@@ -136,7 +141,8 @@ export const useGalleryStore = create<GalleryState>()(
 
       fetchMedia: async (topicId: string, force = false) => {
         const currentMedia = get().mediaByTopic[topicId] || [];
-        if (!force && currentMedia.length > 0 && !useNetworkStore.getState().isOnline) {
+        if (!useNetworkStore.getState().isOnline) {
+          set(state => ({ isLoadingMedia: { ...state.isLoadingMedia, [topicId]: false } }));
           return;
         }
 

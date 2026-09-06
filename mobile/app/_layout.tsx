@@ -548,13 +548,16 @@ function RootLayoutNav() {
           // (register-options.tsx handles its own setSession to avoid double-firing)
           const signupState = useSignupStore.getState();
           if (!signupState.isGoogleDelaying) {
+            if (tokens.type === 'recovery') {
+              signupState.setIsRecoveryFlow(true);
+            }
             await supabase.auth.setSession({
               access_token: tokens.access_token,
               refresh_token: tokens.refresh_token,
             });
             
             if (tokens.type === 'recovery') {
-              setTimeout(() => router.replace('/auth/update-password'), 0);
+              router.replace('/auth/update-password');
             }
           }
         } else {
@@ -571,13 +574,16 @@ function RootLayoutNav() {
         // Only set session from deep link if NOT in an active Google signup flow
         const signupState = useSignupStore.getState();
         if (!signupState.isGoogleDelaying) {
+          if (tokens.type === 'recovery') {
+            signupState.setIsRecoveryFlow(true);
+          }
           await supabase.auth.setSession({
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,
           });
 
           if (tokens.type === 'recovery') {
-            setTimeout(() => router.replace('/auth/update-password'), 0);
+            router.replace('/auth/update-password');
           }
         }
       } else {

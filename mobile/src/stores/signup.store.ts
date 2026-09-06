@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 
@@ -30,11 +30,13 @@ interface SignupState {
 
   // For artificial delay
   isGoogleDelaying: boolean;
+  isRecoveryFlow: boolean;
 
   // Timeout tracking â€” timestamp of last activity during signup
   lastActivityTime: number | null;
 
   setIsGoogleDelaying: (delaying: boolean) => void;
+  setIsRecoveryFlow: (val: boolean) => void;
   setProvider: (provider: 'email' | 'google') => void;
   setCredentials: (email?: string, password?: string) => void;
   setGoogleTokens: (email: string, access_token: string, refresh_token: string) => void;
@@ -73,6 +75,7 @@ const initialState = {
   department: 'Library and Information Science',
   currentStep: undefined,
   isGoogleDelaying: false,
+  isRecoveryFlow: false,
   lastActivityTime: null as number | null,
   otpResendCounts: {} as Record<string, number>,
   otpResendLocks: {} as Record<string, number>,
@@ -84,6 +87,7 @@ export const useSignupStore = create<SignupState>()(
       ...initialState,
       
       setIsGoogleDelaying: (delaying: boolean) => set({ isGoogleDelaying: delaying }),
+      setIsRecoveryFlow: (val: boolean) => set({ isRecoveryFlow: val }),
       setProvider: (provider: 'email' | 'google') => set({ provider }),
 
       setCredentials: (email, password) => set((state) => ({
@@ -196,6 +200,7 @@ export const useSignupStore = create<SignupState>()(
         department: state.department,
         currentStep: state.currentStep,
         lastActivityTime: state.lastActivityTime,
+        isRecoveryFlow: state.isRecoveryFlow,
         otpResendCounts: state.otpResendCounts,
         otpResendLocks: state.otpResendLocks,
       }),

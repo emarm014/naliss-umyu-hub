@@ -370,6 +370,81 @@ export const OfflineSyncService = {
                 }
             });
 
+            // ----------------------------------------------------
+            // Stage 11: Sync news
+            // ----------------------------------------------------
+            Logger.info('offline-sync', 'Stage 11/14: Syncing news');
+            await yieldToUI();
+            try {
+                const { data: newsData } = await (supabase as any).from('news')
+                    .select('*').eq('is_published', true).order('created_at', { ascending: false });
+                if (newsData?.length) await batchUpsertContentManifest(newsData.map((n: any) => ({
+                    content_type: 'news',
+                    content_id: n.id,
+                    user_id: userId,
+                    raw_data: n,
+                    sync_version: 1,
+                    device_id: deviceId
+                })));
+            } catch { /* non-fatal */ }
+
+            // ----------------------------------------------------
+            // Stage 12: Sync archive
+            // ----------------------------------------------------
+            Logger.info('offline-sync', 'Stage 12/14: Syncing archive');
+            await yieldToUI();
+            try {
+                const { data: archiveData } = await (supabase as any).from('archives')
+                    .select('*').order('created_at', { ascending: false });
+                if (archiveData?.length) await batchUpsertContentManifest(archiveData.map((a: any) => ({
+                    content_type: 'archives',
+                    content_id: a.id,
+                    user_id: userId,
+                    raw_data: a,
+                    sync_version: 1,
+                    device_id: deviceId
+                })));
+            } catch { /* non-fatal */ }
+
+            // ----------------------------------------------------
+            // Stage 13: Sync FYB (featured students)
+            // ----------------------------------------------------
+            Logger.info('offline-sync', 'Stage 13/14: Syncing featured students');
+            await yieldToUI();
+            try {
+                const { data: fybData } = await (supabase as any).from('featured_students')
+                    .select(`id, user_id, type, title, subtitle, description, custom_image_url,
+                             is_active, published_at, expires_at, total_congratulations, created_at,
+                             users!featured_students_user_id_fkey(full_name, username, avatar_url)`)
+                    .neq('type', 'event_winner').order('published_at', { ascending: false });
+                if (fybData?.length) await batchUpsertContentManifest(fybData.map((f: any) => ({
+                    content_type: 'featured_students',
+                    content_id: f.id,
+                    user_id: userId,
+                    raw_data: f,
+                    sync_version: 1,
+                    device_id: deviceId
+                })));
+            } catch { /* non-fatal */ }
+
+            // ----------------------------------------------------
+            // Stage 14: Sync gallery
+            // ----------------------------------------------------
+            Logger.info('offline-sync', 'Stage 14/14: Syncing gallery topics');
+            await yieldToUI();
+            try {
+                const { data: galleryData } = await (supabase as any).from('gallery_topics')
+                    .select('*').order('created_at', { ascending: false }).limit(100);
+                if (galleryData?.length) await batchUpsertContentManifest(galleryData.map((g: any) => ({
+                    content_type: 'gallery_topics',
+                    content_id: g.id,
+                    user_id: userId,
+                    raw_data: g,
+                    sync_version: 1,
+                    device_id: deviceId
+                })));
+            } catch { /* non-fatal */ }
+
             // Update Sync state metadata
             await updateSyncState(userId, {
                 last_sync: new Date().toISOString(),

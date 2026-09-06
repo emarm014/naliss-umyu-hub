@@ -74,6 +74,11 @@ export default function UpdatePassword() {
       const updatePromise = supabase.auth.updateUser({ password });
       const { error } = await Promise.race([updatePromise, timeoutPromise]) as any;
       if (error) throw error;
+
+      await supabase.auth.signOut();
+      const { useSignupStore } = require('../../src/stores/signup.store');
+      useSignupStore.getState().setIsRecoveryFlow(false);
+
       setIsSuccess(true);
     } catch (err: any) {
       captureUIError('UpdatePassword.handleUpdate', err);
@@ -129,10 +134,10 @@ export default function UpdatePassword() {
           <Text style={styles.stateSub}>
             Your password has been changed successfully.{'\n'}You can now access your dashboard.
           </Text>
-          <TouchableOpacity style={styles.btn} onPress={() => router.replace('/(tabs)' as any)} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btn} onPress={() => router.replace('/auth/login')} activeOpacity={0.85}>
             <View style={styles.btnInner}>
-              <Ionicons name="home-outline" size={18} color="#fff" />
-              <Text style={styles.btnText}>Continue to Home</Text>
+              <Ionicons name="log-in-outline" size={18} color="#fff" />
+              <Text style={styles.btnText}>Sign In</Text>
             </View>
           </TouchableOpacity>
         </View>

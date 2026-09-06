@@ -51,7 +51,12 @@ async function initReadConnection(): Promise<SQLite.SQLiteDatabase | null> {
         const rawReadDb = await SQLite.openDatabaseAsync(activeDbName);
         await rawReadDb.execAsync('PRAGMA busy_timeout = 3000;');
         await rawReadDb.execAsync('PRAGMA journal_mode = WAL;');
-        await rawReadDb.execAsync('PRAGMA query_only = ON;'); // Safety: prevent accidental writes
+        // NOTE: Do NOT set PRAGMA query_only = ON here.
+        // On Android, openDatabaseAsync() with the same filename can return objects
+        // backed by the SAME underlying native connection (Android's SQLiteDatabase
+        // connection pool). Setting query_only = ON on readDb poisons the shared
+        // native connection, causing SQLITE_READONLY on ALL writes via `db`.
+        // The write queue architecture already prevents accidental writes to readDb.
         await rawReadDb.execAsync('PRAGMA cache_size = -4000;');
         readDb = rawReadDb;
         return readDb;
@@ -86,8 +91,8 @@ export async function readQuery<T>(queryFn: (database: SQLite.SQLiteDatabase) =>
     try {
         return await queryFn(activeReadDb);
     } catch (e: any) {
-        if (isNativeNpe(e)) {
-            // Read connection lost — close and re-create it next time
+        if (isNativeNpe(e) || isReadonlyError(e)) {
+            // Read connection lost or poisoned — close and re-create it next time
             try { readDb?.closeAsync?.(); } catch (_) {}
             readDb = null;
             // Also trigger main DB recovery if needed
@@ -126,6 +131,31 @@ function isNativeNpe(error: any): boolean {
         ? error.message
         : String(error);
     return typeof msg === 'string' && msg.includes('NullPointerException');
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Detect SQLITE_READONLY errors that occur when the database connection
+ * has been poisoned (e.g. by PRAGMA query_only on a shared native connection)
+ * or when the WAL file / storage becomes read-only.
+ *
+ * When detected, recovery should reopen the database with a fresh connection.
+ */
+function isReadonlyError(error: any): boolean {
+  if (!error) return false;
+  try {
+    const msg = typeof error === 'string'
+      ? error
+      : (error && typeof error === 'object' && typeof error.message === 'string')
+        ? error.message
+        : String(error);
+    return typeof msg === 'string' && (
+      msg.includes('attempt to write a readonly database') ||
+      msg.includes('SQLITE_READONLY') ||
+      msg.includes('readonly database')
+    );
   } catch (_) {
     return false;
   }
@@ -254,9 +284,11 @@ function wrapStatementMethods(stmt: any): void {
     try {
       return await origExecute(...args);
     } catch (error) {
-      if (isNativeNpe(error)) {
-        if (isRecovering && recoveryPromise) await recoveryPromise;
-        else if (!isRecovering) await recoverDatabase();
+      if (isNativeNpe(error) || isReadonlyError(error)) {
+        let recovered = false;
+        if (isRecovering && recoveryPromise) recovered = await recoveryPromise;
+        else if (!isRecovering) recovered = await recoverDatabase();
+        if (recovered) return; // DB recovered — caller should retry at a higher level
       }
       throw error;
     }
@@ -266,7 +298,7 @@ function wrapStatementMethods(stmt: any): void {
     try {
       return await origFinalize(...args);
     } catch (error) {
-      if (isNativeNpe(error)) {
+      if (isNativeNpe(error) || isReadonlyError(error)) {
         let recovered = false;
         if (isRecovering && recoveryPromise) recovered = await recoveryPromise;
         else if (!isRecovering) recovered = await recoverDatabase();
@@ -340,6 +372,24 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
                 captureDatabaseError('DatabaseNPE_RecoveryFailed', error, { sql, args, duration });
             }
             throw new Error('Database connection lost and recovery failed');
+          }
+
+          // SQLITE_READONLY: the write connection is poisoned or storage became read-only.
+          // Trigger the same recovery path as NPE — close everything and reopen fresh.
+          if (isReadonlyError(error)) {
+            let recovered = false;
+            if (isRecovering && recoveryPromise) {
+                recovered = await recoveryPromise;
+            } else if (!isRecovering) {
+                recovered = await recoverDatabase();
+            }
+            
+            if (recovered && attempt < 2) continue; // retry once after recovery
+            
+            if (sql) {
+                captureDatabaseError('DatabaseReadonly_RecoveryFailed', error, { sql, args, duration });
+            }
+            throw error;
           }
 
           if (!isTransactionRecoveryError(error)) {

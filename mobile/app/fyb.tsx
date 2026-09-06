@@ -36,6 +36,21 @@ export default function FYBScreen() {
   useEffect(() => {
     markAsRead();
     fetchFeatured();
+
+    const channel = supabase
+      .channel('fyb_tab_listener')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'featured_students' },
+        () => {
+          fetchFeatured(true);
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchFeatured, markAsRead]);
 
   const refetch = async () => {

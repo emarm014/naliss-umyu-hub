@@ -8,7 +8,7 @@ import { useAuthStore } from '../../../src/stores';
 import { useVotingStore } from '../../../src/stores/voting.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { differenceInSeconds } from 'date-fns';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { CachedImage } from '../../../src/components/common/CachedImage';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
 

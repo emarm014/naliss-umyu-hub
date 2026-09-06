@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/react-native';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert, StatusBar, Dimensions, TouchableWithoutFeedback, Keyboard
+  Alert, StatusBar, Dimensions, TouchableWithoutFeedback, Keyboard, ScrollView
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -345,7 +345,11 @@ export default function LoginScreen() {
         {/* Solid Curved Background */}
         <View style={styles.headerBg} />
 
-        <View style={[styles.mainContent, { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <ScrollView 
+          contentContainerStyle={[styles.mainContent, { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 40) }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           
           {/* Header Area (Logo & Title) */}
           <View style={styles.headerArea}>
@@ -471,7 +475,7 @@ export default function LoginScreen() {
             <Text style={styles.footerText}>NALISS UMYU HUB © 2026 • LIS DEPARTMENT</Text>
           </View>
 
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );
@@ -491,7 +495,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 40,
   },
   mainContent: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 20,
     justifyContent: 'space-between',
   },

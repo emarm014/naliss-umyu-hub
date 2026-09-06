@@ -48,7 +48,7 @@ import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature, isNetworkError } from '../../src/utils/sentry';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getCleanAvatarUrl } from '../../src/utils';
 import { WhatsAppMediaEditor, FinalizedMedia } from '../../src/components/messaging/WhatsAppMediaEditor';

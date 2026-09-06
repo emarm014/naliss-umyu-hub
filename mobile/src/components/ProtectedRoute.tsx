@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { useRouter, useSegments, usePathname } from 'expo-router';
 import { View, ActivityIndicator, Alert, Text, StyleSheet, AppState, AppStateStatus, TouchableOpacity, Platform, ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useSettingsStore, useTheme, useDataRestoreStore } from '../stores';
 import MaintenanceScreen from '../../app/maintenance';
 import { useSignupStore, useGlobalSyncStore } from '../stores';

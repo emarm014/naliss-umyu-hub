@@ -109,7 +109,7 @@ const getUserRank = (points: number) => {
 };
 
 import { useNewsStore } from '../../src/stores/news.store';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { supabase } from '../../src/api/supabase/client';
 
@@ -124,6 +124,7 @@ const quickActions = [
 
 export default function HomeScreen() {
   useSentryScreen('HomeScreen');
+  const queryClient = useQueryClient();
   const user = useAuthStore(s => s.profile);
   const lastLocalUpdate = useAuthStore(s => s.lastLocalProfileUpdateAt);
   const confirmedAvatarUrl = useAuthStore(s => s.confirmedAvatarUrl);
@@ -366,8 +367,23 @@ export default function HomeScreen() {
   useEffect(() => {
     fetchProfile();
     loadData();
+
+    const channel = supabase
+      .channel('home_fyb_listener')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'featured_students' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['home_pinned_fyb'] });
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, [queryClient]);
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {

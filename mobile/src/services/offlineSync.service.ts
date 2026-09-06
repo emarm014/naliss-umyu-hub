@@ -45,6 +45,9 @@ async function withStageTimeout<T>(stage: string, task: () => Promise<T>): Promi
 /** Yield to the JS event loop so UI renders and media reads can execute between stages */
 const yieldToUI = () => new Promise<void>(r => setTimeout(r, 20));
 
+/** Concurrency guard — prevents duplicate syncs from running in parallel */
+let _syncInProgress = false;
+
 export const OfflineSyncService = {
     /**
      * Performs a full, stage-by-stage bootstrap of all content and registers all assets into the unified manifest.
@@ -52,6 +55,15 @@ export const OfflineSyncService = {
     syncAll: async (force = false) => {
         const authUser = useAuthStore.getState().user;
         if (!authUser) return;
+
+        // Concurrency guard — prevents duplicate syncs from running in parallel.
+        // The Sentry logs showed every breadcrumb duplicated at the same millisecond,
+        // indicating two full 14-stage syncs executing concurrently.
+        if (_syncInProgress) {
+            Logger.warn('offline-sync', 'Sync already in progress — skipping duplicate invocation.');
+            return;
+        }
+        _syncInProgress = true;
 
         Logger.info('offline-sync', 'Starting full bootstrap synchronization.');
         trackOfflineSync('bootstrap', 'started');
@@ -378,6 +390,8 @@ export const OfflineSyncService = {
             Logger.error('offline-sync', 'Error running bootstrap synchronization', e);
             trackOfflineSync('bootstrap', 'failed', undefined, { error: e.message || String(e) });
             captureStoreError('OfflineSyncService', 'syncAll', e);
+        } finally {
+            _syncInProgress = false;
         }
     }
 };

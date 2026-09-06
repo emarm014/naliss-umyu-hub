@@ -171,14 +171,25 @@ export default function EventPoolRoom() {
                 else if (pool.type === 'essay') answersPayload = { text: essayText };
                 else if (pool.type === 'challenge') answersPayload = { file_url: challengeMediaUrl, file_type: challengeMediaType };
             }
+            let rpcError;
             
-            const { error } = await (supabase as any).from('pool_submissions').upsert({
-                pool_id: pool.id,
-                user_id: user.id,
-                answers: answersPayload
-            }, { onConflict: 'pool_id,user_id' });
+            if (pool.type === 'quiz') {
+                const { error } = await supabase.rpc('submit_quiz', {
+                    p_pool_id: pool.id,
+                    p_answers: answersPayload
+                });
+                rpcError = error;
+            } else if (pool.type === 'essay' || pool.type === 'challenge') {
+                const { error } = await supabase.rpc('submit_manual_evaluation', {
+                    p_pool_id: pool.id,
+                    p_payload: answersPayload
+                });
+                rpcError = error;
+            } else {
+                throw new Error(`Unsupported pool type: ${pool.type}`);
+            }
 
-            if (error) throw error;
+            if (rpcError) throw rpcError;
             
             await mmkvStorage.removeItem(`pool_progress_${id}`);
             

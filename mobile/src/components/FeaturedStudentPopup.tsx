@@ -193,12 +193,25 @@ export function FeaturedStudentPopup() {
                     table: 'featured_students',
                 },
                 (payload) => {
-                    // Admin published a new active featured student, fetch and show!
                     const newRow = payload.new as any;
-                    if (newRow && newRow.is_active === true) {
-                        checkForActiveFeature();
-                    } else if (!payload.new && payload.old) {
-                        // In case of deletes, we might want to refresh, but for now we only care if one is active
+                    const oldRow = payload.old as any;
+                    
+                    // Admin deactivated or deleted a featured student
+                    if (payload.eventType === 'DELETE' || (newRow && newRow.is_active === false)) {
+                        const affectedId = payload.eventType === 'DELETE' ? oldRow?.id : newRow?.id;
+                        if (affectedId && feature?.id === affectedId) {
+                            // Instantly hide without saving to user dismissals
+                            Animated.parallel([
+                                Animated.timing(scaleAnim, { toValue: 0.85, duration: 200, useNativeDriver: true }),
+                                Animated.timing(opacityAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+                            ]).start(() => {
+                                setIsVisible(false);
+                                setFeature(null);
+                                isShowingRef.current = false;
+                            });
+                        }
+                    } else if (newRow && newRow.is_active === true) {
+                        // Admin published a new active featured student
                         checkForActiveFeature();
                     }
                 }
@@ -208,7 +221,7 @@ export function FeaturedStudentPopup() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [profile, isProfileComplete, signupEmail, signupStep, segments[0]]);
+    }, [profile, isProfileComplete, signupEmail, signupStep, segments[0], feature?.id, scaleAnim, opacityAnim]);
 
     // Realtime listener for incoming congratulations on featured student device
     useEffect(() => {
@@ -284,11 +297,31 @@ export function FeaturedStudentPopup() {
 
             if (error || !data || data.length === 0) return;
 
+            // Fetch user's remote dismissals and congratulations
+            const { data: dismissals } = await supabase
+                .from('featured_student_dismissals')
+                .select('featured_student_id')
+                .eq('user_id', profile.id);
+                
+            const { data: congratulations } = await supabase
+                .from('student_congratulations')
+                .select('featured_student_id')
+                .eq('user_id', profile.id);
+
+            const dismissedIds = new Set(dismissals?.map(d => d.featured_student_id) || []);
+            const congratulatedIds = new Set(congratulations?.map(c => c.featured_student_id) || []);
+
             let nextFeature = null;
             for (const item of (data as any[])) {
                 const dismissedKey = `dismissed_featured_${item.id}`;
-                const isDismissed = await mmkvStorage.getItem(dismissedKey);
-                if (!isDismissed) {
+                const isDismissedLocal = await mmkvStorage.getItem(dismissedKey);
+                const congratsKey = `congratulated_${item.id}`;
+                const didCongratulateLocal = await mmkvStorage.getItem(congratsKey);
+
+                const isDismissed = isDismissedLocal || dismissedIds.has(item.id);
+                const isCongratulated = didCongratulateLocal || congratulatedIds.has(item.id);
+
+                if (!isDismissed && !isCongratulated) {
                     nextFeature = item;
                     break;
                 }
@@ -299,11 +332,8 @@ export function FeaturedStudentPopup() {
             isShowingRef.current = true;
             const currentFeature = nextFeature as any as FeaturedStudent;
 
-            const congratsKey = `congratulated_${currentFeature.id}`;
-            const didCongratulate = await mmkvStorage.getItem(congratsKey);
-            
-            if (didCongratulate) setHasCongratulated(true);
-            else setHasCongratulated(false);
+            // It's not congratulated (otherwise we wouldn't show it), but we set state safely
+            setHasCongratulated(false);
 
             setFeature(currentFeature);
             setIsVisible(true);
@@ -346,6 +376,14 @@ export function FeaturedStudentPopup() {
         
         await mmkvStorage.setItem(`dismissed_featured_${feature.id}`, 'true');
         sessionSuppressedRef.current = true;
+        
+        // Persist to database to sync across devices
+        if (profile?.id) {
+            supabase.from('featured_student_dismissals').insert({
+                featured_student_id: feature.id,
+                user_id: profile.id
+            }).then();
+        }
         
         Animated.parallel([
             Animated.timing(scaleAnim, {
@@ -867,9 +905,10 @@ export function FeaturedStudentPopup() {
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: 'rgba(0,0,0,0.5)',
+        padding: 20,
     },
     revealParticle: {
         position: 'absolute',
@@ -981,19 +1020,14 @@ const styles = StyleSheet.create({
     // ── Other Users Congratulate Popup Styles ──
     popupContainer: {
         width: '100%',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
+        borderRadius: 24,
         overflow: 'hidden',
         borderWidth: 1.5,
-        borderBottomWidth: 0,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: -8 },
+        shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.15,
         shadowRadius: 24,
         elevation: 24,
-        paddingBottom: Platform.OS === 'ios' ? 20 : 0,
     },
     topHonorBanner: {
         flexDirection: 'row',

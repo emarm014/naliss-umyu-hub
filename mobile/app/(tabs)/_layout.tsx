@@ -11,20 +11,19 @@ export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // SAFETY GUARD: If there's no session, redirect to login immediately.
-  // This prevents all tab screens from rendering and making Supabase calls
-  // with an expired/missing token, which causes the app to crash.
+  // ALL hooks must run before any conditional return — React Rules of Hooks.
   const session = useAuthStore(s => s.session);
-  if (!session) {
-    return <Redirect href="/auth/login" />;
-  }
-  
-  // Calculate the absolute baseline safety threshold for the device's navigation style
   const safeBottomOffset = insets.bottom > 0 ? insets.bottom : 12;
-
   const groups = useGroupStore((state) => state.groups);
   const isBadgeCleared = useGroupStore((state) => state.isBadgeCleared);
   const currentTab = useGroupStore((state) => state.currentTab);
+
+  // SAFETY GUARD: If there's no session, redirect to login immediately.
+  // This prevents all tab screens from rendering and making Supabase calls
+  // with an expired/missing token, which causes the app to crash.
+  if (!session) {
+    return <Redirect href="/auth/login" />;
+  }
 
   const unreadGroupsCount = groups.filter((g: any) => g.unread_count > 0).length;
   const showBadge = !isBadgeCleared && unreadGroupsCount > 0 && currentTab !== 'messages';

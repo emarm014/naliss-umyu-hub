@@ -96,7 +96,7 @@ module.exports = function withProguardRules(config) {
       if (!fs.existsSync(androidAppDir)) {
         fs.mkdirSync(androidAppDir, { recursive: true });
       }
-      fs.writeFileSync(proguardPath, rules.trim() + '\\n');
+      fs.writeFileSync(proguardPath, rules.trim() + '\n');
 
       // Add the proguard file reference to build.gradle if not already present
       if (!config.modResults.contents.includes('proguard-rules.pro')) {

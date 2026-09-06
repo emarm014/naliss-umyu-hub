@@ -172,7 +172,7 @@ export default function SecuritySettingsScreen() {
                             useAuthStore.getState().setProfile(null);
                             router.replace('/auth/login' as any);
                         } else {
-                            await (supabase.from('user_sessions').delete() as any).eq('user_id', storeProfile.id).neq('device_id', currentDeviceId as string);
+                            await (supabase.from('user_sessions').update({ is_active: false }) as any).eq('user_id', storeProfile.id).neq('device_id', currentDeviceId as string);
                         }
                         fetchDeviceSessions();
                         // Note: Assuming showToast implementation or replace with Alert
@@ -197,7 +197,7 @@ export default function SecuritySettingsScreen() {
 
         try {
             if (!storeProfile?.id) return;
-            await (supabase.from('user_sessions').delete() as any).eq('device_id', sessionToTerminate.device_id).eq('user_id', storeProfile.id);
+            await (supabase.from('user_sessions').update({ is_active: false }) as any).eq('device_id', sessionToTerminate.device_id).eq('user_id', storeProfile.id);
             setDeviceSessions(prev => prev.filter(s => s.device_id !== sessionToTerminate.device_id));
             setSessionToTerminate(null);
             Alert.alert('Success', 'Session revoked successfully.');
@@ -238,11 +238,14 @@ export default function SecuritySettingsScreen() {
                 router.replace('/auth/login');
                 Alert.alert('Logged Out', 'This device session has been terminated.');
             } else {
-                Alert.alert('Success', 'Device session terminated successfully.');
+                await (supabase.from('user_sessions').update({ is_active: false }) as any)
+                    .eq('device_id', sessionToTerminate.device_id)
+                    .eq('user_id', storeProfile?.id);
+                setDeviceSessions(prev => prev.filter(s => s.device_id !== sessionToTerminate.device_id));
+                setSessionToTerminate(null);
                 setConfirmPasswordVisible(false);
                 setConfirmPasswordInput('');
-                setSessionToTerminate(null);
-                await fetchDeviceSessions(currentDeviceId!);
+                Alert.alert('Device Removed', 'That device has been signed out remotely.');
             }
         } catch (err: any) {
             Alert.alert('Error', err.message || 'Failed to terminate session. Please try again.');

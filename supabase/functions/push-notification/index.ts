@@ -220,7 +220,17 @@ Deno.serve(async (req: Request) => {
     const payloadPriority = data?.priority ?? "high";
     let expoPriority: "default" | "normal" | "high" = "high";
     let expoSound: string | null = "default";
-    let expoChannelId = "urgent_alerts_v1";
+    
+    // Default to general, override based on type
+    let expoChannelId = "general";
+    if (notifType === "message") {
+      expoChannelId = "messages";
+    } else if (notifType === "announcement") {
+      expoChannelId = "announcements";
+    } else if (notifType === "fyb_congratulation" || notifType === "featured_student") {
+      expoChannelId = "featured";
+    }
+
     let isSilent = false;
 
     if (payloadPriority === "silent") {
@@ -234,7 +244,6 @@ Deno.serve(async (req: Request) => {
       expoChannelId = "low_priority";
     } else if (payloadPriority === "normal") {
       expoPriority = "default";
-      expoChannelId = "urgent_alerts_v1";
     }
 
     // Map custom categories

@@ -149,6 +149,59 @@ export function usePushNotifications() {
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
   const handledNotificationId = useRef<string | null>(null);
 
+  // Register Android notification channels once
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const setupChannels = async () => {
+      // High-priority channel — messages, urgent alerts (heads-up + lock screen)
+      await Notifications.setNotificationChannelAsync('messages', {
+        name: 'Messages',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#4F46E5',
+        sound: 'default',
+        showBadge: true,
+        enableVibrate: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+
+      // Default channel — announcements, events, general (shows in tray, no heads-up)
+      await Notifications.setNotificationChannelAsync('general', {
+        name: 'General',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        vibrationPattern: [0, 100],
+        lightColor: '#4F46E5',
+        sound: 'default',
+        showBadge: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+      });
+
+      // Featured students / congratulations (heads-up)
+      await Notifications.setNotificationChannelAsync('featured', {
+        name: 'Featured Students',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 200],
+        lightColor: '#F59E0B',
+        sound: 'default',
+        showBadge: false,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+
+      // Announcements (heads-up)
+      await Notifications.setNotificationChannelAsync('announcements', {
+        name: 'Announcements',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 150],
+        sound: 'default',
+        showBadge: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+      });
+    };
+
+    setupChannels().catch(() => {});
+  }, []);
+
   // Cold-start handler: useLastNotificationResponse covers the case where the
   // app was killed and the user tapped a notification to launch it. The ref
   // guard ensures we only handle each notification ONCE — without it, React

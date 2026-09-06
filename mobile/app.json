@@ -39,6 +39,13 @@
     },
     "android": {
       "package": "com.naliss.umyuk",
+      "googleServicesFile": "./google-services.json",
+      "notification": {
+        "androidMode": "default",
+        "androidCollapsedTitle": "#{unread_notifications} new notifications",
+        "color": "#4F46E5",
+        "icon": "./assets/notification-icon.png"
+      },
       "intentFilters": [
         {
           "action": "VIEW",

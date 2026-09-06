@@ -132,6 +132,25 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           if (!isSubscribed) return;
 
           // 3. Register/Update current device session
+          // BEFORE checking active sessions list, check if THIS device was revoked:
+          const { data: thisDeviceSession } = await (supabase as any)
+              .from('user_sessions')
+              .select('is_active')
+              .eq('user_id', session.user.id)
+              .eq('device_id', deviceId)
+              .maybeSingle();
+
+          // Revoked = row exists with is_active:false
+          if (thisDeviceSession !== null && thisDeviceSession?.is_active === false) {
+              await supabase.auth.signOut();
+              useAuthStore.getState().setSession(null);
+              useAuthStore.getState().setUser(null);
+              useAuthStore.getState().setIsProfileComplete(null);
+              useAuthStore.getState().setProfile(null);
+              router.replace('/auth/login' as any);
+              return;
+          }
+
           const { error: upsertErr } = await (supabase as any)
             .from('user_sessions')
             .upsert({
@@ -196,13 +215,15 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           }
           return;
         }
-        if (data && !data.is_active) {
+        if (!data || data.is_active === false) {
           Alert.alert('Session Terminated', 'This device has been logged out remotely.');
           await supabase.auth.signOut();
           useAuthStore.getState().setSession(null);
           useAuthStore.getState().setUser(null);
           useAuthStore.getState().setIsProfileComplete(null);
           useAuthStore.getState().setProfile(null);
+          router.replace('/auth/login' as any);
+          return;
         }
       } catch {
         // silent offline fallback

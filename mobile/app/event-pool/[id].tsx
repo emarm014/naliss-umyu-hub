@@ -612,12 +612,29 @@ export default function EventPoolRoom() {
             );
         }
 
-        if (pool?.status !== 'live') {
+        const now = Date.now() + serverTimeOffset;
+        const startTime = pool?.start_time ? new Date(pool.start_time).getTime() : 0;
+        const endTime = pool?.end_time ? new Date(pool.end_time).getTime() : Infinity;
+
+        const isUpcoming = startTime > 0 && now < startTime;
+        const isFinished = endTime < Infinity && now > endTime;
+
+        if (isUpcoming) {
             return (
                 <View style={styles.centeredContainer}>
-                    <Ionicons name="lock-closed-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
-                    <Text style={[styles.bannerTitle, { color: textColor }]}>Event is not Live</Text>
-                    <Text style={[styles.bannerText, { color: subtextColor }]}>The action room is currently locked.</Text>
+                    <Ionicons name="time-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Event Not Yet Started</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor }]}>The action room will open at {format(startTime, 'MMM d, h:mm a')}.</Text>
+                </View>
+            );
+        }
+
+        if (isFinished) {
+            return (
+                <View style={styles.centeredContainer}>
+                    <Ionicons name="checkmark-done-circle-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Event Finished</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor }]}>This event has concluded. Please check the results tab.</Text>
                 </View>
             );
         }

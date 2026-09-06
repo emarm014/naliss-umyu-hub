@@ -231,7 +231,7 @@ export function FeaturedStudentPopup() {
                     const { data: userData } = await supabase
                         .from('users')
                         .select('id, full_name, username, avatar_url, level')
-                        .eq('id', newUserId)
+                        .eq('id' as any, newUserId)
                         .single();
 
                     if (userData) {
@@ -279,7 +279,7 @@ export function FeaturedStudentPopup() {
                     id, user_id, type, title, subtitle, description, custom_image_url, total_congratulations,
                     users!featured_students_user_id_fkey ( full_name, username, avatar_url, department_id )
                 `)
-                .eq('is_active', true as any)
+                .eq('is_active' as any, true as any)
                 .order('published_at', { ascending: false });
 
             if (error || !data || data.length === 0) return;

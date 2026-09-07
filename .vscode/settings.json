@@ -3,5 +3,9 @@
     "css.lint.unknownAtRules": "ignore",
     "scss.lint.unknownAtRules": "ignore",
     "less.lint.unknownAtRules": "ignore",
-    "terminal.integrated.sendKeybindingsToShell": true
+    "terminal.integrated.sendKeybindingsToShell": true,
+    "C_Cpp.files.exclude": {
+        "**/.vscode": true,
+        "**/node_modules": true
+    }
 }

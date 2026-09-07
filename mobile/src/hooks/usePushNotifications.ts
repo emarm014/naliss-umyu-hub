@@ -153,53 +153,57 @@ export function usePushNotifications() {
   useEffect(() => {
     if (Platform.OS !== 'android') return;
 
-    const setupChannels = async () => {
-      // High-priority channel — messages, urgent alerts (heads-up + lock screen)
-      await Notifications.setNotificationChannelAsync('messages', {
-        name: 'Messages',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#4F46E5',
-        sound: 'default',
-        showBadge: true,
-        enableVibrate: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      });
+    (async () => {
+        // Messages — heads-up + lock screen (like WhatsApp)
+        await Notifications.setNotificationChannelAsync('messages', {
+            name: 'Messages',
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#4F46E5',
+            sound: 'default',
+            showBadge: true,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+        });
 
-      // Default channel — announcements, events, general (shows in tray, no heads-up)
-      await Notifications.setNotificationChannelAsync('general', {
-        name: 'General',
-        importance: Notifications.AndroidImportance.DEFAULT,
-        vibrationPattern: [0, 100],
-        lightColor: '#4F46E5',
-        sound: 'default',
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
-      });
+        // Announcements — heads-up
+        await Notifications.setNotificationChannelAsync('announcements', {
+            name: 'Announcements',
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: [0, 200],
+            sound: 'default',
+            showBadge: true,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+        });
 
-      // Featured students / congratulations (heads-up)
-      await Notifications.setNotificationChannelAsync('featured', {
-        name: 'Featured Students',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 200],
-        lightColor: '#F59E0B',
-        sound: 'default',
-        showBadge: false,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      });
+        // Featured Students — heads-up
+        await Notifications.setNotificationChannelAsync('featured', {
+            name: 'Featured Students',
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: [0, 300, 100, 300],
+            lightColor: '#F59E0B',
+            sound: 'default',
+            showBadge: false,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        });
 
-      // Announcements (heads-up)
-      await Notifications.setNotificationChannelAsync('announcements', {
-        name: 'Announcements',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 150],
-        sound: 'default',
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
-      });
-    };
+        // General / Events — normal tray only (no heads-up)
+        await Notifications.setNotificationChannelAsync('general', {
+            name: 'General',
+            importance: Notifications.AndroidImportance.DEFAULT,
+            sound: 'default',
+            showBadge: true,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+        });
 
-    setupChannels().catch(() => {});
+        // Low priority / silent
+        await Notifications.setNotificationChannelAsync('low_priority', {
+            name: 'Background',
+            importance: Notifications.AndroidImportance.LOW,
+            sound: null,
+            showBadge: false,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
+        });
+    })().catch(() => {});
   }, []);
 
   // Cold-start handler: useLastNotificationResponse covers the case where the

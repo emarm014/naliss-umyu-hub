@@ -114,7 +114,7 @@ export function FeaturedStudentPopup() {
     const [isRevealing, setIsRevealing] = useState(false);
     
     const isShowingRef = useRef(false);
-    const sessionSuppressedRef = useRef(false);
+    const sessionSuppressedIdsRef = useRef<Set<string>>(new Set());
 
     // Initialize 42 continuous tiny floating motion particles
     if (particlesRef.current.length === 0) {
@@ -284,7 +284,6 @@ export function FeaturedStudentPopup() {
 
     const checkForActiveFeature = async () => {
         if (isShowingRef.current) return;
-        if (sessionSuppressedRef.current) return;
         try {
             const { data, error } = await supabase
                 .from('featured_students')
@@ -320,8 +319,9 @@ export function FeaturedStudentPopup() {
 
                 const isDismissed = isDismissedLocal || dismissedIds.has(item.id);
                 const isCongratulated = didCongratulateLocal || congratulatedIds.has(item.id);
+                const isSuppressedThisSession = sessionSuppressedIdsRef.current.has(item.id);
 
-                if (!isDismissed && !isCongratulated) {
+                if (!isDismissed && !isCongratulated && !isSuppressedThisSession) {
                     nextFeature = item;
                     break;
                 }
@@ -375,7 +375,7 @@ export function FeaturedStudentPopup() {
         if (!feature) return;
         
         await mmkvStorage.setItem(`dismissed_featured_${feature.id}`, 'true');
-        sessionSuppressedRef.current = true;
+        sessionSuppressedIdsRef.current.add(feature.id);
         
         // Persist to database to sync across devices
         if (profile?.id) {

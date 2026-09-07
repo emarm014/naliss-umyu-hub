@@ -23,6 +23,9 @@ export default function UpdatePassword() {
   const [confirmFocused, setConfirmFocused] = useState(false);
   const router = useRouter();
 
+  // Track success so the auth state listener can ignore the post-update signOut
+  const didSucceedRef = React.useRef(false);
+
   // Verify there is a valid recovery session before allowing password update.
   // The reset link from email sets a session automatically via deep link handler.
   useEffect(() => {
@@ -39,6 +42,8 @@ export default function UpdatePassword() {
         if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
             setSessionReady(true);
         } else if (event === 'SIGNED_OUT') {
+            // Ignore SIGNED_OUT if we already succeeded — it's from our own signOut() call
+            if (didSucceedRef.current) return;
             setSessionError(true);
         }
     });
@@ -68,6 +73,13 @@ export default function UpdatePassword() {
 
     setIsLoading(true);
     try {
+      // Verify recovery session is still alive before attempting update
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        setSessionError(true);
+        return;
+      }
+
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 15000);
       });
@@ -75,22 +87,37 @@ export default function UpdatePassword() {
       const { error } = await Promise.race([updatePromise, timeoutPromise]) as any;
       if (error) throw error;
 
-      await supabase.auth.signOut();
+      // Success — mark ref BEFORE signOut so the listener ignores the SIGNED_OUT event
+      didSucceedRef.current = true;
       const { useSignupStore } = require('../../src/stores/signup.store');
       useSignupStore.getState().setIsRecoveryFlow(false);
+      await supabase.auth.signOut();
 
       setIsSuccess(true);
     } catch (err: any) {
       captureUIError('UpdatePassword.handleUpdate', err);
-      // Detect expired recovery link
-      if (err.message?.includes('expired') || err.message?.includes('invalid')) {
+
+      // Clean up: sign out the recovery session and clear the flag
+      // so ProtectedRoute doesn't leave the user in a limbo state
+      const { useSignupStore } = require('../../src/stores/signup.store');
+      didSucceedRef.current = true; // Prevent listener from showing "Link Expired" during cleanup signOut
+      useSignupStore.getState().setIsRecoveryFlow(false);
+      try { await supabase.auth.signOut(); } catch {}
+
+      // Detect truly expired recovery link vs generic errors
+      const msg = err.message?.toLowerCase() || '';
+      if (msg.includes('expired') || msg.includes('invalid claim') || msg.includes('session not found')) {
         Alert.alert(
           'Link Expired',
-          'Your password reset link has expired (valid for 1 hour). Please request a new one.',
+          'Your password reset link has expired or is no longer valid. Please request a new one.',
           [{ text: 'Request New Link', onPress: () => router.replace('/auth/reset-password') }]
         );
       } else {
-        Alert.alert('Update Failed', 'Could not update your password. Please try again.');
+        Alert.alert(
+          'Update Failed',
+          'Could not update your password. Please request a new reset link and try again.',
+          [{ text: 'OK', onPress: () => router.replace('/auth/reset-password') }]
+        );
       }
     } finally {
       setIsLoading(false);

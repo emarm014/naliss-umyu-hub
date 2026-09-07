@@ -53,10 +53,15 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     get()._startBackgroundSync();
 
     // Restore previously downloaded files + notes on this device (new device login)
+    // Only if the user didn't explicitly cancel/skip the data restore screen
     if (isOnline) {
-      const { DownloadTracker } = require('../services/downloadTracker.service');
-      DownloadTracker.restoreUserDownloads();
-      useNoteStore.getState().fetchCloudNotes();
+      const { useDataRestoreStore } = require('./data-restore.store');
+      const restoreState = useDataRestoreStore.getState();
+      if (!restoreState.wasSkipped) {
+        const { DownloadTracker } = require('../services/downloadTracker.service');
+        DownloadTracker.restoreUserDownloads();
+        useNoteStore.getState().fetchCloudNotes();
+      }
     }
 
     set({ isInitialized: true });

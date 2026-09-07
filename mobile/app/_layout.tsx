@@ -551,13 +551,16 @@ function RootLayoutNav() {
             if (tokens.type === 'recovery') {
               signupState.setIsRecoveryFlow(true);
             }
-            await supabase.auth.setSession({
+            const { error: sessionError } = await supabase.auth.setSession({
               access_token: tokens.access_token,
               refresh_token: tokens.refresh_token,
             });
             
             if (tokens.type === 'recovery') {
+              // Always route to update-password — the screen handles expired/invalid sessions
               router.replace('/auth/update-password');
+            } else if (sessionError) {
+              console.warn('[DeepLink] setSession failed:', sessionError.message);
             }
           }
         } else {
@@ -577,13 +580,16 @@ function RootLayoutNav() {
           if (tokens.type === 'recovery') {
             signupState.setIsRecoveryFlow(true);
           }
-          await supabase.auth.setSession({
+          const { error: sessionError } = await supabase.auth.setSession({
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,
           });
 
           if (tokens.type === 'recovery') {
+            // Always route to update-password — the screen handles expired/invalid sessions
             router.replace('/auth/update-password');
+          } else if (sessionError) {
+            console.warn('[DeepLink] setSession failed:', sessionError.message);
           }
         }
       } else {

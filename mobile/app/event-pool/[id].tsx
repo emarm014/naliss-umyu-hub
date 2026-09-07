@@ -592,7 +592,7 @@ export default function EventPoolRoom() {
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push((`/event-pool/voting/${(event as any)?.id}`) as any)}
+                        onPress={() => router.push((`/event-pool/voting/${id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Voting Room</Text>
                     </TouchableOpacity>
@@ -651,7 +651,7 @@ export default function EventPoolRoom() {
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push((`/event-pool/quiz/${(event as any)?.id}`) as any)}
+                        onPress={() => router.push((`/event-pool/quiz/${id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Secure Quiz Room</Text>
                     </TouchableOpacity>
@@ -668,7 +668,7 @@ export default function EventPoolRoom() {
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push((`/event-pool/essay/${(event as any)?.id}`) as any)}
+                        onPress={() => router.push((`/event-pool/essay/${id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Writing Room</Text>
                     </TouchableOpacity>
@@ -685,7 +685,7 @@ export default function EventPoolRoom() {
                     </Text>
                     <TouchableOpacity 
                         style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push((`/event-pool/challenge/${(event as any)?.id}`) as any)}
+                        onPress={() => router.push((`/event-pool/challenge/${id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Upload Room</Text>
                     </TouchableOpacity>

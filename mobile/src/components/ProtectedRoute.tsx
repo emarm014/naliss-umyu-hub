@@ -62,8 +62,25 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (session && isProfileComplete === true) {
       let isSubscribed = true;
+
+      // Optimistically unblock the UI if this device was previously verified for this user.
+      // The full background check still runs to catch revocations.
+      try {
+        const { getSyncItem } = require('./mmkv.storage');
+        const cachedUserId = getSyncItem('device-session-verified');
+        if (cachedUserId === session.user.id) {
+          setDeviceSessionChecked(true);
+        }
+      } catch {}
+
       const verifyDeviceSession = async () => {
         try {
+          // Don't verify device during password recovery — recovery sessions have no user_sessions row
+          if (useSignupStore.getState().isRecoveryFlow) {
+            setDeviceSessionChecked(true);
+            return;
+          }
+
           // Skip device session verification if offline — will retry on next app foreground
           const NetInfo = require('@react-native-community/netinfo').default;
           const netState = await NetInfo.fetch();
@@ -75,11 +92,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             return;
           }
 
-          const deviceId = await getOrCreateDeviceId();
-          const ipAddress = await fetchIpAddress();
+          const [deviceId, ipAddress] = await Promise.all([
+            getOrCreateDeviceId(),
+            fetchIpAddress().catch(() => null), // Non-blocking if IP fetch fails
+          ]);
           const deviceName = getDeviceName();
 
-          // 1. Fetch active sessions from the DB with a 3-second timeout
+          // 1. Fetch active sessions from the DB and upsert current session in parallel
           const fetchPromise = (supabase as any)
             .from('user_sessions')
             .select('device_id, is_active, device_name, os, ip_address, last_active_at')
@@ -87,8 +106,25 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             .eq('is_active', true)
             .order('last_active_at', { ascending: false });
 
+          const upsertPromise = (supabase as any)
+            .from('user_sessions')
+            .upsert({
+              user_id: session.user.id,
+              device_id: deviceId,
+              device_name: deviceName,
+              os: Platform.OS,
+              ip_address: ipAddress,
+              is_active: true,
+              last_active_at: new Date().toISOString()
+            }, { onConflict: 'user_id,device_id' });
+
           const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Network timeout')), 3000));
-          const { data: activeSessions, error: fetchErr } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+          
+          // Wait for the fetch (with timeout) and let upsert run alongside
+          const [{ data: activeSessions, error: fetchErr }] = await Promise.all([
+            Promise.race([fetchPromise, timeoutPromise]) as any,
+            upsertPromise.catch((err: any) => console.warn('Session upsert failed:', err)),
+          ]);
 
           if (fetchErr) throw normalizeError(fetchErr);
           if (!isSubscribed) return;
@@ -131,41 +167,33 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
           if (!isSubscribed) return;
 
-          // 3. Register/Update current device session
-          // BEFORE checking active sessions list, check if THIS device was revoked:
-          const { data: thisDeviceSession } = await (supabase as any)
-              .from('user_sessions')
-              .select('is_active')
-              .eq('user_id', session.user.id)
-              .eq('device_id', deviceId)
-              .maybeSingle();
+          // Check if THIS device was revoked (found in the fetched active sessions, but is_active is false)
+          // Wait, the fetch query above only gets is_active=true. We need to check if it's explicitly revoked.
+          // Let's do a fast targeted check for this device's status if we didn't find it in the active list.
+          if (!isCurrentDeviceActive) {
+            const { data: thisDeviceSession } = await (supabase as any)
+                .from('user_sessions')
+                .select('is_active')
+                .eq('user_id', session.user.id)
+                .eq('device_id', deviceId)
+                .maybeSingle();
 
-          // Revoked = row exists with is_active:false
-          if (thisDeviceSession !== null && thisDeviceSession?.is_active === false) {
-              await supabase.auth.signOut();
-              useAuthStore.getState().setSession(null);
-              useAuthStore.getState().setUser(null);
-              useAuthStore.getState().setIsProfileComplete(null);
-              useAuthStore.getState().setProfile(null);
-              router.replace('/auth/login' as any);
-              return;
+            if (thisDeviceSession !== null && thisDeviceSession?.is_active === false) {
+                await supabase.auth.signOut();
+                useAuthStore.getState().setSession(null);
+                useAuthStore.getState().setUser(null);
+                useAuthStore.getState().setIsProfileComplete(null);
+                useAuthStore.getState().setProfile(null);
+                router.replace('/auth/login' as any);
+                return;
+            }
           }
 
-          const { error: upsertErr } = await (supabase as any)
-            .from('user_sessions')
-            .upsert({
-              user_id: session.user.id,
-              device_id: deviceId,
-              device_name: deviceName,
-              os: Platform.OS,
-              ip_address: ipAddress,
-              is_active: true,
-              last_active_at: new Date().toISOString()
-            }, { onConflict: 'user_id,device_id' });
-
-          if (upsertErr) throw normalizeError(upsertErr);
-
           if (isSubscribed) {
+            try {
+              const { setSyncItem } = require('./mmkv.storage');
+              setSyncItem('device-session-verified', session.user.id);
+            } catch {}
             setSessionError(null);
             setDeviceSessionChecked(true);
           }
@@ -193,6 +221,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     if (!session || !deviceSessionChecked || sessionError) return;
 
     const checkSessionStatus = async () => {
+      // Don't run during password recovery — recovery sessions have no user_sessions row
+      if (useSignupStore.getState().isRecoveryFlow) return;
+
       try {
         const deviceId = await getOrCreateDeviceId();
         const { data, error } = await (supabase as any)
@@ -369,7 +400,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       
       // Perform synchronous device detection before we jump the gun and sync everything
       if (!restoreStore.restoreCompleted && !restoreStore.wasSkipped) {
-        restoreStore.detectNewDevice();
+        restoreStore.detectNewDevice(session.user?.id);
       }
 
       // Re-read FRESH state
@@ -411,9 +442,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       // If Supabase emits a null session (e.g. TOKEN_REFRESHED error or INITIAL_SESSION)
       // while we are offline, do NOT wipe the state. Keep the cached session so the
       // app remains usable offline until network returns to attempt a real refresh.
-      if (!currentSession && !useNetworkStore.getState().isOnline) {
-        if (useAuthStore.getState().session) {
-          console.warn(`[ProtectedRoute] Ignoring ${event} with null session because device is offline. Keeping cached session.`);
+      if (!currentSession && event !== 'SIGNED_OUT') {
+        if (!useNetworkStore.getState().isOnline) {
+          if (useAuthStore.getState().session) {
+            console.warn(`[ProtectedRoute] Ignoring ${event} with null session because device is offline. Keeping cached session.`);
+            return;
+          }
+        } else {
+          // Even if online, a TOKEN_REFRESHED or INITIAL_SESSION with null session
+          // is often a temporary glitch (network hiccup during refresh). We only
+          // clear the session on explicit SIGNED_OUT events.
+          console.warn(`[ProtectedRoute] Ignoring ${event} with null session. Waiting for next valid session or SIGNED_OUT.`);
           return;
         }
       }
@@ -429,6 +468,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         useAuthStore.getState().setUser(null);
         useAuthStore.getState().setIsProfileComplete(null);
         useAuthStore.getState().setProfile(null);
+        // Clear recovery flag on sign-out so the user isn't stuck in recovery mode
+        if (useSignupStore.getState().isRecoveryFlow) {
+          useSignupStore.getState().setIsRecoveryFlow(false);
+        }
         Sentry.setUser(null);
         return;
       }
@@ -694,6 +737,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     let timer: ReturnType<typeof setTimeout>;
 
     const performHeartbeatCheck = async () => {
+      // Don't run heartbeat during password recovery — recovery sessions have no user_sessions row
+      if (useSignupStore.getState().isRecoveryFlow) return;
+
       try {
         const deviceId = await getOrCreateDeviceId();
         

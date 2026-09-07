@@ -16,7 +16,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { useDataRestoreStore } from '../../src/stores/data-restore.store';
 import { useGlobalSyncStore } from '../../src/stores/globalSync.store';
+import { useAuthStore } from '../../src/stores/auth.store';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -144,6 +146,13 @@ export default function DataRestoreScreen() {
       // silently ignore background restore errors
     });
 
+    // Mark DownloadTracker as "done" — restoreAllData above handles everything.
+    // This prevents initialize() from running restoreUserDownloads() as a duplicate.
+    const userId = useAuthStore.getState().user?.id;
+    if (userId) {
+      AsyncStorage.setItem(`download_restore_${userId}`, 'true').catch(() => {});
+    }
+
     useDataRestoreStore.getState().skipRestore();
     router.replace('/(tabs)' as any);
   };
@@ -158,7 +167,13 @@ export default function DataRestoreScreen() {
           {
             text: 'Cancel Restore',
             style: 'destructive',
-            onPress: () => {
+            onPress: async () => {
+              // Prevent restoreUserDownloads from running after cancel
+              const userId = useAuthStore.getState().user?.id;
+              if (userId) {
+                await AsyncStorage.setItem(`download_restore_${userId}`, 'true');
+                await AsyncStorage.setItem(`download_restore_progress_${userId}`, '');
+              }
               useDataRestoreStore.getState().skipRestore();
               router.replace('/(tabs)' as any);
             },
@@ -168,6 +183,11 @@ export default function DataRestoreScreen() {
       return;
     }
 
+    // Prevent restoreUserDownloads from running after cancel
+    const userId = useAuthStore.getState().user?.id;
+    if (userId) {
+      AsyncStorage.setItem(`download_restore_${userId}`, 'true').catch(() => {});
+    }
     useDataRestoreStore.getState().skipRestore();
     router.replace('/(tabs)' as any);
   };

@@ -283,7 +283,7 @@ export function FeaturedStudentPopup() {
     }, [isVisible]);
 
     const checkForActiveFeature = async () => {
-        if (isShowingRef.current) return;
+        if (isShowingRef.current || !profile?.id) return;
         try {
             const { data, error } = await supabase
                 .from('featured_students')
@@ -297,18 +297,18 @@ export function FeaturedStudentPopup() {
             if (error || !data || data.length === 0) return;
 
             // Fetch user's remote dismissals and congratulations
-            const { data: dismissals } = await supabase
+            const { data: dismissals } = await (supabase as any)
                 .from('featured_student_dismissals')
                 .select('featured_student_id')
                 .eq('user_id', profile.id);
                 
-            const { data: congratulations } = await supabase
+            const { data: congratulations } = await (supabase as any)
                 .from('student_congratulations')
                 .select('featured_student_id')
                 .eq('user_id', profile.id);
 
-            const dismissedIds = new Set(dismissals?.map(d => d.featured_student_id) || []);
-            const congratulatedIds = new Set(congratulations?.map(c => c.featured_student_id) || []);
+            const dismissedIds = new Set(dismissals?.map((d: any) => d.featured_student_id) || []);
+            const congratulatedIds = new Set(congratulations?.map((c: any) => c.featured_student_id) || []);
 
             let nextFeature = null;
             for (const item of (data as any[])) {
@@ -379,7 +379,7 @@ export function FeaturedStudentPopup() {
         
         // Persist to database to sync across devices
         if (profile?.id) {
-            supabase.from('featured_student_dismissals').insert({
+            (supabase as any).from('featured_student_dismissals').insert({
                 featured_student_id: feature.id,
                 user_id: profile.id
             }).then();

@@ -45,18 +45,11 @@ export function isWriteQueueIdle(): boolean {
  */
 async function initReadConnection(): Promise<SQLite.SQLiteDatabase | null> {
     try {
-        if (readDb) {
-            // Verify it's alive
-            try { await readDb.execAsync('SELECT 1'); return readDb; } catch (_) {}
+        if (db) {
+            readDb = db;
+            return readDb;
         }
-        const rawReadDb = await SQLite.openDatabaseAsync(activeDbName, { useNewConnection: true });
-        await rawReadDb.execAsync('PRAGMA busy_timeout = 3000;');
-        await rawReadDb.execAsync('PRAGMA journal_mode = WAL;');
-        // Safely set query_only = ON since we are using a brand new native connection
-        await rawReadDb.execAsync('PRAGMA query_only = ON;');
-        await rawReadDb.execAsync('PRAGMA cache_size = -4000;');
-        readDb = rawReadDb;
-        return readDb;
+        return null;
     } catch (e) {
         console.warn('[DB] Failed to open read connection:', e);
         return null;
@@ -257,7 +250,7 @@ async function recoverDatabase(): Promise<boolean> {
       const newDb = await initDB();
       if (newDb) {
         // Also re-create the read connection
-        initReadConnection().catch(() => {});
+        await initReadConnection();
         console.warn('SQLite recovery successful');
         return true;
       }
@@ -674,8 +667,9 @@ export const initDB = async () => {
             await db.execAsync('CREATE INDEX IF NOT EXISTS idx_manifest_content_hash ON local_media_manifest (content_hash);');
         } catch (_) {}
 
-        // Eagerly open the dedicated read connection now that the DB is ready
-        initReadConnection().catch(() => {});
+        // Eagerly unify the read connection now that the DB is ready
+        await initReadConnection();
+
 
         return db;
     } catch (e) {

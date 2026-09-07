@@ -43,11 +43,10 @@ export function FeaturedStudentCongratsCard({ userId }: { userId: string }) {
     const fetchFeaturedAndCongrats = async () => {
         try {
             // Find active feature owned by this user
-            const { data: featDataRaw } = await supabase
-                .from('featured_students')
+            const { data: featDataRaw } = await (supabase.from('featured_students') as any)
                 .select('id, title, total_congratulations')
-                .eq('user_id' as any, userId as any)
-                .eq('is_active', true as any)
+                .eq('user_id', userId)
+                .eq('is_active', true)
                 .order('published_at', { ascending: false })
                 .limit(1)
                 .single();
@@ -100,8 +99,7 @@ export function FeaturedStudentCongratsCard({ userId }: { userId: string }) {
                     const newUserId = payload.new.user_id;
                     if (newUserId === userId) return;
 
-                    const { data: userData } = await supabase
-                        .from('users')
+                    const { data: userData } = await (supabase.from('users') as any)
                         .select('id, full_name, username, avatar_url, level')
                         .eq('id', newUserId)
                         .single();

@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import * as Sentry from '@sentry/react-native';
 import { Alert, Platform } from 'react-native';
 import IntentLauncher from 'expo-intent-launcher';
 
@@ -107,6 +108,7 @@ export const openDocumentWith = async (options: DocumentOpenOptions) => {
                         text: 'Open with Other App',
                         onPress: () => launchExternal(localUri, fileName).catch(err => {
                             console.warn('Failed to open with external app:', err);
+                            Sentry.captureException(err, { tags: { section: 'documentOpener' } });
                             Alert.alert('No App Available', 'No app available on your device supports opening this file format. Please use the In-App Viewer.');
                         }),
                     },
@@ -137,6 +139,7 @@ export const openDocumentWith = async (options: DocumentOpenOptions) => {
             text: 'Open with Other App',
             onPress: () => launchExternal(localUri, fileName).catch(err => {
                 console.warn('Failed to open with external app:', err);
+                Sentry.captureException(err, { tags: { section: 'documentOpener' } });
                 Alert.alert('No App Available', 'No app available on your device supports opening this file format. Please use the In-App Viewer.');
             }),
         },

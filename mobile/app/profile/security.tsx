@@ -8,6 +8,7 @@ import { useAuthStore } from '../../src/stores';
 import { COLORS } from '../../src/constants/Colors';
 import { supabase } from '../../src/api/supabase/client';
 import { captureUIError } from '../../src/utils/sentry';
+import { showToast } from '../../src/components/common/overlays';
 
 export default function SecuritySettingsScreen() {
     const router = useRouter();
@@ -94,7 +95,19 @@ export default function SecuritySettingsScreen() {
             setNewPassword('');
             setConfirmPassword('');
         } catch (err: any) {
-            Alert.alert('Update Failed', err.message || 'Could not update password.');
+            const rawMsg = err?.message || err?.value || err?.msg || err?.error_description || '';
+            const msg = rawMsg.toLowerCase();
+            if (msg.includes('same password') || msg.includes('different from')) {
+                showToast('New password should be different from the old password.');
+            } else if (msg.includes('weak') || msg.includes('strength')) {
+                showToast('Please choose a stronger password.');
+            } else if (msg.includes('session') || msg.includes('expired') || msg.includes('jwt')) {
+                Alert.alert('Session Expired', 'Your session has expired. Please sign out and sign in again.');
+            } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('connection')) {
+                showToast('Could not reach the server. Please check your connection.');
+            } else {
+                showToast(`Could not update password: ${rawMsg || 'Please try again.'}`);
+            }
         } finally {
             setIsChangingPassword(false);
         }

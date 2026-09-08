@@ -119,6 +119,7 @@ interface ViewerContentProps {
   isOffline: boolean;
   onSingleTap?: () => void;
   isHalfScreen?: boolean;
+  readyToPlay?: boolean;
 }
 
 interface ZoomableImageProps {
@@ -161,8 +162,9 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
   isOffline,
   onSingleTap,
   isHalfScreen,
+  readyToPlay = true,
 }) => {
-  if (isDownloading) {
+  if (isDownloading || (!readyToPlay && (fileType === 'video' || fileType === 'audio'))) {
     return (
       <View style={styles.center}>
         <View style={styles.progressRing}>
@@ -268,9 +270,13 @@ function ViewerItemSlide({
   const [downloadError, setDownloadError] = React.useState<string | null>(null);
   const [isOffline, setIsOffline] = React.useState(false);
   const [retryKey, setRetryKey] = React.useState(0);
+  const [readyToPlay, setReadyToPlay] = React.useState(false);
 
   React.useEffect(() => {
-    if (!isVisible) return;
+    if (!isVisible) {
+      setReadyToPlay(false);
+      return;
+    }
 
     trackViewerEvent({ stage: 'open', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
 
@@ -284,6 +290,11 @@ function ViewerItemSlide({
 
     let cancelled = false;
     let downloadResumed: FileSystem.DownloadResumable | null = null;
+    
+    setTimeout(() => {
+      if (!cancelled) setReadyToPlay(true);
+    }, 50);
+
     setIsDownloading(true);
     setDownloadError(null);
     setLocalUri(null);
@@ -437,6 +448,7 @@ function ViewerItemSlide({
       isOffline={isOffline}
       onSingleTap={onSingleTap}
       isHalfScreen={isHalfScreen}
+      readyToPlay={readyToPlay}
     />
   );
 }

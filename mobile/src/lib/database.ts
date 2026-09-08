@@ -712,13 +712,19 @@ export const checkpointWal = () => {
     }).catch(e => console.warn('[Database] WAL checkpoint queue error:', e));
 };
 
+const assetMemoryCache = new Map<string, { local_path: string, remote_url: string } | null>();
+
 export const getAssetCache = async (entityId: string) => {
+    if (assetMemoryCache.has(entityId)) {
+        return assetMemoryCache.get(entityId) || null;
+    }
     if (!db) return null;
     try {
         const result = await db.getFirstAsync<{ local_path: string, remote_url: string }>(
             'SELECT local_path, remote_url FROM local_assets WHERE entity_id = ?',
             [entityId]
         );
+        assetMemoryCache.set(entityId, result || null);
         return result || null;
     } catch (e) {
         console.error('SQLite getAssetCache error:', e);
@@ -727,6 +733,7 @@ export const getAssetCache = async (entityId: string) => {
 };
 
 export const upsertAssetCache = async (entityId: string, remoteUrl: string, localPath: string, assetType: string) => {
+    assetMemoryCache.set(entityId, { local_path: localPath, remote_url: remoteUrl });
     return writeQuery(async (database) => {
         const updatedAt = new Date().toISOString();
         await database.runAsync(

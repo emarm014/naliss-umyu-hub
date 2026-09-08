@@ -97,15 +97,33 @@ export default function UpdatePassword() {
     } catch (err: any) {
       captureUIError('UpdatePassword.handleUpdate', err);
 
-      // Clean up: sign out the recovery session and clear the flag
-      // so ProtectedRoute doesn't leave the user in a limbo state
+      const rawMsg = err?.message || err?.value || err?.msg || err?.error_description || '';
+      const msg = rawMsg.toLowerCase();
+
+      // Non-fatal errors that just require the user to fix their input.
+      // We DO NOT want to sign them out or invalidate the flow for these.
+      if (msg.includes('same password') || msg.includes('different from')) {
+        const { showToast } = require('../../src/components/common/overlays');
+        showToast('New password should be different from the old password.');
+        return;
+      }
+      if (msg.includes('weak') || msg.includes('strength')) {
+        const { showToast } = require('../../src/components/common/overlays');
+        showToast('Please choose a stronger password.');
+        return;
+      }
+      if (msg.includes('fetch') || msg.includes('network') || msg.includes('connection') || msg.includes('timeout')) {
+        const { showToast } = require('../../src/components/common/overlays');
+        showToast('Could not reach the server. Please check your connection.');
+        return;
+      }
+
+      // Fatal errors: Clean up recovery session and clear the flag
       const { useSignupStore } = require('../../src/stores/signup.store');
       didSucceedRef.current = true; // Prevent listener from showing "Link Expired" during cleanup signOut
       useSignupStore.getState().setIsRecoveryFlow(false);
       try { await supabase.auth.signOut(); } catch {}
 
-      // Detect truly expired recovery link vs generic errors
-      const msg = err.message?.toLowerCase() || '';
       if (msg.includes('expired') || msg.includes('invalid claim') || msg.includes('session not found')) {
         Alert.alert(
           'Link Expired',
@@ -115,7 +133,7 @@ export default function UpdatePassword() {
       } else {
         Alert.alert(
           'Update Failed',
-          'Could not update your password. Please request a new reset link and try again.',
+          `Could not update your password: ${rawMsg || 'Please request a new reset link and try again.'}`,
           [{ text: 'OK', onPress: () => router.replace('/auth/reset-password') }]
         );
       }

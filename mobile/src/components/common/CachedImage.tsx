@@ -39,6 +39,8 @@ interface CachedImageProps {
     onLongPress?: () => void;
 }
 
+const inFlightDownloads = new Map<string, Promise<string | null>>();
+
 export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode = 'cover', fallbackName, fallbackInitials, blurRadius, onPress, onLongPress }: CachedImageProps) {
     // Initialize synchronously if the file is already cached in memory or is a local file
     const isLocalFile = remoteUrl && !remoteUrl.startsWith('http://') && !remoteUrl.startsWith('https://');
@@ -93,106 +95,76 @@ export function CachedImage({ entityId, remoteUrl, assetType, style, resizeMode 
 
         const loadAsset = async () => {
             if (!entityId || !remoteUrl) {
-                if (isMounted) {
-                    setLoading(false);
-                }
+                if (isMounted) setLoading(false);
                 return;
             }
 
             try {
-                // 1. Check SQLite for existing cache
+                // 1. Check L1 Memory / SQLite Cache
                 const cached = await getAssetCache(entityId);
-                
                 if (cached?.local_path && cached.remote_url === remoteUrl) {
-                    // 2. Verify file exists
-                    const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
-                    if (fileInfo.exists && (fileInfo as any).size > 0) {
-                        if (retryCount > 0) {
-                            // File exists but failed to render (corrupt). Delete it to force re-download.
+                    if (retryCount === 0) {
+                        globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: cached.local_path });
+                        if (isMounted) {
+                            setLocalUri(cached.local_path);
+                            setLoading(false);
+                        }
+                        return;
+                    } else {
+                        const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
+                        if (fileInfo.exists && (fileInfo as any).size > 0) {
                             try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
-                        } else {
-                            globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: cached.local_path });
-                            saveGlobalCache();
-                            if (isMounted) {
-                                setLocalUri(cached.local_path);
-                                setHasError(false); // ← CRITICAL: reset error so cached image can render
-                                setLoading(false);
-                            }
-                            return;
                         }
                     }
                 }
 
-                // 2.5. If the provided remoteUrl is already a local file path or non-http URI, skip downloading
-                if (!remoteUrl.startsWith('http://') && !remoteUrl.startsWith('https://')) {
+                if (!remoteUrl.startsWith('http')) {
                     if (isMounted) {
                         setLocalUri(remoteUrl.startsWith('file://') ? remoteUrl : `file://${remoteUrl}`);
-                        setHasError(false);
                         setLoading(false);
                     }
                     return;
                 }
 
-                // 3. If offline, don't attempt download — let the UI fall back to remoteUrl
-                if (!useNetworkStore.getState().isOnline) {
-                    if (isMounted) {
-                        setLocalUri(null); // Force remote URL fallback
-                        // Don't set hasError yet, let Image.onError handle it
-                        setLoading(false);
-                    }
-                    return;
+                // 2. In-Flight Deduplication: If already downloading, await the existing task
+                let downloadPromise = inFlightDownloads.get(remoteUrl);
+                if (!downloadPromise) {
+                    downloadPromise = (async () => {
+                        try {
+                            const urlHash = remoteUrl.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
+                            const filename = `${assetType}_${entityId}_${urlHash}.jpg`;
+                            const fileUri = `${FileSystem.documentDirectory}${filename}`;
+                            const tempUri = `${FileSystem.documentDirectory}tmp_${Date.now()}_${filename}`;
+
+                            const result = await FileSystem.downloadAsync(remoteUrl, tempUri);
+                            if (result.status === 200) {
+                                const info = await FileSystem.getInfoAsync(tempUri);
+                                if (info.exists && (info as any).size > 0) {
+                                    if (cached?.local_path && cached.local_path !== fileUri) {
+                                        try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
+                                    }
+                                    await FileSystem.moveAsync({ from: tempUri, to: fileUri });
+                                    await upsertAssetCache(entityId, remoteUrl, fileUri, assetType);
+                                    globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: fileUri });
+                                    return fileUri;
+                                }
+                            }
+                            return null;
+                        } finally {
+                            inFlightDownloads.delete(remoteUrl);
+                        }
+                    })();
+                    inFlightDownloads.set(remoteUrl, downloadPromise);
                 }
 
-                // 4. Download if not found or URL changed (online only)
-                // Use a short hash of the remoteUrl to ensure the filename changes when the avatar updates,
-                // forcing React Native to render the new image.
-                const urlHash = remoteUrl.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
-                const filename = `${assetType}_${entityId}_${urlHash}.jpg`;
-                const fileUri = `${FileSystem.documentDirectory}${filename}`;
-                const tempUri = `${FileSystem.documentDirectory}tmp_${Date.now()}_${filename}`;
-                
-                // Download to a temp file first (Atomic Swap)
-                const result = await FileSystem.downloadAsync(remoteUrl, tempUri);
-                
-                if (result.status === 200) {
-                    const info = await FileSystem.getInfoAsync(tempUri);
-                    if (info.exists && (info as any).size > 0) {
-                        // Clean up the old file if it exists and is different
-                        if (cached?.local_path && cached.local_path !== fileUri) {
-                            try { await FileSystem.deleteAsync(cached.local_path, { idempotent: true }); } catch (e) {}
-                        }
-                        // Move temp file to final destination
-                        await FileSystem.moveAsync({ from: tempUri, to: fileUri });
-
-                        // 5. Save to SQLite
-                        await upsertAssetCache(entityId, remoteUrl, fileUri, assetType);
-                        
-                        globalMemoryCache[entityId] = JSON.stringify({ url: remoteUrl, path: fileUri });
-                        saveGlobalCache();
-                        if (isMounted) {
-                            setLocalUri(fileUri);
-                            setHasError(false);
-                        }
-                    } else {
-                        // Download succeeded but file is empty/invalid
-                        try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch (e) {}
-                        if (isMounted) setLocalUri(null); // Fallback to remote URL
-                    }
-                } else {
-                    // Download failed (e.g. 404, offline midway)
-                    if (isMounted) setLocalUri(null); // Fallback to remote URL
+                const resolvedUri = await downloadPromise;
+                if (isMounted && resolvedUri) {
+                    setLocalUri(resolvedUri);
                 }
-            } catch (err: any) {
-                // Use debug-level logging to avoid flooding Sentry breadcrumbs when offline
-                const isNet = err?.message?.includes('Network') || err?.message?.includes('Unable to resolve host');
-                if (!isNet) {
-                    console.warn('[CachedImage] Failed to load image:', err);
-                }
-                if (isMounted) setLocalUri(null); // Fallback to remote URL
+            } catch (err) {
+                if (isMounted) setLocalUri(null);
             } finally {
-                if (isMounted) {
-                    setLoading(false);
-                }
+                if (isMounted) setLoading(false);
             }
         };
 

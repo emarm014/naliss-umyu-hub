@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/Colors';
 import { Material } from '../../src/types';
 import { supabase } from '../../src/api/supabase/client';
+import { showToast } from '../../src/components/common/overlays';
 import { TextInput } from 'react-native';
 import { SafeModal, SafeBottomSheet } from '../../src/components/common/overlays';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -596,17 +597,19 @@ export default function ProfileScreen() {
       Alert.alert('Success', '🔑 Password updated successfully.');
     } catch (err: any) {
       captureUIError('ProfileScreen.handleChangePassword', err);
-      const msg = err?.message || '';
+      const rawMsg = err?.message || err?.value || err?.msg || err?.error_description || '';
+      const msg = rawMsg.toLowerCase();
+      
       if (msg.includes('same password') || msg.includes('different from')) {
-        Alert.alert('Same Password', 'Your new password must be different from your current password.');
+        showToast('New password should be different from the old password.');
       } else if (msg.includes('weak') || msg.includes('strength')) {
-        Alert.alert('Weak Password', 'Please choose a stronger password with a mix of letters, numbers, and symbols.');
-      } else if (msg.includes('session') || msg.includes('expired') || msg.includes('JWT')) {
-        Alert.alert('Session Expired', 'Your session has expired. Please sign out and sign in again, then try changing your password.');
+        showToast('Please choose a stronger password.');
+      } else if (msg.includes('session') || msg.includes('expired') || msg.includes('jwt')) {
+        Alert.alert('Session Expired', 'Your session has expired. Please sign out and sign in again.');
       } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('connection')) {
-        Alert.alert('No Connection', 'Could not reach the server. Please check your internet connection and try again.');
+        showToast('Could not reach the server. Please check your connection.');
       } else {
-        Alert.alert('Failed', `Could not change password: ${msg || 'Please try again.'}`);
+        showToast(`Could not change password: ${rawMsg || 'Please try again.'}`);
       }
     } finally {
       setIsChangingPassword(false);

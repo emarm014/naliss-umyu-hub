@@ -14,6 +14,7 @@ interface PosterImageProps {
 }
 
 const globalPosterMemoryCache: Record<string, string> = {};
+const inFlightDownloads = new Map<string, Promise<string | null>>();
 
 const generateEntityId = (url: string) => {
     return 'poster_' + url.replace(/[^a-zA-Z0-9]/g, '_').slice(-60);
@@ -54,15 +55,12 @@ export function PosterImage({
             // 1. Check SQLite
             const cached = await getAssetCache(entityId);
             if (cached?.local_path && cached.remote_url === targetUri) {
-                const fileInfo = await FileSystem.getInfoAsync(cached.local_path);
-                if (fileInfo.exists && (fileInfo as any).size > 0) {
-                    globalPosterMemoryCache[entityId] = cached.local_path;
-                    if (isMounted) {
-                        setLocalUri(cached.local_path);
-                        setStatus('loaded');
-                    }
-                    return;
+                globalPosterMemoryCache[entityId] = cached.local_path;
+                if (isMounted) {
+                    setLocalUri(cached.local_path);
+                    setStatus('loaded');
                 }
+                return;
             }
 
             // 2. Skip download if it's already a local file
@@ -82,18 +80,40 @@ export function PosterImage({
             }
 
             // 4. Download from network
-            const fileUri = `${FileSystem.documentDirectory}${entityId}.jpg`;
-            const result = await FileSystem.downloadAsync(targetUri, fileUri);
-            
-            if (result.status === 200) {
-                await upsertAssetCache(entityId, targetUri, result.uri, 'poster');
-                globalPosterMemoryCache[entityId] = result.uri;
-                if (isMounted) {
-                    setLocalUri(result.uri);
+            let downloadPromise = inFlightDownloads.get(targetUri);
+            if (!downloadPromise) {
+                downloadPromise = (async () => {
+                    try {
+                        const fileUri = `${FileSystem.documentDirectory}${entityId}.jpg`;
+                        const tempUri = `${FileSystem.documentDirectory}tmp_${Date.now()}_${entityId}.jpg`;
+                        
+                        const result = await FileSystem.downloadAsync(targetUri, tempUri);
+                        if (result.status === 200) {
+                            const info = await FileSystem.getInfoAsync(tempUri);
+                            if (info.exists && (info as any).size > 0) {
+                                await FileSystem.moveAsync({ from: tempUri, to: fileUri });
+                                await upsertAssetCache(entityId, targetUri, fileUri, 'poster');
+                                globalPosterMemoryCache[entityId] = fileUri;
+                                return fileUri;
+                            }
+                        }
+                        return null;
+                    } finally {
+                        inFlightDownloads.delete(targetUri);
+                    }
+                })();
+                inFlightDownloads.set(targetUri, downloadPromise);
+            }
+
+            const resolvedUri = await downloadPromise;
+            if (isMounted) {
+                if (resolvedUri) {
+                    setLocalUri(resolvedUri);
                     setStatus('loaded');
+                } else {
+                    setLocalUri(null);
+                    setStatus('error');
                 }
-            } else {
-                if (isMounted) setLocalUri(null); // Fallback to remote URL
             }
         } catch (err: any) {
             const isNet = err?.message?.includes('Network') || err?.message?.includes('Unable to resolve host');

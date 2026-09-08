@@ -18,6 +18,7 @@ import {
     PanResponder,
     Linking,
     Modal,
+    InteractionManager,
     AppState } from 'react-native';
 import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -2466,32 +2467,46 @@ export default function ChatScreen() {
 
     // Open media — only from local vault, never from remote URL
     const handleOpenMedia = async (messageId: string, url: string, type: any, customName?: string) => {
-        const isLocal = await FileService.isDownloaded(messageId, url);
-        if (!isLocal && !url.startsWith('file://')) return;
-        const localUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
         const name = customName || url.split('/').pop() || 'media';
-
         const viewerType = type === 'document' ? 'document'
             : type === 'video' ? 'video'
             : type === 'audio' ? 'audio'
             : 'image';
 
-        // Images, Videos, and Audio MUST open directly in the in-app viewer with no external app option
-        if (viewerType === 'image' || viewerType === 'video' || viewerType === 'audio') {
+        // Fast path: if already a local file, display instantly
+        if (url.startsWith('file://')) {
+            if (viewerType !== 'document') {
+                setViewerMediaList(undefined);
+                requestAnimationFrame(() => {
+                    setViewerFile({ uri: url, type: viewerType, name });
+                    setViewerVisible(true);
+                });
+                return;
+            }
+        }
+
+        const isLocal = await FileService.isDownloaded(messageId, url);
+        if (!isLocal && !url.startsWith('file://')) return;
+        const localUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
+
+        if (viewerType !== 'document') {
             setViewerMediaList(undefined);
-            setViewerFile({ uri: localUri, type: viewerType, name });
-            setViewerVisible(true);
+            requestAnimationFrame(() => {
+                setViewerFile({ uri: localUri, type: viewerType, name });
+                setViewerVisible(true);
+            });
             return;
         }
 
-        // Documents (PDF, Word, PPT, Excel, Text, etc.) ask user to open in-app or open with another app
         openDocumentWith({
             localUri,
             fileType: 'document',
             fileName: name,
             onOpenInApp: (file) => {
-                setViewerFile({ uri: file.uri, type: file.type as any, name: file.name });
-                setViewerVisible(true);
+                requestAnimationFrame(() => {
+                    setViewerFile({ uri: file.uri, type: file.type as any, name: file.name });
+                    setViewerVisible(true);
+                });
             }
         });
     };
@@ -2593,12 +2608,14 @@ export default function ChatScreen() {
             const safeIdx = Math.max(0, targetIdx);
             setViewerMediaList(mediaList);
             setViewerInitialIndex(safeIdx);
-            setViewerFile({
-                uri: mediaList[safeIdx]?.uri || '',
-                type: mediaList[safeIdx]?.type || 'image',
-                name: mediaList[safeIdx]?.name || 'Media',
+            requestAnimationFrame(() => {
+                setViewerFile({
+                    uri: mediaList[safeIdx]?.uri || '',
+                    type: mediaList[safeIdx]?.type || 'image',
+                    name: mediaList[safeIdx]?.name || 'Media',
+                });
+                setViewerVisible(true);
             });
-            setViewerVisible(true);
         } else {
             const targetMsg = messages.find(m => m.id === targetMessageId);
             if (!targetMsg) return;
@@ -2616,12 +2633,14 @@ export default function ChatScreen() {
 
             setViewerMediaList(undefined);
             setViewerInitialIndex(0);
-            setViewerFile({
-                uri: uri || targetMsg.content,
-                type: targetMsg.message_type || 'image',
-                name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
+            requestAnimationFrame(() => {
+                setViewerFile({
+                    uri: uri || targetMsg.content,
+                    type: targetMsg.message_type || 'image',
+                    name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
+                });
+                setViewerVisible(true);
             });
-            setViewerVisible(true);
         }
     };
 

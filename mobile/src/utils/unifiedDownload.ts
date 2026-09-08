@@ -1,19 +1,13 @@
-﻿import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
 import { AssetPathResolver } from './assetResolver';
 import { Logger } from './logger';
+import * as Sentry from '@sentry/react-native';
 
-/** Clean Cloudinary URL for download â€” same logic as viewer's getViewerUrl */
+// Module-level in-flight deduplication map
+const inFlightDownloads = new Map<string, Promise<string | null>>();
+
 function cleanDownloadUrl(url: string): string {
-  let clean = url
-    .replace('/raw/upload/fl_inline/', '/raw/upload/')
-    .replace('/fl_inline/', '/');
-  if (clean.includes('cloudinary.com') && clean.includes('/image/upload/')) {
-    const lower = clean.toLowerCase();
-    if (lower.match(/\.(pdf|doc|docx|ppt|pptx|xls|xlsx|txt|zip|rar|csv)(\?|$)/)) {
-      clean = clean.replace('/image/upload/', '/raw/upload/');
-    }
-  }
-  return clean;
+    return url.trim();
 }
 
 export const UnifiedDownloadEngine = {
@@ -21,7 +15,7 @@ export const UnifiedDownloadEngine = {
         url: string,
         fileId: string,
         onProgress?: ((progress: number) => void) | string,
-        assetType = 'document',
+        assetType: string = 'document'
     ): Promise<string | null> {
         let progressCallback: ((progress: number) => void) | undefined;
         let resolvedAssetType = assetType;
@@ -36,49 +30,78 @@ export const UnifiedDownloadEngine = {
         try {
             localPath = AssetPathResolver.resolveLocalPath(fileId, resolvedAssetType, url);
         } catch (err) {
-            Logger.error('UnifiedDownload', 'Failed to resolve local path', err);
             return null;
         }
 
-        try {
-            // Prevent attempting to download if it's already a local file
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                return url.startsWith('file://') ? url : `file://${url}`;
-            }
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            return url.startsWith('file://') ? url : `file://${url}`;
+        }
 
+        // 1. In-flight stream deduplication
+        const activeDownload = inFlightDownloads.get(localPath);
+        if (activeDownload) {
+            return activeDownload;
+        }
+
+        const downloadTask = (async (): Promise<string | null> => {
             const folder = localPath.substring(0, localPath.lastIndexOf('/') + 1);
-            const dirInfo = await FileSystem.getInfoAsync(folder);
-            if (!dirInfo.exists) {
-                await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
-            }
+            let downloadResumable: FileSystem.DownloadResumable | null = null;
+            const tempPartPath = `${localPath}.part_${Date.now()}`;
 
-            const downloadResumable = FileSystem.createDownloadResumable(
-                cleanDownloadUrl(url),
-                localPath,
-                { headers: { 'Accept': '*/*', 'User-Agent': 'NALISS-Hub/1.0' } },
-                (progress) => {
-                    const pct = progress.totalBytesExpectedToWrite > 0
-                        ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
-                        : 0;
-                    if (typeof progressCallback === 'function') {
-                        progressCallback(pct);
+            try {
+                const dirInfo = await FileSystem.getInfoAsync(folder);
+                if (!dirInfo.exists) {
+                    await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
+                }
+
+                // Throttle progress to at most 1 update per 100ms
+                let lastProgressTime = 0;
+
+                downloadResumable = FileSystem.createDownloadResumable(
+                    cleanDownloadUrl(url),
+                    tempPartPath,
+                    { headers: { 'Accept': '*/*', 'User-Agent': 'NALISS-Hub/1.0' } },
+                    (progress) => {
+                        const now = Date.now();
+                        if (now - lastProgressTime < 100) return;
+                        lastProgressTime = now;
+
+                        const pct = progress.totalBytesExpectedToWrite > 0
+                            ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
+                            : 0;
+                        if (typeof progressCallback === 'function') {
+                            progressCallback(Math.min(pct, 1));
+                        }
                     }
-                }
-            );
+                );
 
-            const result = await downloadResumable.downloadAsync();
-            if (result && result.status === 200 && result.uri) {
-                const fileInfo = await FileSystem.getInfoAsync(result.uri);
-                if (fileInfo.exists && (fileInfo as any).size > 0) {
-                    return result.uri;
+                const result = await downloadResumable.downloadAsync();
+
+                if (result && result.status === 200 && result.uri) {
+                    const fileInfo = await FileSystem.getInfoAsync(result.uri);
+                    if (fileInfo.exists && (fileInfo as any).size > 0) {
+                        // Atomic move from temporary file to final vault path
+                        await FileSystem.moveAsync({ from: result.uri, to: localPath });
+                        if (typeof progressCallback === 'function') {
+                            progressCallback(1);
+                        }
+                        return localPath;
+                    }
+                    await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
                 }
-                // Delete empty/corrupted file
-                await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+                return null;
+            } catch (err) {
+                Logger.error('UnifiedDownload', 'Stream download failure', err);
+                Sentry.captureException(err, { tags: { section: 'unifiedDownload' }, extra: { fileId, url } });
+                // Clean up partial file to prevent storage bloat and unlock file descriptors
+                await FileSystem.deleteAsync(tempPartPath, { idempotent: true }).catch(() => {});
+                return null;
+            } finally {
+                inFlightDownloads.delete(localPath);
             }
-            return null;
-        } catch (err) {
-            Logger.error('UnifiedDownload', 'Stream download failure', err);
-            return null;
-        }
+        })();
+
+        inFlightDownloads.set(localPath, downloadTask);
+        return downloadTask;
     }
 };

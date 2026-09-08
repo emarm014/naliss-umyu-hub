@@ -72,39 +72,79 @@ Sentry.init({
   environment: process.env.EXPO_PUBLIC_APP_ENV ?? 'development',
 
   // ── Tracing ──────────────────────────────────────────────────────────────
-  // 100% in dev to see all spans; 20% in prod to control quota
-  tracesSampleRate: IS_PROD ? 0.2 : 1.0,
+  tracesSampleRate: 0,
+  profilesSampleRate: 0,
+  enableUserInteractionTracing: false,
+  enableAutoSessionTracking: true, // Keep crash-free session metrics only
 
   // ── Breadcrumbs ──────────────────────────────────────────────────────────
-  // Keep last 150 breadcrumbs — enough to reconstruct the full sequence
-  // leading up to any crash without overwhelming the Sentry event payload
-  maxBreadcrumbs: 150,
+  maxBreadcrumbs: 40,
 
-  // Filter out noisy breadcrumbs that add no crash-diagnostic value
   beforeBreadcrumb(breadcrumb) {
-    // Drop Expo/RN internal console.log noise
-    if (breadcrumb.category === 'console' && breadcrumb.level === 'log') return null;
-    // Drop XHR breadcrumbs for realtime heartbeat pings — they fire every 15s
-    if (
-      breadcrumb.category === 'xhr' &&
-      typeof breadcrumb.data?.url === 'string' &&
-      (breadcrumb.data.url.includes('/realtime/') || breadcrumb.data.url.includes('heartbeat'))
-    ) return null;
-    // Drop repetitive SQLite debug breadcrumbs — PRAGMA calls fire on every screen
-    if (
-      breadcrumb.category === 'db.sqlite' &&
-      breadcrumb.level === 'debug' &&
-      typeof breadcrumb.data?.sql === 'string' &&
-      breadcrumb.data.sql.startsWith('PRAGMA')
-    ) return null;
+    // A. DROP NOISY CONSOLE LOGS (Keep only warnings and errors)
+    if (breadcrumb.category === 'console' && (breadcrumb.level === 'log' || breadcrumb.level === 'info' || breadcrumb.level === 'debug')) {
+      return null;
+    }
+
+    // B. DROP TOUCH DOM-TREE INSPECTIONS
+    if (breadcrumb.category === 'touch' || breadcrumb.category === 'ui.click') {
+      return null;
+    }
+
+    // C. DROP ALL SUCCESSFUL NETWORK CALLS (Keep ONLY >= 400 or network drops)
+    if (breadcrumb.category === 'xhr' || breadcrumb.category === 'fetch') {
+      const status = breadcrumb.data?.status_code;
+      // If request was successful (200-399), discard it completely
+      if (typeof status === 'number' && status >= 200 && status < 400) {
+        return null;
+      }
+      // Drop background realtime heartbeats
+      if (typeof breadcrumb.data?.url === 'string' && (breadcrumb.data.url.includes('/realtime/') || breadcrumb.data.url.includes('heartbeat'))) {
+        return null;
+      }
+    }
+
+    // D. DROP SQLITE PRAGMA DEBUG LOGS
+    if (breadcrumb.category === 'db.sqlite' && breadcrumb.level === 'debug') {
+      return null;
+    }
+
     return breadcrumb;
+  },
+
+  // ── Cleanup Sensitive User Data ──────────────────────────────────────────
+  beforeSend(event) {
+    if (event.request?.data) {
+      let dataStr = typeof event.request.data === 'string' ? event.request.data : JSON.stringify(event.request.data);
+      if (dataStr) {
+        try {
+          const parsed = JSON.parse(dataStr);
+          const fieldsToRedact = ['password', 'otp', 'token', 'access_token', 'refresh_token', 'session'];
+          const redactObj = (obj: any) => {
+            for (const key in obj) {
+              if (typeof obj[key] === 'object' && obj[key] !== null) {
+                redactObj(obj[key]);
+              } else if (fieldsToRedact.some(f => key.toLowerCase().includes(f))) {
+                obj[key] = '[REDACTED]';
+              }
+            }
+          };
+          if (typeof parsed === 'object' && parsed !== null) {
+            redactObj(parsed);
+            event.request.data = JSON.stringify(parsed);
+          }
+        } catch (e) {
+          event.request.data = dataStr.replace(/(password|otp|token|access_token|refresh_token|session)["']?\s*[:=]\s*["']?[^"'\s&]+/gi, '$1=[REDACTED]');
+        }
+      }
+    }
+    return event;
   },
 
   // ── Capture config ───────────────────────────────────────────────────────
   // Disable native nagger — works in Expo Go without a native build
   enableNativeNagger: false,
-  // Only enable debug logging in local development — NOT preview builds
-  debug: __DEV__ && !IS_PROD,
+  debug: false,
   
   // ── Error Filtering ──────────────────────────────────────────────────────
   // Globally drop network/timeout errors from ever hitting Sentry

@@ -123,7 +123,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           // Wait for the fetch (with timeout) and let upsert run alongside
           const [{ data: activeSessions, error: fetchErr }] = await Promise.all([
             Promise.race([fetchPromise, timeoutPromise]) as any,
-            upsertPromise.catch((err: any) => console.warn('Session upsert failed:', err)),
+            Promise.resolve(upsertPromise).catch((err: any) => console.warn('Session upsert failed:', err)),
           ]);
 
           if (fetchErr) throw normalizeError(fetchErr);

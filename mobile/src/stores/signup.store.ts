@@ -200,7 +200,6 @@ export const useSignupStore = create<SignupState>()(
         department: state.department,
         currentStep: state.currentStep,
         lastActivityTime: state.lastActivityTime,
-        isRecoveryFlow: state.isRecoveryFlow,
         otpResendCounts: state.otpResendCounts,
         otpResendLocks: state.otpResendLocks,
       }),

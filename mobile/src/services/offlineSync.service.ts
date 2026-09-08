@@ -1,6 +1,7 @@
 import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
 import { trackOfflineSync, captureStoreError } from '../utils/sentry';
+import * as Sentry from '@sentry/react-native';
 import { useAuthStore } from '../stores/auth.store';
 import { useGroupStore } from '../stores/group.store';
 import { useMessageStore } from '../stores/message.store';
@@ -38,6 +39,7 @@ async function withStageTimeout<T>(stage: string, task: () => Promise<T>): Promi
         ]);
     } catch (e: any) {
         Logger.warn('offline-sync', `${stage}: ${e.message || String(e)} — skipping stage`);
+        Sentry.captureException(e, { tags: { source: 'background_sync' } });
         return null;
     }
 }
@@ -386,7 +388,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch { /* non-fatal */ }
+            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
 
             // ----------------------------------------------------
             // Stage 12: Sync archive
@@ -404,7 +406,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch { /* non-fatal */ }
+            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
 
             // ----------------------------------------------------
             // Stage 13: Sync FYB (featured students)
@@ -425,7 +427,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch { /* non-fatal */ }
+            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
 
             // ----------------------------------------------------
             // Stage 14: Sync gallery
@@ -443,7 +445,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch { /* non-fatal */ }
+            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
 
             // Update Sync state metadata
             await updateSyncState(userId, {
@@ -464,7 +466,7 @@ export const OfflineSyncService = {
         } catch (e: any) {
             Logger.error('offline-sync', 'Error running bootstrap synchronization', e);
             trackOfflineSync('bootstrap', 'failed', undefined, { error: e.message || String(e) });
-            captureStoreError('OfflineSyncService', 'syncAll', e);
+            Sentry.captureException(e, { tags: { source: 'background_sync' } });
         } finally {
             _syncInProgress = false;
         }

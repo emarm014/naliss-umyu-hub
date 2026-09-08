@@ -136,17 +136,17 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
       try {
         const { useNewsStore } = require('./news.store');
         await useNewsStore.getState().fetchNews(true);
-      } catch {}
+      } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
       onProgress(46, 'Loading archive...');
       try {
         const { useArchiveStore } = require('./archive.store');
         await useArchiveStore.getState().fetchArchives(0, true);
-      } catch {}
+      } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
       onProgress(50, 'Loading featured students...');
       try {
         const { useFYBStore } = require('./fyb.store');
         await useFYBStore.getState().fetchFeatured(true);
-      } catch {}
+      } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
       onProgress(55, 'Content loaded');
 
       // Step 5: Events, resources, directory (55–70%)
@@ -168,7 +168,7 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
       onProgress(72, 'Restoring your notes...');
       try {
         await useNoteStore.getState().fetchCloudNotes();
-      } catch {}
+      } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
       onProgress(85, 'Notes restored');
 
       // Step 7: Downloaded files (85–100%)
@@ -176,11 +176,12 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
       try {
         const { DownloadTracker } = require('../services/downloadTracker.service');
         await DownloadTracker.restoreUserDownloads();
-      } catch {}
+      } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
       onProgress(100, 'All done!');
 
     } catch (err) {
       // If any critical step fails, still report progress so far
+      Sentry.captureException(err, { tags: { source: 'background_sync' } });
       throw err;
     }
   },

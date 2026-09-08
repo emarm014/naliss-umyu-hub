@@ -113,7 +113,7 @@ export default function ProtectedRoute() {
 
     // 3. Realtime subscription to log out instantly if session is terminated OR moderator restricted
     const channel = supabase
-      .channel(`admin_session_guard_${deviceId}`)
+      .channel(`admin_session_guard_${deviceId}_${Date.now()}`)
       .on(
         'postgres_changes',
         {

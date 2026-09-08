@@ -369,7 +369,7 @@ export default function HomeScreen() {
     loadData();
 
     const channel = supabase
-      .channel('home_fyb_listener')
+      .channel(`home_fyb_listener_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'featured_students' },

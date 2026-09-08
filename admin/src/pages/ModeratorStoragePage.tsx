@@ -263,12 +263,13 @@ export default function ModeratorStoragePage() {
 
   useEffect(() => {
     const tables = ['materials', 'past_questions', 'announcements', 'events', 'messages', 'news', 'archives', 'gallery_topics', 'gallery_media', 'featured_students'];
-    const channels = tables.map(table =>
-      supabase
-        .channel(`storage-watch:${table}`)
+    const channels = tables.map(table => {
+      const channel = supabase
+        .channel(`storage-watch:${table}:${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table }, () => { fetchItemsRef.current(false); })
-        .subscribe()
-    );
+        .subscribe();
+      return channel;
+    });
 
     return () => {
       channels.forEach(ch => supabase.removeChannel(ch));

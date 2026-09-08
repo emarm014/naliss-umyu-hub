@@ -86,7 +86,7 @@ export const useSettingsStore = create<SettingsState>()(
 
         // 1. Instant Realtime Subscription for system_settings updates (<100ms response)
         const channel = supabase
-          .channel('system_settings_live_global')
+          .channel(`system_settings_live_global_${Date.now()}`)
           .on(
             'postgres_changes',
             {

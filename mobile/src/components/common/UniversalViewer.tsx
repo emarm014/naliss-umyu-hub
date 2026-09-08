@@ -470,6 +470,12 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   isHalfScreen = false,
   onViewProfile,
 }) => {
+  console.log('>>> [VIEWER MOUNT 1] UniversalViewer rendered, visible =', isVisible);
+
+  React.useEffect(() => {
+    console.log('>>> [VIEWER EFFECT 2] Viewer effect triggered with URI =', fileUri);
+  }, [fileUri, isVisible]);
+
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const [showControls, setShowControls] = React.useState(false);

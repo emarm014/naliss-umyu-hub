@@ -2198,8 +2198,8 @@ export default function ChatScreen() {
                         Alert.alert('Invalid File Type', `File "${name}" is not a supported document format.`);
                         continue;
                     }
-                    if (asset.size && asset.size > 15 * 1024 * 1024) {
-                        Alert.alert('File Too Large', `File "${name}" exceeds the 15MB limit.`);
+                    if (asset.size && asset.size > 100 * 1024 * 1024) {
+                        Alert.alert('File Too Large', `File "${name}" exceeds the 100MB limit.`);
                         continue;
                     }
 
@@ -2255,8 +2255,8 @@ export default function ChatScreen() {
                         continue;
                     }
 
-                    const sizeLimit = isAudio ? 10 * 1024 * 1024 : 30 * 1024 * 1024;
-                    const sizeLabelMB = isAudio ? '10MB' : '30MB';
+                    const sizeLimit = 100 * 1024 * 1024;
+                    const sizeLabelMB = '100MB';
 
                     if (asset.size && asset.size > sizeLimit) {
                         Alert.alert('File Too Large', `File "${name}" exceeds the ${sizeLabelMB} limit.`);
@@ -2467,48 +2467,27 @@ export default function ChatScreen() {
 
     // Open media — only from local vault, never from remote URL
     const handleOpenMedia = async (messageId: string, url: string, type: any, customName?: string) => {
-        const name = customName || url.split('/').pop() || 'media';
-        const viewerType = type === 'document' ? 'document'
-            : type === 'video' ? 'video'
-            : type === 'audio' ? 'audio'
-            : 'image';
+        console.log('>>> [TAP STEP 1] Media tapped:', { messageId, type, url: url?.slice(0, 30) });
 
-        // Fast path: if already a local file, display instantly
-        if (url.startsWith('file://')) {
-            if (viewerType !== 'document') {
-                setViewerMediaList(undefined);
-                requestAnimationFrame(() => {
-                    setViewerFile({ uri: url, type: viewerType, name });
-                    setViewerVisible(true);
-                });
-                return;
-            }
-        }
+        try {
+            console.log('>>> [TAP STEP 2] Checking FileService.isDownloaded...');
+            const isLocal = await FileService.isDownloaded(messageId, url);
+            console.log('>>> [TAP STEP 3] isDownloaded returned:', isLocal);
 
-        const isLocal = await FileService.isDownloaded(messageId, url);
-        if (!isLocal && !url.startsWith('file://')) return;
-        const localUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
+            const localUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
+            console.log('>>> [TAP STEP 4] Resolved localUri:', localUri);
 
-        if (viewerType !== 'document') {
+            const name = customName || url.split('/').pop() || 'media';
+            const viewerType = type === 'document' ? 'document' : type === 'video' ? 'video' : type === 'audio' ? 'audio' : 'image';
+
+            console.log('>>> [TAP STEP 5] Setting viewer state...');
             setViewerMediaList(undefined);
-            requestAnimationFrame(() => {
-                setViewerFile({ uri: localUri, type: viewerType, name });
-                setViewerVisible(true);
-            });
-            return;
+            setViewerFile({ uri: localUri, type: viewerType, name });
+            setViewerVisible(true);
+            console.log('>>> [TAP STEP 6] setViewerVisible(true) dispatched');
+        } catch (err) {
+            console.error('>>> [TAP ERROR] Caught error during tap:', err);
         }
-
-        openDocumentWith({
-            localUri,
-            fileType: 'document',
-            fileName: name,
-            onOpenInApp: (file) => {
-                requestAnimationFrame(() => {
-                    setViewerFile({ uri: file.uri, type: file.type as any, name: file.name });
-                    setViewerVisible(true);
-                });
-            }
-        });
     };
 
     const handleSaveMessageMedia = async (msg: any) => {

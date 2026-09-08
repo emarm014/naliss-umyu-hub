@@ -55,7 +55,7 @@ export default function RegisterOptions() {
 
     // 2. Realtime subscription — works without auth, listens for admin changes
     const channel = supabase
-      .channel('reg_options_settings')
+      .channel(`reg_options_settings_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'system_settings', filter: 'key=eq.allow_registration' },

@@ -144,7 +144,7 @@ export default function SecurityPage() {
 
     // Realtime changes listener to update logs on the fly
     const channel = supabase
-      .channel('admin_sessions_realtime')
+      .channel(`admin_sessions_realtime_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_sessions' },

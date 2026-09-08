@@ -44,7 +44,7 @@ export default function DirectoryScreen() {
 
     useEffect(() => {
         const staffChannel = supabase
-            .channel('public:lecturers')
+            .channel(`public:lecturers_${Date.now()}`)
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'lecturers' },
@@ -53,7 +53,7 @@ export default function DirectoryScreen() {
             .subscribe();
 
         const execChannel = supabase
-            .channel('public:executives')
+            .channel(`public:executives_${Date.now()}`)
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'executives' },

@@ -432,9 +432,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         level: 'info',
       });
 
+      // PASSWORD_RECOVERY routing is exclusively handled by _layout.tsx's deep link parser
+      // to prevent loop issues where onAuthStateChange might re-emit events.
       if (event === 'PASSWORD_RECOVERY') {
-        // Force instant, non-blocking absolute routing to the update password form
-        router.replace('/auth/update-password' as any);
         return;
       }
 
@@ -802,7 +802,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     // 2. Instant Realtime Subscription on users table for ban/suspend/restoration
     const statusChannel = supabase
-      .channel(`live_user_status_${userId}`)
+      .channel(`live_user_status_${userId}_${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -838,7 +838,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     // 3. Instant Realtime Subscription on moderator_permissions for moderator restrictions/grants
     const moderatorChannel = supabase
-      .channel(`live_mod_permissions_${userId}`)
+      .channel(`live_mod_permissions_${userId}_${Date.now()}`)
       .on(
         'postgres_changes',
         {

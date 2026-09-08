@@ -38,7 +38,7 @@ export default function FYBScreen() {
     fetchFeatured();
 
     const channel = supabase
-      .channel('fyb_tab_listener')
+      .channel(`fyb_tab_listener_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'featured_students' },

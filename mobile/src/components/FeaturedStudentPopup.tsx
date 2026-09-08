@@ -183,8 +183,8 @@ export function FeaturedStudentPopup() {
         checkForActiveFeature();
 
         // Realtime listener for INSTANT popup when Admin adds a featured student
-        const channel = supabase
-            .channel('global_featured_students_listener')
+          const channel = supabase
+            .channel(`global_featured_students_listener_${Date.now()}`)
             .on(
                 'postgres_changes',
                 {
@@ -227,8 +227,8 @@ export function FeaturedStudentPopup() {
     useEffect(() => {
         if (!feature || feature.user_id !== profile?.id) return;
 
-        const channel = supabase
-            .channel(`featured_realtime_toast_${feature.id}`)
+          const channel = supabase
+            .channel(`featured_realtime_toast_${feature.id}_${Date.now()}`)
             .on(
                 'postgres_changes',
                 {

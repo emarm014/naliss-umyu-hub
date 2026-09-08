@@ -108,7 +108,7 @@ export default function SettingsPage() {
 
     // Realtime subscription — updates UI instantly when DB changes.
     const channel = supabase
-      .channel('admin_settings_live')
+      .channel(`admin_settings_live_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'system_settings' },

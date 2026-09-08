@@ -86,7 +86,7 @@ export function FeaturedStudentCongratsCard({ userId }: { userId: string }) {
         if (!featuredId) return;
 
         const channel = supabase
-            .channel(`home_fyb_congrats_${featuredId}`)
+            .channel(`home_fyb_congrats_${featuredId}_${Date.now()}`)
             .on(
                 'postgres_changes',
                 {

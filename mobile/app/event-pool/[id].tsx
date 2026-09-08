@@ -146,7 +146,7 @@ export default function EventPoolRoom() {
 
         initRoom();
 
-        const channel = supabase.channel(`pool_updates_${id}`)
+        const channel = supabase.channel(`pool_updates_${id}_${Date.now()}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` }, (payload) => {
                 if (payload.new) {
                     setPool(prev => prev ? { ...prev, ...payload.new } as EventPoolDetail : null);

@@ -105,14 +105,14 @@ export async function uploadToCloudinary(
     throw new Error(`Unsupported MIME type: ${mimeType || 'unknown'}`);
   }
 
-  if (isImage && size > 5 * 1024 * 1024) {
-    throw new Error('Image file size exceeds the strict 5MB limit.');
+  if (isImage && size > 10 * 1024 * 1024) {
+    throw new Error('Image file size exceeds the strict 10MB limit.');
   }
-  if (isVideo && size > 15 * 1024 * 1024) {
-    throw new Error('Video file size exceeds the strict 15MB limit.');
+  if (isVideo && size > 100 * 1024 * 1024) {
+    throw new Error('Video file size exceeds the strict 100MB limit.');
   }
-  if ((isAudio || isDoc) && size > 5 * 1024 * 1024) {
-    throw new Error('File size exceeds the strict 5MB limit.');
+  if ((isAudio || isDoc) && size > 100 * 1024 * 1024) {
+    throw new Error('File size exceeds the strict 100MB limit.');
   }
 
   // 1. Attempt signed signature retrieval, fallback to unsigned preset if it fails
@@ -242,14 +242,14 @@ export async function uploadLocalFileToCloudinary(
         }
         
         const size = fileInfo.size || 0;
-        if (isImage && size > 5 * 1024 * 1024) {
-          return reject(new Error('Image file size exceeds the 5MB limit.'));
+        if (isImage && size > 10 * 1024 * 1024) {
+          return reject(new Error('Image file size exceeds the 10MB limit.'));
         }
-        if (isVideo && size > 15 * 1024 * 1024) {
-          return reject(new Error('Video file size exceeds the 15MB limit.'));
+        if (isVideo && size > 100 * 1024 * 1024) {
+          return reject(new Error('Video file size exceeds the 100MB limit.'));
         }
-        if ((isAudio || isDoc) && size > 5 * 1024 * 1024) {
-          return reject(new Error('File size exceeds the 5MB limit.'));
+        if ((isAudio || isDoc) && size > 100 * 1024 * 1024) {
+          return reject(new Error('File size exceeds the 100MB limit.'));
         }
 
         let normalizedUri = localUri;

@@ -64,90 +64,78 @@ const IS_PROD = process.env.EXPO_PUBLIC_APP_ENV === 'production';
 
 Sentry.init({
   dsn: 'https://d788f703d8c028e11be19ad6c99b2822@o4511411773571072.ingest.de.sentry.io/4511413255995472',
-
-  // ── Release & environment ─────────────────────────────────────────────────
-  // These MUST match what the @sentry/react-native/expo plugin uploads source
-  // maps under during an EAS build. Sentry uses release+dist to find the right
-  // source map for a given crash, turning minified stack traces into readable ones.
   environment: process.env.EXPO_PUBLIC_APP_ENV ?? 'development',
 
-  // ── Tracing ──────────────────────────────────────────────────────────────
+  // 1. Zero performance transaction overhead on mobile JS thread
   tracesSampleRate: 0,
   profilesSampleRate: 0,
   enableUserInteractionTracing: false,
-  enableAutoSessionTracking: true, // Keep crash-free session metrics only
+  enableAutoSessionTracking: true,
 
-  // ── Breadcrumbs ──────────────────────────────────────────────────────────
+  // 2. Compact memory buffer for breadcrumbs
   maxBreadcrumbs: 40,
 
+  // 3. Strict errors-only breadcrumbs filter
   beforeBreadcrumb(breadcrumb) {
-    // A. DROP NOISY CONSOLE LOGS (Keep only warnings and errors)
-    if (breadcrumb.category === 'console' && (breadcrumb.level === 'log' || breadcrumb.level === 'info' || breadcrumb.level === 'debug')) {
+    // Drop noisy standard console logs (preserve only warnings and errors)
+    if (
+      breadcrumb.category === 'console' &&
+      (breadcrumb.level === 'log' || breadcrumb.level === 'info' || breadcrumb.level === 'debug')
+    ) {
       return null;
     }
 
-    // B. DROP TOUCH DOM-TREE INSPECTIONS
+    // Drop touch and UI click component-tree traversals
     if (breadcrumb.category === 'touch' || breadcrumb.category === 'ui.click') {
       return null;
     }
 
-    // C. DROP ALL SUCCESSFUL NETWORK CALLS (Keep ONLY >= 400 or network drops)
+    // Drop successful HTTP requests (keep ONLY failures >= 400 or network drops)
     if (breadcrumb.category === 'xhr' || breadcrumb.category === 'fetch') {
       const status = breadcrumb.data?.status_code;
-      // If request was successful (200-399), discard it completely
       if (typeof status === 'number' && status >= 200 && status < 400) {
         return null;
       }
-      // Drop background realtime heartbeats
-      if (typeof breadcrumb.data?.url === 'string' && (breadcrumb.data.url.includes('/realtime/') || breadcrumb.data.url.includes('heartbeat'))) {
+      if (
+        typeof breadcrumb.data?.url === 'string' &&
+        (breadcrumb.data.url.includes('/realtime/') || breadcrumb.data.url.includes('heartbeat'))
+      ) {
         return null;
       }
     }
 
-    // D. DROP SQLITE PRAGMA DEBUG LOGS
-    if (breadcrumb.category === 'db.sqlite' && breadcrumb.level === 'debug') {
+    // Drop SQLite PRAGMA debug spam
+    if (
+      breadcrumb.category === 'db.sqlite' &&
+      breadcrumb.level === 'debug' &&
+      typeof breadcrumb.data?.sql === 'string' &&
+      breadcrumb.data.sql.startsWith('PRAGMA')
+    ) {
       return null;
     }
 
     return breadcrumb;
   },
 
-  // ── Cleanup Sensitive User Data ──────────────────────────────────────────
+  // 4. Data sanitization guard
   beforeSend(event) {
+    // Sanitize any credentials or tokens from request bodies/extra payloads
     if (event.request?.data) {
-      let dataStr = typeof event.request.data === 'string' ? event.request.data : JSON.stringify(event.request.data);
-      if (dataStr) {
-        try {
-          const parsed = JSON.parse(dataStr);
-          const fieldsToRedact = ['password', 'otp', 'token', 'access_token', 'refresh_token', 'session'];
-          const redactObj = (obj: any) => {
-            for (const key in obj) {
-              if (typeof obj[key] === 'object' && obj[key] !== null) {
-                redactObj(obj[key]);
-              } else if (fieldsToRedact.some(f => key.toLowerCase().includes(f))) {
-                obj[key] = '[REDACTED]';
-              }
-            }
-          };
-          if (typeof parsed === 'object' && parsed !== null) {
-            redactObj(parsed);
-            event.request.data = JSON.stringify(parsed);
-          }
-        } catch (e) {
-          event.request.data = dataStr.replace(/(password|otp|token|access_token|refresh_token|session)["']?\s*[:=]\s*["']?[^"'\s&]+/gi, '$1=[REDACTED]');
+      try {
+        if (typeof event.request.data === 'string') {
+          event.request.data = event.request.data.replace(
+            /"(password|token|otp|access_token|refresh_token)":\s*"[^"]+"/gi,
+            '"$1":"[REDACTED]"'
+          );
         }
-      }
+      } catch (_) {}
     }
     return event;
   },
 
-  // ── Capture config ───────────────────────────────────────────────────────
-  // Disable native nagger — works in Expo Go without a native build
   enableNativeNagger: false,
   debug: false,
-  
-  // ── Error Filtering ──────────────────────────────────────────────────────
-  // Globally drop network/timeout errors from ever hitting Sentry
+
   ignoreErrors: [
     'Network request failed',
     'Failed to fetch',
@@ -578,10 +566,13 @@ function RootLayoutNav() {
 
   // ── Handle deep link URLs (password reset, OAuth redirect) ──────────────
   useEffect(() => {
+    let lastProcessedUrl = '';
+
     // Handle URL that launched the app (cold start)
     const handleInitialUrl = async () => {
       const initialUrl = await Linking.getInitialURL();
-      if (initialUrl) {
+      if (initialUrl && initialUrl !== lastProcessedUrl) {
+        lastProcessedUrl = initialUrl;
         const tokens = extractSessionFromUrl(initialUrl);
         if (tokens) {
           // Only set session from deep link if NOT in an active Google signup flow
@@ -612,6 +603,8 @@ function RootLayoutNav() {
 
     // Handle URLs received while app is already open (warm start)
     const subscription = Linking.addEventListener('url', async (event) => {
+      if (event.url === lastProcessedUrl) return;
+      lastProcessedUrl = event.url;
       const tokens = extractSessionFromUrl(event.url);
       if (tokens) {
         // Only set session from deep link if NOT in an active Google signup flow

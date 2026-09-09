@@ -570,6 +570,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       animationType="slide-up"
       dismissible={false}
       overlayStyle={StyleSheet.absoluteFill}
+      useNativeModal={false}
     >
       <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.85)' }]}>
         <View style={[

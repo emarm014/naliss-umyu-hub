@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, InteractionManager } from 'react-native';
 import { supabase } from '../api/supabase/client';
 import * as Sentry from '@sentry/react-native';
 import { useAuthStore } from './auth.store';
@@ -44,30 +44,35 @@ export const useGlobalSyncStore = create<GlobalSyncState>((set, get) => ({
     // Reset any messages stuck in 'sending' from a previous kill
     useMessageStore.getState().resetStuckMessages();
 
-    // Only do initial sync if online â€” cached data is already in stores from AsyncStorage
+    // Defer the heavy 14-stage sync and FTS re-indexing to prevent blocking the JS thread 
+    // during app mount, screen transitions, or priority tasks (like opening media).
     const isOnline = useNetworkStore.getState().isOnline;
-    if (isOnline) {
-      get().syncAll(true);
-    }
-    get()._openChannels();
-    get()._startBackgroundSync();
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => {
+        if (isOnline) {
+          get().syncAll(true);
+        }
+        get()._openChannels();
+        get()._startBackgroundSync();
 
-    // Restore previously downloaded files + notes on this device (new device login)
-    // Only if the user didn't explicitly cancel/skip the data restore screen
-    if (isOnline) {
-      const { useDataRestoreStore } = require('./data-restore.store');
-      const restoreState = useDataRestoreStore.getState();
-      if (!restoreState.wasSkipped) {
-        const { DownloadTracker } = require('../services/downloadTracker.service');
-        DownloadTracker.restoreUserDownloads();
-        useNoteStore.getState().fetchCloudNotes();
-      }
-    }
+        // Restore previously downloaded files + notes on this device (new device login)
+        // Only if the user didn't explicitly cancel/skip the data restore screen
+        if (isOnline) {
+          const { useDataRestoreStore } = require('./data-restore.store');
+          const restoreState = useDataRestoreStore.getState();
+          if (!restoreState.wasSkipped) {
+            const { DownloadTracker } = require('../services/downloadTracker.service');
+            DownloadTracker.restoreUserDownloads();
+            useNoteStore.getState().fetchCloudNotes();
+          }
+        }
+      }, 3000); // 3000ms explicit grace delay
+    });
 
     set({ isInitialized: true });
   },
 
-  // Only called on sign-out â€” tears everything down
+  // Only called on sign-out — tears everything down
   terminate: () => {
     get()._stopBackgroundSync();
     get()._channels.forEach(channel => supabase.removeChannel(channel));

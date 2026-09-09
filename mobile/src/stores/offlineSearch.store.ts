@@ -75,6 +75,12 @@ export const useOfflineSearchStore = create<OfflineSearchState>((set) => ({
                         } catch (_) {}
                     }
                     msgOffset += 500;
+
+                    // Defer execution to prevent starving the UI thread
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    // Ensure SQLite WAL frames are not flooded during FTS rebuild
+                    try { await db.execAsync('PRAGMA wal_checkpoint(PASSIVE);'); } catch (e) { await db.runAsync('PRAGMA wal_checkpoint(PASSIVE);').catch(() => {}); }
+
                     if (messages.length < 500) msgHasMore = false;
                 }
             }
@@ -112,6 +118,12 @@ export const useOfflineSearchStore = create<OfflineSearchState>((set) => ({
                         } catch (_) {}
                     }
                     contentOffset += 500;
+
+                    // Defer execution to prevent starving the UI thread
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    // Ensure SQLite WAL frames are not flooded during FTS rebuild
+                    try { await db.execAsync('PRAGMA wal_checkpoint(PASSIVE);'); } catch (e) { await db.runAsync('PRAGMA wal_checkpoint(PASSIVE);').catch(() => {}); }
+
                     if (contentItems.length < 500) contentHasMore = false;
                 }
             }

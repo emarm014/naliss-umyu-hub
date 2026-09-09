@@ -2627,14 +2627,14 @@ export default function ChatScreen() {
 
     return (
         <ScreenErrorBoundary>
-            <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }}>
+            <View style={{ flex: 1, backgroundColor: colors.background }}>
                 <KeyboardAvoidingView
-                    style={[{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#e8ecf1' }]}
+                    style={{ flex: 1, backgroundColor: colors.background }}
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                     keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 12}
                 >
             {/* Header */}
-            <View style={[styles.header, styles.headerLight, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
+            <View style={[styles.header, styles.headerLight, { backgroundColor: colors.background, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
                 <TouchableOpacity style={styles.backButton} onPress={goBack}>
                     <Ionicons name="chevron-back" size={24} color={colors.text} />
                 </TouchableOpacity>
@@ -2974,7 +2974,7 @@ export default function ChatScreen() {
                     <Text style={[styles.readOnlyText, { color: '#ef4444' }]}>Chat has been disabled for this group</Text>
                 </View>
             ) : (
-                <View style={{ backgroundColor: isDark ? '#000000' : colors.card }}>
+                <View style={{ backgroundColor: colors.background }}>
                     {isMediaLocked && (
                         <View style={{ 
                             backgroundColor: isDark ? '#1e1b4b' : '#f5f3ff', 
@@ -2994,11 +2994,11 @@ export default function ChatScreen() {
                         </View>
                     )}
                     <View style={[styles.inputContainer, { 
-                        backgroundColor: isDark ? '#000000' : colors.card, 
+                        backgroundColor: colors.background, 
                         borderTopColor: isDark ? '#121212' : colors.border,
                         paddingBottom: isKeyboardActive
                             ? 12
-                            : Math.max(insets.bottom, 16)
+                            : Math.max(insets.bottom, 12) + 4
                     }]}>
                         <TouchableOpacity 
                             style={styles.stickerButton}
@@ -3024,12 +3024,12 @@ export default function ChatScreen() {
                             <Ionicons name="happy-outline" size={26} color={showStickerPicker ? "#059669" : colors.textMuted} />
                         </TouchableOpacity>
 
-                        <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#000000' : '#f1f5f9', borderRadius: 24 }]}>
+                        <View style={[styles.inputWrapper, { backgroundColor: colors.surface, borderRadius: 24 }]}>
                             <TextInput
                                 ref={inputRef}
                                 style={[styles.input, { 
-                                    backgroundColor: isDark ? '#000000' : '#f1f5f9', 
-                                    color: isDark ? '#ffffff' : colors.text 
+                                    backgroundColor: colors.surface, 
+                                    color: colors.text 
                                 }]}
                                 placeholder="Type a message..."
                                 placeholderTextColor={isDark ? '#888888' : colors.textMuted}
@@ -3088,7 +3088,7 @@ export default function ChatScreen() {
                 } : undefined}
             />
                 </KeyboardAvoidingView>
-            </SafeAreaView>
+            </View>
         </ScreenErrorBoundary>
     );
 }

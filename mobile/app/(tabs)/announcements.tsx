@@ -1,4 +1,4 @@
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -64,6 +64,7 @@ export default function AnnouncementsScreen() {
     const fetchUpcomingEvents = useEventStore(s => s.fetchUpcomingEvents);
     const { colors, isDark } = useTheme();
     const isOnline = useNetworkStore(s => s.isOnline);
+    const insets = useSafeAreaInsets();
 
     const [activeApplyPoolId, setActiveApplyPoolId] = useState<string | null>(null);
     const [viewerVisible, setViewerVisible] = useState(false);
@@ -121,9 +122,9 @@ export default function AnnouncementsScreen() {
     const isLoading = (loadingAnnouncements || loadingEvents) && announcements.length === 0 && events.length === 0;
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+            <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
                 <View style={styles.headerTextRow}>
                     <View>
                         <Text style={[styles.headerTitle, { color: colors.text }]}>Updates</Text>
@@ -138,7 +139,7 @@ export default function AnnouncementsScreen() {
             </View>
 
             {/* Search */}
-            <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.searchContainer, { backgroundColor: colors.background }]}>
                 <View style={[styles.searchBox, { backgroundColor: colors.surface }]}>
                     <Ionicons name='search' size={18} color={colors.textMuted} />
                     <TextInput
@@ -158,7 +159,7 @@ export default function AnnouncementsScreen() {
             </View>
 
             {/* Filter chips */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll} style={[styles.filterRow, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll} style={[styles.filterRow, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
                 {CATEGORIES.map(cat => {
                     const isActive = activeCategory === cat;
                     const cfg = CATEGORY_CONFIG[cat.toLowerCase()];
@@ -235,7 +236,7 @@ export default function AnnouncementsScreen() {
                     fileName={viewerFile.name}
                 />
             )}
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -617,7 +618,7 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f8fafc' },
-    header: { paddingTop: Platform.OS === 'android' ? 40 : 10, paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+    header: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
     headerTextRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     headerTitle: { fontFamily: 'Inter-Bold', fontSize: 28, color: '#0f172a' },
     headerSubtitle: { fontFamily: 'Inter-Medium', fontSize: 13, color: '#64748b', marginTop: 2 },
@@ -664,7 +665,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     content: { flex: 1, paddingHorizontal: 16 },
-    contentContainer: { paddingTop: 16, paddingBottom: 60 },
+    contentContainer: { paddingTop: 16, paddingBottom: 20 },
 
     // Announcement card
     posterCard: {

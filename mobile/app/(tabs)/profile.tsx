@@ -1729,8 +1729,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    fontFamily: 'Inter-Bold',
-    fontSize: 18,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    fontWeight: 'bold',
+    fontStyle: 'italic',
+    fontSize: 14,
     color: COLORS.text,
   },
   statLabel: {

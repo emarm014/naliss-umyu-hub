@@ -18,6 +18,7 @@ interface FeaturedStudentCardProps {
         description?: string | null;
         custom_image_url?: string | null;
         total_congratulations?: number;
+        pool_id?: string;
         users?: {
             full_name?: string;
             username?: string;
@@ -25,9 +26,10 @@ interface FeaturedStudentCardProps {
             level?: string | null;
         };
     };
+    onPress?: () => void;
 }
 
-export function FeaturedStudentCard({ item }: FeaturedStudentCardProps) {
+export function FeaturedStudentCard({ item, onPress }: FeaturedStudentCardProps) {
     const { colors, isDark } = useTheme();
     const [viewerVisible, setViewerVisible] = useState(false);
 
@@ -72,8 +74,13 @@ export function FeaturedStudentCard({ item }: FeaturedStudentCardProps) {
             <TouchableOpacity
                 style={styles.cardContainer}
                 onPress={() => {
-                    if (bgImage) setViewerVisible(true);
-                    else router.push('/fyb' as any);
+                    if (onPress) {
+                        onPress();
+                    } else if (bgImage) {
+                        setViewerVisible(true);
+                    } else {
+                        router.push('/fyb' as any);
+                    }
                 }}
                 activeOpacity={0.9}
             >
@@ -152,6 +159,22 @@ export function FeaturedStudentCard({ item }: FeaturedStudentCardProps) {
                             <Ionicons name="expand-outline" size={14} color="#FFF" />
                         </View>
                     </View>
+
+                    {item.type === 'event_winner' && item.pool_id && (
+                        <TouchableOpacity
+                            style={styles.eventLinkBtn}
+                            onPress={(e) => {
+                                // Prevent triggering the card's image viewer
+                                e.stopPropagation(); 
+                                router.push(`/event-pool/${item.pool_id}` as any);
+                            }}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="trophy-outline" size={16} color="#FFF" />
+                            <Text style={styles.eventLinkText}>View Winning Event Room</Text>
+                            <Ionicons name="arrow-forward" size={14} color="#FFF" style={{ marginLeft: 'auto' }} />
+                        </TouchableOpacity>
+                    )}
                 </View>
             </TouchableOpacity>
 
@@ -305,4 +328,21 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.4)',
     },
+    eventLinkBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(16, 185, 129, 0.85)',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 12,
+        marginTop: 12,
+        gap: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    eventLinkText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '700',
+    }
 });

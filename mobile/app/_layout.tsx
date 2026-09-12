@@ -580,6 +580,9 @@ function RootLayoutNav() {
           const signupState = useSignupStore.getState();
           if (!signupState.isGoogleDelaying) {
             if (tokens.type === 'recovery') {
+              if (signupState.hasCompletedPasswordReset) {
+                return;
+              }
               signupState.setIsRecoveryFlow(true);
             }
             const { error: sessionError } = await supabase.auth.setSession({
@@ -611,6 +614,9 @@ function RootLayoutNav() {
         const signupState = useSignupStore.getState();
         if (!signupState.isGoogleDelaying) {
           if (tokens.type === 'recovery') {
+            if (signupState.hasCompletedPasswordReset) {
+              return;
+            }
             signupState.setIsRecoveryFlow(true);
           }
           const { error: sessionError } = await supabase.auth.setSession({

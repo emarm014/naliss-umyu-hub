@@ -104,10 +104,9 @@ export const useFYBStore = create<FYBState>()(
             .select(`
               id, user_id, type, title, subtitle, description,
               custom_image_url, is_active, published_at, expires_at,
-              total_congratulations, created_at,
+              total_congratulations, created_at, pool_id,
               users!featured_students_user_id_fkey ( full_name, username, avatar_url )
             `)
-            .neq('type' as any, 'event_winner' as any)
             .order('published_at', { ascending: false });
 
           if (error) throw error;

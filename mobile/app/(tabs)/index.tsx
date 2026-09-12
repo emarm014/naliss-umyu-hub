@@ -590,7 +590,11 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
               {activePinnedFeatured.map((item: any) => (
-                <FeaturedStudentCard key={`fyb-${item.id}`} item={item} />
+                <FeaturedStudentCard 
+                  key={`fyb-${item.id}`} 
+                  item={item} 
+                  onPress={() => router.push('/fyb' as any)}
+                />
               ))}
             </View>
           )}

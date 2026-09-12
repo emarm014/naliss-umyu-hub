@@ -271,12 +271,20 @@ function ViewerItemSlide({
   const [isOffline, setIsOffline] = React.useState(false);
   const [retryKey, setRetryKey] = React.useState(0);
   const [readyToPlay, setReadyToPlay] = React.useState(false);
+  const lastProcessedUriRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!isVisible) {
+      lastProcessedUriRef.current = null;
       setReadyToPlay(false);
       return;
     }
+    if (!item.uri) return;
+    if (lastProcessedUriRef.current === item.uri + retryKey) {
+      // Prevent re-processing identical URI on parent re-renders
+      return;
+    }
+    lastProcessedUriRef.current = item.uri + retryKey;
 
     trackViewerEvent({ stage: 'open', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
 

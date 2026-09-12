@@ -887,7 +887,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     if (pathname === target) return;
     lastNavTime.current = now;
     lastNavTarget.current = target;
-    router.replace(target as any);
+    requestAnimationFrame(() => {
+      router.replace(target as any);
+    });
   });
   // Keep the ref closure fresh with the latest pathname & router
   safeNavigate.current = (target: string) => {
@@ -909,7 +911,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       },
       level: 'info',
     });
-    router.replace(target as any);
+    requestAnimationFrame(() => {
+      router.replace(target as any);
+    });
     
     // Auto-clear the lock after 1.5s in case the navigation is swallowed 
     // (e.g. by an active Alert modal dismissing on iOS)
@@ -1188,16 +1192,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  // Still waiting for profile check AND not yet unblocked by offline timeout
-  // Show a minimal loader instead of the full app UI to prevent tab bar flash
-  if (session && isProfileComplete === null && !offlineUnblocked) {
-    return <MinimalLoader />;
-  }
-
-  // BLOCK: Wait for device session check to complete
-  if (session && isProfileComplete === true && !deviceSessionChecked) {
-    return <MinimalLoader />;
-  }
+  const isEvaluatingAuth = 
+    (session && isProfileComplete === null && !offlineUnblocked) ||
+    (session && isProfileComplete === true && !deviceSessionChecked);
 
   // BLOCK: 5-Device limit exceeded screen
   if (sessionError === 'device_limit_exceeded') {
@@ -1396,7 +1393,16 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <MaintenanceScreen message={maintenanceMessage} estimatedEnd={maintenanceEstimatedEnd} />;
   }
 
-  return <>{children}</>;
+  return (
+    <View style={{ flex: 1 }}>
+      {children}
+      {isEvaluatingAuth && (
+        <View style={StyleSheet.absoluteFill}>
+          <MinimalLoader />
+        </View>
+      )}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

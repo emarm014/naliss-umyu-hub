@@ -104,7 +104,7 @@ export default function VotingEngineScreen() {
                     .select('id')
                     .eq('pool_id', id)
                     .eq('user_id', user.id)
-                    .single();
+                    .maybeSingle();
 
                 if (existingSub) {
                     Alert.alert('Already Voted', 'You have already cast your vote in this event.');

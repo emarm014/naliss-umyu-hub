@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -86,7 +86,9 @@ export const useQuizStore = create<QuizState>()(
           });
 
           if (error) {
-            console.error('Submit Quiz Error:', error);
+            if (!error.message?.toLowerCase().includes('already')) {
+              console.error('Submit Quiz Error:', error);
+            }
             return { success: false, error: error.message };
           }
 

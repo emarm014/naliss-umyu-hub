@@ -90,8 +90,9 @@ export default function UpdatePassword() {
       // Success — mark ref BEFORE signOut so the listener ignores the SIGNED_OUT event
       didSucceedRef.current = true;
       const { useSignupStore } = require('../../src/stores/signup.store');
+      useSignupStore.getState().markPasswordResetComplete();
       useSignupStore.getState().setIsRecoveryFlow(false);
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
 
       setIsSuccess(true);
     } catch (err: any) {
@@ -179,7 +180,11 @@ export default function UpdatePassword() {
           <Text style={styles.stateSub}>
             Your password has been changed successfully.{'\n'}You can now access your dashboard.
           </Text>
-          <TouchableOpacity style={styles.btn} onPress={() => router.replace('/auth/login')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btn} onPress={() => {
+            const { useSignupStore } = require('../../src/stores/signup.store');
+            useSignupStore.getState().clearPasswordResetState();
+            router.replace('/auth/login');
+          }} activeOpacity={0.85}>
             <View style={styles.btnInner}>
               <Ionicons name="log-in-outline" size={18} color="#fff" />
               <Text style={styles.btnText}>Sign In</Text>

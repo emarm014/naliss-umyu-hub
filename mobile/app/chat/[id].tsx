@@ -2585,16 +2585,15 @@ export default function ChatScreen() {
 
             const targetIdx = albumItems.findIndex((c: any) => c.id === targetMessageId);
             const safeIdx = Math.max(0, targetIdx);
+            // Batch viewer state updates cleanly in a single tick
             setViewerMediaList(mediaList);
             setViewerInitialIndex(safeIdx);
-            requestAnimationFrame(() => {
-                setViewerFile({
-                    uri: mediaList[safeIdx]?.uri || '',
-                    type: mediaList[safeIdx]?.type || 'image',
-                    name: mediaList[safeIdx]?.name || 'Media',
-                });
-                setViewerVisible(true);
+            setViewerFile({
+                uri: mediaList[safeIdx]?.uri || '',
+                type: mediaList[safeIdx]?.type || 'image',
+                name: mediaList[safeIdx]?.name || 'Media',
             });
+            setViewerVisible(true);
         } else {
             const targetMsg = messages.find(m => m.id === targetMessageId);
             if (!targetMsg) return;
@@ -2610,16 +2609,15 @@ export default function ChatScreen() {
                 uri = targetMsg.local_media_path;
             }
 
+            // Batch viewer state updates cleanly in a single tick
             setViewerMediaList(undefined);
             setViewerInitialIndex(0);
-            requestAnimationFrame(() => {
-                setViewerFile({
-                    uri: uri || targetMsg.content,
-                    type: targetMsg.message_type || 'image',
-                    name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
-                });
-                setViewerVisible(true);
+            setViewerFile({
+                uri: uri || targetMsg.content,
+                type: targetMsg.message_type || 'image',
+                name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
             });
+            setViewerVisible(true);
         }
     };
 

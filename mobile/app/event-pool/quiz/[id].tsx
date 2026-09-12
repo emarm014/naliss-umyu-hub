@@ -111,7 +111,7 @@ export default function QuizEngineScreen() {
                     .select('id')
                     .eq('pool_id', id)
                     .eq('user_id', user.id)
-                    .single();
+                    .maybeSingle();
                 
                 if (existingSub) {
                     Alert.alert('Already Submitted', 'You have already completed this quiz.');

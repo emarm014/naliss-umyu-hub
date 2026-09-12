@@ -149,6 +149,9 @@ export default function LoginScreen() {
           });
           // Log successful login (best-effort, fire-and-forget)
           (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${emailToUse}`, metadata: { email: emailToUse, method: 'email' } }); } catch (_) {} })();
+          
+          // EXPLICIT NAVIGATION: Force transition immediately without waiting on unmounted listener
+          router.replace('/(tabs)');
           break;
       }
     } catch (err: any) {

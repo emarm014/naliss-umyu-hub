@@ -31,12 +31,15 @@ interface SignupState {
   // For artificial delay
   isGoogleDelaying: boolean;
   isRecoveryFlow: boolean;
+  hasCompletedPasswordReset: boolean;
 
   // Timeout tracking â€” timestamp of last activity during signup
   lastActivityTime: number | null;
 
   setIsGoogleDelaying: (delaying: boolean) => void;
   setIsRecoveryFlow: (val: boolean) => void;
+  markPasswordResetComplete: () => void;
+  clearPasswordResetState: () => void;
   setProvider: (provider: 'email' | 'google') => void;
   setCredentials: (email?: string, password?: string) => void;
   setGoogleTokens: (email: string, access_token: string, refresh_token: string) => void;
@@ -76,6 +79,7 @@ const initialState = {
   currentStep: undefined,
   isGoogleDelaying: false,
   isRecoveryFlow: false,
+  hasCompletedPasswordReset: false,
   lastActivityTime: null as number | null,
   otpResendCounts: {} as Record<string, number>,
   otpResendLocks: {} as Record<string, number>,
@@ -88,6 +92,8 @@ export const useSignupStore = create<SignupState>()(
       
       setIsGoogleDelaying: (delaying: boolean) => set({ isGoogleDelaying: delaying }),
       setIsRecoveryFlow: (val: boolean) => set({ isRecoveryFlow: val }),
+      markPasswordResetComplete: () => set({ hasCompletedPasswordReset: true }),
+      clearPasswordResetState: () => set({ hasCompletedPasswordReset: false, isRecoveryFlow: false }),
       setProvider: (provider: 'email' | 'google') => set({ provider }),
 
       setCredentials: (email, password) => set((state) => ({
@@ -199,6 +205,7 @@ export const useSignupStore = create<SignupState>()(
         level: state.level,
         department: state.department,
         currentStep: state.currentStep,
+        hasCompletedPasswordReset: state.hasCompletedPasswordReset,
         lastActivityTime: state.lastActivityTime,
         otpResendCounts: state.otpResendCounts,
         otpResendLocks: state.otpResendLocks,

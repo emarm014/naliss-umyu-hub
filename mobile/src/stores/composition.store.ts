@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
@@ -78,7 +78,9 @@ export const useCompositionStore = create<CompositionState>()(
                     });
 
                     if (error) {
-                        console.error('Submit Evaluation Error:', error);
+                        if (!error.message?.toLowerCase().includes('already')) {
+                            console.error('Submit Evaluation Error:', error);
+                        }
                         return { success: false, error: error.message };
                     }
 

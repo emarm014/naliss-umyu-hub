@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -1514,6 +1514,18 @@ export default function ChatScreen() {
         return result;
     }, [messages, isSearching, searchParams]);
 
+    // FIX: Scope FlatList extraData to message-relevant state only.
+    // viewerVisible / viewerFile are NOT included — flipping them must NOT
+    // force re-render of 300+ chat bubbles beneath the viewer overlay.
+    const flatListExtraData = useMemo(() => ({
+        longPressedMessage,
+        highlightedMessageId,
+        downloadingIds,
+        uploadingIds,
+        downloadedIds,
+        members,
+    }), [longPressedMessage, highlightedMessageId, downloadingIds, uploadingIds, downloadedIds, members]);
+
     const renderMessage = ({ item, index }: { item: any; index: number }) => {
         const isMe = item.sender_id === currentUser?.id;
         const isSystem = item.sender_id === 'system';
@@ -1535,10 +1547,9 @@ export default function ChatScreen() {
 
         const isMedia = item.message_type === 'image' || item.message_type === 'video' || item.message_type === 'audio' || item.isAlbum || item.message_type === 'document';
         const Wrapper = Pressable;
-        const wrapperProps = isMedia ? {
-            onLongPress: () => setLongPressedMessage(item),
-            delayLongPress: 400,
-        } : {
+        // FIX: When isMedia, the outer Wrapper must NOT compete for gesture responder.
+        // Only the inner CachedImage / TouchableOpacity should handle taps & long-press.
+        const wrapperProps = isMedia ? {} : {
             onLongPress: () => setLongPressedMessage(item),
             delayLongPress: 400,
             onPress: () => {
@@ -1957,6 +1968,7 @@ export default function ChatScreen() {
                                         style={styles.videoThumbContainer}
                                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         onLongPress={() => setLongPressedMessage(item)}
+                                        delayLongPress={400}
                                         onPress={() => {
                                             if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
                                                 handleDownloadMedia(item.id, item.content, item.metadata?.name || `video_${item.id}.mp4`);
@@ -2740,6 +2752,7 @@ export default function ChatScreen() {
                 data={groupedMessages}
                 keyExtractor={(item) => item.id}
                 renderItem={renderMessage}
+                extraData={flatListExtraData}
                 contentContainerStyle={styles.messagesList}
                 ListEmptyComponent={
                     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 150 }}>

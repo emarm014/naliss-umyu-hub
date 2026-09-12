@@ -13,6 +13,7 @@ import {
   useWindowDimensions,
   TouchableWithoutFeedback,
   FlatList,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
@@ -299,9 +300,13 @@ function ViewerItemSlide({
     let cancelled = false;
     let downloadResumed: FileSystem.DownloadResumable | null = null;
     
-    setTimeout(() => {
+    // FIX: Defer native codec initialization until modal animation completes.
+    // setTimeout(50) was too fragile — InteractionManager properly waits for
+    // all JS-driven animations (modal slide-up) to finish before mounting
+    // the heavy native <Video>/<Audio> expo-av component.
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
       if (!cancelled) setReadyToPlay(true);
-    }, 50);
+    });
 
     setIsDownloading(true);
     setDownloadError(null);
@@ -431,6 +436,7 @@ function ViewerItemSlide({
     resolve();
     return () => {
       cancelled = true;
+      if (interactionHandle) interactionHandle.cancel();
       if (downloadResumed) {
         downloadResumed.pauseAsync().catch(() => {});
       }

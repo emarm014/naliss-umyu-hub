@@ -95,7 +95,7 @@ export const SafeOverlayContainer = ({
                 <Animated.View style={[styles.backdrop, { opacity }]} />
             </TouchableWithoutFeedback>
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={[styles.keyboardView, overlayStyle]}
                 pointerEvents="box-none"
             >

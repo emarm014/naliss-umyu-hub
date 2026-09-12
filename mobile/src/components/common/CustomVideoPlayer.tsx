@@ -23,6 +23,7 @@ interface CustomVideoPlayerProps {
   onPlaybackStatusUpdate?: (status: AVPlaybackStatus) => void;
   showControls?: boolean;
   autoPlay?: boolean;
+  onSingleTap?: () => void;
 }
 
 function formatTime(millis: number): string {
@@ -51,6 +52,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   onPlaybackStatusUpdate,
   showControls = true,
   autoPlay = false,
+  onSingleTap,
 }) => {
   const videoRef = useRef<Video>(null);
   const hideControlsTimer = useRef<any>(null);
@@ -113,6 +115,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     } else {
       showControlsOverlay();
     }
+    if (onSingleTap) onSingleTap();
   };
 
   const handleStatusUpdate = (s: AVPlaybackStatus) => {

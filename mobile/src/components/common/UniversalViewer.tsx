@@ -128,9 +128,10 @@ interface ZoomableImageProps {
   uri: string;
   onImageError: () => void;
   isHalfScreen?: boolean;
+  onSingleTap?: () => void;
 }
 
-const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalfScreen }) => {
+const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalfScreen, onSingleTap }) => {
   const { height } = useWindowDimensions();
   return (
     <ScrollView
@@ -140,12 +141,14 @@ const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalf
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
     >
-      <Image
-        source={{ uri }}
-        style={[styles.image, isHalfScreen && { height: height * 0.45 }]}
-        resizeMode="contain"
-        onError={onImageError}
-      />
+      <TouchableWithoutFeedback onPress={onSingleTap}>
+        <Image
+          source={{ uri }}
+          style={[styles.image, isHalfScreen && { height: height * 0.45 }]}
+          resizeMode="contain"
+          onError={onImageError}
+        />
+      </TouchableWithoutFeedback>
     </ScrollView>
   );
 };
@@ -207,10 +210,10 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
 
   switch (fileType) {
     case 'image':
-      return <ZoomableImage uri={localUri} onImageError={onImageError} isHalfScreen={isHalfScreen} />;
+      return <ZoomableImage uri={localUri} onImageError={onImageError} isHalfScreen={isHalfScreen} onSingleTap={onSingleTap} />;
 
     case 'video':
-      return <VideoPlayer localUri={localUri} remoteUrl={fileUri} />;
+      return <VideoPlayer localUri={localUri} remoteUrl={fileUri} onSingleTap={onSingleTap} />;
 
     case 'audio':
       return <AudioPlayer uri={localUri} fileName={fileName} />;
@@ -594,49 +597,47 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
         <View style={styles.container}>
           
           {/* Main Content Area (Rendered first so header floats on top) */}
-          <TouchableWithoutFeedback onPress={() => setShowControls(!showControls)}>
-            <View style={styles.content}>
-              {isMultiItem ? (
-                <FlatList
-                  data={activeMediaList}
-                  horizontal
-                  pagingEnabled
-                  showsHorizontalScrollIndicator={false}
-                  snapToInterval={width}
-                  snapToAlignment="center"
-                  decelerationRate="fast"
-                  initialScrollIndex={initialIndex && initialIndex < activeMediaList.length ? initialIndex : 0}
-                  getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
-                  onMomentumScrollEnd={(e) => {
-                    const idx = Math.round(e.nativeEvent.contentOffset.x / width);
-                    if (idx >= 0 && idx < activeMediaList.length) {
-                      setCurrentIndex(idx);
-                    }
-                  }}
-                  keyExtractor={(item, index) => `viewer-${item.fileId || item.uri}-${index}`}
-                  renderItem={({ item }) => (
-                    <View style={{ width, height: '100%', justifyContent: 'center' }}>
-                      <ViewerItemSlide
-                        item={item}
-                        isVisible={isVisible}
-                        pdfEngine={pdfEngine}
-                        isHalfScreen={isHalfScreen}
-                        onSingleTap={() => setShowControls(!showControls)}
-                      />
-                    </View>
-                  )}
-                />
-              ) : (
-                <ViewerItemSlide
-                  item={activeMediaList[0]}
-                  isVisible={isVisible}
-                  pdfEngine={pdfEngine}
-                  isHalfScreen={isHalfScreen}
-                  onSingleTap={() => setShowControls(!showControls)}
-                />
-              )}
-            </View>
-          </TouchableWithoutFeedback>
+          <View style={styles.content}>
+            {isMultiItem ? (
+              <FlatList
+                data={activeMediaList}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={width}
+                snapToAlignment="center"
+                decelerationRate="fast"
+                initialScrollIndex={initialIndex && initialIndex < activeMediaList.length ? initialIndex : 0}
+                getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+                onMomentumScrollEnd={(e) => {
+                  const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+                  if (idx >= 0 && idx < activeMediaList.length) {
+                    setCurrentIndex(idx);
+                  }
+                }}
+                keyExtractor={(item, index) => `viewer-${item.fileId || item.uri}-${index}`}
+                renderItem={({ item }) => (
+                  <View style={{ width, height: '100%', justifyContent: 'center' }}>
+                    <ViewerItemSlide
+                      item={item}
+                      isVisible={isVisible}
+                      pdfEngine={pdfEngine}
+                      isHalfScreen={isHalfScreen}
+                      onSingleTap={() => setShowControls(!showControls)}
+                    />
+                  </View>
+                )}
+              />
+            ) : (
+              <ViewerItemSlide
+                item={activeMediaList[0]}
+                isVisible={isVisible}
+                pdfEngine={pdfEngine}
+                isHalfScreen={isHalfScreen}
+                onSingleTap={() => setShowControls(!showControls)}
+              />
+            )}
+          </View>
 
           {/* Floating Header */}
           {shouldShowControls && (
@@ -759,7 +760,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 };
 
 // ——— Video Player — expo-av native player ————————————————————————
-function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteUrl: string }) {
+function VideoPlayer({ localUri, remoteUrl, onSingleTap }: { localUri: string | null; remoteUrl: string; onSingleTap?: () => void }) {
   const rawSrc = localUri || remoteUrl;
   const videoSrc = rawSrc && !rawSrc.startsWith('http') && !rawSrc.startsWith('file://')
     ? `file://${rawSrc}`
@@ -772,6 +773,7 @@ function VideoPlayer({ localUri, remoteUrl }: { localUri: string | null; remoteU
         resizeMode={ResizeMode.CONTAIN}
         autoPlay={true}
         showControls={true}
+        onSingleTap={onSingleTap}
       />
     </View>
   );

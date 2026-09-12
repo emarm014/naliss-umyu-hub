@@ -14,6 +14,7 @@ import {
   TouchableWithoutFeedback,
   FlatList,
   InteractionManager,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
@@ -300,14 +301,11 @@ function ViewerItemSlide({
     let cancelled = false;
     let downloadResumed: FileSystem.DownloadResumable | null = null;
     
-    // FIX: Defer native codec initialization until modal animation completes.
-    // setTimeout(50) was too fragile — InteractionManager properly waits for
-    // all JS-driven animations (modal slide-up) to finish before mounting
-    // the heavy native <Video>/<Audio> expo-av component.
-    const interactionHandle = InteractionManager.runAfterInteractions(() => {
-      if (!cancelled) setReadyToPlay(true);
-    });
-
+    // FIX: Defer the ENTIRE file-resolution pipeline until the modal
+    // slide-up animation completes. Previously only readyToPlay was
+    // deferred, but the FileSystem.getInfoAsync bridge calls and the
+    // resulting state-update cascade were still running during the
+    // animation, causing frame drops and perceived freezes.
     setIsDownloading(true);
     setDownloadError(null);
     setLocalUri(null);
@@ -433,7 +431,14 @@ function ViewerItemSlide({
       }
     };
 
-    resolve();
+    // Gate everything behind InteractionManager so bridge calls and
+    // state-update cascades don't compete with the modal animation.
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+      if (!cancelled) {
+        setReadyToPlay(true);
+        resolve();
+      }
+    });
     return () => {
       cancelled = true;
       if (interactionHandle) interactionHandle.cancel();
@@ -578,95 +583,19 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   };
 
   return (
-    <SafeOverlayContainer
+    <Modal
       visible={isVisible}
-      onClose={onClose}
-      animationType="slide-up"
-      dismissible={false}
-      overlayStyle={StyleSheet.absoluteFill}
-      useNativeModal={false}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.85)' }]}>
-        <View style={[
-          styles.container, 
-          isLandscape && { marginTop: 0, borderRadius: 0 },
-          isHalfScreen && { marginTop: height * 0.45, borderTopLeftRadius: 32, borderTopRightRadius: 32 }
-        ]}>
-          {/* Header */}
-          {shouldShowControls && (
-            <View style={[styles.header, isLandscape && styles.landscapeOverlayHeader]}>
-              <TouchableOpacity onPress={() => {
-              trackViewerEvent({ stage: 'close', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
-              onClose();
-            }} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color={COLORS.black} />
-              </TouchableOpacity>
-
-              <View style={styles.titleContainer}>
-                <Text style={styles.title} numberOfLines={1}>
-                  {isMultiItem ? `${currentIndex + 1} of ${activeMediaList.length}` : activeItem.name}
-                </Text>
-                <View style={styles.badgeRow}>
-                  <Text style={styles.subtitle}>IN-APP VIEWER</Text>
-                </View>
-              </View>
-
-              <View style={{ width: 40 }} />
-            </View>
-          )}
-
-          {/* PDF Engine Switcher Bar */}
-          {shouldShowControls && (activeItem.type === 'pdf' || activeItem.type === 'document') && (
-            <View style={[engineStyles.bar, isLandscape && styles.landscapeOverlayTabs]}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}
-              >
-                <TouchableOpacity
-                  style={[engineStyles.btn, pdfEngine === 'local' && engineStyles.btnActive]}
-                  onPress={() => setPdfEngine('local')}
-                >
-                  <Ionicons name="document-text-outline" size={14} color={pdfEngine === 'local' ? '#fff' : '#64748b'} />
-                  <Text style={[engineStyles.btnText, pdfEngine === 'local' && engineStyles.btnTextActive]}>Fit Width</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[engineStyles.btn, pdfEngine === 'local_hd' && engineStyles.btnActive]}
-                  onPress={() => setPdfEngine('local_hd')}
-                >
-                  <Ionicons name="sparkles-outline" size={14} color={pdfEngine === 'local_hd' ? '#fff' : '#64748b'} />
-                  <Text style={[engineStyles.btnText, pdfEngine === 'local_hd' && engineStyles.btnTextActive]}>Closer View</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    engineStyles.btn,
-                    pdfEngine === 'google' && engineStyles.btnActive,
-                  ]}
-                  onPress={() => setPdfEngine('google')}
-                >
-                  <Ionicons name="logo-google" size={14} color={pdfEngine === 'google' ? '#fff' : '#64748b'} />
-                  <Text style={[engineStyles.btnText, pdfEngine === 'google' && engineStyles.btnTextActive]}>Google Web</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    engineStyles.btn,
-                    pdfEngine === 'microsoft' && engineStyles.btnActive,
-                  ]}
-                  onPress={() => setPdfEngine('microsoft')}
-                >
-                  <Ionicons name="logo-windows" size={14} color={pdfEngine === 'microsoft' ? '#fff' : '#64748b'} />
-                  <Text style={[engineStyles.btnText, pdfEngine === 'microsoft' && engineStyles.btnTextActive]}>MS View</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Main Content Area */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]}>
+        <View style={styles.container}>
+          
+          {/* Main Content Area (Rendered first so header floats on top) */}
           <TouchableWithoutFeedback onPress={() => setShowControls(!showControls)}>
-            <View style={[styles.content, isLandscape && { position: 'absolute', top: 0, left: 0, width, height, zIndex: 1 }]}>
+            <View style={styles.content}>
               {isMultiItem ? (
                 <FlatList
                   data={activeMediaList}
@@ -686,7 +615,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   }}
                   keyExtractor={(item, index) => `viewer-${item.fileId || item.uri}-${index}`}
                   renderItem={({ item }) => (
-                    <View style={{ width, height: '100%' }}>
+                    <View style={{ width, height: '100%', justifyContent: 'center' }}>
                       <ViewerItemSlide
                         item={item}
                         isVisible={isVisible}
@@ -709,9 +638,78 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             </View>
           </TouchableWithoutFeedback>
 
-          {/* Footer */}
+          {/* Floating Header */}
+          {shouldShowControls && (
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => {
+                trackViewerEvent({ stage: 'close', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
+                onClose();
+              }} style={styles.closeButton}>
+                <Ionicons name="arrow-back" size={26} color="#ffffff" />
+              </TouchableOpacity>
+
+              <View style={styles.titleContainer}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {isMultiItem ? `${currentIndex + 1} of ${activeMediaList.length}` : activeItem.name}
+                </Text>
+              </View>
+
+              <View style={{ width: 40 }} />
+            </View>
+          )}
+
+          {/* PDF Engine Switcher Bar */}
+          {shouldShowControls && (activeItem.type === 'pdf' || activeItem.type === 'document') && (
+            <View style={engineStyles.bar}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}
+              >
+                <TouchableOpacity
+                  style={[engineStyles.btn, pdfEngine === 'local' && engineStyles.btnActive]}
+                  onPress={() => setPdfEngine('local')}
+                >
+                  <Ionicons name="document-text-outline" size={14} color={pdfEngine === 'local' ? '#000' : '#fff'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'local' && engineStyles.btnTextActive]}>Fit Width</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[engineStyles.btn, pdfEngine === 'local_hd' && engineStyles.btnActive]}
+                  onPress={() => setPdfEngine('local_hd')}
+                >
+                  <Ionicons name="sparkles-outline" size={14} color={pdfEngine === 'local_hd' ? '#000' : '#fff'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'local_hd' && engineStyles.btnTextActive]}>Closer View</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    engineStyles.btn,
+                    pdfEngine === 'google' && engineStyles.btnActive,
+                  ]}
+                  onPress={() => setPdfEngine('google')}
+                >
+                  <Ionicons name="logo-google" size={14} color={pdfEngine === 'google' ? '#000' : '#fff'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'google' && engineStyles.btnTextActive]}>Google Web</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    engineStyles.btn,
+                    pdfEngine === 'microsoft' && engineStyles.btnActive,
+                  ]}
+                  onPress={() => setPdfEngine('microsoft')}
+                >
+                  <Ionicons name="logo-windows" size={14} color={pdfEngine === 'microsoft' ? '#000' : '#fff'} />
+                  <Text style={[engineStyles.btnText, pdfEngine === 'microsoft' && engineStyles.btnTextActive]}>MS View</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Floating Footer */}
           {shouldShowControls && (showDownload || showShare || onViewProfile) && (
-            <View style={[styles.footer, !showShare && !showDownload && { justifyContent: 'center' }, isLandscape && styles.landscapeOverlayFooter]}>
+            <View style={styles.footer}>
               {showDownload && (
                 <TouchableOpacity
                   style={[styles.footerAction, isSaving && { opacity: 0.5 }]}
@@ -719,16 +717,16 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   disabled={isSaving}
                 >
                   {isSaving ? (
-                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
                     <Ionicons
                       name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
-                      size={20}
-                      color={isSaved ? '#10b981' : COLORS.primary}
+                      size={24}
+                      color={isSaved ? '#10b981' : '#ffffff'}
                     />
                   )}
                   <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
-                    {isSaving ? 'Saving…' : isSaved ? 'Saved!' : 'Save to Device'}
+                    {isSaving ? 'Saving…' : isSaved ? 'Saved!' : 'Save'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -739,9 +737,9 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   disabled={isSharing}
                 >
                   {isSharing ? (
-                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
+                    <Ionicons name="share-social-outline" size={24} color="#ffffff" />
                   )}
                   <Text style={styles.footerActionText}>{isSharing ? 'Sharing…' : 'Share'}</Text>
                 </TouchableOpacity>
@@ -756,7 +754,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
           )}
         </View>
       </View>
-    </SafeOverlayContainer>
+    </Modal>
   );
 };
 
@@ -1099,11 +1097,15 @@ const audioStyles = StyleSheet.create({
 
 const engineStyles = StyleSheet.create({
   bar: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 100 : 90,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     gap: 8,
   },
   btn: {
@@ -1114,71 +1116,85 @@ const engineStyles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 10,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   btnActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: '#ffffff',
+    borderColor: '#ffffff',
   },
   btnText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748b',
+    color: '#ffffff',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   btnTextActive: {
-    color: '#fff',
+    color: '#000000',
   },
 });
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    marginTop: Platform.OS === 'ios' ? 60 : 40,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    overflow: 'hidden',
+    backgroundColor: '#000000',
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingTop: Platform.OS === 'ios' ? 50 : 40,
+    paddingBottom: 15,
+    paddingHorizontal: 15,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 10,
   },
-  closeButton: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 12 },
+  closeButton: { padding: 8 },
   titleContainer: { flex: 1, paddingHorizontal: 15 },
-  title: { fontSize: 16, fontWeight: '800', color: COLORS.black },
+  title: { fontSize: 18, fontWeight: '600', color: '#ffffff' },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   subtitle: { fontSize: 10, fontWeight: '600', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 },
   offlineBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#16a34a', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 3 },
   offlineBadgeText: { fontSize: 8, fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 },
   actionButton: { padding: 8 },
-  content: { flex: 1 },
+  content: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   webview: { flex: 1, width },
-  image: { width, height: height * 0.75, backgroundColor: '#f1f5f9' },
-  videoContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center' },
+  image: { width, height: '100%', resizeMode: 'contain', backgroundColor: '#000000' },
+  videoContainer: { flex: 1, backgroundColor: '#000000', justifyContent: 'center' },
   video: {
     width: '100%',
-    aspectRatio: 16 / 9,
+    height: '100%',
     backgroundColor: '#000000',
-    alignSelf: 'stretch',
+    alignSelf: 'center',
   },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   progressRing: { marginBottom: 16 },
-  progressBarOuter: { width: '80%', height: 6, backgroundColor: '#e2e8f0', borderRadius: 3, overflow: 'hidden', marginTop: 12 },
-  progressBarInner: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
-  loadingText: { marginTop: 8, fontSize: 14, fontWeight: '600', color: '#64748b', textAlign: 'center' },
+  progressBarOuter: { width: '80%', height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2, overflow: 'hidden', marginTop: 12 },
+  progressBarInner: { height: '100%', backgroundColor: '#ffffff', borderRadius: 2 },
+  loadingText: { marginTop: 8, fontSize: 14, fontWeight: '500', color: '#ffffff', textAlign: 'center' },
   errorText: { marginTop: 16, fontSize: 14, fontWeight: '600', color: '#ef4444', textAlign: 'center', maxWidth: 280, lineHeight: 22 },
-  retryButton: { marginTop: 24, paddingHorizontal: 32, paddingVertical: 12, backgroundColor: COLORS.primary, borderRadius: 16 },
-  retryText: { fontSize: 14, fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: 1 },
-  footer: { flexDirection: 'row', padding: 20, borderTopWidth: 1, borderTopColor: '#f1f5f9', gap: 12 },
-  footerAction: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', paddingVertical: 12, borderRadius: 16, gap: 8 },
-  footerActionText: { fontSize: 12, fontWeight: '700', color: COLORS.black },
+  retryButton: { marginTop: 24, paddingHorizontal: 32, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 16 },
+  retryText: { fontSize: 14, fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: 1 },
+  footer: { 
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    padding: 20, 
+    paddingBottom: Platform.OS === 'ios' ? 40 : 30,
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    gap: 24,
+    zIndex: 10,
+  },
+  footerAction: { alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 60 },
+  footerActionText: { fontSize: 13, fontWeight: '500', color: '#ffffff' },
   placeholderContainer: { flex: 1, padding: 40, alignItems: 'center', justifyContent: 'center' },
   placeholderText: { fontSize: 14, color: '#64748b', marginTop: 10 },
   fileNameText: { fontSize: 18, fontWeight: '800', color: COLORS.black, marginVertical: 10, textAlign: 'center' },

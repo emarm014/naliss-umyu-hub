@@ -57,7 +57,7 @@ export let migrationPromise: Promise<void>;
 export const mmkvStorage: StateStorage = {
   setItem: async (name, value) => {
     await migrationPromise;
-    if (useFallback) {
+    if (useFallback || !storage) {
       await AsyncStorage.setItem(name, value);
     } else {
       storage.set(name, value);
@@ -65,7 +65,7 @@ export const mmkvStorage: StateStorage = {
   },
   getItem: async (name) => {
     await migrationPromise;
-    if (useFallback) {
+    if (useFallback || !storage) {
       return await AsyncStorage.getItem(name);
     } else {
       const value = storage.getString(name);
@@ -74,7 +74,7 @@ export const mmkvStorage: StateStorage = {
   },
   removeItem: async (name) => {
     await migrationPromise;
-    if (useFallback) {
+    if (useFallback || !storage) {
       await AsyncStorage.removeItem(name);
     } else {
       storage.remove(name);

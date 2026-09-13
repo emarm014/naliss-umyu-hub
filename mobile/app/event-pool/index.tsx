@@ -62,9 +62,25 @@ export default function EventPoolDashboard() {
 
     const getServerTime = () => new Date(Date.now() + serverTimeOffset);
 
-    const livePools = useMemo(() => pools.filter(p => p.status === 'live').reverse(), [pools]);
-    const scheduledPools = useMemo(() => pools.filter(p => p.status === 'scheduled').reverse(), [pools]);
-    const completedPools = useMemo(() => pools.filter(p => p.status === 'completed'), [pools]);
+    const computedPools = useMemo(() => {
+        return pools.map(p => {
+            let computedStatus = p.status;
+            if (p.status === 'scheduled' || p.status === 'live') {
+                const now = getServerTime();
+                const start = new Date(p.start_time);
+                const end = p.end_time ? new Date(p.end_time) : null;
+                if (isBefore(now, start)) computedStatus = 'scheduled';
+                else if (end && isBefore(end, now)) computedStatus = 'completed';
+                else computedStatus = 'live';
+            }
+            return { ...p, computedStatus };
+        });
+    }, [pools, tick, serverTimeOffset]); // tick updates every second
+
+    const livePools = useMemo(() => computedPools.filter(p => p.computedStatus === 'live').reverse(), [computedPools]);
+    const scheduledPools = useMemo(() => computedPools.filter(p => p.computedStatus === 'scheduled').reverse(), [computedPools]);
+    const draftPools = useMemo(() => computedPools.filter(p => p.computedStatus === 'draft').reverse(), [computedPools]);
+    const completedPools = useMemo(() => computedPools.filter(p => p.computedStatus === 'completed' || p.computedStatus === 'archived'), [computedPools]);
 
     const cardBg = colors.card;
     const textColor = colors.text;
@@ -139,10 +155,19 @@ export default function EventPoolDashboard() {
                             {(item.type || 'EVENT').toUpperCase()} • {item.participation_rule.replace('_', ' ').toUpperCase()}
                         </Text>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: isLive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)' }]}>
-                        <View style={[styles.statusDot, { backgroundColor: isLive ? '#10b981' : '#f59e0b' }]} />
-                        <Text style={[styles.statusText, { color: isLive ? '#10b981' : '#f59e0b' }]}>
-                            {isLive ? 'LIVE' : 'SCHEDULED'}
+                    <View style={[
+                        styles.statusBadge, 
+                        { backgroundColor: item.status === 'draft' ? 'rgba(156, 163, 175, 0.15)' : isLive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)' }
+                    ]}>
+                        <View style={[
+                            styles.statusDot, 
+                            { backgroundColor: item.status === 'draft' ? '#9ca3af' : isLive ? '#10b981' : '#f59e0b' }
+                        ]} />
+                        <Text style={[
+                            styles.statusText, 
+                            { color: item.status === 'draft' ? '#9ca3af' : isLive ? '#10b981' : '#f59e0b' }
+                        ]}>
+                            {item.status === 'draft' ? 'DRAFT (LOCKED)' : isLive ? 'LIVE' : 'SCHEDULED'}
                         </Text>
                     </View>
                 </View>
@@ -175,7 +200,12 @@ export default function EventPoolDashboard() {
                             </View>
                         )}
 
-                        {isLive ? (
+                        {item.status === 'draft' ? (
+                            <View style={[styles.joinBtn, { backgroundColor: '#f3f4f6' }]}>
+                                <Ionicons name="lock-closed" size={18} color="#9ca3af" />
+                                <Text style={[styles.joinBtnText, { color: '#9ca3af' }]}>Pending Setup</Text>
+                            </View>
+                        ) : isLive ? (
                             <TouchableOpacity 
                                 style={[styles.joinBtn, (!isRegistered && !isRegistrationEnabled) && { backgroundColor: '#9ca3af' }]}
                                 onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: item.id } } as any)}
@@ -187,10 +217,13 @@ export default function EventPoolDashboard() {
                         ) : (
                             <View>
                                 {isRegistered || appStatus === 'approved' ? (
-                                    <View style={[styles.joinBtn, { backgroundColor: '#22c55e' }]}>
+                                    <TouchableOpacity 
+                                        style={[styles.joinBtn, { backgroundColor: '#22c55e' }]}
+                                        onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: item.id } } as any)}
+                                    >
                                         <Ionicons name="ticket" size={18} color="#fff" />
-                                        <Text style={styles.joinBtnText}>Ticket Secured</Text>
-                                    </View>
+                                        <Text style={styles.joinBtnText}>View Scheduled Details</Text>
+                                    </TouchableOpacity>
                                 ) : appStatus === 'pending' ? (
                                     <View style={[styles.joinBtn, { backgroundColor: '#eab308' }]}>
                                         <Ionicons name="time" size={18} color="#fff" />
@@ -315,8 +348,15 @@ export default function EventPoolDashboard() {
                         </View>
                     )}
 
+                    {draftPools.length > 0 && (
+                        <View style={[styles.section, { marginTop: (livePools.length > 0 || scheduledPools.length > 0) ? 24 : 0 }]}>
+                            <Text style={[styles.sectionTitle, { color: textColor }]}>In Preparation</Text>
+                            {draftPools.map(pool => renderPoolCard(pool, false))}
+                        </View>
+                    )}
+
                     {completedPools.length > 0 && (
-                        <View style={[styles.section, { marginTop: (livePools.length > 0 || scheduledPools.length > 0) ? 32 : 0 }]}>
+                        <View style={[styles.section, { marginTop: (livePools.length > 0 || scheduledPools.length > 0 || draftPools.length > 0) ? 32 : 0 }]}>
                             <View style={styles.historyHeader}>
                                 <Ionicons name="time" size={20} color={subtextColor} />
                                 <Text style={[styles.sectionTitle, { color: textColor, marginBottom: 0, marginLeft: 8 }]}>Past Events & Winners</Text>

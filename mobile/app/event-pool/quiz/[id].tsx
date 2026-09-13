@@ -1,6 +1,6 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, BackHandler, Animated, Image } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, BackHandler, Animated, Image, AppState, AppStateStatus } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../src/api/supabase/client';
@@ -8,7 +8,7 @@ import { useTheme } from '../../../src/stores/theme.store';
 import { useAuthStore } from '../../../src/stores';
 import { useQuizStore } from '../../../src/stores/quiz.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
-import { differenceInSeconds } from 'date-fns';
+
 
 
 type QuizQuestion = {
@@ -45,6 +45,9 @@ export default function QuizEngineScreen() {
     const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({});
 
     const fadeAnim = useRef(new Animated.Value(1)).current;
+    const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+    const pollingFallbackRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const [hasSubmitted, setHasSubmitted] = useState(false);
 
     const answers = getAnswers(id);
 
@@ -163,25 +166,41 @@ export default function QuizEngineScreen() {
         loadOrSetStartTime();
     }, [id, user]);
 
-    // Timer logic
-    useEffect(() => {
-        if (isLoading || !poolInfo) return;
-
-        // Initialize timeLeft once based on server-offset corrected times
-        const adjustedNow = new Date(Date.now() + serverTimeOffset);
-        let initialTimeLeft = 999999;
+    // Compute a stable absolute deadline timestamp (ms) from pool constraints.
+    // This is the single source of truth for "when does this quiz end" and is
+    // used by both the tick-based timer and the AppState reconciliation logic.
+    const deadlineTimestamp = useMemo(() => {
+        if (!poolInfo) return null;
+        let deadline = Infinity;
 
         if (poolInfo.end_time) {
-            const endDate = new Date(poolInfo.end_time);
-            initialTimeLeft = Math.min(initialTimeLeft, differenceInSeconds(endDate, adjustedNow));
+            deadline = Math.min(deadline, new Date(poolInfo.end_time).getTime());
         }
 
-        if (poolInfo.target_constraints?.total_time_limit_sec) {
-            const targetDate = new Date(poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000);
-            initialTimeLeft = Math.min(initialTimeLeft, differenceInSeconds(targetDate, adjustedNow));
+        if (poolInfo.target_constraints?.total_time_limit_sec && poolStartedAt) {
+            deadline = Math.min(
+                deadline,
+                poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000
+            );
         }
 
-        setTimeLeft(initialTimeLeft > 0 ? initialTimeLeft : 0);
+        return deadline === Infinity ? null : deadline;
+    }, [poolInfo, poolStartedAt]);
+
+    // Timer logic
+    useEffect(() => {
+        if (isLoading || !poolInfo || deadlineTimestamp === null) return;
+
+        // Initialize timeLeft once based on server-offset corrected times
+        const currentEstimatedServerTime = Date.now() + serverTimeOffset;
+        const initialTimeLeft = Math.max(0, Math.floor((deadlineTimestamp - currentEstimatedServerTime) / 1000));
+
+        setTimeLeft(initialTimeLeft);
+
+        if (initialTimeLeft <= 0) {
+            handleFinalSubmit(true);
+            return;
+        }
 
         let lastTickTime = Date.now();
         const interval = setInterval(() => {
@@ -204,7 +223,7 @@ export default function QuizEngineScreen() {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [poolInfo, serverTimeOffset, isLoading, poolStartedAt]);
+    }, [poolInfo, serverTimeOffset, isLoading, poolStartedAt, deadlineTimestamp]);
 
     // Per-question timer
     useEffect(() => {
@@ -233,7 +252,7 @@ export default function QuizEngineScreen() {
     }, [currentIndex, poolInfo, isLoading, isSubmittingGlobal, questions.length]);
 
     const handleFinalSubmit = async (autoSubmitted = false) => {
-        if (isSubmittingGlobal) return;
+        if (isSubmittingGlobal || hasSubmitted) return;
         
         if (!autoSubmitted) {
             const unanswered = questions.filter(q => !answers[q.id]).length;
@@ -253,6 +272,7 @@ export default function QuizEngineScreen() {
     };
 
     const executeSubmit = async () => {
+        setHasSubmitted(true);
         const result = await submitQuiz(id);
         if (result.success) {
             clearAnswers(id);
@@ -260,9 +280,111 @@ export default function QuizEngineScreen() {
                 { text: 'OK', onPress: () => router.back() }
             ]);
         } else {
+            // Allow retry on failure (but not on "already submitted" errors)
+            if (!result.error?.toLowerCase().includes('already')) {
+                setHasSubmitted(false);
+            }
             Alert.alert('Submission Failed', result.error || 'Please try again. Your answers are saved locally.');
         }
     };
+
+    // =====================================================================
+    // APPSTATE LIFECYCLE — DRIFT RECONCILIATION
+    // =====================================================================
+    const reconcileQuizTimerOnForeground = useCallback(() => {
+        if (isSubmittingGlobal || hasSubmitted || deadlineTimestamp === null) return;
+
+        const currentEstimatedServerTime = Date.now() + serverTimeOffset;
+        const remainingSeconds = Math.max(0, Math.floor((deadlineTimestamp - currentEstimatedServerTime) / 1000));
+
+        if (remainingSeconds <= 0) {
+            // Time fully expired while app was minimized.
+            // Force immediate submission with current saved answers to beat the 30s server grace window.
+            console.warn('[QuizTimer] Time expired in background. Forcing emergency auto-submit.');
+            handleFinalSubmit(true);
+        } else {
+            // Update local state timer immediately so the UI skips forward without tick lag
+            setTimeLeft(remainingSeconds);
+        }
+    }, [serverTimeOffset, deadlineTimestamp, isSubmittingGlobal, hasSubmitted]);
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+            if (
+                appStateRef.current.match(/inactive|background/) &&
+                nextAppState === 'active'
+            ) {
+                // App just came back to foreground
+                reconcileQuizTimerOnForeground();
+            }
+            appStateRef.current = nextAppState;
+        });
+
+        return () => subscription.remove();
+    }, [reconcileQuizTimerOnForeground]);
+
+    // =====================================================================
+    // REALTIME CHANNEL — POOL STATUS + RECONNECTION FALLBACK
+    // =====================================================================
+    const triggerPollingFallback = useCallback(() => {
+        // Only start one polling loop
+        if (pollingFallbackRef.current) return;
+
+        console.warn('[QuizRT] Channel disconnected. Falling back to 15s polling.');
+        pollingFallbackRef.current = setInterval(async () => {
+            try {
+                const { data, error } = await (supabase as any)
+                    .from('event_pools')
+                    .select('id, title, status, end_time, target_constraints')
+                    .eq('id', id)
+                    .single();
+                if (!error && data) {
+                    setPoolInfo((prev: any) => prev ? { ...prev, ...data } : data);
+                }
+            } catch (e) {
+                console.error('[QuizRT] Polling fallback error:', e);
+            }
+        }, 15_000);
+    }, [id]);
+
+    const clearPollingFallback = useCallback(() => {
+        if (pollingFallbackRef.current) {
+            clearInterval(pollingFallbackRef.current);
+            pollingFallbackRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!id) return;
+
+        const channel = supabase.channel(`quiz_pool_${id}_${Date.now()}`)
+            .on('postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` },
+                (payload) => {
+                    if (payload.new) {
+                        setPoolInfo((prev: any) => prev ? { ...prev, ...payload.new } : payload.new);
+                    }
+                }
+            )
+            .on('system' as any, {} as any, (payload: any) => {
+                if (
+                    payload.status === 'CHANNEL_ERROR' ||
+                    payload.status === 'TIMED_OUT' ||
+                    payload.status === 'CLOSED'
+                ) {
+                    triggerPollingFallback();
+                }
+                if (payload.status === 'SUBSCRIBED') {
+                    clearPollingFallback();
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+            clearPollingFallback();
+        };
+    }, [id, triggerPollingFallback, clearPollingFallback]);
 
     const handleOptionSelect = async (qId: string, option: string) => {
         const q = questions.find(x => x.id === qId);

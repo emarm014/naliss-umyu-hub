@@ -1,493 +1,343 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, BackHandler, Image } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../src/api/supabase/client';
 import { useTheme } from '../../../src/stores/theme.store';
 import { useAuthStore } from '../../../src/stores';
-import { useVotingStore } from '../../../src/stores/voting.store';
-import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
-import { differenceInSeconds } from 'date-fns';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
-import { CachedImage } from '../../../src/components/common/CachedImage';
-import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
+import { mmkvStorage } from '../../../src/stores/mmkv.storage';
+import * as Haptics from 'expo-haptics';
 
-type Candidate = {
-    id: string;
-    user_id: string;
-    answers: {
-        text?: string;
-        file_url?: string;
-        file_type?: string;
-    };
-    users: {
-        full_name: string;
-        username: string;
-        avatar_url: string | null;
-    } | null;
-};
+interface Candidate {
+  id: string;
+  display_name: string;
+  position_title: string;
+  bio: string | null;
+  photo_url: string | null;
+  vote_count: number | null;
+  is_winner: boolean;
+  podium_rank: string | null;
+}
 
 export default function VotingEngineScreen() {
-    useSentryScreen('VotingEngine');
-    const { id } = useLocalSearchParams<{ id: string }>();
-    const { colors, isDark } = useTheme();
-    const user = useAuthStore((s: any) => s.profile);
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { colors, isDark } = useTheme();
+  const user = useAuthStore((s: any) => s.profile);
+  const insets = useSafeAreaInsets();
 
-    const setVoteDraft = useVotingStore((s) => s.setVoteDraft);
-    const getVoteDraft = useVotingStore((s) => s.getVoteDraft);
-    const submitVote = useVotingStore((s) => s.submitVote);
-    const clearVoteDraft = useVotingStore((s) => s.clearVoteDraft);
-    const isSubmittingGlobal = useVotingStore((s) => s.isSubmitting);
-    const insets = useSafeAreaInsets();
+  const [poolInfo, setPoolInfo] = useState<any>(null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isSealed, setIsSealed] = useState(true);
+  const [totalVotes, setTotalVotes] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const [selectedBallot, setSelectedBallot] = useState<Record<string, string>>({});
+  const [viewingCandidate, setViewingCandidate] = useState<Candidate | null>(null);
+  const [ballotReceipt, setBallotReceipt] = useState<{ receiptCode: string; votedAt: string; poolId: string } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const [poolInfo, setPoolInfo] = useState<any>(null);
-    const [candidates, setCandidates] = useState<Candidate[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [timeLeft, setTimeLeft] = useState<number | null>(null);
-    const [serverTimeOffset, setServerTimeOffset] = useState(0);
-    const [selectedCandidateId, setSelectedCandidateId] = useState<string>(getVoteDraft(id || ''));
-    const [viewerVisible, setViewerVisible] = useState(false);
-    const [viewerFile, setViewerFile] = useState({ uri: '', name: '' });
+  const receiptKey = `vote_receipt_${id}_${user?.id}`;
 
-    // Handle back button protection
-    useEffect(() => {
-        const backAction = () => {
-            Alert.alert("Exit Voting Room?", "Are you sure you want to exit? Your selected candidate draft is saved, but the voting clock is still running.", [
-                { text: "Cancel", style: "cancel" },
-                { text: "YES, Exit", onPress: () => router.back() }
-            ]);
-            return true;
-        };
+  useEffect(() => {
+    const initVoting = async () => {
+      if (!id || !user) return;
+      setIsLoading(true);
+      try {
+        const { data: poolData, error: poolError } = await (supabase as any)
+          .from('event_pools')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-        const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
-        return () => backHandler.remove();
-    }, []);
+        if (poolError) throw poolError;
+        setPoolInfo(poolData);
 
-    // Auto-save selection to Zustand/MMKV store
-    useEffect(() => {
-        if (id && selectedCandidateId) {
-            setVoteDraft(id, selectedCandidateId);
+        const receiptStr = await mmkvStorage.getItem(receiptKey);
+        if (receiptStr) {
+          setBallotReceipt(JSON.parse(receiptStr));
         }
-    }, [selectedCandidateId, id]);
 
-    useEffect(() => {
-        const initVoting = async () => {
-            if (!id || !user) return;
-            setIsLoading(true);
-            try {
-                // 1. Fetch Pool Status & Deadline
-                const { data: poolData, error: poolError } = await (supabase as any)
-                    .from('event_pools')
-                    .select('id, title, status, end_time, target_constraints')
-                    .eq('id', id)
-                    .single();
-
-                if (poolError) throw poolError;
-                if (poolData.status !== 'live') {
-                    Alert.alert('Closed', 'This event pool is no longer live.');
-                    router.back();
-                    return;
-                }
-                setPoolInfo(poolData);
-
-                // 2. Fetch Server Time
-                const { data: serverTimeData } = await supabase.rpc('get_server_time');
-                if (serverTimeData) {
-                    const serverDate = new Date(serverTimeData).getTime();
-                    const localDate = Date.now();
-                    setServerTimeOffset(serverDate - localDate);
-                }
-
-                // 3. Check if user already voted
-                const { data: existingSub } = await (supabase as any)
-                    .from('pool_submissions')
-                    .select('id')
-                    .eq('pool_id', id)
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-
-                if (existingSub) {
-                    Alert.alert('Already Voted', 'You have already cast your vote in this event.');
-                    router.back();
-                    return;
-                }
-
-                // 4. Fetch Candidates (support admin-nominated candidates in target_constraints or pool_submissions fallback)
-                const adminCandidates = poolData.target_constraints?.candidates || [];
-                if (Array.isArray(adminCandidates) && adminCandidates.length > 0) {
-                    const formattedCandidates = adminCandidates.map((c: any) => ({
-                        id: c.id || c.user_id,
-                        user_id: c.user_id,
-                        answers: {
-                            text: c.manifesto ? `Manifesto: ${c.manifesto}` : (c.position_title ? `Position: ${c.position_title}` : undefined),
-                            file_url: c.photo_url || null
-                        },
-                        users: {
-                            full_name: c.position_title ? `${c.full_name} — ${c.position_title}` : c.full_name,
-                            username: c.username,
-                            avatar_url: c.photo_url || c.avatar_url
-                        }
-                    }));
-                    setCandidates(formattedCandidates as Candidate[]);
-                } else {
-                    const { data: submissionData, error: submissionErr } = await (supabase as any)
-                        .from('pool_submissions')
-                        .select('id, user_id, answers, users:user_id(full_name, username, avatar_url)')
-                        .eq('pool_id', id);
-
-                    if (submissionErr) throw submissionErr;
-                    setCandidates((submissionData || []) as Candidate[]);
-                }
-
-            } catch (err: any) {
-                console.error('Init Voting Error:', err);
-                Alert.alert('Error', 'Failed to load voting room.');
-                router.back();
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        initVoting();
-    }, [id, user]);
-
-    // Timer logic
-    useEffect(() => {
-        if (!poolInfo?.end_time || isLoading) return;
-
-        const interval = setInterval(() => {
-            const adjustedNow = new Date(Date.now() + serverTimeOffset);
-            const endDate = new Date(poolInfo.end_time);
-            const diff = differenceInSeconds(endDate, adjustedNow);
-
-            if (diff <= 0) {
-                clearInterval(interval);
-                setTimeLeft(0);
-                Alert.alert('Time Up', 'Voting has ended for this event.');
-                router.back();
-            } else {
-                setTimeLeft(diff);
-            }
-        }, 1000);
-
-        return () => clearInterval(interval);
-    }, [poolInfo?.end_time, serverTimeOffset, isLoading]);
-
-    const handleVoteSubmit = async () => {
-        if (isSubmittingGlobal || !selectedCandidateId) return;
-
-        Alert.alert(
-            'Confirm Vote',
-            'Are you sure you want to lock in your vote? This action is permanent and cannot be modified.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Submit Vote', onPress: executeVoteSubmission }
-            ]
-        );
-    };
-
-    const executeVoteSubmission = async () => {
-        if (!id) return;
-        const result = await submitVote(id, selectedCandidateId);
+        const { data, error } = await supabase.rpc('get_voting_candidates', { p_pool_id: id });
+        if (error) throw error;
         
-        if (result.success) {
-            clearVoteDraft(id);
-            Alert.alert('Vote Cast!', 'Your vote has been securely recorded on the server.', [
-                { text: 'OK', onPress: () => router.back() }
-            ]);
-        } else {
-            Alert.alert('Failed to Vote', result.error || 'Please try again. Your selection is still saved locally.');
+        const typedData = data as any;
+        if (typedData) {
+          setCandidates(typedData.candidates || []);
+          setIsSealed(typedData.is_sealed);
+          setTotalVotes(typedData.total_votes || 0);
         }
+      } catch (err: any) {
+        Alert.alert('Error', 'Failed to load voting room.');
+        router.back();
+      } finally {
+        setIsLoading(false);
+      }
     };
+    initVoting();
+  }, [id, user]);
 
-    if (isLoading) {
-        return (
-            <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={{ marginTop: 10, color: colors.text }}>Securing voting booth...</Text>
-            </SafeAreaView>
-        );
+  const groupedCandidates = useMemo(() => {
+    return candidates.reduce((acc: Record<string, Candidate[]>, cand) => {
+      acc[cand.position_title] = acc[cand.position_title] || [];
+      acc[cand.position_title].push(cand);
+      return acc;
+    }, {});
+  }, [candidates]);
+
+  const handleCastBallot = async () => {
+    const selections = Object.entries(selectedBallot).map(([position_title, candidate_id]) => ({
+      position_title,
+      candidate_id
+    }));
+
+    if (selections.length === 0) {
+      Alert.alert('Incomplete Ballot', 'You must select at least one candidate.');
+      return;
     }
 
-    const formatTime = (secs: number) => {
-        const h = Math.floor(secs / 3600);
-        const m = Math.floor((secs % 3600) / 60);
-        const s = secs % 60;
-        if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
-
-    const isTimeUp = timeLeft === 0;
-
-    return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
-                    <Ionicons name="close" size={28} color={colors.text} />
-                </TouchableOpacity>
-                <View style={styles.headerCenter}>
-                    <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>Voting Room</Text>
-                    <Text style={[styles.subtitle, { color: colors.textMuted }]}>{poolInfo?.title}</Text>
-                </View>
-                <View style={[styles.timerBadge, { backgroundColor: timeLeft && timeLeft < 60 ? '#ef4444' : '#059669' }]}>
-                    <Text style={styles.timerText}>
-                        {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
-                    </Text>
-                </View>
-            </View>
-
-            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-                <Text style={[styles.instructions, { color: colors.text }]}>
-                    {poolInfo?.description || 'Select one of the presentation entries below to cast your vote.'}
-                </Text>
-
-                {candidates.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <Ionicons name="people-outline" size={48} color={colors.textMuted} />
-                        <Text style={{ color: colors.textMuted, marginTop: 12, textAlign: 'center' }}>
-                            No entries have been submitted to vote on yet.
-                        </Text>
-                    </View>
-                ) : (
-                    candidates.map((c) => {
-                        const isSelected = selectedCandidateId === c.user_id;
-                        return (
-                            <TouchableOpacity
-                                key={c.id}
-                                disabled={isTimeUp || isSubmittingGlobal}
-                                onPress={() => setSelectedCandidateId(c.user_id)}
-                                style={[
-                                    styles.card,
-                                    { backgroundColor: colors.card, borderColor: isSelected ? '#059669' : colors.border },
-                                    isSelected && { borderWidth: 2, shadowColor: '#059669', shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 }
-                                ]}
-                            >
-                                <View style={styles.cardHeader}>
-                                    <TouchableOpacity
-                                        style={styles.avatarContainer}
-                                        onPress={(e) => {
-                                            e.stopPropagation();
-                                            const avatarUri = c.users?.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(c.users?.full_name || 'candidate')}&size=200`;
-                                            setViewerFile({ uri: avatarUri, name: `${c.users?.full_name || 'Candidate'}'s Photo` });
-                                            setViewerVisible(true);
-                                        }}
-                                        activeOpacity={0.8}
-                                    >
-                                        <CachedImage remoteUrl={c.users?.avatar_url} style={styles.avatar} entityId={`candidate_${c.user_id}`} assetType="user" fallbackName={c.users?.full_name} />
-                                        <View style={styles.nameDetails}>
-                                            <Text style={[styles.fullName, { color: colors.text }]}>{c.users?.full_name || 'Anonymous'}</Text>
-                                            <Text style={[styles.username, { color: colors.textMuted }]}>@{c.users?.username || 'user'}</Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                    <View style={[styles.selectionCircle, { borderColor: isSelected ? '#059669' : colors.textMuted }]}>
-                                        {isSelected && <View style={[styles.selectionFill, { backgroundColor: '#059669' }]} />}
-                                    </View>
-                                </View>
-
-                                {c.answers?.text && (
-                                    <View style={styles.submissionTextContainer}>
-                                        <Text style={[styles.submissionText, { color: colors.text }]} numberOfLines={5}>
-                                            {c.answers.text}
-                                        </Text>
-                                    </View>
-                                )}
-
-                                {c.answers?.file_url && (
-                                    <TouchableOpacity 
-                                        style={styles.fileLinkContainer}
-                                        onPress={(e) => {
-                                            e.stopPropagation();
-                                            setViewerFile({ uri: c.answers.file_url!, name: `${c.users?.full_name || 'Candidate'}'s Entry File` });
-                                            setViewerVisible(true);
-                                        }}
-                                        activeOpacity={0.8}
-                                    >
-                                        <Ionicons name="document-attach-outline" size={16} color="#059669" />
-                                        <Text style={[styles.fileLinkText, { color: '#059669' }]} numberOfLines={1}>
-                                            View attached entry file
-                                        </Text>
-                                    </TouchableOpacity>
-                                )}
-                            </TouchableOpacity>
-                        );
-                    })
-                )}
-            </ScrollView>
-
-            <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: Math.max(insets.bottom + 16, 16) }]}>
-                <TouchableOpacity
-                    disabled={!selectedCandidateId || isTimeUp || isSubmittingGlobal}
-                    onPress={handleVoteSubmit}
-                    style={[
-                        styles.submitBtn,
-                        { backgroundColor: '#059669' },
-                        (!selectedCandidateId || isTimeUp || isSubmittingGlobal) && { opacity: 0.5 }
-                    ]}
-                >
-                    <Text style={styles.submitText}>
-                        {isSubmittingGlobal ? 'Locking in vote...' : 'Cast Final Vote'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-
-            <UniversalViewer
-                isVisible={viewerVisible}
-                onClose={() => setViewerVisible(false)}
-                fileUri={viewerFile.uri}
-                fileType="image"
-                fileName={viewerFile.name}
-                showDownload={true}
-                showShare={true}
-                isHalfScreen={true}
-            />
-        </SafeAreaView>
+    Alert.alert(
+      'Cast Ballot?',
+      'Are you sure you want to seal and cast your ballot? This action is irreversible.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Cast Ballot', 
+          style: 'default',
+          onPress: async () => {
+            setIsSubmitting(true);
+            try {
+              const { data, error } = await supabase.rpc('cast_multi_post_ballot', { p_pool_id: id, p_selections: selections });
+              if (error) throw error;
+              
+              const receiptCode = `NALISS-VOTE-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+              const receipt = { receiptCode, votedAt: new Date().toISOString(), poolId: id as string };
+              
+              await mmkvStorage.setItem(receiptKey, JSON.stringify(receipt));
+              setBallotReceipt(receipt);
+              
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              
+              const { data: refreshData } = await supabase.rpc('get_voting_candidates', { p_pool_id: id });
+              const typedRefresh = refreshData as any;
+              if (typedRefresh) {
+                setCandidates(typedRefresh.candidates || []);
+                setIsSealed(typedRefresh.is_sealed);
+                setTotalVotes(typedRefresh.total_votes || 0);
+              }
+            } catch (err: any) {
+              if (err.message?.includes('already voted')) {
+                  Alert.alert('Error', 'You have already voted in this election.');
+              } else {
+                  Alert.alert('Failed to Cast Ballot', err.message || 'Unknown error');
+              }
+            } finally {
+              setIsSubmitting(false);
+            }
+          }
+        }
+      ]
     );
+  };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  const officesCount = Object.keys(groupedCandidates).length;
+  const selectionsCount = Object.keys(selectedBallot).length;
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
+          <Ionicons name="close" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: colors.text }]}>{poolInfo?.title}</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+        
+        {/* BALLOT RECEIPT */}
+        {ballotReceipt && (
+          <View style={[styles.receiptCard, { backgroundColor: isDark ? '#064e3b' : '#ecfdf5', borderColor: '#34d399' }]}>
+            <Ionicons name="checkmark-circle" size={32} color="#10b981" />
+            <Text style={styles.receiptTitle}>Your Ballot Has Been Recorded Anonymously</Text>
+            <View style={styles.receiptPill}>
+              <Text style={styles.receiptPillText}>Receipt Ref: {ballotReceipt.receiptCode}</Text>
+            </View>
+            <Text style={styles.receiptSub}>Your vote is sealed in the decentralized ledger. Take a screenshot for your personal election audit.</Text>
+          </View>
+        )}
+
+        {/* TURNOUT & LEADERBOARD */}
+        <View style={[styles.turnoutHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.turnoutText, { color: colors.primary }]}>Verified Turnout: {totalVotes} Ballots Cast</Text>
+          {isSealed ? (
+            <Text style={[styles.sealedText, { color: colors.textMuted }]}>🔒 Ballot Box Sealed • Standings will be revealed after voting concludes</Text>
+          ) : (
+            <Text style={[styles.unsealedText, { color: '#059669' }]}>🟢 Live Results Unsealed</Text>
+          )}
+        </View>
+
+        {!isSealed && (
+            <View style={{ marginTop: 24 }}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Election Results</Text>
+              {Object.entries(groupedCandidates).map(([office, cands]) => (
+                <View key={`res-${office}`} style={{ marginBottom: 20 }}>
+                  <Text style={[styles.officeTitle, { color: colors.textMuted }]}>{office}</Text>
+                  {cands.map((c, i) => {
+                    const pct = totalVotes > 0 && c.vote_count ? (c.vote_count / totalVotes) * 100 : 0;
+                    return (
+                      <View key={`res-cand-${c.id}`} style={[styles.resultRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <Text style={{ color: colors.text, fontWeight: 'bold', flex: 1 }} numberOfLines={1}>
+                            {(c.is_winner || c.podium_rank === '1st') && <Ionicons name="trophy" size={14} color="#eab308" /> } {c.display_name}
+                          </Text>
+                          <Text style={{ color: colors.textMuted, fontWeight: 'bold' }}>{c.vote_count} ({pct.toFixed(1)}%)</Text>
+                        </View>
+                        <View style={{ height: 6, backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                          <View style={{ height: '100%', width: `${pct}%`, backgroundColor: (c.is_winner || c.podium_rank === '1st') ? '#eab308' : colors.primary }} />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+        )}
+
+        {/* BALLOT SELECTION (Only if not voted and live) */}
+        {!ballotReceipt && poolInfo?.status === 'live' && (
+          <View style={{ marginTop: 24 }}>
+             {Object.entries(groupedCandidates).map(([office, cands]) => (
+                <View key={`vote-${office}`} style={{ marginBottom: 24 }}>
+                  <Text style={[styles.officeHeader, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}>{office}</Text>
+                  {cands.map(c => {
+                    const isSelected = selectedBallot[office] === c.id;
+                    return (
+                      <TouchableOpacity 
+                        key={`vote-cand-${c.id}`}
+                        onPress={() => setSelectedBallot(prev => ({...prev, [office]: c.id}))}
+                        style={[styles.candidateCard, { backgroundColor: colors.card, borderColor: isSelected ? colors.primary : colors.border }, isSelected && { borderWidth: 2 }]}
+                      >
+                        {c.photo_url ? (
+                           <Image source={{uri: c.photo_url}} style={styles.candAvatar} />
+                        ) : (
+                           <View style={[styles.candAvatar, { backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }]}>
+                             <Ionicons name="person" size={20} color={colors.textMuted} />
+                           </View>
+                        )}
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={[styles.candName, { color: colors.text }]}>{c.display_name}</Text>
+                          <TouchableOpacity onPress={() => setViewingCandidate(c)}>
+                            <Text style={{ color: colors.primary, fontSize: 12, marginTop: 4 }}>Read Manifesto</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View style={[styles.radioCircle, { borderColor: isSelected ? colors.primary : colors.textMuted }]}>
+                          {isSelected && <View style={[styles.radioFill, { backgroundColor: colors.primary }]} />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+             ))}
+          </View>
+        )}
+      </ScrollView>
+
+      {!ballotReceipt && poolInfo?.status === 'live' && (
+        <View style={[styles.bottomBar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+          <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
+            {selectionsCount} of {officesCount} offices selected
+          </Text>
+          <TouchableOpacity 
+            disabled={selectionsCount === 0 || isSubmitting}
+            onPress={handleCastBallot}
+            style={[styles.castBtn, { backgroundColor: selectionsCount === 0 ? colors.border : colors.primary }]}
+          >
+            {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.castBtnText}>Review & Cast Complete Ballot</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Candidate Profile Modal */}
+      <Modal visible={!!viewingCandidate} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setViewingCandidate(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={[styles.header, { borderBottomColor: colors.border, justifyContent: 'flex-end' }]}>
+            <TouchableOpacity onPress={() => setViewingCandidate(null)} style={{ padding: 8 }}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 24, alignItems: 'center' }}>
+            {viewingCandidate?.photo_url ? (
+              <Image source={{ uri: viewingCandidate.photo_url }} style={styles.modalAvatar} />
+            ) : (
+              <View style={[styles.modalAvatar, { backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }]}>
+                <Ionicons name="person" size={64} color={colors.textMuted} />
+              </View>
+            )}
+            <Text style={[styles.modalName, { color: colors.text }]}>{viewingCandidate?.display_name}</Text>
+            <View style={{ backgroundColor: colors.primary + '20', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginTop: 8 }}>
+              <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 12 }}>{viewingCandidate?.position_title}</Text>
+            </View>
+            <Text style={[styles.modalBio, { color: colors.text }]}>
+              {viewingCandidate?.bio || 'No manifesto provided.'}
+            </Text>
+          </ScrollView>
+          <View style={{ padding: 24 }}>
+            {!ballotReceipt && poolInfo?.status === 'live' ? (
+              <TouchableOpacity 
+                style={[styles.castBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setSelectedBallot(prev => ({ ...prev, [viewingCandidate!.position_title]: viewingCandidate!.id }));
+                  setViewingCandidate(null);
+                }}
+              >
+                <Text style={styles.castBtnText}>Select for {viewingCandidate?.position_title}</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={[styles.castBtn, { backgroundColor: colors.border }]} onPress={() => setViewingCandidate(null)}>
+                <Text style={[styles.castBtnText, { color: colors.text }]}>Close</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-    centered: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-    },
-    closeBtn: {
-        padding: 4,
-    },
-    headerCenter: {
-        flex: 1,
-        marginLeft: 12,
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    subtitle: {
-        fontSize: 12,
-    },
-    timerBadge: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-    },
-    timerText: {
-        color: '#FFFFFF',
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
-    content: {
-        padding: 16,
-        paddingBottom: 100,
-    },
-    instructions: {
-        fontSize: 14,
-        lineHeight: 20,
-        marginBottom: 20,
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 60,
-    },
-    card: {
-        borderRadius: 12,
-        borderWidth: 1,
-        padding: 16,
-        marginBottom: 16,
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    avatarContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    avatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-    },
-    avatarPlaceholder: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    nameDetails: {
-        marginLeft: 12,
-        flex: 1,
-    },
-    fullName: {
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    username: {
-        fontSize: 12,
-    },
-    selectionCircle: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        borderWidth: 2,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginLeft: 12,
-    },
-    selectionFill: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-    },
-    submissionTextContainer: {
-        marginTop: 12,
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(128,128,128,0.1)',
-    },
-    submissionText: {
-        fontSize: 14,
-        lineHeight: 20,
-    },
-    fileLinkContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 12,
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(128,128,128,0.1)',
-    },
-    fileLinkText: {
-        marginLeft: 6,
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    footer: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: 16,
-        borderTopWidth: 1,
-    },
-    submitBtn: {
-        paddingVertical: 14,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    submitText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1 },
+  title: { fontSize: 18, fontWeight: 'bold', marginLeft: 12 },
+  receiptCard: { borderWidth: 2, borderRadius: 16, padding: 20, alignItems: 'center', marginBottom: 24 },
+  receiptTitle: { fontSize: 16, fontWeight: 'bold', color: '#065f46', textAlign: 'center', marginTop: 12, marginBottom: 8 },
+  receiptPill: { backgroundColor: '#10b981', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginBottom: 12 },
+  receiptPillText: { color: '#fff', fontWeight: 'bold', fontSize: 12, fontFamily: 'monospace' },
+  receiptSub: { fontSize: 12, color: '#047857', textAlign: 'center' },
+  turnoutHeader: { borderWidth: 1, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 8 },
+  turnoutText: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
+  sealedText: { fontSize: 12, fontWeight: 'bold' },
+  unsealedText: { fontSize: 12, fontWeight: 'bold' },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
+  officeTitle: { fontSize: 14, fontWeight: 'bold', marginBottom: 8, textTransform: 'uppercase' },
+  resultRow: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 },
+  officeHeader: { padding: 12, fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', borderWidth: 1, borderRadius: 8, marginBottom: 12, overflow: 'hidden' },
+  candidateCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: 1, borderRadius: 12, marginBottom: 12 },
+  candAvatar: { width: 48, height: 48, borderRadius: 24 },
+  candName: { fontSize: 16, fontWeight: 'bold' },
+  radioCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  radioFill: { width: 12, height: 12, borderRadius: 6 },
+  bottomBar: { padding: 16, borderTopWidth: 1 },
+  castBtn: { padding: 16, borderRadius: 12, alignItems: 'center' },
+  castBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  modalAvatar: { width: 120, height: 120, borderRadius: 60, marginBottom: 16 },
+  modalName: { fontSize: 24, fontWeight: 'bold' },
+  modalBio: { fontSize: 16, marginTop: 24, lineHeight: 24, textAlign: 'center' }
 });

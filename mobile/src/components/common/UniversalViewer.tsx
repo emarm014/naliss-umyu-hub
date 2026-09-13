@@ -1,3 +1,21 @@
+/**
+ * ============================================================================
+ * 🛑 ARCHITECTURAL INVARIANT: DO NOT MODIFY THE MODAL SHELL 🛑
+ * ============================================================================
+ * This viewer uses a strict native `<Modal animationType="slide">`. 
+ * This ensures that the opening/closing animation runs entirely on the Android 
+ * native UI thread, preventing the Hermes JS engine from freezing during 
+ * heavy media mounts (PDFs, large videos).
+ * 
+ * To prevent regressions, DO NOT:
+ * 1. Replace the native <Modal> with a custom JS-driven animated view.
+ * 2. Add Animated.parallel/Animated.timing to the root opening sequence.
+ * 3. Use continuous JS-driven pan responders that intercept the native PDF/Video scroll.
+ * 4. Remove `useNativeDriver: true` from the header/footer auto-fade animations.
+ * 
+ * If you are an LLM or developer adding features, respect these boundaries.
+ * ============================================================================
+ */
 import React from 'react';
 import {
   View,
@@ -18,6 +36,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
+import { useTheme } from '../../stores/theme.store';
 import { extractFileNameFromUrl, getVaultFilePath } from '../../utils/download';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { WebView } from 'react-native-webview';
@@ -122,6 +141,7 @@ interface ViewerContentProps {
   onSingleTap?: () => void;
   isHalfScreen?: boolean;
   readyToPlay?: boolean;
+  videoResizeMode?: ResizeMode;
 }
 
 interface ZoomableImageProps {
@@ -168,14 +188,17 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
   onSingleTap,
   isHalfScreen,
   readyToPlay = true,
+  videoResizeMode = ResizeMode.CONTAIN,
 }) => {
+  const { colors } = useTheme();
+
   if (isDownloading || (!readyToPlay && (fileType === 'video' || fileType === 'audio'))) {
     return (
       <View style={styles.center}>
         <View style={styles.progressRing}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-        <Text style={styles.loadingText}>
+        <Text style={[styles.loadingText, { color: colors.text }]}>
           {downloadProgress > 0 ? `Loading... ${downloadProgress}%` : 'Preparing file...'}
         </Text>
         {downloadProgress > 0 && (
@@ -192,8 +215,8 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
       <View style={styles.center}>
         <Ionicons name="alert-circle-outline" size={56} color="#ef4444" />
         <Text style={styles.errorText}>{downloadError}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
-          <Text style={styles.retryText}>Retry</Text>
+        <TouchableOpacity style={[styles.retryButton, { borderColor: colors.border }]} onPress={onRetry}>
+          <Text style={[styles.retryText, { color: colors.text }]}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
@@ -203,7 +226,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Preparing file...</Text>
+        <Text style={[styles.loadingText, { color: colors.text }]}>Preparing file...</Text>
       </View>
     );
   }
@@ -213,7 +236,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
       return <ZoomableImage uri={localUri} onImageError={onImageError} isHalfScreen={isHalfScreen} onSingleTap={onSingleTap} />;
 
     case 'video':
-      return <VideoPlayer localUri={localUri} remoteUrl={fileUri} onSingleTap={onSingleTap} />;
+      return <CustomVideoPlayer source={{ uri: localUri.startsWith('http') ? localUri : `file://${localUri}` }} resizeMode={videoResizeMode} onSingleTap={onSingleTap} autoPlay />;
 
     case 'audio':
       return <AudioPlayer uri={localUri} fileName={fileName} />;
@@ -241,7 +264,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
       return (
         <View style={styles.center}>
           <Ionicons name="document-outline" size={56} color={COLORS.textMuted} />
-          <Text style={styles.loadingText}>Format not supported for preview.</Text>
+          <Text style={[styles.loadingText, { color: colors.text }]}>Format not supported for preview.</Text>
         </View>
       );
   }
@@ -262,12 +285,14 @@ function ViewerItemSlide({
   pdfEngine,
   isHalfScreen,
   onSingleTap,
+  videoResizeMode,
 }: {
   item: ViewerMediaItem;
   isVisible: boolean;
   pdfEngine: 'local' | 'local_hd' | 'google' | 'microsoft';
   isHalfScreen?: boolean;
   onSingleTap?: () => void;
+  videoResizeMode?: ResizeMode;
 }) {
   const [localUri, setLocalUri] = React.useState<string | null>(null);
   const [isDownloading, setIsDownloading] = React.useState(false);
@@ -471,6 +496,7 @@ function ViewerItemSlide({
       onSingleTap={onSingleTap}
       isHalfScreen={isHalfScreen}
       readyToPlay={readyToPlay}
+      videoResizeMode={videoResizeMode}
     />
   );
 }
@@ -499,6 +525,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   }, [fileUri, isVisible]);
 
   const { width, height } = useWindowDimensions();
+  const { colors, isDark } = useTheme();
   const isLandscape = width > height;
   const [showControls, setShowControls] = React.useState(false);
 
@@ -530,6 +557,16 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
   const activeItem = activeMediaList[currentIndex] || activeMediaList[0];
   const [pdfEngine, setPdfEngine] = React.useState<'local' | 'local_hd' | 'google' | 'microsoft'>('local');
+
+  const VIDEO_ASPECT_MODES = [
+    { mode: ResizeMode.CONTAIN, label: 'FIT' },
+    { mode: ResizeMode.COVER,   label: 'CROP' },
+    { mode: ResizeMode.STRETCH, label: 'FULL' },
+  ] as const;
+  const [videoAspectIndex, setVideoAspectIndex] = React.useState<number>(0);
+  const cycleVideoResizeMode = () => {
+    setVideoAspectIndex((prev) => (prev + 1) % VIDEO_ASPECT_MODES.length);
+  };
 
   const [isSaved, setIsSaved] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -624,6 +661,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                       pdfEngine={pdfEngine}
                       isHalfScreen={isHalfScreen}
                       onSingleTap={() => setShowControls(!showControls)}
+                      videoResizeMode={VIDEO_ASPECT_MODES[videoAspectIndex].mode}
                     />
                   </View>
                 )}
@@ -635,6 +673,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 pdfEngine={pdfEngine}
                 isHalfScreen={isHalfScreen}
                 onSingleTap={() => setShowControls(!showControls)}
+                videoResizeMode={VIDEO_ASPECT_MODES[videoAspectIndex].mode}
               />
             )}
           </View>
@@ -646,16 +685,30 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 trackViewerEvent({ stage: 'close', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
                 onClose();
               }} style={styles.closeButton}>
-                <Ionicons name="arrow-back" size={26} color="#ffffff" />
+                <Ionicons name="arrow-back" size={26} color={colors.text} />
               </TouchableOpacity>
 
               <View style={styles.titleContainer}>
-                <Text style={styles.title} numberOfLines={1}>
+                <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
                   {isMultiItem ? `${currentIndex + 1} of ${activeMediaList.length}` : activeItem.name}
                 </Text>
               </View>
 
-              <View style={{ width: 40 }} />
+              {activeItem.type === 'video' ? (
+                <View style={styles.videoActionCluster}>
+                  {/* Aspect Ratio Badge Stepper */}
+                  <TouchableOpacity
+                    style={styles.aspectBadge}
+                    onPress={cycleVideoResizeMode}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="scan-outline" size={14} color={colors.text} style={{ marginRight: 4 }} />
+                    <Text style={[styles.aspectText, { color: colors.text }]}>{VIDEO_ASPECT_MODES[videoAspectIndex].label}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ width: 40 }} />
+              )}
             </View>
           )}
 
@@ -710,7 +763,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
           {/* Floating Footer */}
           {shouldShowControls && (showDownload || showShare || onViewProfile) && (
-            <View style={styles.footer}>
+            <View style={[styles.footer, { backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)' }]}>
               {showDownload && (
                 <TouchableOpacity
                   style={[styles.footerAction, isSaving && { opacity: 0.5 }]}
@@ -718,16 +771,18 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   disabled={isSaving}
                 >
                   {isSaving ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
+                    <ActivityIndicator size="small" color={colors.text} />
                   ) : (
-                    <Ionicons
-                      name={isSaved ? 'checkmark-circle' : 'cloud-download-outline'}
-                      size={24}
-                      color={isSaved ? '#10b981' : '#ffffff'}
-                    />
+                    <View>
+                      <Ionicons
+                        name={isSaved ? 'checkmark' : 'download-outline'}
+                        size={24}
+                        color={isSaved ? '#10b981' : colors.text}
+                      />
+                    </View>
                   )}
-                  <Text style={[styles.footerActionText, isSaved && { color: '#10b981' }]}>
-                    {isSaving ? 'Saving…' : isSaved ? 'Saved!' : 'Save'}
+                  <Text style={[styles.footerActionText, { color: colors.text }, isSaved && { color: '#10b981' }]}>
+                    {isSaved ? 'Saved!' : 'Save'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -738,17 +793,19 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   disabled={isSharing}
                 >
                   {isSharing ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
+                    <ActivityIndicator size="small" color={colors.text} />
                   ) : (
-                    <Ionicons name="share-social-outline" size={24} color="#ffffff" />
+                    <View>
+                      <Ionicons name="share-social-outline" size={24} color={colors.text} />
+                    </View>
                   )}
-                  <Text style={styles.footerActionText}>{isSharing ? 'Sharing…' : 'Share'}</Text>
+                  <Text style={[styles.footerActionText, { color: colors.text }]}>Share</Text>
                 </TouchableOpacity>
               )}
               {onViewProfile && (
                 <TouchableOpacity style={styles.footerAction} onPress={onViewProfile}>
                   <Ionicons name="person-circle-outline" size={20} color={COLORS.primary} />
-                  <Text style={styles.footerActionText}>View Full Profile</Text>
+                  <Text style={[styles.footerActionText, { color: colors.text }]}>View Full Profile</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -845,31 +902,22 @@ function MicrosoftPdfViewer({ remoteUrl, isOffline }: { remoteUrl: string; isOff
   );
 }
 
-function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }: {
-  localUri: string | null;
-  remoteUrl: string;
-  scaleMultiplier?: number;
-  onSingleTap?: () => void;
-}) {
-  const [numPages, setNumPages] = React.useState(0);
-  const [currentPage, setCurrentPage] = React.useState(1);
-  const [rotation, setRotation] = React.useState(0);
+function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }: { localUri: string | null, remoteUrl: string, scaleMultiplier?: number, onSingleTap?: () => void }) {
+  const { colors, isDark } = useTheme();
   const [zoom, setZoom] = React.useState(scaleMultiplier);
+  const [numPages, setNumPages] = React.useState<number>(0);
+  const [currentPage, setCurrentPage] = React.useState<number>(1);
+  const [rotation, setRotation] = React.useState<number>(0);
+  const [pdfLoaded, setPdfLoaded] = React.useState(false);
   const [hasError, setHasError] = React.useState(false);
 
-  // FREEZE-2 fix: Timeout for native PDF load. react-native-pdf can crash or
-  // stall at the native level (bypassing JS error boundaries entirely).
-  // If the PDF doesn't fire onLoadComplete within 15s, we show an error state
-  // instead of leaving the user frozen on a blank screen.
-  const [pdfLoaded, setPdfLoaded] = React.useState(false);
   React.useEffect(() => {
-    if (pdfLoaded || hasError) return;
-    const timer = setTimeout(() => {
-      if (!pdfLoaded && !hasError) {
-        console.warn('[PDF] Load timeout — native renderer may be unresponsive');
+    let timer: ReturnType<typeof setTimeout>;
+    if (!pdfLoaded && !hasError) {
+      timer = setTimeout(() => {
         setHasError(true);
-      }
-    }, 15000);
+      }, 15000); // 15s timeout
+    }
     return () => clearTimeout(timer);
   }, [pdfLoaded, hasError]);
 
@@ -886,12 +934,12 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
 
   if (hasError) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <Ionicons name="alert-circle-outline" size={56} color="#f59e0b" style={{ marginBottom: 12 }} />
-        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
           Unable to Load PDF
         </Text>
-        <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center', marginBottom: 20, lineHeight: 20 }}>
+        <Text style={{ color: colors.text, opacity: 0.7, fontSize: 14, textAlign: 'center', marginBottom: 20, lineHeight: 20 }}>
           The file may be corrupted, empty, or failed to download over your network connection.
         </Text>
         <TouchableOpacity
@@ -905,11 +953,11 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#1e293b' }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[{ flex: 1, width: '100%' }, rotContainer]}>
         <Pdf
           source={source}
-          style={{ flex: 1, width: '100%', backgroundColor: 'transparent' }}
+          style={{ flex: 1, width: '100%', backgroundColor: colors.background }}
           scale={zoom}
           minScale={0.5}
           maxScale={5.0}
@@ -928,25 +976,25 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
         />
       </View>
 
-      <View style={pdfCtrl.container}>
-        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))}>
-          <Ionicons name="remove" size={18} color="#fff" />
+      <View style={[pdfCtrl.container, { backgroundColor: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.9)', borderTopColor: colors.border }]}>
+        <TouchableOpacity style={[pdfCtrl.btn, { backgroundColor: colors.card }]} onPress={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))}>
+          <Ionicons name="remove" size={18} color={colors.text} />
         </TouchableOpacity>
-        <Text style={pdfCtrl.label}>{Math.round(zoom * 100)}%</Text>
-        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setZoom(z => Math.min(5, +(z + 0.25).toFixed(2)))}>
-          <Ionicons name="add" size={18} color="#fff" />
+        <Text style={[pdfCtrl.label, { color: colors.text }]}>{Math.round(zoom * 100)}%</Text>
+        <TouchableOpacity style={[pdfCtrl.btn, { backgroundColor: colors.card }]} onPress={() => setZoom(z => Math.min(5, +(z + 0.25).toFixed(2)))}>
+          <Ionicons name="add" size={18} color={colors.text} />
         </TouchableOpacity>
-        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setZoom(scaleMultiplier)}>
-          <Ionicons name="resize" size={16} color="#fff" />
-        </TouchableOpacity>
-        <View style={pdfCtrl.divider} />
-        <TouchableOpacity style={pdfCtrl.btn} onPress={() => setRotation(r => (r + 90) % 360)}>
-          <Ionicons name="refresh-outline" size={18} color="#fff" />
+        <TouchableOpacity style={[pdfCtrl.btn, { backgroundColor: colors.card }]} onPress={() => setZoom(scaleMultiplier)}>
+          <Ionicons name="resize" size={16} color={colors.text} />
         </TouchableOpacity>
         <View style={pdfCtrl.divider} />
-        <View style={pdfCtrl.pageBadge}>
-          <Ionicons name="document-text-outline" size={12} color="#94a3b8" />
-          <Text style={pdfCtrl.pageText}>{currentPage}/{numPages || '?'}</Text>
+        <TouchableOpacity style={[pdfCtrl.btn, { backgroundColor: colors.card }]} onPress={() => setRotation(r => (r + 90) % 360)}>
+          <Ionicons name="refresh-outline" size={18} color={colors.text} />
+        </TouchableOpacity>
+        <View style={pdfCtrl.divider} />
+        <View style={[pdfCtrl.pageBadge, { backgroundColor: colors.card }]}>
+          <Ionicons name="document-text-outline" size={12} color={colors.text} />
+          <Text style={[pdfCtrl.pageText, { color: colors.text }]}>{currentPage}/{numPages || '?'}</Text>
         </View>
       </View>
     </View>
@@ -1005,6 +1053,7 @@ const pdfCtrl = StyleSheet.create({
 });
 
 function AudioPlayer({ uri, fileName }: { uri: string; fileName: string }) {
+  const { colors, isDark } = useTheme();
   const [sound, setSound] = React.useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -1057,20 +1106,20 @@ function AudioPlayer({ uri, fileName }: { uri: string; fileName: string }) {
 
   return (
     <View style={audioStyles.container}>
-      <View style={audioStyles.iconWrap}>
+      <View style={[audioStyles.iconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#fef3c7' }]}>
         <Ionicons name="musical-notes" size={48} color={COLORS.primary} />
       </View>
-      <Text style={audioStyles.name} numberOfLines={2}>{fileName}</Text>
+      <Text style={[audioStyles.name, { color: colors.text }]} numberOfLines={2}>{fileName}</Text>
       {error ? (
         <Text style={audioStyles.error}>{error}</Text>
       ) : (
         <>
-          <View style={audioStyles.progressBar}>
+          <View style={[audioStyles.progressBar, { backgroundColor: colors.border }]}>
             <View style={[audioStyles.progressFill, { width: `${progress * 100}%` as any }]} />
           </View>
           <View style={audioStyles.timeRow}>
-            <Text style={audioStyles.time}>{fmt(position)}</Text>
-            <Text style={audioStyles.time}>{fmt(duration)}</Text>
+            <Text style={[audioStyles.time, { color: colors.text }]}>{fmt(position)}</Text>
+            <Text style={[audioStyles.time, { color: colors.text }]}>{fmt(duration)}</Text>
           </View>
         </>
       )}
@@ -1164,6 +1213,10 @@ const styles = StyleSheet.create({
   offlineBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#16a34a', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 3 },
   offlineBadgeText: { fontSize: 8, fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 },
   actionButton: { padding: 8 },
+  videoActionCluster: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aspectBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(30, 30, 30, 0.85)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.15)' },
+  aspectText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  circleButtonCompact: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(30, 30, 30, 0.85)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.15)', justifyContent: 'center', alignItems: 'center' },
   content: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   webview: { flex: 1, width },
   image: { width, height: '100%', resizeMode: 'contain', backgroundColor: '#000000' },

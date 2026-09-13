@@ -23,6 +23,8 @@ import { PosterImage } from '../../src/components/PosterImage';
 import { getCleanAvatarUrl } from '../../src/utils';
 import * as ImagePicker from 'expo-image-picker';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
+import { isBefore } from 'date-fns';
+import { useEventPoolStore } from '../../src/stores/event-pool.store';
 
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { FeaturedStudentCongratsCard } from '../../src/components/FeaturedStudentCongratsCard';
@@ -112,6 +114,7 @@ import { useNewsStore } from '../../src/stores/news.store';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { supabase } from '../../src/api/supabase/client';
+import { realtimeManager } from '../../src/lib/realtimeManager';
 
 const quickActions = [
   { id: 'notepad', name: 'Notepad', icon: 'document-text', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/notepad' },
@@ -147,6 +150,10 @@ export default function HomeScreen() {
   const archiveUnreadCount = require('../../src/stores/archive.store').useArchiveStore((s: any) => s.unreadCount);
   const fetchFYBUnreadCount = require('../../src/stores/fyb.store').useFYBStore((s: any) => s.fetchUnreadCount);
   const fybUnreadCount = require('../../src/stores/fyb.store').useFYBStore((s: any) => s.unreadCount);
+  const fetchPools = useEventPoolStore(s => s.fetchPools);
+  const pools = useEventPoolStore(s => s.pools);
+  const serverTimeOffset = useEventPoolStore(s => s.serverTimeOffset);
+  const [tick, setTick] = React.useState(0);
   const [refreshing, setRefreshing] = React.useState(false);
   const notifications = useNotificationStore(s => s.notifications);
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -361,29 +368,53 @@ export default function HomeScreen() {
       fetchNewsUnreadCount(),
       fetchArchiveUnreadCount(),
       fetchFYBUnreadCount(),
+      fetchPools(),
     ]);
-  }, [user?.level, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses, fetchNewsUnreadCount, fetchArchiveUnreadCount, fetchFYBUnreadCount]);
+  }, [user?.level, fetchAnnouncements, fetchUpcomingEvents, fetchMaterials, fetchCourses, fetchNewsUnreadCount, fetchArchiveUnreadCount, fetchFYBUnreadCount, fetchPools]);
 
   useEffect(() => {
     fetchProfile();
     loadData();
 
-    const channel = supabase
-      .channel(`home_fyb_listener_${Date.now()}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'featured_students' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['home_pinned_fyb'] });
-        }
-      )
-      .subscribe();
+    const interval = setInterval(() => setTick(t => t + 1), 10000); // 10s tick for badges
+
+    if (user?.id) {
+      realtimeManager.init(user.id);
+    }
+
+    const unsubFeatured = realtimeManager.registerFeaturedListener(() => {
+      queryClient.invalidateQueries({ queryKey: ['home_pinned_fyb'] });
+    });
+
+    const unsubPool = realtimeManager.registerPoolListener(() => {
+      fetchUpcomingEvents(user?.level || undefined);
+    });
       
     return () => {
-      supabase.removeChannel(channel);
+      unsubFeatured();
+      unsubPool();
+      clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient]);
+
+  const eventPoolBadge = React.useMemo(() => {
+    const now = new Date(Date.now() + serverTimeOffset);
+    let hasScheduled = false;
+    for (const p of pools) {
+      if (p.status === 'scheduled' || p.status === 'live') {
+        const start = new Date(p.start_time);
+        const end = p.end_time ? new Date(p.end_time) : null;
+        if (isBefore(now, start)) {
+          hasScheduled = true;
+        } else if (!end || isBefore(now, end)) {
+          return 'LIVE';
+        }
+      }
+    }
+    return hasScheduled ? 'SOON' : null;
+  }, [pools, serverTimeOffset, tick]);
+
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
@@ -569,6 +600,11 @@ export default function HomeScreen() {
                   {action.id === 'fyb' && fybUnreadCount > 0 && (
                     <View style={styles.newsBadge}>
                       <Text style={styles.newsBadgeText}>{fybUnreadCount > 99 ? '99+' : fybUnreadCount}</Text>
+                    </View>
+                  )}
+                  {action.id === 'event_pool' && eventPoolBadge && (
+                    <View style={[styles.newsBadge, { backgroundColor: eventPoolBadge === 'LIVE' ? '#ef4444' : '#f59e0b', width: 'auto', paddingHorizontal: 5, right: -10 }]}>
+                      <Text style={[styles.newsBadgeText, { fontSize: 9, letterSpacing: 0.5 }]}>{eventPoolBadge}</Text>
                     </View>
                   )}
                 </View>

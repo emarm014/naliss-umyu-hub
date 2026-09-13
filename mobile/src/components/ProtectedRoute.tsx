@@ -118,7 +118,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
               last_active_at: new Date().toISOString()
             }, { onConflict: 'user_id,device_id' });
 
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Network timeout')), 3000));
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Network timeout')), 15000));
           
           // Wait for the fetch (with timeout) and let upsert run alongside
           const [{ data: activeSessions, error: fetchErr }] = await Promise.all([

@@ -8,6 +8,8 @@ export type CompositionState = {
     essayDrafts: Record<string, string>;
     // poolId -> { url, type }
     challengeDrafts: Record<string, { url: string, type: 'image' | 'video' | 'raw' }>;
+    // poolId -> ms timestamp of last MMKV save
+    lastSavedAt: Record<string, number>;
     isSubmitting: boolean;
 
     // Actions
@@ -15,6 +17,7 @@ export type CompositionState = {
     setChallengeDraft: (poolId: string, draft: { url: string, type: 'image' | 'video' | 'raw' }) => void;
     getEssayDraft: (poolId: string) => string;
     getChallengeDraft: (poolId: string) => { url: string, type: 'image' | 'video' | 'raw' } | null;
+    getLastSavedAt: (poolId: string) => number | null;
     clearDraft: (poolId: string) => void;
     
     // Submit
@@ -26,6 +29,7 @@ export const useCompositionStore = create<CompositionState>()(
         (set, get) => ({
             essayDrafts: {},
             challengeDrafts: {},
+            lastSavedAt: {},
             isSubmitting: false,
 
             setEssayDraft: (poolId, text) => {
@@ -33,6 +37,10 @@ export const useCompositionStore = create<CompositionState>()(
                     essayDrafts: {
                         ...state.essayDrafts,
                         [poolId]: text
+                    },
+                    lastSavedAt: {
+                        ...state.lastSavedAt,
+                        [poolId]: Date.now()
                     }
                 }));
             },
@@ -42,6 +50,10 @@ export const useCompositionStore = create<CompositionState>()(
                     challengeDrafts: {
                         ...state.challengeDrafts,
                         [poolId]: draft
+                    },
+                    lastSavedAt: {
+                        ...state.lastSavedAt,
+                        [poolId]: Date.now()
                     }
                 }));
             },
@@ -54,15 +66,22 @@ export const useCompositionStore = create<CompositionState>()(
                 return get().challengeDrafts[poolId] || null;
             },
 
+            getLastSavedAt: (poolId) => {
+                return get().lastSavedAt[poolId] || null;
+            },
+
             clearDraft: (poolId) => {
                 set((state) => {
                     const newEssays = { ...state.essayDrafts };
                     const newChallenges = { ...state.challengeDrafts };
+                    const newSaved = { ...state.lastSavedAt };
                     delete newEssays[poolId];
                     delete newChallenges[poolId];
+                    delete newSaved[poolId];
                     return {
                         essayDrafts: newEssays,
-                        challengeDrafts: newChallenges
+                        challengeDrafts: newChallenges,
+                        lastSavedAt: newSaved
                     };
                 });
             },
@@ -72,9 +91,16 @@ export const useCompositionStore = create<CompositionState>()(
                 set({ isSubmitting: true });
                 
                 try {
+                    // Enrich essay payloads with word_count and submitted_client_time
+                    const enrichedPayload = { ...payload };
+                    if (typeof enrichedPayload.text === 'string') {
+                        enrichedPayload.word_count = enrichedPayload.text.trim().split(/\s+/).filter(Boolean).length;
+                    }
+                    enrichedPayload.submitted_client_time = new Date().toISOString();
+
                     const { error } = await supabase.rpc('submit_manual_evaluation', {
                         p_pool_id: poolId,
-                        p_payload: payload
+                        p_payload: enrichedPayload
                     });
 
                     if (error) {

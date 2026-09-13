@@ -59,6 +59,11 @@ export default function EventPoolRoom() {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<TabId>('overview');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    // Status & Submission Lock
+    const [tick, setTick] = useState(0);
+    const [hasSubmitted, setHasSubmitted] = useState(false);
+    const [submissionData, setSubmissionData] = useState<any>(null);
 
     // Server time offset & Timer
     const [serverTimeOffset, setServerTimeOffset] = useState(0);
@@ -137,6 +142,31 @@ export default function EventPoolRoom() {
                     setPoolStartedAt(Date.now());
                 }
 
+                // 5. Fetch user submission if exists
+                if (user) {
+                    const { data: subData } = await (supabase as any)
+                        .from('pool_submissions')
+                        .select('payload')
+                        .eq('pool_id', id)
+                        .eq('user_id', user.id)
+                        .maybeSingle();
+                    if (subData) {
+                        setHasSubmitted(true);
+                        setSubmissionData(subData.payload);
+                    } else {
+                        // Fallback check for participants table if payload is empty
+                        const { data: partData } = await (supabase as any)
+                            .from('pool_participants')
+                            .select('*')
+                            .eq('pool_id', id)
+                            .eq('user_id', user.id)
+                            .maybeSingle();
+                        if (partData?.completed_at) {
+                            setHasSubmitted(true);
+                        }
+                    }
+                }
+
             } catch (err) {
                 console.error('Failed to init room:', err);
             } finally {
@@ -146,7 +176,7 @@ export default function EventPoolRoom() {
 
         initRoom();
 
-        const channel = supabase.channel(`pool_updates_${id}_${Date.now()}`)
+        const channel = supabase.channel(`pool_live_${id}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` }, (payload) => {
                 if (payload.new) {
                     setPool(prev => prev ? { ...prev, ...payload.new } as EventPoolDetail : null);
@@ -158,6 +188,26 @@ export default function EventPoolRoom() {
             supabase.removeChannel(channel);
         };
     }, [id]);
+
+    // Tick for dynamic status
+    useEffect(() => {
+        const interval = setInterval(() => setTick(t => t + 1), 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const computedStatus = useMemo(() => {
+        if (!pool) return 'loading';
+        if (pool.status === 'draft') return 'draft';
+        if (pool.status === 'completed' || pool.status === 'archived') return pool.status;
+        
+        const now = new Date(Date.now() + serverTimeOffset);
+        const start = pool.start_time ? new Date(pool.start_time) : null;
+        const end = pool.end_time ? new Date(pool.end_time) : null;
+
+        if (start && isBefore(now, start)) return 'scheduled';
+        if (end && isBefore(end, now)) return 'completed';
+        return 'live';
+    }, [pool, serverTimeOffset, tick]);
 
     const handleFinalSubmit = async (autoSubmitted: boolean = false, customPayload?: any) => {
         if (!pool || !user) return;
@@ -580,22 +630,70 @@ export default function EventPoolRoom() {
     const renderLiveAction = () => {
         if (!pool) return null;
 
-        if (pool.type === 'voting' || pool.type === 'talent') {
+        if (computedStatus === 'draft') {
             return (
                 <View style={styles.centeredContainer}>
-                    <Ionicons name="checkbox-outline" size={48} color={brandColor} style={{ marginBottom: 16 }} />
-                    <Text style={[styles.bannerTitle, { color: textColor }]}>
-                        {pool.type === 'voting' ? 'Debate Voting Room' : 'Talent Show Voting Room'}
+                    <Ionicons name="lock-closed-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Pending Setup</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor }]}>This event is currently being prepared.</Text>
+                </View>
+            );
+        }
+
+        if (computedStatus === 'scheduled') {
+            const start = pool.start_time ? new Date(pool.start_time) : new Date();
+            const now = new Date(Date.now() + serverTimeOffset);
+            const diffSeconds = differenceInSeconds(start, now);
+            
+            let countdownStr = 'Soon';
+            if (diffSeconds > 0) {
+                const d = Math.floor(diffSeconds / (3600 * 24));
+                const h = Math.floor((diffSeconds % (3600 * 24)) / 3600);
+                const m = Math.floor((diffSeconds % 3600) / 60);
+                const s = diffSeconds % 60;
+                if (d > 0) countdownStr = `${d}d ${h}h ${m}m`;
+                else countdownStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+
+            return (
+                <View style={styles.centeredContainer}>
+                    <Ionicons name="time-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Event Starting Soon</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor }]}>The action room will open in:</Text>
+                    <Text style={{ fontSize: 32, fontWeight: '800', color: brandColor, marginTop: 12 }}>{countdownStr}</Text>
+                </View>
+            );
+        }
+
+        if (computedStatus === 'completed' || computedStatus === 'archived') {
+            return (
+                <View style={styles.centeredContainer}>
+                    <Ionicons name="checkmark-done-circle-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Event Finished</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor }]}>Waiting for official results soon. Please check the results tab.</Text>
+                </View>
+            );
+        }
+
+        if (hasSubmitted) {
+            return (
+                <View style={styles.centeredContainer}>
+                    <Ionicons name="shield-checkmark-outline" size={48} color={brandColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Submission Recorded</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor, marginBottom: 16 }]}>
+                        You have already submitted your participation for this event. 
+                        Your actions have been securely recorded.
                     </Text>
-                    <Text style={[styles.bannerText, { color: subtextColor, marginBottom: 24, textAlign: 'center' }]}>
-                        Submit your vote.
-                    </Text>
-                    <TouchableOpacity 
-                        style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
-                        onPress={() => router.push((`/event-pool/voting/${id}`) as any)}
-                    >
-                        <Text style={styles.navBtnPrimaryText}>Enter Voting Room</Text>
-                    </TouchableOpacity>
+                    {submissionData && typeof submissionData === 'object' && Object.keys(submissionData).length > 0 && (
+                        <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)', padding: 16, borderRadius: 12, width: '100%', marginTop: 12 }}>
+                            <Text style={{ fontWeight: '700', marginBottom: 8, color: textColor }}>Submission History:</Text>
+                            {Object.entries(submissionData).map(([k, v]) => (
+                                <Text key={k} style={{ color: subtextColor, fontSize: 13, marginBottom: 4 }} numberOfLines={1}>
+                                    <Text style={{ fontWeight: '600' }}>{k.substring(0, 8)}...</Text>: {String(v)}
+                                </Text>
+                            ))}
+                        </View>
+                    )}
                 </View>
             );
         }
@@ -614,29 +712,22 @@ export default function EventPoolRoom() {
             );
         }
 
-        const now = Date.now() + serverTimeOffset;
-        const startTime = pool?.start_time ? new Date(pool.start_time).getTime() : 0;
-        const endTime = pool?.end_time ? new Date(pool.end_time).getTime() : Infinity;
-
-        const isUpcoming = startTime > 0 && now < startTime;
-        const isFinished = endTime < Infinity && now > endTime;
-
-        if (isUpcoming) {
+        if (pool.type === 'voting' || pool.type === 'talent') {
             return (
                 <View style={styles.centeredContainer}>
-                    <Ionicons name="time-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
-                    <Text style={[styles.bannerTitle, { color: textColor }]}>Event Not Yet Started</Text>
-                    <Text style={[styles.bannerText, { color: subtextColor }]}>The action room will open at {format(startTime, 'MMM d, h:mm a')}.</Text>
-                </View>
-            );
-        }
-
-        if (isFinished) {
-            return (
-                <View style={styles.centeredContainer}>
-                    <Ionicons name="checkmark-done-circle-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
-                    <Text style={[styles.bannerTitle, { color: textColor }]}>Event Finished</Text>
-                    <Text style={[styles.bannerText, { color: subtextColor }]}>This event has concluded. Please check the results tab.</Text>
+                    <Ionicons name="checkbox-outline" size={48} color={brandColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>
+                        {pool.type === 'voting' ? 'Debate Voting Room' : 'Talent Show Voting Room'}
+                    </Text>
+                    <Text style={[styles.bannerText, { color: subtextColor, marginBottom: 24, textAlign: 'center' }]}>
+                        Submit your vote.
+                    </Text>
+                    <TouchableOpacity 
+                        style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
+                        onPress={() => router.push((`/event-pool/voting/${id}`) as any)}
+                    >
+                        <Text style={styles.navBtnPrimaryText}>Enter Voting Room</Text>
+                    </TouchableOpacity>
                 </View>
             );
         }
@@ -688,6 +779,23 @@ export default function EventPoolRoom() {
                         onPress={() => router.push((`/event-pool/challenge/${id}`) as any)}
                     >
                         <Text style={styles.navBtnPrimaryText}>Enter Upload Room</Text>
+                    </TouchableOpacity>
+                </View>
+            );
+        }
+        if (pool.type === 'debate') {
+            return (
+                <View style={styles.centeredContainer}>
+                    <Ionicons name="chatbubbles-outline" size={48} color={brandColor} style={{ marginBottom: 16 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Debate Arena</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor, marginBottom: 24, textAlign: 'center' }]}>
+                        A structured debate with timed rounds and floor control. Enter the chamber to participate or observe.
+                    </Text>
+                    <TouchableOpacity 
+                        style={[styles.navBtnPrimary, { backgroundColor: brandColor, paddingHorizontal: 32 }]}
+                        onPress={() => router.push((`/event-pool/debate/${id}`) as any)}
+                    >
+                        <Text style={styles.navBtnPrimaryText}>Enter Debate Chamber</Text>
                     </TouchableOpacity>
                 </View>
             );

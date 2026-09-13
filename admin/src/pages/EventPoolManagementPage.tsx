@@ -2,11 +2,28 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import FileUpload from '../lib/FileUpload';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, Award, MessageSquare, Sparkles, Lock } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, Award, MessageSquare, Sparkles, Lock, FileDown } from 'lucide-react';
 import { getAllowedLevelsForPermission } from '../utils/access';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
 import Modal from '../components/ui/Modal';
+import { ElectionGazetteModal } from '../components/voting/ElectionGazetteModal';
+
+export interface PoolCandidate {
+  id: string;
+  pool_id: string;
+  candidate_user_id?: string | null;
+  display_name: string;
+  position_title: string;
+  bio?: string | null;
+  photo_url?: string | null;
+  vote_count: number;
+  judge_score: number;
+  final_score: number;
+  podium_rank?: string | null;
+  is_winner: boolean;
+  created_at: string;
+}
 
 export type VotingCandidate = {
   id: string;
@@ -81,6 +98,13 @@ type QuizQuestion = {
  media_url?: string | null;
 };
 
+const DEFAULT_RUBRIC_CRITERIA = [
+  { key: "relevance", label: "Relevance & Focus", max_points: 25 },
+  { key: "originality", label: "Originality & Insight", max_points: 25 },
+  { key: "structure", label: "Structure & Flow", max_points: 25 },
+  { key: "depth", label: "Research & Analytical Depth", max_points: 25 }
+];
+
 export default function EventPoolManagementPage() {
   const { profile, permissions } = useAuthStore();
   
@@ -105,6 +129,8 @@ export default function EventPoolManagementPage() {
   }, [pools, eventAllowedLevels]);
  const [selectedPool, setSelectedPool] = useState<EventPool | null>(null);
  const [submissions, setSubmissions] = useState<Submission[]>([]);
+ const [votingCandidates, setVotingCandidates] = useState<PoolCandidate[]>([]);
+ const [totalTurnout, setTotalTurnout] = useState(0);
  const [applications, setApplications] = useState<any[]>([]);
  const [participantsCount, setParticipantsCount] = useState(0);
  const [isLoading, setIsLoading] = useState(true);
@@ -113,9 +139,30 @@ export default function EventPoolManagementPage() {
  // Active View inside Modal: 'config' | 'content' | 'monitor' | 'evaluate' | 'applications'
  const [activeView, setActiveView] = useState<'config' | 'content' | 'monitor' | 'evaluate' | 'applications'>('config');
 
- const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
- const [isBulkMode, setIsBulkMode] = useState(false);
- const [newQuestionType, setNewQuestionType] = useState('single');
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [newQuestionType, setNewQuestionType] = useState('single');
+
+  // Bulk Importer States
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [bulkImportFormat, setBulkImportFormat] = useState<'json' | 'csv'>('json');
+  const [bulkRawText, setBulkRawText] = useState('');
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Quiz Evaluation Tab
+  const [quizEvalTab, setQuizEvalTab] = useState<'submissions' | 'item-analysis'>('submissions');
+
+  // Student Audit Modal State
+  const [selectedSubmissionForAudit, setSelectedSubmissionForAudit] = useState<Submission | null>(null);
+
+  // Essay / Challenge Evaluation Modal States
+  const [selectedSubmissionForEssayEval, setSelectedSubmissionForEssayEval] = useState<Submission | null>(null);
+  const [rubricScores, setRubricScores] = useState<Record<string, number>>({});
+  const [evaluatorNotes, setEvaluatorNotes] = useState('');
+  const [evaluationStatus, setEvaluationStatus] = useState<'completed' | 'needs_revision'>('completed');
+
+  // Election Gazette Modal State
+  const [isGazetteOpen, setIsGazetteOpen] = useState(false);
 
  // Evaluator states
  const [editingSubId, setEditingSubId] = useState<string | null>(null);
@@ -415,6 +462,58 @@ export default function EventPoolManagementPage() {
     }
   };
 
+  const handleSaveRubricEvaluation = async () => {
+    if (!selectedSubmissionForEssayEval) return;
+    try {
+      const criteria = selectedPool?.target_constraints?.rubric_criteria || DEFAULT_RUBRIC_CRITERIA;
+      let calculatedTotal = 0;
+      criteria.forEach((c: any) => {
+        calculatedTotal += (rubricScores[c.key] || 0);
+      });
+
+      const updatedAnswers = {
+        ...selectedSubmissionForEssayEval.answers,
+        rubric_breakdown: rubricScores,
+        evaluator_feedback: evaluatorNotes
+      };
+
+      const { error } = await supabase.from('pool_submissions').update({
+        score: calculatedTotal,
+        answers: updatedAnswers,
+        grading_status: evaluationStatus,
+        grading_score: calculatedTotal,
+        grading_feedback: evaluatorNotes
+      }).eq('id', selectedSubmissionForEssayEval.id);
+      if (error) throw error;
+
+      // Refresh table UI
+      setSubmissions(submissions.map(s => 
+        s.id === selectedSubmissionForEssayEval.id 
+          ? { ...s, score: calculatedTotal, answers: updatedAnswers, grading_status: evaluationStatus } 
+          : s
+      ));
+      
+      setSelectedSubmissionForEssayEval(null);
+      alert('Rubric evaluation saved successfully!');
+    } catch (e: any) {
+      alert('Failed to save rubric evaluation: ' + e.message);
+    }
+  };
+
+  const handleOpenEssayEval = (sub: Submission) => {
+    setSelectedSubmissionForEssayEval(sub);
+    setEvaluatorNotes(sub.answers?.evaluator_feedback || '');
+    setEvaluationStatus(sub.grading_status === 'needs_revision' ? 'needs_revision' : 'completed');
+    
+    // Initialize rubric scores
+    const criteria = selectedPool?.target_constraints?.rubric_criteria || DEFAULT_RUBRIC_CRITERIA;
+    const initialScores: Record<string, number> = {};
+    criteria.forEach((c: any) => {
+      initialScores[c.key] = sub.answers?.rubric_breakdown?.[c.key] || 0;
+    });
+    setRubricScores(initialScores);
+  };
+
   const handleSaveChallengeSetup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedPool) return;
@@ -581,9 +680,19 @@ export default function EventPoolManagementPage() {
  const { count: pCount } = await supabase.from('pool_participants').select('*', { count: 'exact', head: true }).eq('pool_id', pool.id);
  setParticipantsCount(pCount || 0);
 
- // Fetch submissions
- const { data: subs } = await supabase.from('pool_submissions').select('id, user_id, answers, grading_status, grading_score, grading_feedback, podium_status, users:user_id(full_name, username)').eq('pool_id', pool.id);
- setSubmissions(subs ? subs.map((s: any) => ({ ...s, users: Array.isArray(s.users) ? s.users[0] : s.users })) : []);
+ // Fetch submissions or candidates
+ if (pool.type === 'voting') {
+   const { data: cands } = await supabase.from('pool_candidates').select('*').eq('pool_id', pool.id).order('vote_count', { ascending: false });
+   setVotingCandidates(cands || []);
+   const { count: vCount } = await supabase.from('pool_votes').select('*', { count: 'exact', head: true }).eq('pool_id', pool.id);
+   setTotalTurnout(vCount || 0);
+   setSubmissions([]); // clear generic submissions
+ } else {
+   const { data: subs } = await supabase.from('pool_submissions').select('id, user_id, answers, grading_status, grading_score, grading_feedback, podium_status, users:user_id(full_name, username)').eq('pool_id', pool.id);
+   setSubmissions(subs ? subs.map((s: any) => ({ ...s, users: Array.isArray(s.users) ? s.users[0] : s.users })) : []);
+   setVotingCandidates([]);
+   setTotalTurnout(0);
+ }
  
  // Fetch applications
  const { data: apps } = await supabase.from('pool_applications').select('id, user_id, status, created_at, users:user_id(full_name, username)').eq('pool_id', pool.id).order('created_at', { ascending: false });
@@ -800,6 +909,53 @@ export default function EventPoolManagementPage() {
  }
  };
 
+ const handleCreateCandidate = async (e: React.FormEvent<HTMLFormElement>) => {
+   e.preventDefault();
+   if (!selectedPool) return;
+   const fd = new FormData(e.currentTarget);
+   try {
+     const { error } = await supabase.from('pool_candidates').insert({
+       pool_id: selectedPool.id,
+       display_name: fd.get('display_name') as string,
+       position_title: fd.get('position_title') as string,
+       bio: fd.get('bio') as string,
+       photo_url: candidatePhotoUrl || null,
+       candidate_user_id: selectedStudentForCandidate?.id || null
+     });
+     if (error) throw error;
+     alert('Candidate created successfully!');
+     loadPoolDetails(selectedPool);
+     setCandidatePhotoUrl('');
+     setSelectedStudentForCandidate(null);
+     (e.target as HTMLFormElement).reset();
+   } catch (e: any) { alert('Error: ' + e.message); }
+ };
+
+ const handleDeleteCandidate = async (candId: string) => {
+   if (selectedPool?.status !== 'draft' && selectedPool?.status !== 'scheduled') {
+     alert('Cannot delete candidates once the election has started.');
+     return;
+   }
+   if (!window.confirm('Delete this candidate?')) return;
+   try {
+     const { error } = await supabase.from('pool_candidates').delete().eq('id', candId);
+     if (error) throw error;
+     loadPoolDetails(selectedPool!);
+   } catch (e: any) { alert('Error: ' + e.message); }
+ };
+
+ const handleCertifyElection = async () => {
+   if (!selectedPool) return;
+   if (!window.confirm("Are you sure you want to certify the election? This will seal the ballot box, crown the top candidate(s), and mark the event as completed.")) return;
+   try {
+     const { error } = await supabase.rpc('certify_voting_winners', { p_pool_id: selectedPool.id });
+     if (error) throw error;
+     alert("Election certified and winners officially declared!");
+     fetchPools();
+     setSelectedPool(null);
+   } catch (e: any) { alert('Error: ' + e.message); }
+ };
+
  const handleApproveApplication = async (appId: string) => {
  try {
  const { error } = await supabase.rpc('approve_pool_application', { p_application_id: appId });
@@ -926,69 +1082,112 @@ export default function EventPoolManagementPage() {
  }
  };
 
- const handleBulkImport = async (e: React.FormEvent<HTMLFormElement>) => {
- e.preventDefault();
- if (!selectedPool) return;
- const fd = new FormData(e.currentTarget);
- const rawText = fd.get('bulk_text') as string;
- 
- if (!rawText.trim()) return;
- 
- const blocks = rawText.split(/\n\s*\n/).filter(b => b.trim().length > 0);
- const newQuestions = [];
- 
- for (const block of blocks) {
- const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
- if (lines.length < 3) continue;
- 
- const question_text = lines[0].replace(/^\d+[\.\)]\s*/, '').trim();
- const options: string[] = [];
- let correct_option = '';
- let points = 1;
- 
- for (let i = 1; i < lines.length; i++) {
- const line = lines[i];
- if (line.match(/^[A-Za-z][\.\)]\s/)) {
- options.push(line.replace(/^[A-Za-z][\.\)]\s*/, '').trim());
- } else if (line.toLowerCase().startsWith('answer:')) {
- const ansLetter = line.replace(/answer:/i, '').trim().toUpperCase();
- const idx = ansLetter.charCodeAt(0) - 65;
- if (idx >= 0 && idx < options.length) {
- correct_option = options[idx];
- } else {
- correct_option = line.replace(/answer:/i, '').trim();
- }
- } else if (line.toLowerCase().startsWith('points:')) {
- points = parseInt(line.replace(/points:/i, '').trim(), 10) || 1;
- }
- }
- 
- if (question_text && options.length >= 2 && correct_option) {
- newQuestions.push({
- pool_id: selectedPool.id,
- question_text,
- options,
- correct_option,
- points
- });
- }
- }
- 
- if (newQuestions.length === 0) {
- alert("No valid questions parsed. Please check your format.");
- return;
- }
- 
- try {
- const { data, error } = await supabase.from('pool_quiz_questions').insert(newQuestions).select();
- if (error) throw error;
- setQuizQuestions([...quizQuestions, ...(data || [])]);
- setIsBulkMode(false);
- alert(`Successfully imported ${newQuestions.length} questions!`);
- } catch (err: any) {
- alert("Failed to bulk import: " + err.message);
- }
- };
+ const handleExecuteBulkImport = async () => {
+    if (!selectedPool) return;
+    setIsImporting(true);
+    setImportErrors([]);
+    let parsedQuestions: any[] = [];
+
+    try {
+      if (bulkImportFormat === 'json') {
+        const parsed = JSON.parse(bulkRawText);
+        if (!Array.isArray(parsed)) throw new Error('Root JSON must be an array of questions');
+        
+        parsed.forEach((q, idx) => {
+          if (!q.question_text || typeof q.question_text !== 'string') throw new Error(`Row ${idx + 1}: Missing or invalid question_text`);
+          if (!q.options || !Array.isArray(q.options) || q.options.length < 2) throw new Error(`Row ${idx + 1}: options must be an array of at least 2 strings`);
+          if (!q.correct_option || typeof q.correct_option !== 'string') throw new Error(`Row ${idx + 1}: Missing or invalid correct_option`);
+          if (!q.options.includes(q.correct_option)) throw new Error(`Row ${idx + 1}: correct_option is not present in the options array`);
+          
+          parsedQuestions.push({
+            question_text: q.question_text,
+            options: q.options,
+            correct_option: q.correct_option,
+            points: Number(q.points) || 1,
+            explanation: q.explanation || null
+          });
+        });
+      } else {
+        // CSV Parsing
+        const lines = bulkRawText.split(/\r?\n/).filter(l => l.trim().length > 0);
+        if (lines.length <= 1) throw new Error('CSV requires a header row and at least one data row');
+        
+        const parseCSVLine = (line: string) => {
+          const result = [];
+          let cur = '';
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"' && line[i+1] === '"') { cur += '"'; i++; } // Escaped quote
+            else if (char === '"') { inQuotes = !inQuotes; }
+            else if (char === ',' && !inQuotes) { result.push(cur); cur = ''; }
+            else { cur += char; }
+          }
+          result.push(cur);
+          return result;
+        };
+
+        const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+        const qIdx = headers.indexOf('question');
+        const ansIdx = headers.indexOf('correct');
+        const ptsIdx = headers.indexOf('points');
+        const expIdx = headers.indexOf('explanation');
+        
+        // Find option columns dynamically or by naming convention
+        const optionIndices = headers.map((h, i) => h.startsWith('option') ? i : -1).filter(i => i !== -1);
+        
+        if (qIdx === -1 || ansIdx === -1 || optionIndices.length < 2) {
+          throw new Error('CSV must contain headers: question, correct, and at least two option_X columns (e.g. option_a, option_b)');
+        }
+
+        for (let i = 1; i < lines.length; i++) {
+          const row = parseCSVLine(lines[i]);
+          if (row.length < headers.length) continue; // Skip malformed rows
+          
+          const qText = row[qIdx]?.trim();
+          const qAns = row[ansIdx]?.trim();
+          const qPts = ptsIdx !== -1 ? Number(row[ptsIdx]?.trim()) || 1 : 1;
+          const qExp = expIdx !== -1 ? row[expIdx]?.trim() || null : null;
+          
+          const opts = optionIndices.map(idx => row[idx]?.trim()).filter(Boolean);
+          
+          if (!qText) throw new Error(`Row ${i + 1}: Missing question text`);
+          if (opts.length < 2) throw new Error(`Row ${i + 1}: Requires at least 2 non-empty options`);
+          if (!opts.includes(qAns)) throw new Error(`Row ${i + 1}: correct option '${qAns}' not found in options [${opts.join(', ')}]`);
+          
+          parsedQuestions.push({
+            question_text: qText,
+            options: opts,
+            correct_option: qAns,
+            points: qPts,
+            explanation: qExp
+          });
+        }
+      }
+
+      // Batch DB Insert
+      const recordsToInsert = parsedQuestions.map(q => ({
+        pool_id: selectedPool.id,
+        question_text: q.question_text.trim(),
+        options: q.options.map((o: string) => o.trim()),
+        correct_option: q.correct_option.trim(),
+        points: q.points || 1,
+        explanation: q.explanation?.trim() || null
+      }));
+
+      const { data, error } = await supabase.from('pool_quiz_questions').insert(recordsToInsert).select();
+      if (error) throw error;
+      
+      setQuizQuestions(prev => [...prev, ...(data || [])]);
+      alert(`Successfully imported ${recordsToInsert.length} questions!`);
+      setIsBulkImportOpen(false);
+      setBulkRawText('');
+    } catch (err: any) {
+      setImportErrors([err.message || 'Unknown parsing error']);
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
  if (isLoading) return <LoadingSpinner />;
  if (error) return <ErrorState message={error} onRetry={fetchPools} />;
@@ -1115,9 +1314,7 @@ export default function EventPoolManagementPage() {
  <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
  <select name="status" defaultValue={selectedPool.status} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 ">
  <option value="draft">Draft</option>
- <option value="scheduled">Scheduled</option>
- <option value="live">Live</option>
- <option value="paused">Paused</option>
+ <option value="scheduled">Scheduled (Auto-Live)</option>
  <option value="completed">Completed</option>
  <option value="archived">Archived</option>
  </select>
@@ -1366,8 +1563,8 @@ export default function EventPoolManagementPage() {
  <div className="space-y-4">
  <div className="flex items-center justify-between">
  <h3 className="font-semibold text-gray-900">Quiz Questions ({quizQuestions.length})</h3>
- <button onClick={() => setIsBulkMode(!isBulkMode)} className="text-sm font-medium text-primary-600 hover:text-primary-700">
- {isBulkMode ? 'Switch to Manual Entry' : 'Bulk Import Questions'}
+ <button onClick={() => setIsBulkImportOpen(true)} className="text-sm font-medium text-primary-600 hover:text-primary-700">
+ Bulk Import Questions
  </button>
  </div>
  {quizQuestions.length === 0 && <p className="text-gray-500 text-sm">No questions added yet.</p>}
@@ -1394,29 +1591,7 @@ export default function EventPoolManagementPage() {
  ))}
  </div>
 
- {/* Add new question form or Bulk mode */}
- {isBulkMode ? (
- <form onSubmit={handleBulkImport} className="bg-primary-50 border border-primary-100 p-6 rounded-xl space-y-4">
- <h4 className="font-semibold text-primary-900">Bulk Import Questions</h4>
- <div className="bg-white p-4 rounded-lg border border-primary-200 text-sm text-gray-600">
- <p className="font-semibold mb-2">Required Format:</p>
- <pre className="text-xs text-gray-500 whitespace-pre-wrap">
- 1. What is the capital of France?{"\n"}
- A) London{"\n"}
- B) Berlin{"\n"}
- C) Paris{"\n"}
- D) Madrid{"\n"}
- Answer: C{"\n"}
- Points: 2
- </pre>
- <p className="mt-2 text-xs text-primary-600">Separate questions with a blank line. Points are optional (default 1).</p>
- </div>
- <textarea required name="bulk_text" rows={15} className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm" placeholder="Paste your questions here..." />
- <button type="submit" className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 flex items-center gap-2">
- <Save className="h-4 w-4" /> Parse & Import
- </button>
- </form>
- ) : (
+ {/* Add new question form */}
  <form onSubmit={handleAddQuizQuestion} className="bg-primary-50 border border-primary-100 p-6 rounded-xl space-y-4">
  <h4 className="font-semibold text-primary-900">Add New Question</h4>
  
@@ -1491,212 +1666,48 @@ export default function EventPoolManagementPage() {
  )}
  </div>
  ) : selectedPool.type === 'voting' ? (
-  /* VOTING CONTENT BUILDER */
   <div className="space-y-6">
-    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className="bg-emerald-100 p-2.5 rounded-lg text-emerald-700">
-          <Award className="h-5 w-5" />
+    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex justify-between items-center">
+      <div>
+        <h4 className="font-bold text-emerald-900">Manage Voting Candidates</h4>
+        <p className="text-xs text-emerald-700">Add or remove candidates directly from the election roster.</p>
+      </div>
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <form onSubmit={handleCreateCandidate} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+        <h5 className="font-bold text-sm">Add New Candidate</h5>
+        <div>
+          <label className="block text-xs font-bold mb-1">Display Name *</label>
+          <input required name="display_name" type="text" className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. John Doe" />
         </div>
         <div>
-          <h4 className="font-bold text-emerald-900 text-sm">Voting Candidate Nominees ({candidatesList.length})</h4>
-          <p className="text-xs text-emerald-700">Nominate department students as candidates, set their election position, posters, and manifesto.</p>
+          <label className="block text-xs font-bold mb-1">Position / Office *</label>
+          <input required name="position_title" type="text" className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. President" />
         </div>
-      </div>
-      <button
-        type="button"
-        onClick={handleSaveVotingCandidates}
-        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-      >
-        <Save className="h-3.5 w-3.5" /> Save Voting Candidates
-      </button>
-    </div>
-
-    {/* Candidate Nomination Interface */}
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      {/* Left Column: Student Picker */}
-      <div className="lg:col-span-5 space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-          <UserPlus className="h-4 w-4 text-primary-600" /> Nominate Student Candidate
-        </h4>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              value={candidateSearchQuery}
-              onChange={(e) => handleCandidateSearch(e.target.value)}
-              placeholder="Search student by name..."
-              className="w-full pl-9 pr-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-            />
-          </div>
-          <select
-            value={candidateFilterLevel}
-            onChange={(e) => handleCandidateFilterChange(e.target.value)}
-            className="px-2 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-          >
-            <option value="all">All Assigned Levels</option>
-            {(eventAllowedLevels || ['100', '200', '300', '400']).map(lvl => (
-              <option key={lvl} value={lvl}>Level {lvl}</option>
-            ))}
-          </select>
+        <div>
+          <label className="block text-xs font-bold mb-1">Bio / Manifesto</label>
+          <textarea name="bio" rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Message to voters..."></textarea>
         </div>
-
-        {/* Student Browser List */}
-        <div className="border rounded-lg h-[240px] overflow-y-auto divide-y bg-white relative">
-          {isCandidateSearching && (
-            <div className="absolute inset-0 bg-white/50 flex items-center justify-center backdrop-blur-sm z-10">
-              <LoadingSpinner size="sm" />
-            </div>
-          )}
-          {candidateSearchResults.length === 0 && !isCandidateSearching ? (
-            <div className="p-8 text-center text-gray-400 text-xs">
-              No unnominated students found matching search.
-            </div>
-          ) : (
-            candidateSearchResults.map(user => (
-              <div key={user.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors">
-                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-bold text-xs shrink-0 overflow-hidden">
-                  {user.avatar_url ? (
-                    <img src={user.avatar_url} alt={user.full_name} className="w-full h-full object-cover" />
-                  ) : (
-                    user.full_name?.[0] || '?'
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-900 truncate">{user.full_name}</p>
-                  <p className="text-[10px] text-slate-500">@{user.username} • L{user.level || '?'}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAddCandidate(user)}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-primary-50 text-primary-700 hover:bg-primary-100 rounded-md text-xs font-semibold transition-colors"
-                >
-                  <Plus className="h-3 w-3" /> Select
-                </button>
-              </div>
-            ))
-          )}
+        <div>
+          <label className="block text-xs font-bold mb-1">Candidate Photo</label>
+          <FileUpload accept="image/*" isImage={true} folder="candidate_posters" onUploadComplete={(url) => setCandidatePhotoUrl(url)} currentFileUrl={candidatePhotoUrl} />
         </div>
-
-        {/* Selected Candidate Customization Form Box */}
-        {selectedStudentForCandidate && (
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 shadow-sm">
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center font-bold text-amber-900 text-xs">
-                  {selectedStudentForCandidate.full_name?.[0] || '?'}
-                </div>
-                <div>
-                  <h5 className="font-bold text-slate-900 text-xs">{selectedStudentForCandidate.full_name}</h5>
-                  <p className="text-[10px] text-slate-500">@{selectedStudentForCandidate.username}</p>
-                </div>
+        <button type="submit" className="w-full py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700">Add Candidate</button>
+      </form>
+      <div className="space-y-3 max-h-[500px] overflow-y-auto">
+        <h5 className="font-bold text-sm">Current Roster ({votingCandidates.length})</h5>
+        {votingCandidates.map(c => (
+          <div key={c.id} className="p-3 bg-white border border-slate-200 rounded-xl flex justify-between items-center shadow-sm">
+            <div className="flex gap-3 items-center">
+              {c.photo_url ? <img src={c.photo_url} className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center"><Users className="w-5 h-5 text-slate-400" /></div>}
+              <div>
+                <p className="font-bold text-sm text-slate-900">{c.display_name}</p>
+                <p className="text-[10px] text-emerald-700 font-black uppercase tracking-wider">{c.position_title}</p>
               </div>
-              <button onClick={() => setSelectedStudentForCandidate(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-4 w-4" />
-              </button>
             </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">Position / Contest Title *</label>
-              <input
-                type="text"
-                value={candidatePositionTitle}
-                onChange={(e) => setCandidatePositionTitle(e.target.value)}
-                placeholder="e.g. Department President, Best Dressed, etc."
-                className="w-full px-3 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">Candidate Campaign Photo Poster</label>
-              <FileUpload
-                accept="image/*"
-                isImage={true}
-                folder="candidate_posters"
-                onUploadComplete={(url) => setCandidatePhotoUrl(url)}
-                currentFileUrl={candidatePhotoUrl}
-                label="Candidate Photo"
-                description="Upload custom poster/photo"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">Manifesto / Short Bio</label>
-              <textarea
-                value={candidateManifesto}
-                onChange={(e) => setCandidateManifesto(e.target.value)}
-                rows={2}
-                placeholder="Candidate's message to voters..."
-                className="w-full px-3 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-primary-500 bg-white"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={handleConfirmCandidateAdd}
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
-            >
-              <CheckCircle className="h-3.5 w-3.5" /> Confirm Candidate Nomination
-            </button>
+            <button type="button" onClick={() => handleDeleteCandidate(c.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
           </div>
-        )}
-      </div>
-
-      {/* Right Column: Nominated Candidates Grid */}
-      <div className="lg:col-span-7 space-y-3">
-        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
-          <span>Active Nominees</span>
-          <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px]">
-            {candidatesList.length} Nominees
-          </span>
-        </h4>
-
-        {candidatesList.length === 0 ? (
-          <div className="p-12 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl">
-            <Award className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-600">No Candidates Nominated Yet</p>
-            <p className="text-xs text-slate-400 mt-1">Use the student search on the left to nominate candidates for this election/voting event.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
-            {candidatesList.map(cand => (
-              <div key={cand.id} className="p-3 bg-white border border-slate-200 rounded-xl space-y-2 hover:border-emerald-300 transition-colors shadow-sm relative group">
-                <button
-                  type="button"
-                  onClick={() => handleRemoveCandidate(cand.id)}
-                  className="absolute top-2 right-2 p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                  title="Remove Candidate"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
-                    {cand.photo_url || cand.avatar_url ? (
-                      <img src={cand.photo_url || cand.avatar_url} alt={cand.full_name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center font-bold text-slate-400 text-sm">
-                        {cand.full_name?.[0] || '?'}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0 pr-6">
-                    <span className="inline-block px-1.5 py-0.5 bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider rounded border border-emerald-200 mb-0.5">
-                      {cand.position_title}
-                    </span>
-                    <h5 className="font-bold text-slate-900 text-xs truncate">{cand.full_name}</h5>
-                    <p className="text-[10px] text-slate-400 truncate">@{cand.username} • Level {cand.level || '?'}</p>
-                  </div>
-                </div>
-                {cand.manifesto && (
-                  <p className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg italic line-clamp-2">
-                    "{cand.manifesto}"
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        ))}
       </div>
     </div>
   </div>
@@ -2147,50 +2158,268 @@ export default function EventPoolManagementPage() {
  </div>
  )}
 
- {/* 3. Evaluation Terminal */}
+ {/* 3. Evaluation Terminal & Voting Tally */}
  {activeView === 'evaluate' && (
- <div className="space-y-4">
- {submissions.length === 0 ? (
- <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
- No submissions received yet.
- </div>
- ) : (
- <div className="border border-gray-200 rounded-xl overflow-hidden">
- <table className="w-full text-left text-sm">
- <thead className="bg-gray-50 text-gray-600 border-b border-gray-200 ">
- <tr>
- <th className="px-4 py-3 font-semibold">Student</th>
- <th className="px-4 py-3 font-semibold">Submission</th>
- <th className="px-4 py-3 font-semibold">Score</th>
- <th className="px-4 py-3 font-semibold">Podium</th>
- <th className="px-4 py-3 font-semibold text-right">Action</th>
- </tr>
- </thead>
- <tbody className="divide-y divide-gray-100">
- {submissions.map(sub => (
- <tr key={sub.id} className="hover:bg-gray-50 ">
- <td className="px-4 py-3">
- <p className="font-medium text-gray-900 ">{sub.users?.full_name}</p>
- <p className="text-xs text-gray-500 ">@{sub.users?.username}</p>
- </td>
- <td className="px-4 py-3 max-w-xs truncate text-gray-500 ">
- {sub.answers?.text ? `"${sub.answers.text.substring(0, 50)}..."` : sub.answers?.file_url ? 'Attachment [Link]' : 'Complex Data'}
- </td>
- <td className="px-4 py-3 font-medium text-primary-700 ">{sub.grading_score !== null ? sub.grading_score : '--'}</td>
- <td className="px-4 py-3 font-bold text-amber-600">{sub.podium_status || '--'}</td>
- <td className="px-4 py-3 text-right">
- <button onClick={() => {
- setEditingSubId(sub.id);
- setScoreInput(sub.grading_score?.toString() || '');
- setFeedbackInput(sub.grading_feedback || '');
- setPodiumInput(sub.podium_status || '');
- }} className="text-primary-600 hover:text-primary-800 font-medium">Evaluate</button>
- </td>
- </tr>
- ))}
- </tbody>
- </table>
- </div>
+   selectedPool.type === 'voting' ? (
+     <div className="space-y-6">
+       <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
+         <div>
+           <h3 className="font-bold text-gray-900">Live Election Telemetry</h3>
+           <p className="text-sm text-gray-500">Total Verified Ballots Cast: {totalTurnout}</p>
+         </div>
+         <div className="flex gap-3 items-center">
+           <span className={`px-3 py-1 rounded-full text-xs font-bold ${selectedPool.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+             {selectedPool.status === 'completed' ? 'Sealed & Certified' : (selectedPool.status === 'live' ? 'Live Poll' : 'Scheduled')}
+           </span>
+           {selectedPool.status === 'completed' && (
+             <button
+               onClick={() => setIsGazetteOpen(true)}
+               className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-semibold hover:bg-black flex items-center gap-2"
+             >
+               <FileDown className="w-4 h-4" />
+               Export Election Gazette
+             </button>
+           )}
+           {(selectedPool.status === 'live' || new Date() > new Date(selectedPool.end_time || '')) && selectedPool.status !== 'completed' && (
+             <button
+               onClick={handleCertifyElection}
+               className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700"
+             >
+               Certify Results & Close Poll
+             </button>
+           )}
+         </div>
+       </div>
+
+       {votingCandidates.length === 0 ? (
+         <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+           No candidates in this election.
+         </div>
+       ) : (
+         <div className="space-y-6">
+           {Object.entries(
+             votingCandidates.reduce((acc: Record<string, PoolCandidate[]>, cand) => {
+               acc[cand.position_title] = acc[cand.position_title] || [];
+               acc[cand.position_title].push(cand);
+               return acc;
+             }, {})
+           ).map(([position, candidates]) => {
+             // Calculate category total votes to determine local turnout percentage
+             const categoryTotalVotes = candidates.reduce((sum, c) => sum + c.vote_count, 0);
+
+             return (
+             <div key={position} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+               <div className="bg-blue-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                 <h4 className="font-bold text-blue-900 uppercase tracking-wider text-sm">{position}</h4>
+                 <span className="text-xs font-bold text-blue-700">{categoryTotalVotes} Valid Ballots Cast</span>
+               </div>
+               <table className="w-full text-left text-sm">
+                 <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                   <tr>
+                     <th className="px-4 py-3 font-semibold">Rank</th>
+                     <th className="px-4 py-3 font-semibold">Candidate</th>
+                     <th className="px-4 py-3 font-semibold text-right">Votes</th>
+                     <th className="px-4 py-3 font-semibold w-1/4">Turnout %</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-gray-100">
+                   {candidates.map((cand, idx) => (
+                     <tr key={cand.id} className="hover:bg-gray-50 bg-white">
+                       <td className="px-4 py-3 font-bold text-gray-700">
+                         {cand.podium_rank ? cand.podium_rank : `#${idx + 1}`}
+                       </td>
+                       <td className="px-4 py-3 flex items-center gap-3">
+                         {cand.photo_url ? (
+                           <img src={cand.photo_url} alt="" className="w-8 h-8 rounded-full object-cover shadow-sm" />
+                         ) : (
+                           <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                             <Users className="w-4 h-4 text-slate-500" />
+                           </div>
+                         )}
+                         <div>
+                           <div className="font-semibold text-gray-900 flex items-center gap-2">
+                             {cand.display_name}
+                             {cand.is_winner && <Crown className="w-4 h-4 text-yellow-500" />}
+                           </div>
+                         </div>
+                       </td>
+                       <td className="px-4 py-3 font-bold text-gray-900 text-right">{cand.vote_count}</td>
+                       <td className="px-4 py-3 text-gray-600">
+                         <div className="flex items-center gap-2">
+                           <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                             <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${categoryTotalVotes > 0 ? (cand.vote_count / categoryTotalVotes) * 100 : 0}%` }}></div>
+                           </div>
+                           <span className="text-xs font-medium w-10 text-right">{categoryTotalVotes > 0 ? ((cand.vote_count / categoryTotalVotes) * 100).toFixed(1) : '0.0'}%</span>
+                         </div>
+                       </td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+             </div>
+             );
+           })}
+         </div>
+       )}
+     </div>    ) : selectedPool.type === 'quiz' ? (
+      <div className="space-y-4">
+        <div className="flex border-b border-gray-200">
+          <button onClick={() => setQuizEvalTab('submissions')} className={`px-4 py-2 font-semibold text-sm ${quizEvalTab === 'submissions' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}>Submissions & Audit</button>
+          <button onClick={() => setQuizEvalTab('item-analysis')} className={`px-4 py-2 font-semibold text-sm ${quizEvalTab === 'item-analysis' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}>Item Analysis</button>
+        </div>
+
+        {quizEvalTab === 'submissions' ? (
+          submissions.length === 0 ? (
+            <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+              No submissions received yet.
+            </div>
+          ) : (
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Student</th>
+                    <th className="px-4 py-3 font-semibold">Final Score</th>
+                    <th className="px-4 py-3 font-semibold">Time Elapsed</th>
+                    <th className="px-4 py-3 font-semibold text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {submissions.map(sub => (
+                    <tr key={sub.id} className="hover:bg-gray-50 bg-white">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{sub.users?.full_name}</p>
+                        <p className="text-xs text-gray-500">@{sub.users?.username}</p>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-primary-700">{sub.score !== null && sub.score !== undefined ? sub.score : '--'} pts</td>
+                      <td className="px-4 py-3 text-gray-600">{sub.time_taken_seconds ? `${Math.floor(sub.time_taken_seconds / 60)}m ${sub.time_taken_seconds % 60}s` : '--'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => setSelectedSubmissionForAudit(sub)} className="text-primary-600 hover:text-primary-800 font-medium px-3 py-1.5 bg-primary-50 rounded-lg">Audit Answers</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : (
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 font-semibold w-12">Q#</th>
+                  <th className="px-4 py-3 font-semibold">Question Preview</th>
+                  <th className="px-4 py-3 font-semibold text-center">Attempts</th>
+                  <th className="px-4 py-3 font-semibold">Error Rate</th>
+                  <th className="px-4 py-3 font-semibold">Top Distractor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {quizQuestions.map((q, idx) => {
+                  const attempts = submissions.filter(s => s.answers && s.answers[q.id] !== undefined);
+                  const totalAttempts = attempts.length;
+                  let correctCount = 0;
+                  const distractorCounts: Record<string, number> = {};
+
+                  attempts.forEach(s => {
+                    const ans = s.answers[q.id];
+                    if (ans === q.correct_option) {
+                      correctCount++;
+                    } else {
+                      distractorCounts[ans] = (distractorCounts[ans] || 0) + 1;
+                    }
+                  });
+
+                  const wrongCount = totalAttempts - correctCount;
+                  const difficultyRatio = totalAttempts > 0 ? (wrongCount / totalAttempts) * 100 : 0;
+                  
+                  let mostCommonDistractor = 'None';
+                  let maxD = 0;
+                  Object.entries(distractorCounts).forEach(([k, v]) => {
+                    if (v > maxD) { maxD = v; mostCommonDistractor = k; }
+                  });
+
+                  return (
+                    <tr key={q.id} className="hover:bg-gray-50 bg-white">
+                      <td className="px-4 py-3 font-bold text-gray-500">{idx + 1}</td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900 truncate max-w-xs" title={q.question_text}>{q.question_text}</p>
+                        <p className="text-xs text-green-600 font-semibold mt-0.5">Key: {q.correct_option}</p>
+                      </td>
+                      <td className="px-4 py-3 text-center font-medium text-gray-700">{totalAttempts}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden w-24">
+                            <div className={`h-2 rounded-full ${difficultyRatio < 25 ? 'bg-green-500' : difficultyRatio < 65 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${difficultyRatio}%` }}></div>
+                          </div>
+                          <span className={`text-xs font-bold ${difficultyRatio < 25 ? 'text-green-600' : difficultyRatio < 65 ? 'text-yellow-600' : 'text-red-600'}`}>{difficultyRatio.toFixed(1)}%</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {mostCommonDistractor !== 'None' ? (
+                          <span className="px-2.5 py-1 bg-red-50 text-red-700 rounded-lg text-xs font-medium truncate max-w-[150px] inline-block" title={mostCommonDistractor}>{mostCommonDistractor}</span>
+                        ) : (
+                          <span className="text-xs text-gray-400">--</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    ) : (
+      <div className="space-y-4">
+        {submissions.length === 0 ? (
+          <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+            No submissions received yet.
+          </div>
+        ) : (
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-600 border-b border-gray-200 ">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Student</th>
+                  <th className="px-4 py-3 font-semibold">Submission</th>
+                  <th className="px-4 py-3 font-semibold">Score</th>
+                  <th className="px-4 py-3 font-semibold">Podium</th>
+                  <th className="px-4 py-3 font-semibold text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {submissions.map(sub => (
+                  <tr key={sub.id} className="hover:bg-gray-50 bg-white">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900 ">{sub.users?.full_name}</p>
+                      <p className="text-xs text-gray-500 ">@{sub.users?.username}</p>
+                    </td>
+                    <td className="px-4 py-3 max-w-xs truncate text-gray-500 ">
+                      {sub.answers?.text ? `"${sub.answers.text.substring(0, 50)}..."` : sub.answers?.file_url ? 'Attachment [Link]' : 'Complex Data'}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-primary-700 ">{sub.grading_score !== null ? sub.grading_score : '--'}</td>
+                    <td className="px-4 py-3 font-bold text-amber-600">{sub.podium_status || '--'}</td>
+                    <td className="px-4 py-3 text-right">
+                      {(selectedPool.type === 'essay' || selectedPool.type === 'challenge') ? (
+                        <button onClick={() => handleOpenEssayEval(sub)} className="text-primary-600 hover:text-primary-800 font-medium px-3 py-1.5 bg-primary-50 rounded-lg">
+                          Grade Submission
+                        </button>
+                      ) : (
+                        <button onClick={() => {
+                          setEditingSubId(sub.id);
+                          setScoreInput(sub.grading_score?.toString() || '');
+                          setFeedbackInput(sub.grading_feedback || '');
+                          setPodiumInput(sub.podium_status || '');
+                        }} className="text-primary-600 hover:text-primary-800 font-medium">Evaluate</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )} </div>
  )}
 
  {/* Inline Evaluation Editor Form */}
@@ -2317,7 +2546,251 @@ export default function EventPoolManagementPage() {
  </div>
  )}
 
- <Modal isOpen={!!showCreateModal} onClose={() => setShowCreateModal(false)} title={showCreateModal === 'create' ? "Create New Pool" : "Edit Pool Info"} size="sm">
+        <Modal isOpen={isBulkImportOpen} onClose={() => setIsBulkImportOpen(false)} title="Bulk Import Questions" size="md">
+          <div className="space-y-4">
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input type="radio" name="bulkFormat" checked={bulkImportFormat === 'json'} onChange={() => setBulkImportFormat('json')} /> JSON
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="bulkFormat" checked={bulkImportFormat === 'csv'} onChange={() => setBulkImportFormat('csv')} /> CSV
+              </label>
+            </div>
+            {bulkImportFormat === 'json' ? (
+              <div className="bg-white p-3 rounded-lg border border-primary-200 text-xs text-gray-600">
+                <pre>
+{`[
+  {
+    "question_text": "What is the capital of France?",
+    "options": ["London", "Berlin", "Paris", "Madrid"],
+    "correct_option": "Paris",
+    "points": 2,
+    "explanation": "Paris is the capital of France."
+  }
+]`}
+                </pre>
+              </div>
+            ) : (
+              <div className="bg-white p-3 rounded-lg border border-primary-200 text-xs text-gray-600">
+                <p>Headers required: question, option_a, option_b, correct, points, explanation</p>
+                <pre>
+{`question,option_a,option_b,option_c,correct,points
+What is 2+2?,3,4,5,4,1`}
+                </pre>
+              </div>
+            )}
+            
+            <textarea
+              value={bulkRawText}
+              onChange={(e) => setBulkRawText(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+              placeholder={`Paste your ${bulkImportFormat.toUpperCase()} here...`}
+            />
+
+            {importErrors.length > 0 && (
+              <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm border border-red-200">
+                <ul className="list-disc list-inside">
+                  {importErrors.map((err, idx) => <li key={idx}>{err}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button onClick={() => setIsBulkImportOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button
+                onClick={handleExecuteBulkImport}
+                disabled={isImporting || !bulkRawText.trim()}
+                className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 disabled:opacity-50"
+              >
+                {isImporting ? 'Importing...' : 'Parse & Import'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal isOpen={!!selectedSubmissionForAudit} onClose={() => setSelectedSubmissionForAudit(null)} title="Student Exam Sheet Audit" size="lg">
+          {selectedSubmissionForAudit && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="bg-primary-50 p-4 rounded-xl border border-primary-100 flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-primary-900 text-lg">{selectedSubmissionForAudit.users?.full_name}</h4>
+                  <p className="text-sm text-primary-700">Submitted: {new Date(selectedSubmissionForAudit.created_at).toLocaleString()}</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-black text-primary-700">{selectedSubmissionForAudit.score} <span className="text-sm font-medium">pts</span></div>
+                  <div className="text-sm font-medium text-gray-500">
+                    ⏱ {selectedSubmissionForAudit.time_taken_seconds ? `${Math.floor(selectedSubmissionForAudit.time_taken_seconds / 60)}m ${selectedSubmissionForAudit.time_taken_seconds % 60}s` : 'Unknown time'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Questions Audit List */}
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                {quizQuestions.map((q, idx) => {
+                  const studentAns = selectedSubmissionForAudit.answers?.[q.id];
+                  const isCorrect = studentAns === q.correct_option;
+                  const isUnanswered = studentAns === undefined || studentAns === null;
+
+                  return (
+                    <div key={q.id} className={`p-4 rounded-xl border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <div className="flex justify-between items-start mb-3">
+                        <h5 className="font-bold text-gray-900 text-sm">
+                          <span className="text-gray-500 mr-2">{idx + 1}.</span>
+                          {q.question_text}
+                        </h5>
+                        <div className={`font-bold whitespace-nowrap ml-4 ${isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+                          {isCorrect ? `+${q.points}` : '0'} pts
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        {q.options.map((opt, oIdx) => {
+                          const isSelected = opt === studentAns;
+                          const isActuallyCorrect = opt === q.correct_option;
+
+                          let rowClass = "flex items-center gap-2 p-2 rounded-lg border ";
+                          if (isSelected && isActuallyCorrect) {
+                            rowClass += "bg-green-100 border-green-300 text-green-900 font-bold";
+                          } else if (isSelected && !isActuallyCorrect) {
+                            rowClass += "bg-red-100 border-red-300 text-red-900 font-bold";
+                          } else if (!isSelected && isActuallyCorrect) {
+                            rowClass += "bg-green-50 border-green-300 border-dashed text-green-800 font-medium";
+                          } else {
+                            rowClass += "bg-white border-gray-100 text-gray-600";
+                          }
+
+                          return (
+                            <div key={oIdx} className={rowClass}>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? (isActuallyCorrect ? 'bg-green-600 border-green-600' : 'bg-red-600 border-red-600') : 'border-gray-300'}`}>
+                                {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                              </div>
+                              {opt}
+                              {isActuallyCorrect && !isSelected && <span className="ml-auto text-xs text-green-600 font-bold">(Correct Answer)</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {q.explanation && (
+                        <div className="mt-4 p-3 bg-white/60 rounded-lg text-xs text-gray-700 border border-gray-200">
+                          <span className="font-bold text-gray-900 block mb-1">Explanation:</span>
+                          {q.explanation}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        <Modal isOpen={!!selectedSubmissionForEssayEval} onClose={() => setSelectedSubmissionForEssayEval(null)} title="Evaluation Rubric Scorecard" size="3xl">
+          {selectedSubmissionForEssayEval && (
+            <div className="flex flex-col lg:flex-row gap-6 max-h-[75vh]">
+              {/* Left Pane: The Submission */}
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden flex flex-col max-h-[75vh]">
+                <div className="p-4 border-b border-gray-200 bg-white">
+                  <h4 className="font-bold text-gray-900">{selectedSubmissionForEssayEval.users?.full_name}</h4>
+                  <p className="text-xs text-gray-500">@{selectedSubmissionForEssayEval.users?.username} • Submitted {new Date(selectedSubmissionForEssayEval.created_at).toLocaleString()}</p>
+                </div>
+                <div className="p-5 overflow-y-auto flex-1 text-sm text-gray-800 leading-relaxed font-serif">
+                  {selectedSubmissionForEssayEval.answers?.text ? (
+                    <div className="whitespace-pre-wrap">{selectedSubmissionForEssayEval.answers.text}</div>
+                  ) : selectedSubmissionForEssayEval.answers?.file_url ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center p-6">
+                      <div className="bg-primary-100 p-4 rounded-full mb-4 text-primary-600">
+                        <Save className="h-8 w-8" />
+                      </div>
+                      <p className="font-bold text-gray-900 mb-2">File Submission</p>
+                      <a href={selectedSubmissionForEssayEval.answers.file_url} target="_blank" rel="noreferrer" className="text-primary-600 hover:underline">
+                        Open Attached Document
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 italic">No text content available.</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Pane: Rubric Scorecard */}
+              <div className="flex-1 flex flex-col overflow-y-auto pr-2 max-h-[75vh] pb-4">
+                <div className="bg-primary-50 p-4 rounded-xl border border-primary-100 mb-6 sticky top-0 z-10 shadow-sm flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-primary-900">Total Score</h4>
+                    <p className="text-xs text-primary-700">Calculated automatically</p>
+                  </div>
+                  <div className="text-3xl font-black text-primary-700">
+                    {Object.values(rubricScores).reduce((a, b) => a + b, 0)}
+                    <span className="text-lg text-primary-400 font-medium"> / {(selectedPool?.target_constraints?.rubric_criteria || DEFAULT_RUBRIC_CRITERIA).reduce((a: number, c: any) => a + c.max_points, 0)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-6 flex-1">
+                  {(selectedPool?.target_constraints?.rubric_criteria || DEFAULT_RUBRIC_CRITERIA).map((c: any) => (
+                    <div key={c.key} className="bg-white p-4 rounded-xl border border-gray-200">
+                      <div className="flex justify-between items-end mb-3">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-900">{c.label}</label>
+                          <span className="text-xs text-gray-500">Max {c.max_points} pts</span>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          max={c.max_points}
+                          value={rubricScores[c.key] || 0}
+                          onChange={(e) => setRubricScores(prev => ({ ...prev, [c.key]: Math.min(c.max_points, Math.max(0, parseInt(e.target.value) || 0)) }))}
+                          className="w-20 px-3 py-1.5 border rounded-lg text-center font-bold focus:ring-2 focus:ring-primary-500"
+                        />
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={c.max_points}
+                        value={rubricScores[c.key] || 0}
+                        onChange={(e) => setRubricScores(prev => ({ ...prev, [c.key]: parseInt(e.target.value) }))}
+                        className="w-full accent-primary-600"
+                      />
+                    </div>
+                  ))}
+
+                  <div className="pt-4 border-t border-gray-200">
+                    <label className="block text-sm font-bold text-gray-900 mb-2">Evaluator Notes</label>
+                    <textarea
+                      rows={3}
+                      value={evaluatorNotes}
+                      onChange={(e) => setEvaluatorNotes(e.target.value)}
+                      placeholder="Constructive feedback for the student..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-4 py-2">
+                    <label className="text-sm font-bold text-gray-900">Status:</label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input type="radio" checked={evaluationStatus === 'completed'} onChange={() => setEvaluationStatus('completed')} className="text-primary-600 focus:ring-primary-500" /> Completed
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input type="radio" checked={evaluationStatus === 'needs_revision'} onChange={() => setEvaluationStatus('needs_revision')} className="text-primary-600 focus:ring-primary-500" /> Needs Revision
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 sticky bottom-0 bg-white z-10 py-2">
+                  <button onClick={() => setSelectedSubmissionForEssayEval(null)} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancel</button>
+                  <button onClick={handleSaveRubricEvaluation} className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-700 shadow-md flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Save & Submit Score
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        <Modal isOpen={!!showCreateModal} onClose={() => setShowCreateModal(false)} title={showCreateModal === 'create' ? "Create New Pool" : "Edit Pool Info"} size="sm">
  <form onSubmit={handleCreatePool} className="space-y-6">
  <div>
  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Pool Title</label>
@@ -2377,6 +2850,15 @@ export default function EventPoolManagementPage() {
  </div>
  </form>
  </Modal>
+
+ <ElectionGazetteModal
+    isOpen={isGazetteOpen}
+    onClose={() => setIsGazetteOpen(false)}
+    pool={selectedPool}
+    candidates={votingCandidates}
+    totalTurnout={totalTurnout}
+ />
+
  </div>
  );
 }

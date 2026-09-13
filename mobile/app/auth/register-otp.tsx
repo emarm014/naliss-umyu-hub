@@ -312,6 +312,7 @@ export default function RegisterOTP() {
       router.push({ pathname: '/auth/register-password', params: { email } });
 
     } catch (err: any) {
+      autoVerifyAttempted.current = false;
       captureUIError('RegisterOTP.handleVerify', err, { email });
       if (!isMounted.current) return;
       if (err.message?.includes('expired') || err.message?.includes('Token has expired')) {

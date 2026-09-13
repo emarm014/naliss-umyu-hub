@@ -23,6 +23,8 @@ import {
 import { SafeModal, SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { realtimeManager } from '../../src/lib/realtimeManager';
+import * as Haptics from 'expo-haptics';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenErrorBoundary } from '../../src/components/ScreenErrorBoundary';
 import * as Sentry from '@sentry/react-native';
@@ -647,229 +649,173 @@ export default function ChatScreen() {
 
 
     const setupRealtime = () => {
-        // Clean up any existing channel first
+        // Clean up previous listeners if they exist
         if (realtimeChannelRef.current) {
-            supabase.removeChannel(realtimeChannelRef.current);
+            realtimeChannelRef.current.forEach((unsub: any) => unsub());
+            realtimeChannelRef.current = null;
         }
 
-        const channel = supabase
-            .channel(`chat:${idRef.current}:${Date.now()}`)
-            // ── Messages: new / edit / delete ────────────────────────────────
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'messages', filter: `group_id=eq.${idRef.current}` },
-                async (payload) => {
-                    if (payload.eventType === 'INSERT') {
-                        const newMsg = payload.new as any;
-                        // Guard against malformed payload
-                        if (!newMsg?.id || !newMsg?.group_id) return;
+        const unsubs: (() => void)[] = [];
 
-                        // ── DEDUP: find the optimistic temp message this confirms ──
-                        // Priority 1: metadata.tempId (set for all our messages)
-                        // Priority 2: content + sender match (fallback for text only)
-                        // NEVER match by content alone for media (content changes after upload)
-                        const findTempMsg = (prev: any[]) => prev.find(m =>
-                            (m.status === 'sending' || m.status === 'unsent' || m.status === 'failed' || m.status === 'error') &&
-                            m.sender_id === newMsg.sender_id && (
-                                (newMsg.metadata?.tempId && m.id === newMsg.metadata.tempId)
-                            )
-                        );
+        // 1. Chat Listener
+        unsubs.push(realtimeManager.registerChatListener(idRef.current, async (payload) => {
+            if (payload.eventType === 'INSERT') {
+                const newMsg = payload.new as any;
+                if (!newMsg?.id || !newMsg?.group_id) return;
 
+                const findTempMsg = (prev: any[]) => prev.find(m =>
+                    (m.status === 'sending' || m.status === 'unsent' || m.status === 'failed' || m.status === 'error') &&
+                    m.sender_id === newMsg.sender_id && (
+                        (newMsg.metadata?.tempId && m.id === newMsg.metadata.tempId)
+                    )
+                );
+
+                setMessages(prev => {
+                    if (prev.some(m => m.id === newMsg.id)) return prev;
+
+                    const tempMsg = findTempMsg(prev);
+
+                    if (tempMsg) {
+                        const confirmed = {
+                            ...tempMsg,
+                            ...newMsg,
+                            id: newMsg.id,
+                            status: 'sent',
+                            isEdited: false,
+                        };
+                        setTimeout(() => messageStore.updateMessage(idRef.current, tempMsg.id, confirmed), 0);
+                        return prev.map(m => m.id === tempMsg.id ? confirmed : m);
+                    }
+
+                    const memberInfo = membersRef.current.find(m => m.id === newMsg.sender_id);
+                    let replyToData = null;
+                    if (newMsg.reply_to_id) {
+                        const repliedMsg = prev.find(m => m.id === newMsg.reply_to_id);
+                        if (repliedMsg) {
+                            replyToData = {
+                                id: repliedMsg.id,
+                                username: repliedMsg.user?.username || repliedMsg.username || 'user',
+                                full_name: repliedMsg.user?.full_name || repliedMsg.full_name || '',
+                                content_type: repliedMsg.message_type || repliedMsg.content_type,
+                                content: repliedMsg.content?.substring(0, 50),
+                                is_deleted: repliedMsg.is_deleted
+                            };
+                        }
+                    }
+
+                    const formatted = {
+                        ...newMsg,
+                        status: 'sent',
+                        isEdited: false,
+                        user: memberInfo || newMsg.user || null,
+                        replyTo: replyToData
+                    };
+                    setTimeout(() => messageStore.addMessage(idRef.current, formatted), 0);
+                    return [...prev, formatted];
+                });
+
+                const isOurs = newMsg.sender_id === currentUserRef.current?.id;
+                if (!isOurs) {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    const { data: fullData } = await (supabase as any).from('messages')
+                        .select(`
+                            *,
+                            user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
+                            reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
+                        `)
+                        .eq('id', newMsg.id)
+                        .single();
+                    if (fullData) {
+                        const formatted = {
+                            ...(fullData as any),
+                            isEdited: (fullData as any).is_edited || false,
+                            replyTo: (fullData as any).reply_to_message ? {
+                                id: (fullData as any).reply_to_message.id,
+                                username: (fullData as any).reply_to_message.user?.username,
+                                full_name: (fullData as any).reply_to_message.user?.full_name,
+                                content_type: (fullData as any).reply_to_message.message_type,
+                                content: (fullData as any).reply_to_message.content?.substring(0, 50),
+                                is_deleted: (fullData as any).reply_to_message.is_deleted
+                            } : null,
+                            status: 'sent',
+                        };
                         setMessages(prev => {
-                            // Already have this real message ID — skip (idempotent)
-                            if (prev.some(m => m.id === newMsg.id)) return prev;
-
-                            const tempMsg = findTempMsg(prev);
-
-                            if (tempMsg) {
-                                // Confirm: swap temp → real, mark sent
-                                const confirmed = {
-                                    ...tempMsg,
-                                    ...newMsg,
-                                    id: newMsg.id,
-                                    status: 'sent',
-                                    isEdited: false,
-                                    // Keep local URI for images until Cloudinary URL is loaded
-                                };
-                                // Side effect outside state updater to avoid double-call issues
-                                setTimeout(() => messageStore.updateMessage(idRef.current, tempMsg.id, confirmed), 0);
-                                return prev.map(m => m.id === tempMsg.id ? confirmed : m);
-                            }
-
-                            // Someone else's message — add with member info
-                            const memberInfo = membersRef.current.find(m => m.id === newMsg.sender_id);
-
-                            // Find the replied-to message if reply_to_id exists
-                            let replyToData = null;
-                            if (newMsg.reply_to_id) {
-                                const repliedMsg = prev.find(m => m.id === newMsg.reply_to_id);
-                                if (repliedMsg) {
-                                    replyToData = {
-                                        id: repliedMsg.id,
-                                        username: repliedMsg.user?.username || repliedMsg.username || 'user',
-                                        full_name: repliedMsg.user?.full_name || repliedMsg.full_name || '',
-                                        content_type: repliedMsg.message_type || repliedMsg.content_type,
-                                        content: repliedMsg.content?.substring(0, 50),
-                                        is_deleted: repliedMsg.is_deleted
-                                    };
-                                }
-                            }
-
-                            const formatted = {
-                                ...newMsg,
-                                status: 'sent',
-                                isEdited: false,
-                                user: memberInfo || newMsg.user || null,
-                                replyTo: replyToData
-                            };
-                            setTimeout(() => messageStore.addMessage(idRef.current, formatted), 0);
-                            return [...prev, formatted];
-                        });
-
-                        // Background: enrich sender profile and fetch joined reply details
-                        const isOurs = newMsg.sender_id === currentUserRef.current?.id;
-                        if (!isOurs) {
-                            const { data: fullData } = await (supabase as any).from('messages')
-                                .select(`
-                                    *,
-                                    user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
-                                    reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
-                                `)
-                                .eq('id', newMsg.id)
-                                .single();
-                            if (fullData) {
-                                const formatted = {
-                                    ...(fullData as any),
-                                    isEdited: (fullData as any).is_edited || false,
-                                    replyTo: (fullData as any).reply_to_message ? {
-                                        id: (fullData as any).reply_to_message.id,
-                                        username: (fullData as any).reply_to_message.user?.username,
-                                        full_name: (fullData as any).reply_to_message.user?.full_name,
-                                        content_type: (fullData as any).reply_to_message.message_type,
-                                        content: (fullData as any).reply_to_message.content?.substring(0, 50),
-                                        is_deleted: (fullData as any).reply_to_message.is_deleted
-                                    } : null,
-                                    status: 'sent',
-                                };
-                                setMessages(prev => {
-                                    const updated = prev.map(m => m.id === newMsg.id ? formatted : m);
-                                    setTimeout(() => messageStore.updateMessage(idRef.current, newMsg.id, formatted), 0);
-                                    return updated;
-                                });
-                            }
-                        }
-                    } else if (payload.eventType === 'UPDATE') {
-                        if (!payload.new?.id) return;
-                        if (payload.new.is_deleted) {
-                            const updates = { is_deleted: true, content: '' };
-                            setMessages(prev => prev.map(m =>
-                                m.id === payload.new.id ? { ...m, ...updates } : m
-                            ));
-                            messageStore.updateMessage(idRef.current, payload.new.id, updates);
-                        } else {
-                            const updates = { 
-                                content: payload.new.content, 
-                                is_edited: payload.new.is_edited, 
-                                isEdited: payload.new.is_edited,
-                                edited_at: payload.new.edited_at
-                            };
-                            setMessages(prev => prev.map(m =>
-                                m.id === payload.new.id ? { ...m, ...updates } : m
-                            ));
-                            messageStore.updateMessage(idRef.current, payload.new.id, updates);
-                        }
-                    } else if (payload.eventType === 'DELETE') {
-                        setMessages(prev => prev.filter(m => m.id !== payload.old.id));
-                        messageStore.removeMessage(idRef.current, payload.old.id);
-                    }
-                }
-            )
-            // ── Group metadata: name / DP / chat_enabled changes ─────────────
-            .on(
-                'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'groups', filter: `id=eq.${idRef.current}` },
-                (payload) => {
-                    // Instantly update the local group state — header re-renders immediately
-                    setGroup((prev: any) => prev ? { ...prev, ...payload.new } : payload.new);
-                }
-            )
-            // ── Group members: someone added or removed ───────────────────────
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'group_members', filter: `group_id=eq.${idRef.current}` },
-                async (payload) => {
-                    if (payload.eventType === 'DELETE') {
-                        const removedUserId = (payload.old as any).user_id;
-                        const updated = membersRef.current.filter(m => m.id !== removedUserId);
-                        setMembersWithRef(updated);
-                        setGroupMembers(idRef.current, updated);
-                    } else if (payload.eventType === 'INSERT') {
-                        // Fetch the new member's profile and add to list
-                        const newUserId = (payload.new as any).user_id;
-                        const { data: userProfile } = await (supabase as any).from('users')
-                            .select('id, username, full_name, avatar_url, level, role')
-                            .eq('id', newUserId)
-                            .single();
-                        if (userProfile) {
-                            const updated = [
-                                ...membersRef.current.filter(m => m.id !== newUserId),
-                                userProfile,
-                            ];
-                            setMembersWithRef(updated);
-                            setGroupMembers(idRef.current, updated);
-                        }
-                    }
-                }
-            )
-            // ── User presence tracking using Supabase Realtime Presence ──────────
-            .on(
-                'presence',
-                { event: 'sync' },
-                () => {
-                    const presenceState = channel.presenceState();
-                    const onlineUserIds = new Set<string>();
-
-                    Object.values(presenceState).forEach((presences: any) => {
-                        presences.forEach((p: any) => {
-                            if (p.user_id) {
-                                onlineUserIds.add(p.user_id);
-                            }
-                        });
-                    });
-
-                    // Patch all messages from active users — online status
-                    setMessages(prev => prev.map(m => {
-                        const isOnline = onlineUserIds.has(m.sender_id);
-                        if (m.isOnline === isOnline) return m;
-                        return { ...m, isOnline };
-                    }));
-
-                    // Also patch the members list online status
-                    const updatedMembers = membersRef.current.map(m => {
-                        const isOnline = onlineUserIds.has(m.id);
-                        if (m.isOnline === isOnline) return m;
-                        return { ...m, isOnline };
-                    });
-                    setMembersWithRef(updatedMembers);
-                    setGroupMembers(idRef.current, updatedMembers);
-                }
-            )
-            .subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    if (currentUserRef.current?.id) {
-                        await channel.track({
-                            user_id: currentUserRef.current.id,
-                            online_at: new Date().toISOString()
+                            const updated = prev.map(m => m.id === newMsg.id ? formatted : m);
+                            setTimeout(() => messageStore.updateMessage(idRef.current, newMsg.id, formatted), 0);
+                            return updated;
                         });
                     }
                 }
+            } else if (payload.eventType === 'UPDATE') {
+                if (!payload.new?.id) return;
+                if (payload.new.is_deleted) {
+                    const updates = { is_deleted: true, content: '' };
+                    setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...updates } : m));
+                    messageStore.updateMessage(idRef.current, payload.new.id, updates);
+                } else {
+                    const updates = { 
+                        content: payload.new.content, 
+                        is_edited: payload.new.is_edited, 
+                        isEdited: payload.new.is_edited,
+                        edited_at: payload.new.edited_at
+                    };
+                    setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...updates } : m));
+                    messageStore.updateMessage(idRef.current, payload.new.id, updates);
+                }
+            } else if (payload.eventType === 'DELETE') {
+                setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+                messageStore.removeMessage(idRef.current, payload.old.id);
+            }
+        }));
+
+        // 2. Group Metadata
+        unsubs.push(realtimeManager.registerGroupMetadataListener(idRef.current, (groupPayload) => {
+            setGroup((prev: any) => prev ? { ...prev, ...groupPayload } : groupPayload);
+        }));
+
+        // 3. Group Members
+        unsubs.push(realtimeManager.registerGroupMembersListener(idRef.current, async (payload) => {
+            if (payload.eventType === 'DELETE') {
+                const removedUserId = (payload.old as any).user_id;
+                const updated = membersRef.current.filter(m => m.id !== removedUserId);
+                setMembersWithRef(updated);
+                setGroupMembers(idRef.current, updated);
+            } else if (payload.eventType === 'INSERT') {
+                const newUserId = (payload.new as any).user_id;
+                const { data: userProfile } = await (supabase as any).from('users')
+                    .select('id, username, full_name, avatar_url, level, role')
+                    .eq('id', newUserId)
+                    .single();
+                if (userProfile) {
+                    const updated = [
+                        ...membersRef.current.filter(m => m.id !== newUserId),
+                        userProfile,
+                    ];
+                    setMembersWithRef(updated);
+                    setGroupMembers(idRef.current, updated);
+                }
+            }
+        }));
+
+        // 4. Presence
+        unsubs.push(realtimeManager.registerPresenceListener(idRef.current, (onlineUserIds) => {
+            setMessages(prev => prev.map(m => {
+                const isOnline = onlineUserIds.has(m.sender_id);
+                if (m.isOnline === isOnline) return m;
+                return { ...m, isOnline };
+            }));
+            const updatedMembers = membersRef.current.map(m => {
+                const isOnline = onlineUserIds.has(m.id);
+                if (m.isOnline === isOnline) return m;
+                return { ...m, isOnline };
             });
+            setMembersWithRef(updatedMembers);
+            setGroupMembers(idRef.current, updatedMembers);
+        }));
 
-        // Store channel ref for proper cleanup
-        realtimeChannelRef.current = channel;
+        realtimeChannelRef.current = unsubs;
     };
 
-    // Keep refs in sync with latest function versions — fixes stale closure in reconnection callback
     setupRealtimeRef.current = setupRealtime;
     fetchMissedMessagesRef.current = fetchMissedMessages;
 
@@ -2640,7 +2586,7 @@ export default function ChatScreen() {
             <View style={{ flex: 1, backgroundColor: colors.background }}>
                 <KeyboardAvoidingView
                     style={{ flex: 1, backgroundColor: colors.background }}
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                     keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 12}
                 >
             {/* Header */}

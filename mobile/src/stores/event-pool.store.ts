@@ -8,7 +8,7 @@ export type EventPool = {
     id: string;
     title: string;
     description: string;
-    status: 'scheduled' | 'live' | 'completed';
+    status: 'draft' | 'scheduled' | 'live' | 'completed' | 'archived';
     start_time: string;
     end_time: string | null;
     banner_url: string | null;
@@ -94,7 +94,7 @@ export const useEventPoolStore = create<EventPoolState>()(
                     users!featured_students_user_id_fkey ( full_name, username, avatar_url )
                 )
             `)
-            .in('status', ['live', 'scheduled', 'completed'])
+            .in('status', ['draft', 'scheduled', 'live', 'completed', 'archived'])
             .order('start_time', { ascending: false });
 
           if (error) throw error;

@@ -1,6 +1,6 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, BackHandler } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, BackHandler, AppState, AppStateStatus } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../src/api/supabase/client';
@@ -8,7 +8,6 @@ import { useTheme } from '../../../src/stores/theme.store';
 import { useAuthStore } from '../../../src/stores';
 import { useCompositionStore } from '../../../src/stores/composition.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
-import { differenceInSeconds } from 'date-fns';
 import * as DocumentPicker from 'expo-document-picker';
 import { useQuizStore } from '../../../src/stores/quiz.store';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,14 +24,29 @@ export default function ChallengeEngineScreen() {
     const submitEvaluation = useCompositionStore((s: any) => s.submitEvaluation);
     const clearDraft = useCompositionStore((s: any) => s.clearDraft);
     const isSubmittingGlobal = useCompositionStore((s: any) => s.isSubmitting);
+    const getLastSavedAt = useCompositionStore((s: any) => s.getLastSavedAt);
     
     const [poolInfo, setPoolInfo] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [isUploading, setIsUploading] = useState(false);
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [serverTimeOffset, setServerTimeOffset] = useState(0);
     const [poolStartedAt, setPoolStartedAt] = useState<number>(Date.now());
     const [mediaDraft, setMediaDraft] = useState<{ url: string, type: 'image' | 'video' | 'raw' } | null>(getChallengeDraft(id));
+    const [hasSubmitted, setHasSubmitted] = useState(false);
+
+    // Two-stage upload state
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadFileName, setUploadFileName] = useState<string | null>(null);
+
+    // Track last upload URI for retry without re-picking
+    const lastUploadAttemptRef = useRef<{ uri: string; type: 'image' | 'video' | 'raw'; fileName: string; mimeType: string } | null>(null);
+
+    // Draft saved indicator
+    const [lastSavedDisplay, setLastSavedDisplay] = useState<string | null>(null);
+
+    // AppState ref
+    const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
     // Handle back button protection
     useEffect(() => {
@@ -47,6 +61,18 @@ export default function ChallengeEngineScreen() {
         const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
         return () => backHandler.remove();
     }, []);
+
+    // Show saved timestamp from store on mount
+    useEffect(() => {
+        if (!id) return;
+        const savedAt = getLastSavedAt(id);
+        if (savedAt) {
+            const d = new Date(savedAt);
+            setLastSavedDisplay(
+                `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
+            );
+        }
+    }, [id]);
 
     useEffect(() => {
         const initChallenge = async () => {
@@ -122,25 +148,37 @@ export default function ChallengeEngineScreen() {
         loadOrSetStartTime();
     }, [id, user]);
 
-    // Timer logic
-    useEffect(() => {
-        if (isLoading || !poolInfo) return;
-
-        // Initialize timeLeft once based on server-offset corrected times
-        const adjustedNow = new Date(Date.now() + serverTimeOffset);
-        let initialTimeLeft = 999999;
+    // Compute deadline timestamp
+    const deadlineTimestamp = useMemo(() => {
+        if (!poolInfo) return null;
+        let deadline = Infinity;
 
         if (poolInfo.end_time) {
-            const endDate = new Date(poolInfo.end_time);
-            initialTimeLeft = Math.min(initialTimeLeft, differenceInSeconds(endDate, adjustedNow));
+            deadline = Math.min(deadline, new Date(poolInfo.end_time).getTime());
         }
 
-        if (poolInfo.target_constraints?.total_time_limit_sec) {
-            const targetDate = new Date(poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000);
-            initialTimeLeft = Math.min(initialTimeLeft, differenceInSeconds(targetDate, adjustedNow));
+        if (poolInfo.target_constraints?.total_time_limit_sec && poolStartedAt) {
+            deadline = Math.min(
+                deadline,
+                poolStartedAt + poolInfo.target_constraints.total_time_limit_sec * 1000
+            );
         }
 
-        setTimeLeft(initialTimeLeft > 0 ? initialTimeLeft : 0);
+        return deadline === Infinity ? null : deadline;
+    }, [poolInfo, poolStartedAt]);
+
+    // Timer logic
+    useEffect(() => {
+        if (isLoading || !poolInfo || deadlineTimestamp === null) return;
+
+        const currentEstimatedServerTime = Date.now() + serverTimeOffset;
+        const initialTimeLeft = Math.max(0, Math.floor((deadlineTimestamp - currentEstimatedServerTime) / 1000));
+
+        setTimeLeft(initialTimeLeft);
+
+        if (initialTimeLeft <= 0) {
+            return;
+        }
 
         let lastTickTime = Date.now();
         const interval = setInterval(() => {
@@ -163,21 +201,81 @@ export default function ChallengeEngineScreen() {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [poolInfo, serverTimeOffset, isLoading, poolStartedAt]);
+    }, [poolInfo, serverTimeOffset, isLoading, poolStartedAt, deadlineTimestamp]);
 
-    const uploadMedia = async (uri: string, type: 'image' | 'video' | 'raw') => {
+    // =====================================================================
+    // APPSTATE LIFECYCLE — DRIFT RECONCILIATION
+    // =====================================================================
+    const reconcileTimerOnForeground = useCallback(() => {
+        if (deadlineTimestamp === null) return;
+
+        const currentEstimatedServerTime = Date.now() + serverTimeOffset;
+        const remainingSeconds = Math.max(0, Math.floor((deadlineTimestamp - currentEstimatedServerTime) / 1000));
+
+        setTimeLeft(remainingSeconds);
+    }, [serverTimeOffset, deadlineTimestamp]);
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+            if (
+                appStateRef.current.match(/inactive|background/) &&
+                nextAppState === 'active'
+            ) {
+                reconcileTimerOnForeground();
+            }
+            appStateRef.current = nextAppState;
+        });
+
+        return () => subscription.remove();
+    }, [reconcileTimerOnForeground]);
+
+    // =====================================================================
+    // TWO-STAGE UPLOAD PIPELINE
+    // =====================================================================
+    const uploadMedia = async (uri: string, type: 'image' | 'video' | 'raw', fileName: string, mimeType: string) => {
         setIsUploading(true);
+        setUploadProgress(0);
+        setUploadFileName(fileName);
+        lastUploadAttemptRef.current = { uri, type, fileName, mimeType };
+
         try {
-            const url = await uploadLocalFileToCloudinary(uri, type, 'event_pools');
+            const folder = `event_pools/${id}`;
+            const url = await uploadLocalFileToCloudinary(
+                uri,
+                fileName,
+                folder,
+                mimeType,
+                (progress: number) => setUploadProgress(progress)
+            );
             if (url) {
                 const draft = { url, type };
                 setMediaDraft(draft);
                 setChallengeDraft(id, draft);
+                setUploadProgress(100);
+                // Update saved display
+                const now = new Date();
+                setLastSavedDisplay(
+                    `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
+                );
             }
-        } catch (e) {
-            Alert.alert('Upload Failed', 'There was an error uploading your file. Please check your connection and try again.');
+        } catch (e: any) {
+            Alert.alert(
+                'Upload Failed', 
+                e?.message || 'There was an error uploading your file. Please check your connection and try again.',
+                [
+                    { text: 'Dismiss', style: 'cancel' },
+                    { text: 'Retry', onPress: retryUpload }
+                ]
+            );
         } finally {
             setIsUploading(false);
+        }
+    };
+
+    const retryUpload = () => {
+        const attempt = lastUploadAttemptRef.current;
+        if (attempt) {
+            uploadMedia(attempt.uri, attempt.type, attempt.fileName, attempt.mimeType);
         }
     };
 
@@ -189,8 +287,11 @@ export default function ChallengeEngineScreen() {
             quality: 0.8
         });
         if (!result.canceled && result.assets[0]) {
-            const type = result.assets[0].type === 'video' ? 'video' : 'image';
-            uploadMedia(result.assets[0].uri, type);
+            const asset = result.assets[0];
+            const type = asset.type === 'video' ? 'video' : 'image';
+            const mimeType = type === 'video' ? 'video/mp4' : 'image/jpeg';
+            const fileName = asset.fileName || `media_${Date.now()}.${type === 'video' ? 'mp4' : 'jpg'}`;
+            uploadMedia(asset.uri, type, fileName, mimeType);
         }
     };
 
@@ -199,12 +300,16 @@ export default function ChallengeEngineScreen() {
             type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
         });
         if (!result.canceled && result.assets[0]) {
-            uploadMedia(result.assets[0].uri, 'raw');
+            const asset = result.assets[0];
+            uploadMedia(asset.uri, 'raw', asset.name || 'document', asset.mimeType || 'application/pdf');
         }
     };
 
+    // =====================================================================
+    // SUBMISSION WITH ERROR RECOVERY
+    // =====================================================================
     const handleFinalSubmit = async () => {
-        if (isSubmittingGlobal || !mediaDraft) return;
+        if (isSubmittingGlobal || !mediaDraft || hasSubmitted) return;
         
         Alert.alert(
             'Submit Entry',
@@ -218,7 +323,19 @@ export default function ChallengeEngineScreen() {
 
     const executeSubmit = async () => {
         if (!mediaDraft) return;
-        const result = await submitEvaluation(id, mediaDraft);
+
+        // Stage 1 is already complete (file is uploaded to Cloudinary)
+        // Stage 2: Atomic RPC submission
+        setHasSubmitted(true);
+
+        const payload: Record<string, any> = {
+            file_url: mediaDraft.url,
+            file_type: mediaDraft.type,
+            attachment_url: mediaDraft.url,
+            submitted_client_time: new Date().toISOString(),
+        };
+
+        const result = await submitEvaluation(id, payload);
         
         if (result.success) {
             clearDraft(id);
@@ -226,7 +343,20 @@ export default function ChallengeEngineScreen() {
                 { text: 'OK', onPress: () => router.back() }
             ]);
         } else {
-            Alert.alert('Submission Failed', result.error || 'Please try again. Your uploaded draft is cached.');
+            // DO NOT clear the draft or re-upload — the file is already in Cloudinary
+            if (!result.error?.toLowerCase().includes('already')) {
+                setHasSubmitted(false);
+            }
+            Alert.alert(
+                'Submission Failed', 
+                result.error || 'Please try again. Your uploaded file is still cached.',
+                [
+                    { text: 'OK' },
+                    ...(!result.error?.toLowerCase().includes('already')
+                        ? [{ text: 'Retry Submission', onPress: executeSubmit }]
+                        : [])
+                ]
+            );
         }
     };
 
@@ -268,14 +398,14 @@ export default function ChallengeEngineScreen() {
 
             <ScrollView contentContainerStyle={styles.content} bounces={false}>
                 <Text style={[styles.instructions, { color: colors.text }]}>
-                    {poolInfo?.description || 'Upload your challenge submission (Image, Video, or Document). Files are securely cached to Cloudinary before final submission.'}
+                    {poolInfo?.description || 'Upload your challenge submission (Image, Video, or Document). Files are securely uploaded before final submission.'}
                 </Text>
 
                 <View style={styles.uploadRow}>
                     <TouchableOpacity 
                         style={[styles.uploadBtn, { backgroundColor: colors.card, borderColor: colors.border }]} 
                         onPress={pickImage} 
-                        disabled={isTimeUp || isSubmittingGlobal || isUploading}
+                        disabled={isTimeUp || isSubmittingGlobal || isUploading || hasSubmitted}
                     >
                         <Ionicons name="image-outline" size={32} color="#059669" />
                         <Text style={[styles.uploadBtnText, { color: colors.text }]}>Pick Media</Text>
@@ -284,7 +414,7 @@ export default function ChallengeEngineScreen() {
                     <TouchableOpacity 
                         style={[styles.uploadBtn, { backgroundColor: colors.card, borderColor: colors.border }]} 
                         onPress={pickDoc} 
-                        disabled={isTimeUp || isSubmittingGlobal || isUploading}
+                        disabled={isTimeUp || isSubmittingGlobal || isUploading || hasSubmitted}
                     >
                         <Ionicons name="document-text-outline" size={32} color="#059669" />
                         <Text style={[styles.uploadBtnText, { color: colors.text }]}>Pick Document</Text>
@@ -292,9 +422,19 @@ export default function ChallengeEngineScreen() {
                 </View>
 
                 {isUploading && (
-                    <View style={styles.uploadingContainer}>
-                        <ActivityIndicator size="small" color={colors.primary} />
-                        <Text style={[styles.uploadingText, { color: colors.textMuted }]}>Uploading securely to Cloudinary...</Text>
+                    <View style={styles.uploadProgressContainer}>
+                        <View style={styles.uploadProgressHeader}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                            <Text style={[styles.uploadProgressLabel, { color: colors.textMuted }]}>
+                                Uploading {uploadFileName}...
+                            </Text>
+                            <Text style={[styles.uploadProgressPct, { color: colors.primary }]}>
+                                {uploadProgress}%
+                            </Text>
+                        </View>
+                        <View style={[styles.progressBarTrack, { backgroundColor: isDark ? '#334155' : '#e2e8f0' }]}>
+                            <View style={[styles.progressBarFill, { backgroundColor: colors.primary, width: `${uploadProgress}%` }]} />
+                        </View>
                     </View>
                 )}
 
@@ -304,14 +444,24 @@ export default function ChallengeEngineScreen() {
                             <Ionicons name="checkmark-circle" size={24} color="#10b981" />
                             <Text style={[styles.previewTitle, { color: colors.text }]}>File Uploaded Successfully</Text>
                         </View>
-                        <Text style={[styles.previewUrl, { color: colors.textMuted }]} numberOfLines={1}>{mediaDraft.url}</Text>
+                        <Text style={[styles.previewUrl, { color: colors.textMuted }]} numberOfLines={1}>{uploadFileName || mediaDraft.url}</Text>
+                        {lastSavedDisplay && (
+                            <View style={styles.draftSavedRow}>
+                                <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+                                <Text style={[styles.draftSavedText, { color: colors.textMuted }]}>
+                                    Draft cached at {lastSavedDisplay}
+                                </Text>
+                            </View>
+                        )}
                         <TouchableOpacity 
                             style={styles.removeBtn} 
                             onPress={() => {
                                 setMediaDraft(null);
+                                setUploadFileName(null);
+                                setUploadProgress(0);
                                 clearDraft(id);
                             }}
-                            disabled={isTimeUp || isSubmittingGlobal}
+                            disabled={isTimeUp || isSubmittingGlobal || hasSubmitted}
                         >
                             <Text style={styles.removeText}>Remove File</Text>
                         </TouchableOpacity>
@@ -325,13 +475,13 @@ export default function ChallengeEngineScreen() {
                     style={[
                         styles.submitBtn, 
                         { backgroundColor: '#059669' },
-                        (!mediaDraft || isTimeUp || isSubmittingGlobal || isUploading) && { opacity: 0.5 }
+                        (!mediaDraft || isTimeUp || isSubmittingGlobal || isUploading || hasSubmitted) && { opacity: 0.5 }
                     ]} 
                     onPress={handleFinalSubmit}
-                    disabled={!mediaDraft || isTimeUp || isSubmittingGlobal || isUploading}
+                    disabled={!mediaDraft || isTimeUp || isSubmittingGlobal || isUploading || hasSubmitted}
                 >
                     <Text style={styles.submitText}>
-                        {isSubmittingGlobal ? 'Submitting...' : 'Submit Entry'}
+                        {isSubmittingGlobal ? 'Submitting...' : hasSubmitted ? 'Submitted' : 'Submit Entry'}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -402,15 +552,33 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
     },
-    uploadingContainer: {
+    uploadProgressContainer: {
+        padding: 12,
+        marginBottom: 16,
+    },
+    uploadProgressHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
+        gap: 8,
+        marginBottom: 8,
     },
-    uploadingText: {
-        marginLeft: 8,
+    uploadProgressLabel: {
+        flex: 1,
+        fontSize: 13,
+    },
+    uploadProgressPct: {
         fontSize: 14,
+        fontWeight: '700',
+        fontVariant: ['tabular-nums'],
+    },
+    progressBarTrack: {
+        height: 6,
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    progressBarFill: {
+        height: '100%',
+        borderRadius: 3,
     },
     previewCard: {
         padding: 16,
@@ -429,7 +597,17 @@ const styles = StyleSheet.create({
     },
     previewUrl: {
         fontSize: 12,
-        marginBottom: 16,
+        marginBottom: 8,
+    },
+    draftSavedRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginBottom: 12,
+    },
+    draftSavedText: {
+        fontSize: 12,
+        fontWeight: '500',
     },
     removeBtn: {
         alignSelf: 'flex-start',

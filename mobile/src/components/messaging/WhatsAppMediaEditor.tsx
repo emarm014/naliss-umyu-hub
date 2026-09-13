@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, Image, Dimensions, KeyboardAvoidingView, Platform, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, Image, Dimensions, KeyboardAvoidingView, Platform, FlatList, ActivityIndicator, PanResponder } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,6 +31,134 @@ interface WhatsAppMediaEditorProps {
     onAddMore?: () => void;
 }
 
+interface CropBox { x: number; y: number; w: number; h: number; }
+
+const FreeformCropper = ({ asset, onApply, onCancel }: { asset: FinalizedMedia, onApply: (uri: string, w: number, h: number) => void, onCancel: () => void }) => {
+    const { width: winW, height: winH } = Dimensions.get('window');
+    const containerW = winW;
+    const containerH = winH - 120;
+
+    const [imageLayout, setImageLayout] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+    const [crop, setCrop] = useState<CropBox | null>(null);
+    const startCropRef = React.useRef<CropBox | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+
+    useEffect(() => {
+        if (!asset.width || !asset.height) return;
+        const imgRatio = asset.width / asset.height;
+        const containerRatio = containerW / containerH;
+
+        let renderW, renderH;
+        if (imgRatio > containerRatio) {
+            renderW = containerW;
+            renderH = containerW / imgRatio;
+        } else {
+            renderH = containerH;
+            renderW = containerH * imgRatio;
+        }
+        
+        setImageLayout({ x: (containerW - renderW) / 2, y: (containerH - renderH) / 2, w: renderW, h: renderH });
+        setCrop({ x: 0, y: 0, w: renderW, h: renderH });
+    }, [asset, containerW, containerH]);
+
+    const createCornerPan = (corner: 'tl' | 'tr' | 'bl' | 'br') => {
+        return PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onPanResponderGrant: () => { startCropRef.current = crop; },
+            onPanResponderMove: (_, gestureState) => {
+                if (!startCropRef.current || !imageLayout) return;
+                const start = startCropRef.current;
+                const dx = gestureState.dx;
+                const dy = gestureState.dy;
+                let { x, y, w, h } = start;
+
+                if (corner === 'tl') {
+                    const newX = Math.min(Math.max(0, start.x + dx), start.x + start.w - 50);
+                    const newY = Math.min(Math.max(0, start.y + dy), start.y + start.h - 50);
+                    w = start.w - (newX - start.x); h = start.h - (newY - start.y); x = newX; y = newY;
+                } else if (corner === 'tr') {
+                    w = Math.max(50, Math.min(imageLayout.w - start.x, start.w + dx));
+                    const newY = Math.min(Math.max(0, start.y + dy), start.y + start.h - 50);
+                    h = start.h - (newY - start.y); y = newY;
+                } else if (corner === 'bl') {
+                    const newX = Math.min(Math.max(0, start.x + dx), start.x + start.w - 50);
+                    w = start.w - (newX - start.x); x = newX;
+                    h = Math.max(50, Math.min(imageLayout.h - start.y, start.h + dy));
+                } else if (corner === 'br') {
+                    w = Math.max(50, Math.min(imageLayout.w - start.x, start.w + dx));
+                    h = Math.max(50, Math.min(imageLayout.h - start.y, start.h + dy));
+                }
+                setCrop({ x, y, w, h });
+            },
+            onPanResponderRelease: () => { startCropRef.current = null; }
+        });
+    };
+
+    const panBoxResponder = React.useRef(PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => { startCropRef.current = crop; },
+        onPanResponderMove: (_, gestureState) => {
+            if (!startCropRef.current || !imageLayout) return;
+            const start = startCropRef.current;
+            let newX = start.x + gestureState.dx;
+            let newY = start.y + gestureState.dy;
+            newX = Math.max(0, Math.min(imageLayout.w - start.w, newX));
+            newY = Math.max(0, Math.min(imageLayout.h - start.h, newY));
+            setCrop({ x: newX, y: newY, w: start.w, h: start.h });
+        }
+    })).current;
+
+    const applyCrop = async () => {
+        if (!crop || !imageLayout) return;
+        setIsProcessing(true);
+        const scaleX = asset.width / imageLayout.w;
+        const scaleY = asset.height / imageLayout.h;
+        const originX = Math.max(0, Math.floor(crop.x * scaleX));
+        const originY = Math.max(0, Math.floor(crop.y * scaleY));
+        const cWidth = Math.floor(crop.w * scaleX);
+        const cHeight = Math.floor(crop.h * scaleY);
+        try {
+            const result = await manipulateAsync(asset.uri, [{ crop: { originX, originY, width: cWidth, height: cHeight } }], { compress: 1, format: SaveFormat.JPEG });
+            onApply(result.uri, result.width, result.height);
+        } catch (e) {
+            console.warn(e);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const cornerStyle: any = { position: 'absolute', width: 24, height: 24, backgroundColor: '#FFF', borderRadius: 12, zIndex: 10, borderWidth: 2, borderColor: '#000' };
+
+    return (
+        <View style={StyleSheet.absoluteFill}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 20, paddingTop: Platform.OS === 'ios' ? 50 : 20, backgroundColor: '#000', zIndex: 10 }}>
+                <TouchableOpacity onPress={onCancel} style={{ padding: 8 }}><Text style={{ color: '#fff', fontSize: 16 }}>Cancel</Text></TouchableOpacity>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', alignSelf: 'center' }}>Crop Image</Text>
+                <TouchableOpacity onPress={applyCrop} style={{ padding: 8 }} disabled={isProcessing}>
+                    {isProcessing ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: COLORS.primary, fontSize: 16, fontWeight: 'bold' }}>Apply</Text>}
+                </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+                {imageLayout && crop && (
+                    <View style={{ width: imageLayout.w, height: imageLayout.h }}>
+                        <Image source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} />
+                        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: crop.y, backgroundColor: 'rgba(0,0,0,0.7)' }} />
+                        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: imageLayout.h - (crop.y + crop.h), backgroundColor: 'rgba(0,0,0,0.7)' }} />
+                        <View style={{ position: 'absolute', top: crop.y, left: 0, width: crop.x, height: crop.h, backgroundColor: 'rgba(0,0,0,0.7)' }} />
+                        <View style={{ position: 'absolute', top: crop.y, right: 0, width: imageLayout.w - (crop.x + crop.w), height: crop.h, backgroundColor: 'rgba(0,0,0,0.7)' }} />
+                        <View {...panBoxResponder.panHandlers} style={{ position: 'absolute', left: crop.x, top: crop.y, width: crop.w, height: crop.h, borderWidth: 2, borderColor: '#fff' }}>
+                            <View {...createCornerPan('tl').panHandlers} style={[cornerStyle, { top: -12, left: -12 }]} />
+                            <View {...createCornerPan('tr').panHandlers} style={[cornerStyle, { top: -12, right: -12 }]} />
+                            <View {...createCornerPan('bl').panHandlers} style={[cornerStyle, { bottom: -12, left: -12 }]} />
+                            <View {...createCornerPan('br').panHandlers} style={[cornerStyle, { bottom: -12, right: -12 }]} />
+                        </View>
+                    </View>
+                )}
+            </View>
+        </View>
+    );
+};
+
 export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visible, assets, onSend, onCancel, onAddMore }) => {
     const insets = useSafeAreaInsets();
     const [finalizedAssets, setFinalizedAssets] = useState<FinalizedMedia[]>([]);
@@ -38,6 +166,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
     const [isProcessing, setIsProcessing] = useState(false);
     
     const [playingVideoIndex, setPlayingVideoIndex] = useState<number | null>(null);
+    const [showCropModal, setShowCropModal] = useState(false);
     
     // For flatlist scroll sync
     const mainListRef = React.useRef<FlatList>(null);
@@ -80,26 +209,9 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
         setFinalizedAssets(newAssets);
     };
 
-    const handleCropSquare = async () => {
+    const handleCropOpen = () => {
         if (!activeAsset || isVideoAsset(activeAsset)) return;
-        setIsProcessing(true);
-        try {
-            const side = Math.min(activeAsset.width || 1080, activeAsset.height || 1080);
-            const originX = Math.max(0, Math.floor(((activeAsset.width || side) - side) / 2));
-            const originY = Math.max(0, Math.floor(((activeAsset.height || side) - side) / 2));
-            
-            const result = await manipulateAsync(
-                activeAsset.uri,
-                [{ crop: { originX, originY, width: side, height: side } }],
-                { compress: 0.9, format: SaveFormat.JPEG }
-            );
-            
-            setFinalizedAssets(prev => prev.map((asset, i) => i === activeIndex ? { ...asset, uri: result.uri, width: result.width, height: result.height } : asset));
-        } catch (e) {
-            console.warn('Failed to crop image', e);
-        } finally {
-            setIsProcessing(false);
-        }
+        setShowCropModal(true);
     };
 
     const handleRotate = async () => {
@@ -165,7 +277,7 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                     <View style={styles.headerActions}>
                         {!isVideoAsset(activeAsset) && (
                             <>
-                                <TouchableOpacity onPress={handleCropSquare} style={styles.iconButton} disabled={isProcessing}>
+                                <TouchableOpacity onPress={handleCropOpen} style={styles.iconButton} disabled={isProcessing}>
                                     <Ionicons name="crop" size={24} color="#fff" />
                                 </TouchableOpacity>
                                 <TouchableOpacity onPress={handleRotate} style={styles.iconButton} disabled={isProcessing}>
@@ -246,6 +358,20 @@ export const WhatsAppMediaEditor: React.FC<WhatsAppMediaEditorProps> = ({ visibl
                         getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
                     />
                 </View>
+
+                {/* Crop Modal Overlay */}
+                <Modal visible={showCropModal} transparent animationType="fade" onRequestClose={() => setShowCropModal(false)}>
+                    {activeAsset && (
+                        <FreeformCropper
+                            asset={activeAsset}
+                            onCancel={() => setShowCropModal(false)}
+                            onApply={(uri, w, h) => {
+                                setFinalizedAssets(prev => prev.map((asset, i) => i === activeIndex ? { ...asset, uri, width: w, height: h } : asset));
+                                setShowCropModal(false);
+                            }}
+                        />
+                    )}
+                </Modal>
 
                 {/* Bottom Controls */}
                 <View style={styles.bottomControls}>

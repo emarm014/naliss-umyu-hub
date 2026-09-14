@@ -47,7 +47,7 @@ export default function GroupsPage() {
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [createForm, setCreateForm] = useState({
-    name: '', description: '', group_type: 'department' as 'level' | 'department',
+    name: '', description: '', group_type: 'custom' as 'level' | 'department' | 'custom',
     level: '' as string, avatar_url: '', is_official: false, chat_enabled: true, allow_media: true,
   });
   const [editForm, setEditForm] = useState<GroupWithDetails | null>(null);
@@ -78,7 +78,9 @@ export default function GroupsPage() {
         }
         return g.moderator_id === profile?.id;
       }
-      if (typeFilter !== 'all' && g.group_type !== typeFilter) return false;
+      // 'department' filter matches both 'department' and 'custom' group types
+      if (typeFilter === 'department' && g.group_type !== 'department' && g.group_type !== 'custom') return false;
+      if (typeFilter === 'level' && g.group_type !== 'level') return false;
       if (searchQuery && !g.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
@@ -303,13 +305,16 @@ export default function GroupsPage() {
     if (!createForm.name.trim()) return;
     setIsSubmitting(true);
     try {
+      // Custom groups always use group_type='custom' to avoid interfering with
+      // the auto-join trigger which only targets 'department' and 'level' types.
+      const isLevelGroup = createForm.group_type === 'level';
       const { data, error } = await supabase.from('groups').insert({
         name: createForm.name.trim(),
         description: createForm.description || null,
         group_type: createForm.group_type,
-        level: createForm.group_type === 'level' ? createForm.level || null : null,
+        level: isLevelGroup ? createForm.level || null : null,
         avatar_url: createForm.avatar_url || null,
-        is_official: createForm.is_official,
+        is_official: isLevelGroup ? true : createForm.is_official,
         chat_enabled: createForm.chat_enabled,
         allow_media: createForm.allow_media ?? true,
         created_by: profile?.id,
@@ -343,7 +348,7 @@ export default function GroupsPage() {
         });
       }
 
-      if (createForm.group_type === 'level' && createForm.level && data) {
+      if (isLevelGroup && createForm.level && data) {
         const targets = storeStudents.filter(
           (s: User) => s.level === createForm.level && s.status === 'active' && s.role !== 'super_admin'
         );
@@ -354,7 +359,7 @@ export default function GroupsPage() {
       }
 
       closeModal();
-      setCreateForm({ name: '', description: '', group_type: 'department', level: '', avatar_url: '', is_official: false, chat_enabled: true, allow_media: true });
+      setCreateForm({ name: '', description: '', group_type: 'custom', level: '', avatar_url: '', is_official: false, chat_enabled: true, allow_media: true });
       showSuccess(`Group "${createForm.name}" created successfully.`);
     } catch (err: unknown) {
       setGroupFormError((err as any)?.message || 'Failed to create group. Please try again.');
@@ -680,7 +685,7 @@ export default function GroupsPage() {
   const stats = useMemo(() => ({
     total: levelScopedGroups.length,
     level: levelScopedGroups.filter(g => g.group_type === 'level').length,
-    department: levelScopedGroups.filter(g => g.group_type === 'department').length,
+    department: levelScopedGroups.filter(g => g.group_type === 'department' || g.group_type === 'custom').length,
     withModerator: levelScopedGroups.filter(g => g.moderator_id).length,
   }), [levelScopedGroups]);
 
@@ -1226,11 +1231,11 @@ export default function GroupsPage() {
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Group Type *</label>
                   <select
                     value={createForm.group_type}
-                    onChange={e => setCreateForm({ ...createForm, group_type: e.target.value as 'level' | 'department', level: '' })}
+                    onChange={e => setCreateForm({ ...createForm, group_type: e.target.value as 'level' | 'department' | 'custom', level: '', is_official: e.target.value === 'level' })}
                     disabled={isModerator}
                     className="w-full px-5 py-3.5 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary-950 shadow-inner appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <option value="department">Custom / Department</option>
+                    <option value="custom">Custom</option>
                     {!isModerator && <option value="level">Academic Level</option>}
                   </select>
                   {isModerator && (
@@ -1274,11 +1279,12 @@ export default function GroupsPage() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={createForm.is_official}
+                    checked={createForm.group_type === 'level' ? true : createForm.is_official}
                     onChange={e => setCreateForm({ ...createForm, is_official: e.target.checked })}
-                    className="w-4 h-4 rounded text-primary-950 focus:ring-primary-950"
+                    disabled={createForm.group_type === 'level'}
+                    className="w-4 h-4 rounded text-primary-950 focus:ring-primary-950 disabled:opacity-50"
                   />
-                  <span className="text-xs font-black text-gray-600 uppercase tracking-widest">Official Group</span>
+                  <span className={`text-xs font-black uppercase tracking-widest ${createForm.group_type === 'level' ? 'text-gray-400' : 'text-gray-600'}`}>Official Group</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input

@@ -21,6 +21,8 @@ import { AuthGuardian } from '../../src/utils/auth-guardian';
 import { useNetworkStore } from '../../src/stores/network.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { startTransaction, trackUserAction } from '../../src/utils/sentry';
+import { getRawStorage } from '../../src/stores/mmkv.storage';
+import { handleOAuthRedirect } from '../../src/utils/oauth-redirect';
 
 const { height } = Dimensions.get('window');
 
@@ -192,6 +194,9 @@ export default function LoginScreen() {
   };
 
   const handleGoogleAuth = async () => {
+    const mmkv = getRawStorage();
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
+
     try {
       setIsGoogleLoading(true);
 
@@ -204,7 +209,23 @@ export default function LoginScreen() {
 
       useSignupStore.getState().setIsGoogleDelaying(true);
 
-      const redirectUrl = Linking.createURL('/');
+      // Persist recovery state synchronously to MMKV (survives process kill)
+      if (mmkv) {
+        mmkv.set('oauth_in_progress', true);
+        mmkv.set('oauth_start_time', Date.now().toString());
+      }
+
+      // Watchdog safety timer: cleans UI if user cancels or gets stuck in browser
+      watchdog = setTimeout(() => {
+        setIsGoogleLoading(false);
+        useSignupStore.getState().setIsGoogleDelaying(false);
+        if (mmkv) {
+          mmkv.delete('oauth_in_progress');
+          mmkv.delete('oauth_start_time');
+        }
+      }, 45_000);
+
+      const redirectUrl = Linking.createURL('auth/callback');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
@@ -215,127 +236,30 @@ export default function LoginScreen() {
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 
-      // Check if session got set in the background during deep link redirect
-      const { data: { session: activeSession } } = await supabase.auth.getSession();
+      // Clear watchdog — browser returned control to the app
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
 
-      if ((result.type === 'success' && (result as any).url) || activeSession) {
-        let user = activeSession?.user || null;
-        let accessToken = activeSession?.access_token || null;
-        let refreshToken = activeSession?.refresh_token || null;
-
-        if (!accessToken || !refreshToken) {
-          if ((result as any).url) {
-            const url = (result as any).url;
-            const hashPart = url.split('#')[1] || '';
-            const queryPart = url.split('?')[1]?.split('#')[0] || '';
-            const hashParams = new URLSearchParams(hashPart);
-            const queryParams = new URLSearchParams(queryPart);
-            accessToken = hashParams.get('access_token') || queryParams.get('access_token');
-            refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
-          }
-        }
-
-        if (accessToken && refreshToken) {
-          if (!activeSession) {
-            const { data: { user: sessionUser }, error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-            if (sessionError) throw sessionError;
-            user = sessionUser;
-          }
-
-          if (user?.email && !INSTITUTIONAL_EMAIL_REGEX.test(user.email)) {
-            await AuthGuardian.recordFailure(user.email);
-            // Purge invalid non-institutional Google account from Supabase
-            try {
-              await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email });
-            } catch {}
-            Alert.alert('Access Denied', 'Only institutional student emails (@students.umyu.edu.ng) are allowed.');
-            await supabase.auth.signOut();
-            useSignupStore.getState().setIsGoogleDelaying(false);
-            return;
-          }
-
-          // Strict account separation: Block Google logins if the account was originally registered via Email/Password
-          if (user?.app_metadata?.provider === 'email') {
-            Alert.alert(
-              'Use Email Sign-In',
-              'This account is registered via Email and Password. Please sign in using your password.',
-              [{ text: 'OK', style: 'default' }]
-            );
-            await supabase.auth.signOut();
-            useSignupStore.getState().setIsGoogleDelaying(false);
-            return;
-          }
-
-          // Check if this Google account belongs to a graduated student, external moderator, or is incomplete
-          if (user?.id) {
-            const { data: profileCheck } = await (supabase as any).from('users')
-              .select('status, level, registration_number, role, is_external')
-              .eq('id', user.id)
-              .maybeSingle();
-
-            if (
-              profileCheck?.is_external === true ||
-              (profileCheck?.role === 'moderator' && !profileCheck?.registration_number && !profileCheck?.level)
-            ) {
-              Alert.alert(
-                'Access Denied',
-                'External moderators are restricted to the Web Admin Portal only and cannot log into the mobile app.',
-                [{ text: 'OK', style: 'default' }]
-              );
-              await supabase.auth.signOut();
-              useSignupStore.getState().setIsGoogleDelaying(false);
-              return;
-            }
-
-            if (profileCheck?.status === 'graduated') {
-              Alert.alert(
-                'Account Graduated',
-                'This account belongs to a graduated student. The NALISS UMYU Hub is only for currently enrolled students.\n\nYour alumni record is preserved in the system.',
-                [{ text: 'OK', style: 'default' }]
-              );
-              await supabase.auth.signOut();
-              useSignupStore.getState().setIsGoogleDelaying(false);
-              return;
-            }
-
-            // Incomplete Google registration — seamlessly route to Identity Screen (Step 2)
-            if (!profileCheck || !profileCheck.level || !profileCheck.registration_number) {
-              const store = useSignupStore.getState();
-              store.setProvider('google');
-              store.setCredentials(user.email!, undefined);
-              store.setGoogleTokens(user.email!, accessToken, refreshToken);
-              store.setCurrentStep(2);
-              store.touchActivity();
-              useAuthStore.getState().setIsProfileComplete(false);
-              store.setIsGoogleDelaying(false);
-              setIsGoogleLoading(false);
-              router.replace('/auth/identity' as any);
-              return;
-            }
-          }
-
-          // Fetch profile and check completeness before releasing isGoogleDelaying
-          await useAuthStore.getState().fetchProfile(true);
-          await useAuthStore.getState().checkProfileComplete(user!.id);
-          useSignupStore.getState().setIsGoogleDelaying(false);
-        } else {
-          // Tokens not found in redirect URL — silent fail, user likely cancelled
-          useSignupStore.getState().setIsGoogleDelaying(false);
-          setIsGoogleLoading(false);
-          return;
-        }
+      if (result.type === 'success' && (result as any).url) {
+        await handleOAuthRedirect((result as any).url);
       } else {
+        // User dismissed browser or backed out
         useSignupStore.getState().setIsGoogleDelaying(false);
+        if (mmkv) {
+          mmkv.delete('oauth_in_progress');
+          mmkv.delete('oauth_start_time');
+        }
       }
     } catch (err: any) {
       useSignupStore.getState().setIsGoogleDelaying(false);
+      if (mmkv) {
+        mmkv.delete('oauth_in_progress');
+        mmkv.delete('oauth_start_time');
+      }
       // Log Google auth failure (best-effort)
       (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: 'Failed Google sign-in attempt', metadata: { reason: err?.message || 'Unknown', method: 'google' } }); } catch (_) {} })();
       Alert.alert('Google Sign-In Failed', 'Sign-in failed. Please try again.');
     } finally {
+      if (watchdog) clearTimeout(watchdog);
       setIsGoogleLoading(false);
     }
   };

@@ -37,6 +37,8 @@ import { useThemeStore } from '../src/stores/theme.store';
 import * as Notifications from 'expo-notifications';
 import { NotificationRouter } from '../src/services/notificationRouter';
 import { runCacheMaintenance } from '../src/utils/cacheMaintenance';
+import { handleOAuthRedirect } from '../src/utils/oauth-redirect';
+import { getRawStorage } from '../src/stores/mmkv.storage';
 
 // Catch any unhandled errors globally via React Native's global ErrorUtils.
 // NOTE: ErrorUtils is NOT a named export of the 'react-native' package — it is
@@ -562,6 +564,44 @@ function RootLayoutNav() {
       );
     });
     return unregister;
+  }, []);
+
+  // ── Cold-start OAuth deep link recovery ─────────────────────────────────
+  // Handles the case where Android kills the app during the OAuth browser session.
+  // When the app relaunches via the callback deep link, this picks up the OAuth
+  // redirect and completes the sign-in flow.
+  useEffect(() => {
+    const mmkv = getRawStorage();
+
+    const checkColdStartOAuth = async () => {
+      const initialUrl = await Linking.getInitialURL();
+      const pendingOAuth = mmkv?.getBoolean('oauth_in_progress') ?? false;
+
+      if (initialUrl && (initialUrl.includes('code=') || initialUrl.includes('access_token='))) {
+        console.log('[Auth] Handling cold-start OAuth deep link:', initialUrl);
+        await handleOAuthRedirect(initialUrl);
+      } else if (pendingOAuth) {
+        // App was killed and restored without a valid callback URL
+        // If enough time has passed, clean up the stale flag
+        const startTime = Number(mmkv?.getString('oauth_start_time') || '0');
+        if (Date.now() - startTime > 60_000) {
+          console.warn('[Auth] Expired pending OAuth flag detected. Resetting.');
+          mmkv?.delete('oauth_in_progress');
+          mmkv?.delete('oauth_start_time');
+        }
+      }
+    };
+
+    checkColdStartOAuth();
+
+    // Also listen to warm incoming OAuth URLs
+    const oauthSub = Linking.addEventListener('url', ({ url }) => {
+      if (url.includes('code=') || url.includes('access_token=')) {
+        handleOAuthRedirect(url);
+      }
+    });
+
+    return () => oauthSub.remove();
   }, []);
 
   // ── Handle deep link URLs (password reset, OAuth redirect) ──────────────

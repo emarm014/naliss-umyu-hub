@@ -93,6 +93,14 @@ export const setSyncItem = (name: string, value: string): void => {
   }
 };
 
+// Returns the raw MMKV instance for synchronous operations (getBoolean, set, delete).
+// Used by OAuth hardening code to persist recovery flags synchronously before the browser opens.
+// Returns null if MMKV isn't available (AsyncStorage fallback mode).
+export const getRawStorage = (): any | null => {
+  if (useFallback || !storage) return null;
+  return storage;
+};
+
 // Programmatic migration check from AsyncStorage to MMKV (only runs if MMKV is active)
 export const migrateAsyncStorageToMMKV = async () => {
   await initPromise;

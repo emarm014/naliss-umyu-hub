@@ -90,7 +90,8 @@ export const useGroupStore = create<GroupState>()(
                         if (memError) throw memError;
                         groupIds = (memberships || []).map((m: any) => m.group_id);
 
-                        // Auto-repair missing default groups for students (Department and Level groups)
+                        // Auto-repair missing default groups for students (official Department and Level groups only)
+                        // Custom admin-created groups are excluded — they use group_type='custom'
                         let orQuery = 'group_type.eq.department';
                         if (profile?.level) {
                             orQuery += `,and(group_type.eq.level,level.eq.${profile.level})`;
@@ -99,6 +100,7 @@ export const useGroupStore = create<GroupState>()(
                         const { data: defaultGroups } = await (supabase as any).from('groups')
                             .select('id')
                             .eq('is_active', true)
+                            .eq('is_official', true)
                             .or(orQuery);
                         
                         if (defaultGroups) {

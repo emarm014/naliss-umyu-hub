@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/auth.store';
 import FileUpload from '../lib/FileUpload';
-import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, Award, MessageSquare, Sparkles, Lock, FileDown } from 'lucide-react';
+import { Trophy, Settings, Activity, CheckCircle, Edit, Save, X, Users, Plus, Trash2, BookOpen, Crown, Search, UserPlus, FileText, MessageSquare, Sparkles, Lock, FileDown } from 'lucide-react';
 import { getAllowedLevelsForPermission } from '../utils/access';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
@@ -84,6 +84,9 @@ type Submission = {
  grading_score: number | null;
  grading_feedback: string | null;
  podium_status: string | null;
+ score?: number | null;
+ time_taken_seconds?: number | null;
+ created_at?: string;
  users: { full_name: string; username: string };
 };
 
@@ -96,6 +99,7 @@ type QuizQuestion = {
  points: number;
  question_type: string;
  media_url?: string | null;
+ explanation?: string | null;
 };
 
 const DEFAULT_RUBRIC_CRITERIA = [
@@ -182,14 +186,14 @@ export default function EventPoolManagementPage() {
 
   // Voting Content Builder State
   const [candidatesList, setCandidatesList] = useState<VotingCandidate[]>([]);
-  const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
-  const [candidateFilterLevel, setCandidateFilterLevel] = useState('all');
-  const [candidateSearchResults, setCandidateSearchResults] = useState<any[]>([]);
-  const [isCandidateSearching, setIsCandidateSearching] = useState(false);
+  const [candidateSearchQuery, _setCandidateSearchQuery] = useState('');
+  const [candidateFilterLevel, _setCandidateFilterLevel] = useState('all');
+  const [_candidateSearchResults, setCandidateSearchResults] = useState<any[]>([]);
+  const [_isCandidateSearching, setIsCandidateSearching] = useState(false);
   const [selectedStudentForCandidate, setSelectedStudentForCandidate] = useState<any | null>(null);
-  const [candidatePositionTitle, setCandidatePositionTitle] = useState('');
+  const [_candidatePositionTitle, _setCandidatePositionTitle] = useState('');
   const [candidatePhotoUrl, setCandidatePhotoUrl] = useState('');
-  const [candidateManifesto, setCandidateManifesto] = useState('');
+  const [_candidateManifesto, _setCandidateManifesto] = useState('');
 
   // Debate State
   const [debateTopics, setDebateTopics] = useState<DebateTopic[]>([]);
@@ -327,15 +331,15 @@ export default function EventPoolManagementPage() {
     }
   };
 
-  const handleCandidateSearch = (query: string) => {
-    setCandidateSearchQuery(query);
-    fetchCandidateSearchUsers(query, candidateFilterLevel);
-  };
+  // const _handleCandidateSearch = (query: string) => {
+  //   setCandidateSearchQuery(query);
+  //   fetchCandidateSearchUsers(query, candidateFilterLevel);
+  // };
 
-  const handleCandidateFilterChange = (level: string) => {
-    setCandidateFilterLevel(level);
-    fetchCandidateSearchUsers(candidateSearchQuery, level);
-  };
+  // const _handleCandidateFilterChange = (level: string) => {
+  //   setCandidateFilterLevel(level);
+  //   fetchCandidateSearchUsers(candidateSearchQuery, level);
+  // };
 
   useEffect(() => {
     if (selectedPool?.type === 'voting' && activeView === 'content') {
@@ -343,39 +347,40 @@ export default function EventPoolManagementPage() {
     }
   }, [selectedPool?.type, activeView]);
 
-  const handleAddCandidate = (user: any) => {
-    setSelectedStudentForCandidate(user);
-    setCandidatePositionTitle('');
-    setCandidatePhotoUrl(user.avatar_url || '');
-    setCandidateManifesto('');
-  };
+  // const _handleAddCandidate = (user: any) => {
+  //   setSelectedStudentForCandidate(user);
+  //   setCandidatePositionTitle('');
+  //   setCandidatePhotoUrl(user.avatar_url || '');
+  //   setCandidateManifesto('');
+  // };
 
-  const handleConfirmCandidateAdd = () => {
-    if (!selectedStudentForCandidate) return;
-    const newCand: VotingCandidate = {
-      id: crypto.randomUUID(),
-      user_id: selectedStudentForCandidate.id,
-      full_name: selectedStudentForCandidate.full_name,
-      username: selectedStudentForCandidate.username,
-      avatar_url: selectedStudentForCandidate.avatar_url,
-      level: selectedStudentForCandidate.level,
-      position_title: candidatePositionTitle.trim() || 'Candidate',
-      photo_url: candidatePhotoUrl || selectedStudentForCandidate.avatar_url || '',
-      manifesto: candidateManifesto.trim()
-    };
-    setCandidatesList(prev => [...prev, newCand]);
-    setSelectedStudentForCandidate(null);
-    setCandidatePositionTitle('');
-    setCandidatePhotoUrl('');
-    setCandidateManifesto('');
-    setCandidateSearchResults(prev => prev.filter(u => u.id !== selectedStudentForCandidate.id));
-  };
+  // const _handleConfirmCandidateAdd = () => {
+  //   if (!selectedStudentForCandidate) return;
+  //   const newCand: VotingCandidate = {
+  //     id: crypto.randomUUID(),
+  //     user_id: selectedStudentForCandidate.id,
+  //     full_name: selectedStudentForCandidate.full_name,
+  //     username: selectedStudentForCandidate.username,
+  //     avatar_url: selectedStudentForCandidate.avatar_url,
+  //     level: selectedStudentForCandidate.level,
+  //     position_title: candidatePositionTitle.trim() || 'Candidate',
+  //     photo_url: candidatePhotoUrl || selectedStudentForCandidate.avatar_url || '',
+  //     manifesto: candidateManifesto.trim()
+  //   };
+  //   setCandidatesList(prev => [...prev, newCand]);
+  //   setSelectedStudentForCandidate(null);
+  //   setCandidatePositionTitle('');
+  //   setCandidatePhotoUrl('');
+  //   setCandidateManifesto('');
+  //   setCandidateSearchResults(prev => prev.filter(u => u.id !== selectedStudentForCandidate.id));
+  // };
 
-  const handleRemoveCandidate = (candidateId: string) => {
-    setCandidatesList(prev => prev.filter(c => c.id !== candidateId));
-  };
+  // const _handleRemoveCandidate = (candidateId: string) => {
+  //   setCandidatesList(prev => prev.filter(c => c.id !== candidateId));
+  // };
 
-  const handleSaveVotingCandidates = async () => {
+  // @ts-ignore
+  const _handleSaveVotingCandidates = async () => {
     if (!selectedPool) return;
     try {
       const updates = {
@@ -1663,7 +1668,6 @@ export default function EventPoolManagementPage() {
  <Plus className="h-4 w-4" /> Add Question
  </button>
  </form>
- )}
  </div>
  ) : selectedPool.type === 'voting' ? (
   <div className="space-y-6">
@@ -2160,9 +2164,10 @@ export default function EventPoolManagementPage() {
 
  {/* 3. Evaluation Terminal & Voting Tally */}
  {activeView === 'evaluate' && (
-   selectedPool.type === 'voting' ? (
-     <div className="space-y-6">
-       <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
+   <div className="space-y-6">
+     {selectedPool.type === 'voting' ? (
+       <div className="space-y-6">
+         <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
          <div>
            <h3 className="font-bold text-gray-900">Live Election Telemetry</h3>
            <p className="text-sm text-gray-500">Total Verified Ballots Cast: {totalTurnout}</p>
@@ -2616,7 +2621,7 @@ What is 2+2?,3,4,5,4,1`}
               <div className="bg-primary-50 p-4 rounded-xl border border-primary-100 flex items-center justify-between">
                 <div>
                   <h4 className="font-bold text-primary-900 text-lg">{selectedSubmissionForAudit.users?.full_name}</h4>
-                  <p className="text-sm text-primary-700">Submitted: {new Date(selectedSubmissionForAudit.created_at).toLocaleString()}</p>
+                  <p className="text-sm text-primary-700">Submitted: {new Date(selectedSubmissionForAudit.created_at || '').toLocaleString()}</p>
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-black text-primary-700">{selectedSubmissionForAudit.score} <span className="text-sm font-medium">pts</span></div>
@@ -2631,7 +2636,6 @@ What is 2+2?,3,4,5,4,1`}
                 {quizQuestions.map((q, idx) => {
                   const studentAns = selectedSubmissionForAudit.answers?.[q.id];
                   const isCorrect = studentAns === q.correct_option;
-                  const isUnanswered = studentAns === undefined || studentAns === null;
 
                   return (
                     <div key={q.id} className={`p-4 rounded-xl border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
@@ -2687,14 +2691,14 @@ What is 2+2?,3,4,5,4,1`}
           )}
         </Modal>
 
-        <Modal isOpen={!!selectedSubmissionForEssayEval} onClose={() => setSelectedSubmissionForEssayEval(null)} title="Evaluation Rubric Scorecard" size="3xl">
+        <Modal isOpen={!!selectedSubmissionForEssayEval} onClose={() => setSelectedSubmissionForEssayEval(null)} title="Evaluation Rubric Scorecard" size="xl">
           {selectedSubmissionForEssayEval && (
             <div className="flex flex-col lg:flex-row gap-6 max-h-[75vh]">
               {/* Left Pane: The Submission */}
               <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden flex flex-col max-h-[75vh]">
                 <div className="p-4 border-b border-gray-200 bg-white">
                   <h4 className="font-bold text-gray-900">{selectedSubmissionForEssayEval.users?.full_name}</h4>
-                  <p className="text-xs text-gray-500">@{selectedSubmissionForEssayEval.users?.username} • Submitted {new Date(selectedSubmissionForEssayEval.created_at).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">@{selectedSubmissionForEssayEval.users?.username} • Submitted {new Date(selectedSubmissionForEssayEval.created_at || '').toLocaleString()}</p>
                 </div>
                 <div className="p-5 overflow-y-auto flex-1 text-sm text-gray-800 leading-relaxed font-serif">
                   {selectedSubmissionForEssayEval.answers?.text ? (

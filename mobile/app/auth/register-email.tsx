@@ -145,7 +145,12 @@ export default function RegisterEmail() {
       if (provider === 'incomplete') {
         // Idempotent Garbage Collection: Purge the ghost account so we can start fresh
         Sentry.addBreadcrumb({ category: 'signup.email', message: 'Purging incomplete ghost account', level: 'info' });
-        await (supabase as any).rpc('purge_incomplete_account', { email_addr: trimmedEmail });
+        const { error: purgeErr } = await (supabase as any).rpc('purge_incomplete_account', { email_addr: trimmedEmail });
+        if (purgeErr) {
+          console.warn('[RegisterEmail] Purge RPC warning:', purgeErr);
+        }
+        // Allow Supabase Auth cache and Postgres transaction to settle cleanly
+        await new Promise((resolve) => setTimeout(resolve, 600));
       } else if (provider === 'email') {
         Alert.alert(
           'Already Registered',

@@ -198,7 +198,7 @@ export default function DebateEngineScreen() {
     useEffect(() => {
         if (!id) return;
 
-        const channel = supabase.channel(`debate_pool_${id}_${Date.now()}`)
+        const channel = supabase.channel(`debate_pool_${id}`)
             .on('postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` },
                 (payload) => {
@@ -294,7 +294,7 @@ export default function DebateEngineScreen() {
 
     const handlePointOfOrder = () => {
         if (!id || !user) return;
-        supabase.channel(`debate_pool_${id}_${Date.now()}`).send({
+        supabase.channel(`debate_pool_${id}`).send({
             type: 'broadcast',
             event: 'point_of_order',
             payload: { user_id: user.id, name: user.full_name }

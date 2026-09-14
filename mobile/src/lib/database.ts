@@ -46,7 +46,9 @@ export function isWriteQueueIdle(): boolean {
 async function initReadConnection(): Promise<SQLite.SQLiteDatabase | null> {
     try {
         if (db) {
-            readDb = db;
+            const rawReadDb = await SQLite.openDatabaseAsync(activeDbName, { useNewConnection: true });
+            await rawReadDb.execAsync('PRAGMA query_only = 1;');
+            readDb = wrapDatabaseWithObservability(rawReadDb);
             return readDb;
         }
         return null;

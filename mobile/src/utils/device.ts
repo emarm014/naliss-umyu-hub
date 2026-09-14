@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
+import * as Application from 'expo-application';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../api/supabase/client';
 
 /**
@@ -24,29 +26,45 @@ export function getDeviceName(): string {
 }
 
 let cachedDeviceId: string | null = null;
+const SECURE_DEVICE_KEY = 'naliss_secure_device_id';
 
-/**
- * Retrieves a persisted unique device ID or generates a new one.
- * Stores it persistently in AsyncStorage to survive app restarts.
- */
 export async function getOrCreateDeviceId(): Promise<string> {
   if (cachedDeviceId) return cachedDeviceId;
+
   try {
-    let deviceId = await AsyncStorage.getItem('device_id');
-    if (!deviceId) {
-      // Generate a unique 32-character string
-      deviceId = Math.random().toString(36).substring(2, 15) + 
-                 Math.random().toString(36).substring(2, 15) + 
-                 Date.now().toString(36);
-      await AsyncStorage.setItem('device_id', deviceId);
+    // 1. ANDROID: Hardware-anchored Settings.Secure.ANDROID_ID
+    if (Platform.OS === 'android') {
+      const androidId = Application.getAndroidId();
+      if (androidId) {
+        cachedDeviceId = `android_${androidId}`;
+        return cachedDeviceId;
+      }
     }
-    cachedDeviceId = deviceId;
-    return deviceId;
-  } catch (error) {
-    console.error('Failed to get or create device ID:', error);
-    // Fallback in-memory ID if AsyncStorage fails
-    cachedDeviceId = 'temp_device_' + Date.now().toString(36);
+
+    // 2. IOS & FALLBACK: Keychain-backed ID (Survives app uninstalls)
+    let storedId = await SecureStore.getItemAsync(SECURE_DEVICE_KEY);
+    if (!storedId) {
+      // Check if expo-application provides vendor identifier on iOS
+      let vendorId: string | null = null;
+      if (Platform.OS === 'ios') {
+        vendorId = await Application.getIosIdForVendorAsync();
+      }
+
+      storedId = vendorId 
+        ? `ios_${vendorId}` 
+        : `dev_${Platform.OS}_${Math.random().toString(36).substring(2, 15)}_${Date.now().toString(36)}`;
+
+      await SecureStore.setItemAsync(SECURE_DEVICE_KEY, storedId, {
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+      });
+    }
+
+    cachedDeviceId = storedId;
     return cachedDeviceId;
+  } catch (error) {
+    console.error('[Device] Failed to resolve persistent device ID:', error);
+    // Temporary fallback for unexpected runtime failures
+    return `fallback_${Platform.OS}_${Date.now().toString(36)}`;
   }
 }
 

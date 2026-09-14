@@ -55,6 +55,8 @@ export default function RegisterOTP() {
   const isMounted = useRef(true);
   const initDone = useRef(false); // prevents re-running init on AppState changes
   const autoVerifyAttempted = useRef(false); // prevents double auto-verify
+  const isVerifyingRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
 
   // Lock countdown ticker
@@ -86,20 +88,24 @@ export default function RegisterOTP() {
   }, [cooldown]);
 
   // ── Auto-verify: fires whenever all 6 digits are filled ──────────────────
-  // Works for both iOS system suggestion and Android clipboard paste.
-  // autoVerifyAttempted ref prevents double-firing if the effect re-runs.
   useEffect(() => {
     const code = otp.join('');
     if (code.length !== OTP_LENGTH) {
-      // Reset the guard when digits are cleared so user can retry
       autoVerifyAttempted.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
       return;
     }
-    if (autoVerifyAttempted.current) return;
+
+    if (autoVerifyAttempted.current || isVerifyingRef.current) return;
     autoVerifyAttempted.current = true;
-    // Small tick to let the last digit render before the verify call
-    const t = setTimeout(() => handleVerify(), 120);
-    return () => clearTimeout(t);
+
+    timerRef.current = setTimeout(() => {
+      handleVerify();
+    }, 150);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [otp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Unified Clipboard Parsing ─────────────────────────────────────────────
@@ -272,26 +278,26 @@ export default function RegisterOTP() {
       Alert.alert('Incomplete', 'Please enter all 6 digits of the verification code.');
       return;
     }
+
+    // Strict concurrency lock: abort if already running
+    if (isVerifyingRef.current) return;
+    isVerifyingRef.current = true;
     setIsLoading(true);
+
     let succeeded = false;
     try {
       const store = useSignupStore.getState();
       store.setCredentials(email as string, undefined);
       store.setCurrentStep(3);
-
-      // Block ProtectedRoute from intercepting the navigation that follows
-      // verifyOtp(). Without this, onAuthStateChange fires a SIGNED_IN event
-      // which causes ProtectedRoute to race with our router.push() below.
       store.setIsGoogleDelaying(true);
 
       const { error } = await supabase.auth.verifyOtp({
-        email: email as string,
-        token: code,
+        email: (email as string).trim().toLowerCase(),
+        token: code.trim(),
         type: 'email',
       });
 
       if (error) {
-        // Revert on failure so user can retry
         store.setCurrentStep(2);
         store.setIsGoogleDelaying(false);
         throw error;
@@ -305,27 +311,28 @@ export default function RegisterOTP() {
         return;
       }
 
-      // Navigate immediately — no success state, no animation frame delay.
-      // Release the block just before navigating so ProtectedRoute sees
-      // currentStep=3 and stays on register-password if it fires after this.
       store.setIsGoogleDelaying(false);
       router.push({ pathname: '/auth/register-password', params: { email } });
-
     } catch (err: any) {
+      isVerifyingRef.current = false; // Release lock on error to allow retry
       autoVerifyAttempted.current = false;
       captureUIError('RegisterOTP.handleVerify', err, { email });
       if (!isMounted.current) return;
-      if (err.message?.includes('expired') || err.message?.includes('Token has expired')) {
+
+      const errMsg = err?.message || '';
+      if (errMsg.includes('expired') || errMsg.includes('Token has expired')) {
         Alert.alert('Code Expired', 'Your verification code has expired. Please request a new one.');
-      } else if (err.message?.includes('invalid') || err.message?.includes('Invalid')) {
+      } else if (errMsg.includes('invalid') || errMsg.includes('Invalid')) {
         Alert.alert('Wrong Code', 'The code you entered is incorrect. Please check and try again.');
       } else {
-        Alert.alert('Verification Failed', 'Could not verify the code. Please try again.');
+        Alert.alert('Verification Failed', errMsg || 'Could not verify the code. Please try again.');
       }
     } finally {
-      // Always clear the delay flag — even if component unmounted
       useSignupStore.getState().setIsGoogleDelaying(false);
-      if (isMounted.current && !succeeded) setIsLoading(false);
+      if (isMounted.current && !succeeded) {
+        setIsLoading(false);
+        isVerifyingRef.current = false;
+      }
     }
   };
 

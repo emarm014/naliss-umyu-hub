@@ -64,6 +64,9 @@ if (typeof globalThis !== 'undefined' && !(globalThis as any)._rejectHandlerInst
 // ── Sentry: initialised before everything else so it catches all boot errors ──
 const IS_PROD = process.env.EXPO_PUBLIC_APP_ENV === 'production';
 
+// Capture native console BEFORE Sentry intercepts it
+const originalConsoleError = console.error;
+
 Sentry.init({
   dsn: 'https://d788f703d8c028e11be19ad6c99b2822@o4511411773571072.ingest.de.sentry.io/4511413255995472',
   environment: process.env.EXPO_PUBLIC_APP_ENV ?? 'development',
@@ -151,7 +154,6 @@ Sentry.init({
 // ── Global console.error interception ──────────────────────────────────────
 // Force all manual console.error() calls to be reported to Sentry as exceptions
 // Rate-limited to prevent JS thread starvation when native modules spam errors
-const originalConsoleError = console.error;
 const safeStringifyArg = (a: any) => {
   if (typeof a === 'object' && a !== null) {
     try {
@@ -268,22 +270,25 @@ export function NetworkStatusDot() {
 
 // ── Deep Link Session Handler ─────────────────────────────────────────────────
 // Extracts Supabase auth tokens from redirect URLs (e.g. after OAuth or reset)
-function extractSessionFromUrl(url: string): { access_token: string; refresh_token: string; type?: string } | null {
-  const fragment = url.split('#')[1];
-  if (!fragment) return null;
-
+function extractSessionFromUrl(url: string): { access_token?: string; refresh_token?: string; type?: string; code?: string } | null {
   try {
-    const params = fragment.split('&').reduce((acc, current) => {
+    const hashStr = url.split('#')[1] || '';
+    const queryStr = url.split('?')[1]?.split('#')[0] || '';
+    
+    const parseParams = (str: string) => str.split('&').reduce((acc, current) => {
       const [key, value] = current.split('=');
       if (key && value) acc[key] = decodeURIComponent(value);
       return acc;
     }, {} as Record<string, string>);
 
-    if (params.access_token && params.refresh_token) {
+    const mergedParams = { ...parseParams(queryStr), ...parseParams(hashStr) };
+
+    if ((mergedParams.access_token && mergedParams.refresh_token) || mergedParams.code) {
       return { 
-        access_token: params.access_token, 
-        refresh_token: params.refresh_token,
-        type: params.type 
+        access_token: mergedParams.access_token, 
+        refresh_token: mergedParams.refresh_token,
+        type: mergedParams.type || (url.includes('type=recovery') ? 'recovery' : undefined),
+        code: mergedParams.code
       };
     }
   } catch {
@@ -625,17 +630,29 @@ function RootLayoutNav() {
               }
               signupState.setIsRecoveryFlow(true);
             }
-            const { error: sessionError } = await supabase.auth.setSession({
+            let sessionError: any = null;
+          if (tokens.access_token && tokens.refresh_token) {
+            await supabase.auth.setSession({
               access_token: tokens.access_token,
               refresh_token: tokens.refresh_token,
+            }).catch((err) => {
+              sessionError = err;
+              console.warn('[Recovery] setSession initial warning:', err.message);
             });
-            
-            if (tokens.type === 'recovery') {
-              // Always route to update-password — the screen handles expired/invalid sessions
-              router.replace('/auth/update-password');
-            } else if (sessionError) {
-              console.warn('[DeepLink] setSession failed:', sessionError.message);
-            }
+          }
+
+          if (tokens.type === 'recovery') {
+            router.replace({
+              pathname: '/auth/update-password',
+              params: {
+                access_token: tokens.access_token || '',
+                refresh_token: tokens.refresh_token || '',
+                code: tokens.code || '',
+              }
+            });
+          } else if (sessionError) {
+            console.warn('[DeepLink] setSession failed:', sessionError.message);
+          }
           }
         } else {
           handleDeepLink(initialUrl);
@@ -659,14 +676,26 @@ function RootLayoutNav() {
             }
             signupState.setIsRecoveryFlow(true);
           }
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token,
-          });
+          let sessionError: any = null;
+          if (tokens.access_token && tokens.refresh_token) {
+            await supabase.auth.setSession({
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token,
+            }).catch((err) => {
+              sessionError = err;
+              console.warn('[Recovery] setSession initial warning:', err.message);
+            });
+          }
 
           if (tokens.type === 'recovery') {
-            // Always route to update-password — the screen handles expired/invalid sessions
-            router.replace('/auth/update-password');
+            router.replace({
+              pathname: '/auth/update-password',
+              params: {
+                access_token: tokens.access_token || '',
+                refresh_token: tokens.refresh_token || '',
+                code: tokens.code || '',
+              }
+            });
           } else if (sessionError) {
             console.warn('[DeepLink] setSession failed:', sessionError.message);
           }

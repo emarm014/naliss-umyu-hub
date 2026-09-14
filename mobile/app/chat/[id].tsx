@@ -56,6 +56,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { getCleanAvatarUrl } from '../../src/utils';
 import { WhatsAppMediaEditor, FinalizedMedia } from '../../src/components/messaging/WhatsAppMediaEditor';
 import { openDocumentWith } from '../../src/utils/documentOpener';
+import { updateLocalMediaPath } from '../../src/lib/database';
 
 const MAX_CHARS = 500;
 
@@ -216,7 +217,7 @@ export default function ChatScreen() {
     const [viewerMediaList, setViewerMediaList] = useState<any[] | undefined>(undefined);
     const [viewerInitialIndex, setViewerInitialIndex] = useState<number>(0);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-    const [viewerFile, setViewerFile] = useState<{ uri: string, type: any, name: string, isProfile?: boolean, profileData?: any }>({ uri: '', type: 'document', name: '' });
+    const [viewerFile, setViewerFile] = useState<{ uri: string, remoteUrl?: string, type: any, name: string, isProfile?: boolean, profileData?: any }>({ uri: '', type: 'document', name: '' });
     const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
     const [uploadingIds, setUploadingIds] = useState<Record<string, number>>({});
     const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
@@ -2372,13 +2373,31 @@ export default function ChatScreen() {
                 const pct = Math.round(p * 100);
                 setDownloadingIds(prev => ({ ...prev, [messageId]: Math.max(pct, 1) }));
             });
+            
             if (localUri) {
-                setDownloadingIds(prev => ({ ...prev, [messageId]: 100 }));
-                setTimeout(() => {
-                    if (!isMounted.current) return;
+                try {
+                    const fileInfo = await FileSystem.getInfoAsync(localUri);
+                    if (fileInfo.exists && (fileInfo.size ?? 0) > 0) {
+                        // Persist local path in SQLite
+                        await updateLocalMediaPath(messageId, localUri);
+                        
+                        // Update in-memory message store so re-renders know it's downloaded
+                        messageStore.updateMessage(id, messageId, { local_media_path: localUri });
+                        
+                        setDownloadingIds(prev => ({ ...prev, [messageId]: 100 }));
+                        setTimeout(() => {
+                            if (!isMounted.current) return;
+                            setDownloadingIds(prev => { const next = { ...prev }; delete next[messageId]; return next; });
+                            setDownloadedIds(prev => ({ ...prev, [messageId]: true }));
+                        }, 300);
+                    } else {
+                        throw new Error('Downloaded file is empty or missing');
+                    }
+                } catch (e) {
+                    console.warn('[Chat] Download verification failed:', e);
                     setDownloadingIds(prev => { const next = { ...prev }; delete next[messageId]; return next; });
-                    setDownloadedIds(prev => ({ ...prev, [messageId]: true }));
-                }, 300);
+                    setDownloadedIds(prev => { const next = { ...prev }; delete next[messageId]; return next; });
+                }
             } else {
                 setDownloadingIds(prev => { const next = { ...prev }; delete next[messageId]; return next; });
                 setDownloadedIds(prev => { const next = { ...prev }; delete next[messageId]; return next; });
@@ -2425,26 +2444,51 @@ export default function ChatScreen() {
 
     // Open media — only from local vault, never from remote URL
     const handleOpenMedia = async (messageId: string, url: string, type: any, customName?: string) => {
-        console.log('>>> [TAP STEP 1] Media tapped:', { messageId, type, url: url?.slice(0, 30) });
-
         try {
-            console.log('>>> [TAP STEP 2] Checking FileService.isDownloaded...');
             const isLocal = await FileService.isDownloaded(messageId, url);
-            console.log('>>> [TAP STEP 3] isDownloaded returned:', isLocal);
+            const computedLocalUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
 
-            const localUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
-            console.log('>>> [TAP STEP 4] Resolved localUri:', localUri);
-
+            // If physically on disk, use local path; otherwise use remote url
+            const activeUri = isLocal ? computedLocalUri : url;
             const name = customName || url.split('/').pop() || 'media';
             const viewerType = type === 'document' ? 'document' : type === 'video' ? 'video' : type === 'audio' ? 'audio' : 'image';
 
-            console.log('>>> [TAP STEP 5] Setting viewer state...');
-            setViewerMediaList(undefined);
-            setViewerFile({ uri: localUri, type: viewerType, name });
-            setViewerVisible(true);
-            console.log('>>> [TAP STEP 6] setViewerVisible(true) dispatched');
+            const openInApp = () => {
+                setViewerMediaList(undefined);
+                setViewerFile({
+                    uri: activeUri,
+                    remoteUrl: url.startsWith('http') ? url : undefined,
+                    type: viewerType,
+                    name
+                });
+                setViewerVisible(true);
+            };
+
+            if (viewerType === 'document' || type === 'pdf') {
+                Alert.alert(
+                    'Open Document',
+                    'How would you like to open this document?',
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Open in App', onPress: openInApp },
+                        { 
+                            text: 'External App', 
+                            onPress: async () => {
+                                const normalizedUri = activeUri.startsWith('file://') || activeUri.startsWith('http') ? activeUri : `file://${activeUri}`;
+                                const mime = name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : '*/*';
+                                const result = await shareMedia(normalizedUri, mime, name);
+                                if (!result.success) {
+                                    Alert.alert('Error', result.error || 'Could not open document externally.');
+                                }
+                            } 
+                        }
+                    ]
+                );
+            } else {
+                openInApp();
+            }
         } catch (err) {
-            console.error('>>> [TAP ERROR] Caught error during tap:', err);
+            console.error('[Chat] Error opening media:', err);
         }
     };
 

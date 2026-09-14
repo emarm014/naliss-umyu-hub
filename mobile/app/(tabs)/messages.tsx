@@ -19,6 +19,7 @@ import { CachedImage } from '../../src/components/common/CachedImage';
 import { format } from 'date-fns';
 import { supabase } from '../../src/api/supabase/client';
 import { useSettingsStore, useAuthStore, useGroupStore } from '../../src/stores';
+import { useOfflineStorageStore } from '../../src/stores/offlineStorage.store';
 import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { getCleanAvatarUrl } from '../../src/utils';
@@ -34,8 +35,13 @@ export default function MessagesScreen() {
   const fetchGroups = useGroupStore(s => s.fetchGroups);
   const { colors } = useTheme();
   useEffect(() => {
-    useGroupStore.getState().clearBadge();
-    useGroupStore.getState().setCurrentTab('messages');
+    const groupState = useGroupStore.getState() as any;
+    if (typeof groupState.clearBadge === 'function') {
+      groupState.clearBadge();
+    }
+    if (typeof groupState.setCurrentTab === 'function') {
+      groupState.setCurrentTab('messages');
+    }
   }, []);
 
   const colorScheme = useColorScheme();
@@ -63,7 +69,14 @@ export default function MessagesScreen() {
   });
 
   useEffect(() => {
-    fetchGroups();
+    if (typeof fetchGroups === 'function') {
+      fetchGroups();
+    } else {
+      const storeFetch = (useGroupStore.getState() as any).fetchGroups;
+      if (typeof storeFetch === 'function') {
+        storeFetch();
+      }
+    }
   }, [fetchGroups]);
 
   const onRefresh = async () => {
@@ -255,6 +268,20 @@ function sanitizeLastMessage(msg: string | null | undefined, lastMsgObj?: any, c
   return formattedMsg;
 }
 
+const formatLastMessageTime = (timestamp?: string | null): string => {
+  if (!timestamp) return '';
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+    if (typeof format === 'function') {
+      return format(date, 'p');
+    }
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+};
+
 function ConversationItem({
   conversation,
   onPress,
@@ -276,14 +303,16 @@ function ConversationItem({
       if (!active || isChecking) return;
       isChecking = true;
       try {
-        const { useOfflineStorageStore } = require('../../src/stores/offlineStorage.store');
-        const res = await useOfflineStorageStore.getState().getPerChatStatus(conversation.id);
-        if (active) {
-          setSyncStatus(res.status);
-          setSyncProgress(res.progress);
+        const store = useOfflineStorageStore?.getState?.();
+        if (store && typeof store.getPerChatStatus === 'function') {
+          const res = await store.getPerChatStatus(conversation.id);
+          if (active && res) {
+            setSyncStatus(res.status);
+            setSyncProgress(res.progress);
+          }
         }
       } catch (_) {
-        // Silent fallback — don't crash on SQLite errors
+        // Silent fallback — don't crash on SQLite or store errors
       } finally {
         isChecking = false;
       }
@@ -351,7 +380,7 @@ function ConversationItem({
           </View>
           {conversation.last_message_at && conversation.last_message ? (
             <Text style={[styles.conversationTime, { color: colors.textMuted }]}>
-              {format(new Date(conversation.last_message_at), 'p')}
+              {formatLastMessageTime(conversation.last_message_at)}
             </Text>
           ) : null}
         </View>

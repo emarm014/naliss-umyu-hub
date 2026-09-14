@@ -357,7 +357,7 @@ export default function QuizEngineScreen() {
     useEffect(() => {
         if (!id) return;
 
-        const channel = supabase.channel(`quiz_pool_${id}_${Date.now()}`)
+        const channel = supabase.channel(`quiz_pool_${id}`)
             .on('postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` },
                 (payload) => {

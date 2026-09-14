@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
@@ -22,44 +22,74 @@ export default function UpdatePassword() {
   const [passFocused, setPassFocused] = useState(false);
   const [confirmFocused, setConfirmFocused] = useState(false);
   const router = useRouter();
+  const params = useLocalSearchParams<{ access_token?: string; refresh_token?: string; code?: string }>();
 
-  // Track success so the auth state listener can ignore the post-update signOut
   const didSucceedRef = React.useRef(false);
 
-  // Verify there is a valid recovery session before allowing password update.
-  // The reset link from email sets a session automatically via deep link handler.
   useEffect(() => {
-    // Check immediately in case session is already set
-    supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-            setSessionReady(true);
-            return;
-        }
-    });
+    let isCancelled = false;
 
-    // Listen for the recovery event — fires when setSession() completes in _layout.tsx
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
-            setSessionReady(true);
-        } else if (event === 'SIGNED_OUT') {
-            // Ignore SIGNED_OUT if we already succeeded — it's from our own signOut() call
-            if (didSucceedRef.current) return;
-            setSessionError(true);
-        }
-    });
+    const resolveRecoverySession = async () => {
+      // 1. Check if session is already active (set by _layout.tsx)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && !isCancelled) {
+        setSessionReady(true);
+        return;
+      }
 
-    // Safety timeout — only as last resort (5s, not 800ms)
-    const fallback = setTimeout(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (!session) setSessionError(true);
+      // 2. Self-heal from route params if session was missed
+      if (params.access_token && params.refresh_token) {
+        console.log('[UpdatePassword] Rehydrating session from route params...');
+        const { data: restored, error } = await supabase.auth.setSession({
+          access_token: params.access_token,
+          refresh_token: params.refresh_token,
         });
-    }, 5000);
+        if (!error && restored.session && !isCancelled) {
+          setSessionReady(true);
+          return;
+        }
+      }
+
+      // 3. Handle PKCE code if present
+      if (params.code) {
+        console.log('[UpdatePassword] Exchanging PKCE code...');
+        const { data: exchanged, error } = await supabase.auth.exchangeCodeForSession(params.code);
+        if (!error && exchanged.session && !isCancelled) {
+          setSessionReady(true);
+          return;
+        }
+      }
+
+      // 4. Fallback check with getUser()
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && !isCancelled) {
+        setSessionReady(true);
+        return;
+      }
+
+      // 5. If all resolution steps fail after grace period, show expired state
+      if (!isCancelled) {
+        setSessionError(true);
+      }
+    };
+
+    resolveRecoverySession();
+
+    // Secondary listener for late auth events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session && !isCancelled) {
+        setSessionReady(true);
+      } else if (event === 'SIGNED_OUT') {
+        if (didSucceedRef.current) return;
+        setSessionError(true);
+      }
+    });
 
     return () => {
-        subscription.unsubscribe();
-        clearTimeout(fallback);
+      isCancelled = true;
+      subscription.unsubscribe();
     };
-  }, []);
+  }, [params.access_token, params.refresh_token, params.code]);
 
   const handleUpdate = async () => {
     if (password.length < 6) {

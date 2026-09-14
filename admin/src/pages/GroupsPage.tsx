@@ -47,7 +47,7 @@ export default function GroupsPage() {
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [createForm, setCreateForm] = useState({
-    name: '', description: '', group_type: 'custom' as 'level' | 'department' | 'custom',
+    name: '', description: '', group_type: 'other' as 'level' | 'department' | 'other',
     level: '' as string, avatar_url: '', is_official: false, chat_enabled: true, allow_media: true,
   });
   const [editForm, setEditForm] = useState<GroupWithDetails | null>(null);
@@ -78,8 +78,8 @@ export default function GroupsPage() {
         }
         return g.moderator_id === profile?.id;
       }
-      // 'department' filter matches both 'department' and 'custom' group types
-      if (typeFilter === 'department' && g.group_type !== 'department' && g.group_type !== 'custom') return false;
+      // 'department' filter matches both 'department' and 'other' group types
+      if (typeFilter === 'department' && g.group_type !== 'department' && g.group_type !== 'other') return false;
       if (typeFilter === 'level' && g.group_type !== 'level') return false;
       if (searchQuery && !g.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
@@ -305,7 +305,7 @@ export default function GroupsPage() {
     if (!createForm.name.trim()) return;
     setIsSubmitting(true);
     try {
-      // Custom groups always use group_type='custom' to avoid interfering with
+      // Other groups always use group_type='other' to avoid interfering with
       // the auto-join trigger which only targets 'department' and 'level' types.
       const isLevelGroup = createForm.group_type === 'level';
       const { data, error } = await supabase.from('groups').insert({
@@ -359,7 +359,7 @@ export default function GroupsPage() {
       }
 
       closeModal();
-      setCreateForm({ name: '', description: '', group_type: 'custom', level: '', avatar_url: '', is_official: false, chat_enabled: true, allow_media: true });
+      setCreateForm({ name: '', description: '', group_type: 'other', level: '', avatar_url: '', is_official: false, chat_enabled: true, allow_media: true });
       showSuccess(`Group "${createForm.name}" created successfully.`);
     } catch (err: unknown) {
       setGroupFormError((err as any)?.message || 'Failed to create group. Please try again.');
@@ -685,7 +685,7 @@ export default function GroupsPage() {
   const stats = useMemo(() => ({
     total: levelScopedGroups.length,
     level: levelScopedGroups.filter(g => g.group_type === 'level').length,
-    department: levelScopedGroups.filter(g => g.group_type === 'department' || g.group_type === 'custom').length,
+    department: levelScopedGroups.filter(g => g.group_type === 'department' || g.group_type === 'other').length,
     withModerator: levelScopedGroups.filter(g => g.moderator_id).length,
   }), [levelScopedGroups]);
 
@@ -741,7 +741,7 @@ export default function GroupsPage() {
         {[
           { label: 'Total Groups', value: stats.total, color: 'border-b-primary-950', icon: Layers },
           { label: 'Level Groups', value: stats.level, color: 'border-b-blue-500', icon: GraduationCap },
-          { label: 'Dept / Custom', value: stats.department, color: 'border-b-green-500', icon: Building },
+          { label: 'Dept / Other', value: stats.department, color: 'border-b-green-500', icon: Building },
           { label: 'With Moderator', value: stats.withModerator, color: 'border-b-amber-500', icon: Crown },
         ].map(({ label, value, color, icon: Icon }) => (
           <div key={label} className={`bg-white p-6 rounded-2xl border border-gray-100 shadow-sm border-b-4 ${color}`}>
@@ -767,7 +767,7 @@ export default function GroupsPage() {
                 typeFilter === t ? 'bg-primary-950 text-white shadow-lg' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
               }`}
             >
-              {t === 'all' ? 'All' : t === 'level' ? 'Level Groups' : 'Dept / Custom'}
+              {t === 'all' ? 'All' : t === 'level' ? 'Level Groups' : 'Dept / Other'}
             </button>
           ))}
         </div>
@@ -825,7 +825,7 @@ export default function GroupsPage() {
                       <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${
                         group.group_type === 'level' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
                       }`}>
-                        {group.group_type === 'level' ? `Level ${group.level}` : 'Custom'}
+                        {group.group_type === 'level' ? `Level ${group.level}` : 'Other'}
                       </span>
                       {!group.chat_enabled && (
                         <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-600">
@@ -1231,11 +1231,11 @@ export default function GroupsPage() {
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Group Type *</label>
                   <select
                     value={createForm.group_type}
-                    onChange={e => setCreateForm({ ...createForm, group_type: e.target.value as 'level' | 'department' | 'custom', level: '', is_official: e.target.value === 'level' })}
+                    onChange={e => setCreateForm({ ...createForm, group_type: e.target.value as 'level' | 'department' | 'other', level: '', is_official: e.target.value === 'level' })}
                     disabled={isModerator}
                     className="w-full px-5 py-3.5 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary-950 shadow-inner appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <option value="custom">Custom</option>
+                    <option value="other">Other</option>
                     {!isModerator && <option value="level">Academic Level</option>}
                   </select>
                   {isModerator && (
@@ -1374,7 +1374,7 @@ export default function GroupsPage() {
                     onChange={e => setEditForm({ ...editForm, group_type: e.target.value as 'level' | 'department' })}
                     className="w-full px-5 py-3.5 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary-950 shadow-inner appearance-none"
                   >
-                    <option value="department">Custom / Department</option>
+                    <option value="department">Other / Department</option>
                     <option value="level">Academic Level</option>
                   </select>
                 </div>

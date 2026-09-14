@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Sentry from '@sentry/react-native';
 import { Alert, Platform } from 'react-native';
-import IntentLauncher from 'expo-intent-launcher';
+import * as IntentLauncher from 'expo-intent-launcher';
 
 const MIME_MAP: Record<string, string> = {
     '.pdf': 'application/pdf',

@@ -11,7 +11,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import NetInfo from '@react-native-community/netinfo';
 import { saveLocalUserSession, getLocalUserSession, clearLocalUserSession } from '../lib/database';
 import { safeFire } from '../utils/safeFire';
-
+import { realtimeManager } from '../lib/realtimeManager';
+import { getCurrentPushToken } from '../hooks/usePushNotifications';
+import { getOrCreateDeviceId } from '../utils/device';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 const cacheAvatarLocally = async (userId: string, remoteUrl: string): Promise<string | null> => {
   if (!userId || !remoteUrl) return null;
   if (!remoteUrl.startsWith('http')) {
@@ -144,7 +147,7 @@ export const useAuthStore = create<AuthState>()(
               const result = await (supabase as any).from('users')
                 .select('*')
                 .eq('id', user.id)
-                .single();
+                .maybeSingle();
               if (result.error) throw result.error;
               return result;
             }, { componentName: 'auth.store', operationName: 'fetchProfile' })
@@ -161,10 +164,12 @@ export const useAuthStore = create<AuthState>()(
           }
 
           if (!data || Object.keys(data).length === 0) {
-            Logger.warn('auth.store', 'Empty server profile response. Skipping overwrite.');
-            
+            console.log('[AuthStore] Profile not yet created for user:', user.id);
+            set({ profile: null, isProfileComplete: false });
             return;
           }
+
+          set({ isProfileComplete: true });
 
           // Version Control Check
           const localProfile = get().profile;
@@ -426,57 +431,55 @@ export const useAuthStore = create<AuthState>()(
       signOut: async () => {
         const { user } = get();
         const userId = user?.id;
-        
+
+        // 1. Cleanly tear down the Realtime master socket and AppState listeners
+        try {
+          realtimeManager.cleanup();
+        } catch (e) {
+          console.warn('[AuthStore] Realtime cleanup warning during logout:', e);
+        }
+
+        // 2. Teardown per-device push tokens and server sessions
         if (userId) {
-          const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-          await AsyncStorage.removeItem(`download_restore_${userId}`).catch(() => {});
-          await AsyncStorage.removeItem(`download_restore_progress_${userId}`).catch(() => {});
-          // Delete ONLY this device's token — other devices keep receiving notifications.
-          // The old approach set users.push_token = null, which triggered
-          // sync_push_token_from_users() and cascade-deleted ALL device tokens.
-          const { getCurrentPushToken } = require('../hooks/usePushNotifications');
-          const deviceToken = getCurrentPushToken();
-          if (deviceToken) {
-            (supabase as any).from('user_push_tokens')
-              .delete()
-              .eq('user_id', userId)
-              .eq('push_token', deviceToken)
-              .then(
-                () => {},
-                () => {}
-              );
+          try {
+            await AsyncStorage.removeItem(`download_restore_${userId}`);
+            await AsyncStorage.removeItem(`download_restore_progress_${userId}`);
+          } catch {}
+
+          try {
+            const deviceToken = typeof getCurrentPushToken === 'function' ? getCurrentPushToken() : null;
+            if (deviceToken) {
+              await (supabase as any).from('user_push_tokens')
+                .delete()
+                .eq('user_id', userId)
+                .eq('push_token', deviceToken);
+            }
+          } catch (e) {
+            console.warn('[AuthStore] Push token cleanup warning:', e);
           }
 
-          // Delete this device's session row so it no longer counts toward the
-          // 5-device concurrency limit.  Without this, signing out leaves a
-          // ghost row with is_active = true, which blocks re-login.
           try {
-            const { getOrCreateDeviceId } = require('../utils/device');
             const deviceId = await getOrCreateDeviceId();
-            await (supabase as any)
-              .from('user_sessions')
+            await (supabase as any).from('user_sessions')
               .delete()
               .eq('user_id', userId)
               .eq('device_id', deviceId);
-          } catch {
-            // Best-effort — don't block logout if this fails
-          }
+          } catch {}
         }
 
-        // Hardened Logout: Wipes memory auth state but preserves SQLite profile & vaults
-        set({ 
-          session: null, 
-          user: null, 
-          isProfileComplete: null, 
-          error: null 
+        // 3. Clear auth store state
+        set({
+          session: null,
+          user: null,
+          isProfileComplete: null,
+          error: null,
         });
         clearSentryUserContext();
-        
+
+        // 4. Invalidate Supabase session
         try {
           await supabase.auth.signOut();
-        } catch {
-          // Ignore network errors on signout to prevent UI hanging
-        }
+        } catch {}
       },
 
       syncPendingAvatar: async () => {

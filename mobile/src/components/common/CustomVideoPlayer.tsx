@@ -13,6 +13,7 @@ import {
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Slider } from '@miblanchard/react-native-slider';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface CustomVideoPlayerProps {
   source: { uri: string };
@@ -24,6 +25,7 @@ interface CustomVideoPlayerProps {
   showControls?: boolean;
   autoPlay?: boolean;
   onSingleTap?: () => void;
+  bottomOffset?: number;
 }
 
 function formatTime(millis: number): string {
@@ -53,9 +55,13 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   showControls = true,
   autoPlay = false,
   onSingleTap,
+  bottomOffset,
 }) => {
   const videoRef = useRef<Video>(null);
   const hideControlsTimer = useRef<any>(null);
+
+  const insets = useSafeAreaInsets();
+  const safeBottomInset = Math.max(insets.bottom, 16);
 
   const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
   const [isPlaying, setIsPlaying] = useState(autoPlay || shouldPlay);
@@ -267,7 +273,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             </View>
 
             {/* Bottom Timeline Control Bar with Scrubbing Slider */}
-            <View style={styles.bottomBar}>
+            <View style={[styles.bottomBar, { paddingBottom: bottomOffset ?? safeBottomInset }]}>
               <View style={styles.sliderContainer}>
                 <Slider
                   value={currentDisplayTime}

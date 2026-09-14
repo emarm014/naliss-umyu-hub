@@ -35,19 +35,24 @@ class RealtimeManager {
         this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
     }
 
-    private handleAppStateChange = (nextAppState: AppStateStatus) => {
+    private handleAppStateChange = async (nextAppState: AppStateStatus) => {
         if (nextAppState === 'active') {
-            if (this.masterChannel && this.masterChannel.state !== 'joined') {
-                console.log('[RealtimeManager] Reconnecting channel due to AppState active');
-                this.masterChannel.unsubscribe();
-                this.masterChannel.subscribe(async (status) => {
-                    if (status === 'SUBSCRIBED' && this.userId) {
-                        await this.masterChannel!.track({
-                            user_id: this.userId,
-                            online_at: new Date().toISOString()
-                        });
-                    }
-                });
+            // If channel is already joined and healthy, do nothing
+            if (this.masterChannel && this.masterChannel.state === 'joined') {
+                return;
+            }
+
+            console.log('[RealtimeManager] Reconnecting fresh channel due to AppState active');
+
+            // 1. Completely remove and unregister the old channel from the Supabase client
+            if (this.masterChannel) {
+                await supabase.removeChannel(this.masterChannel);
+                this.masterChannel = null;
+            }
+
+            // 2. Instantiate and subscribe with a clean channel object
+            if (this.userId) {
+                this.setupMasterChannel();
             }
         }
     };

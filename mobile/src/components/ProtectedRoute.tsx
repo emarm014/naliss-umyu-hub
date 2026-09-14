@@ -18,6 +18,7 @@ import { getOrCreateDeviceId, fetchIpAddress, getDeviceName } from '../utils/dev
 import { normalizeError, isNetworkError } from '../utils/sentry';
 import { NotificationRouter } from '../services/notificationRouter';
 import { safeFire } from '../utils/safeFire';
+import { realtimeManager } from '../lib/realtimeManager';
 const MinimalLoader = () => {
   const { colors } = useTheme();
   return (
@@ -28,6 +29,7 @@ const MinimalLoader = () => {
 };
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   // â”€â”€ Zustand selectors â€” subscribe to individual properties, NOT the whole store.
   // This prevents re-renders from unrelated store changes (lastFetch, error, etc.)
   // which were amplifying navigation guard re-fires and contributing to the loop.
@@ -395,7 +397,16 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const wasSkipped = useDataRestoreStore(s => s.wasSkipped);
 
   useEffect(() => {
+    // Check pathname using usePathname() from the component level (assuming it's already there)
+    const isAuthRoute = pathname?.includes('/auth/') || pathname?.includes('register') || pathname?.includes('login');
+    const isDelaying = useSignupStore.getState().isGoogleDelaying;
+
     if (session && (isProfileComplete === true || offlineUnblocked)) {
+      // STRICT GUARD: Never initialize global sync if user is still in the auth/onboarding tree
+      if (isAuthRoute || isDelaying) {
+        return;
+      }
+
       const restoreStore = useDataRestoreStore.getState();
       
       // Perform synchronous device detection before we jump the gun and sync everything
@@ -408,13 +419,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
       // Only initialize global sync if we are NOT holding back for the data restore screen
       if (!freshRestoreState.isNewDevice || freshRestoreState.restoreCompleted || freshRestoreState.wasSkipped) {
-        useGlobalSyncStore.getState().initialize();
+        const syncStore = useGlobalSyncStore.getState();
+        // Prevent re-triggering if already initialized
+        if (!syncStore.isInitialized) {
+          syncStore.initialize();
+        }
       }
     }
     // No cleanup / terminate here — channels must survive navigation
     // CRITICAL: Do NOT include store functions in dependencies
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, isProfileComplete, offlineUnblocked]);
+  }, [session, isProfileComplete, offlineUnblocked, pathname]);
 
   // 2. Auth State Sync
   useEffect(() => {
@@ -464,11 +479,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       // the restriction screen instead of logging them out silently.
       if (event === 'SIGNED_OUT' && !currentSession) {
         if (!useNetworkStore.getState().isOnline) return;
+
+        // Ensure Realtime channel is severed even if signOut triggered externally
+        try {
+          realtimeManager.cleanup();
+        } catch {}
+
         useAuthStore.getState().setSession(null);
         useAuthStore.getState().setUser(null);
         useAuthStore.getState().setIsProfileComplete(null);
         useAuthStore.getState().setProfile(null);
-        // Clear recovery flag on sign-out so the user isn't stuck in recovery mode
+        
         if (useSignupStore.getState().isRecoveryFlow) {
           useSignupStore.getState().setIsRecoveryFlow(false);
         }
@@ -870,7 +891,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     };
   }, [session?.user?.id, deviceSessionChecked, sessionError]);
 
-  const pathname = usePathname();
   // Cooldown-based navigation guard â€” prevents infinite loops by throttling
   // navigations to at most once per 500ms and blocking duplicate targets.
   const lastNavTime = useRef(0);

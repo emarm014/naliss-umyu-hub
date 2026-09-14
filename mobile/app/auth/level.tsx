@@ -121,49 +121,37 @@ export default function RegisterLevel() {
     // Block ProtectedRoute from redirecting while we're loading
     useSignupStore.getState().setIsGoogleDelaying(true);
 
-    // Pre-set isProfileComplete to true BEFORE auth.updateUser fires.
-    // auth.updateUser(password) triggers onAuthStateChange(USER_UPDATED) in ProtectedRoute.
-    // If isProfileComplete is null at that point, ProtectedRoute queries the DB,
-    // finds no profile yet, sets isProfileComplete=false, and may unmount this screen.
-    // Setting it to true here prevents that re-check from running.
-    // It will be reset to null in the catch block if profile creation fails.
-    useAuthStore.getState().setIsProfileComplete(true);
-
     try {
       const numericLevel = parseInt(level, 10);
       let finalAvatarUrl = '';
 
-      // ── STEP 1: Get current user ──────────────────────────────────────────
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error('Your session expired. Please start registration again.');
+      // ── 1. SESSION RECOVERY ──
+      let { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        await supabase.auth.refreshSession();
+        const { data: { user: retryUser } } = await supabase.auth.getUser();
+        user = retryUser;
 
-      if (provider === 'google') {
-        // ── STEP 2: Update auth metadata (Google) ─────────────────────────
-        advanceTo(2); // 18% — "Saving account details…"
-        const { error: authUpdateError } = await supabase.auth.updateUser({
-          data: { full_name, username, registration_number: reg_number, level: numericLevel.toString(), provider },
-        });
-        if (authUpdateError) {
-          if (
-            authUpdateError.message?.toLowerCase().includes('session') ||
-            authUpdateError.message?.toLowerCase().includes('token') ||
-            authUpdateError.message?.toLowerCase().includes('jwt') ||
-            authUpdateError.message?.toLowerCase().includes('expired')
-          ) {
-            throw new Error('Your session expired. Please start registration again.');
-          }
-          throw authUpdateError;
+        if (!user && provider === 'google' && signupState.access_token && signupState.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: signupState.access_token,
+            refresh_token: signupState.refresh_token,
+          });
+          const { data: { user: restoredUser } } = await supabase.auth.getUser();
+          user = restoredUser;
         }
+      }
 
-        // After auth.updateUser metadata, read current session to sync the client.
-        await supabase.auth.getSession();
-        await new Promise(r => setTimeout(r, 300));
+      if (!user) {
+        throw new Error('Your session expired. Please start registration again.');
+      }
 
-        // ── STEP 3: Upload Google avatar to Cloudinary ────────────────────
-        // Skip the password step for Google (step 3 is email-only)
-        advanceTo(4); // 48% — "Uploading profile photo…"
+      // Cloudinary upload for Google
+      if (provider === 'google') {
         finalAvatarUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`;
-        const googleAvatarUrl = user.user_metadata?.avatar_url;
+        const { data: { session } } = await supabase.auth.getSession();
+        const googleAvatarUrl = session?.user?.user_metadata?.avatar_url;
         if (googleAvatarUrl) {
           try {
             const uploadWithTimeout = async () => {
@@ -173,7 +161,6 @@ export default function RegisterLevel() {
               const blob = await response.blob();
               return await uploadToCloudinary(blob, 'avatars', 'image/png');
             };
-            // 6s timeout — if Cloudinary is slow, fall back to Google URL
             const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), 6000));
             const hosted = await Promise.race([uploadWithTimeout(), timeoutPromise]);
             if (hosted) finalAvatarUrl = hosted;
@@ -182,75 +169,24 @@ export default function RegisterLevel() {
             finalAvatarUrl = googleAvatarUrl;
           }
         }
-
       } else {
-        // ── STEP 2: Update auth metadata (email) ──────────────────────────
-        advanceTo(2); // 18% — "Saving account details…"
-        // Small yield so the UI renders the label before the async call
-        await new Promise(r => setTimeout(r, 50));
-
-        // ── STEP 3: Set password + metadata ───────────────────────────────
-        advanceTo(3); // 32% — "Setting your password…"
-        const { error: updateError } = await supabase.auth.updateUser({
-          password: password!,
-          data: {
-            full_name,
-            username,
-            registration_number: reg_number,
-            level: numericLevel.toString(),
-            provider: 'email',
-          },
-        });
-
-        if (updateError) {
-          // "Same password" is not a real error — just update metadata
-          if (
-            updateError.message?.toLowerCase().includes('same password') ||
-            updateError.message?.toLowerCase().includes('different from the old') ||
-            updateError.code === 'same_password'
-          ) {
-            const { error: metaError } = await supabase.auth.updateUser({
-              data: { full_name, username, registration_number: reg_number, level: numericLevel.toString(), provider: 'email' },
-            });
-            if (metaError) throw metaError;
-            await supabase.auth.getSession();
-            await new Promise(r => setTimeout(r, 300));
-          } else if (
-            updateError.message?.toLowerCase().includes('session') ||
-            updateError.message?.toLowerCase().includes('token')
-          ) {
-            throw new Error('Your session expired. Please start registration again.');
-          } else {
-            throw updateError;
-          }
-        }
-
         finalAvatarUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`;
-
-        // After auth.updateUser(password), the session token is already updated
-        // internally by Supabase. Just read the current session to ensure the
-        // client is using the latest token — no full refresh needed.
-        await supabase.auth.getSession();
-        await new Promise(r => setTimeout(r, 300));
       }
 
-      // ── STEP 5: Create public profile via RPC ─────────────────────────────
-      advanceTo(5); // 62% — "Creating your profile…"
-      await new Promise(r => setTimeout(r, 50)); // yield so label renders
+      // ── 2. RUN 'create_user_profile' FIRST ──
+      advanceTo(4); // "Creating your profile…"
+      await new Promise(r => setTimeout(r, 50)); 
+      
+      const profileUserId = user.id;
+      const profileEmail = user.email || activeEmail;
 
-      // Re-fetch the current user after token refresh to ensure we have the
-      // latest user ID and the RPC call is authenticated with the fresh token.
-      const { data: { user: freshUser } } = await supabase.auth.getUser();
-      const profileUserId = freshUser?.id || user.id;
-      const profileEmail = freshUser?.email || user.email || activeEmail;
-
-      const { error: profileFnError } = await ((supabase as any).rpc as any)('create_user_profile', {
+      const { error: profileFnError } = await (supabase as any).rpc('create_user_profile', {
         p_id: profileUserId,
         p_full_name: full_name || 'Student',
         p_email: profileEmail,
         p_registration_number: reg_number,
         p_level: numericLevel.toString(),
-        p_avatar_url: finalAvatarUrl,
+        p_avatar_url: finalAvatarUrl || null,
         p_username: username || (full_name || 'user').toLowerCase().replace(/\s+/g, '_') + '_' + profileUserId.slice(0, 6),
       });
 
@@ -260,7 +196,6 @@ export default function RegisterLevel() {
           profileFnError.message?.includes('duplicate') ||
           profileFnError.code === '23505'
         ) {
-          // Identify which unique constraint was violated
           if (profileFnError.message?.includes('username')) {
             throw new Error('This username is already taken. Please go back and choose a different username.');
           }
@@ -269,31 +204,36 @@ export default function RegisterLevel() {
         throw new Error(`Profile creation failed: ${profileFnError.message}`);
       }
 
-      // ── STEP 6: Fetch profile (verify it was created) ─────────────────────
-      advanceTo(6); // 74% — "Verifying profile record…"
-      await useAuthStore.getState().fetchProfile(true);
+      // ── 3. EXECUTE 'supabase.auth.updateUser()' SECOND ──
+      advanceTo(6); // "Finalizing credentials…"
+      
+      if (provider === 'google') {
+        await supabase.auth.updateUser({
+          data: { full_name, username, registration_number: reg_number, level: numericLevel.toString(), provider },
+        });
+      } else {
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: password!,
+          data: { full_name, username, registration_number: reg_number, level: numericLevel.toString(), provider: 'email' },
+        });
+        if (updateError && !updateError.message?.toLowerCase().includes('same password')) {
+          console.warn('[Level] Non-fatal auth metadata update warning:', updateError);
+        }
+      }
+      await supabase.auth.getSession();
 
-      // ── STEP 7: Join level groups ─────────────────────────────────────────
-      advanceTo(7); // 86% — "Joining your level groups…"
+      // ── 4. FINALIZE STORES & ROUTE ──
+      await useAuthStore.getState().fetchProfile(true);
+      useAuthStore.getState().setIsProfileComplete(true);
       await useGroupStore.getState().fetchGroups(true);
 
-      // ── STEP 8: Finalise ──────────────────────────────────────────────────
       advanceTo(8); // 95% — "Finalising setup…"
-
-      // Brief hold at 95% so the user sees it before the final jump
       await new Promise(r => setTimeout(r, 400));
 
-      // ── STEP 9: Done ──────────────────────────────────────────────────────
       if (!isMounted.current) return;
       advanceTo(9); // 100% — "Welcome to NALISS UMYU Hub! 🎉"
-
-      // Hold at 100% for 800ms so the user reads the success message
       await new Promise(r => setTimeout(r, 800));
 
-      // Only NOW release the gate — after the user has seen the full completion UX.
-      // This prevents ProtectedRoute from redirecting to /(tabs) before the
-      // "Welcome" message is shown, and prevents overlays like FeaturedStudentPopup
-      // from firing during the registration finish animation.
       useSignupStore.getState().setIsGoogleDelaying(false);
       signupStore.reset();
 
@@ -310,7 +250,6 @@ export default function RegisterLevel() {
         advanceTo(0);
         setIsLoading(false);
         const msg = err?.message || 'Could not complete registration. Please try again.';
-        // Username conflict — send back to identity to pick a new one
         if (msg.includes('username is already taken')) {
           Alert.alert('Username Taken', msg, [
             { text: 'Go Back', onPress: () => router.replace('/auth/identity' as any) }
@@ -320,8 +259,7 @@ export default function RegisterLevel() {
         }
       }
     } finally {
-      // Only clear loading if we hit an error (success path navigates away)
-      // isMounted check prevents state update on unmounted component
+      // Cleanup handled
     }
   };
 

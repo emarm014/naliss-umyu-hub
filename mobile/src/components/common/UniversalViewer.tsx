@@ -49,6 +49,8 @@ import {  saveMediaToDevice, shareMedia } from '../../utils/mediaSaver';
 import Pdf from 'react-native-pdf';
 import { CustomVideoPlayer } from './CustomVideoPlayer';
 import { getAssetCacheByUrl } from '../../lib/database';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ReactNativeZoomableView } from '@openspacelabs/react-native-zoomable-view';
 
 const { width, height } = Dimensions.get('window');
 
@@ -106,6 +108,7 @@ function getCloudinaryPageUrl(url: string, page: number): string | null {
 
 export interface ViewerMediaItem {
   uri: string;
+  remoteUrl?: string;
   type: 'image' | 'video' | 'pdf' | 'audio' | 'document';
   name: string;
   fileId?: string;
@@ -142,6 +145,7 @@ interface ViewerContentProps {
   isHalfScreen?: boolean;
   readyToPlay?: boolean;
   videoResizeMode?: ResizeMode;
+  bottomOffset?: number;
 }
 
 interface ZoomableImageProps {
@@ -152,24 +156,28 @@ interface ZoomableImageProps {
 }
 
 const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalfScreen, onSingleTap }) => {
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   return (
-    <ScrollView
-      maximumZoomScale={5}
-      minimumZoomScale={1}
-      showsHorizontalScrollIndicator={false}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
-    >
-      <TouchableWithoutFeedback onPress={onSingleTap}>
-        <Image
-          source={{ uri }}
-          style={[styles.image, isHalfScreen && { height: height * 0.45 }]}
-          resizeMode="contain"
-          onError={onImageError}
-        />
-      </TouchableWithoutFeedback>
-    </ScrollView>
+    <View style={{ width, height: isHalfScreen ? height * 0.45 : height, backgroundColor: '#000000' }}>
+      <ReactNativeZoomableView
+        maxZoom={5}
+        minZoom={1}
+        zoomStep={0.5}
+        initialZoom={1}
+        style={{ flex: 1, width: '100%', height: '100%' }}
+      >
+        <TouchableWithoutFeedback onPress={onSingleTap}>
+          <View style={{ flex: 1, width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+            <Image
+              source={{ uri }}
+              style={[styles.image, { width: '100%', height: '100%' }]}
+              resizeMode="contain"
+              onError={onImageError}
+            />
+          </View>
+        </TouchableWithoutFeedback>
+      </ReactNativeZoomableView>
+    </View>
   );
 };
 
@@ -189,6 +197,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
   isHalfScreen,
   readyToPlay = true,
   videoResizeMode = ResizeMode.CONTAIN,
+  bottomOffset,
 }) => {
   const { colors } = useTheme();
 
@@ -236,7 +245,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
       return <ZoomableImage uri={localUri} onImageError={onImageError} isHalfScreen={isHalfScreen} onSingleTap={onSingleTap} />;
 
     case 'video':
-      return <CustomVideoPlayer source={{ uri: localUri.startsWith('http') ? localUri : `file://${localUri}` }} resizeMode={videoResizeMode} onSingleTap={onSingleTap} autoPlay />;
+      return <CustomVideoPlayer source={{ uri: localUri.startsWith('http') ? localUri : `file://${localUri}` }} resizeMode={videoResizeMode} onSingleTap={onSingleTap} autoPlay bottomOffset={bottomOffset} />;
 
     case 'audio':
       return <AudioPlayer uri={localUri} fileName={fileName} />;
@@ -286,6 +295,8 @@ function ViewerItemSlide({
   isHalfScreen,
   onSingleTap,
   videoResizeMode,
+  bottomOffset,
+  onLocalUriResolved,
 }: {
   item: ViewerMediaItem;
   isVisible: boolean;
@@ -293,6 +304,8 @@ function ViewerItemSlide({
   isHalfScreen?: boolean;
   onSingleTap?: () => void;
   videoResizeMode?: ResizeMode;
+  bottomOffset?: number;
+  onLocalUriResolved?: (uri: string) => void;
 }) {
   const [localUri, setLocalUri] = React.useState<string | null>(null);
   const [isDownloading, setIsDownloading] = React.useState(false);
@@ -302,6 +315,12 @@ function ViewerItemSlide({
   const [retryKey, setRetryKey] = React.useState(0);
   const [readyToPlay, setReadyToPlay] = React.useState(false);
   const lastProcessedUriRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (localUri && onLocalUriResolved) {
+      onLocalUriResolved(localUri);
+    }
+  }, [localUri, onLocalUriResolved]);
 
   React.useEffect(() => {
     if (!isVisible) {
@@ -318,13 +337,7 @@ function ViewerItemSlide({
 
     trackViewerEvent({ stage: 'open', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
 
-    if (item.uri.startsWith('file://') || item.uri.startsWith('/')) {
-      trackViewerEvent({ stage: 'vault_hit', uri: item.uri, fileType: item.type, fileName: item.name });
-      setLocalUri(item.uri.startsWith('file://') ? item.uri : `file://${item.uri}`);
-      setIsOffline(true);
-      setIsDownloading(false);
-      return;
-    }
+
 
     let cancelled = false;
     let downloadResumed: FileSystem.DownloadResumable | null = null;
@@ -340,6 +353,34 @@ function ViewerItemSlide({
     setDownloadProgress(0);
 
     const resolve = async () => {
+      let viewerUrl = getViewerUrl(item.uri);
+
+      if (item.uri.startsWith('file://') || item.uri.startsWith('/')) {
+        const targetPath = item.uri.startsWith('file://') ? item.uri : `file://${item.uri}`;
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(targetPath);
+          if (fileInfo.exists && (fileInfo as any).size > 0) {
+            trackViewerEvent({ stage: 'vault_hit', uri: targetPath, fileType: item.type, fileName: item.name });
+            if (!cancelled) {
+              setLocalUri(targetPath);
+              setIsOffline(true);
+              setIsDownloading(false);
+            }
+            return;
+          } else {
+            console.warn('[UniversalViewer] Local vault file missing or 0 bytes:', targetPath);
+            trackViewerEvent({ stage: 'vault_miss', uri: targetPath, fileType: item.type, fileName: item.name });
+            // Switch to remote URL if available
+            if (item.remoteUrl) {
+              viewerUrl = item.remoteUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('[UniversalViewer] Error inspecting file path:', e);
+          if (item.remoteUrl) viewerUrl = item.remoteUrl;
+        }
+      }
+
       try {
         if (item.fileId) {
           const vaultPath = getVaultFilePath(item.fileId, item.name, item.uri);
@@ -371,7 +412,6 @@ function ViewerItemSlide({
           }
         }
 
-        const viewerUrl = getViewerUrl(item.uri);
         const destinationPath = item.fileId
           ? getVaultFilePath(item.fileId, item.name, item.uri)
           : (() => {
@@ -384,15 +424,6 @@ function ViewerItemSlide({
               else if (item.type === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) safeName += '.jpg';
               return `${VIEWER_CACHE}${safeName}`;
             })();
-
-        if (!viewerUrl.startsWith('http://') && !viewerUrl.startsWith('https://')) {
-          if (!cancelled) {
-            setLocalUri(viewerUrl.startsWith('file://') ? viewerUrl : `file://${viewerUrl}`);
-            setIsOffline(true);
-            setIsDownloading(false);
-          }
-          return;
-        }
 
         // For video and audio, skip full file download to allow instant streaming playback
         if (item.type === 'video' || item.type === 'audio') {
@@ -497,6 +528,7 @@ function ViewerItemSlide({
       isHalfScreen={isHalfScreen}
       readyToPlay={readyToPlay}
       videoResizeMode={videoResizeMode}
+      bottomOffset={bottomOffset}
     />
   );
 }
@@ -527,17 +559,23 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   const { width, height } = useWindowDimensions();
   const { colors, isDark } = useTheme();
   const isLandscape = width > height;
-  const [showControls, setShowControls] = React.useState(false);
 
-  React.useEffect(() => {
-    if (isLandscape) {
-      setShowControls(false);
-    } else {
-      setShowControls(true);
-    }
-  }, [isLandscape]);
+  const insets = useSafeAreaInsets();
+  const safeTopPadding = Math.max(insets.top, 16);
+  const safeBottomPadding = Math.max(insets.bottom, 20);
 
-  const shouldShowControls = !isLandscape || showControls;
+  // Start with controls visible, but allow toggling on/off in both portrait and landscape
+  const [showControls, setShowControls] = React.useState(true);
+  const shouldShowControls = showControls;
+
+  const [resolvedUris, setResolvedUris] = React.useState<Record<string, string>>({});
+
+  // Standard footer height + padding clearance
+  const footerClearance = (showDownload || showShare || onViewProfile) && shouldShowControls ? 70 + safeBottomPadding : safeBottomPadding;
+
+  const toggleControls = React.useCallback(() => {
+    setShowControls(prev => !prev);
+  }, []);
 
   const activeMediaList = mediaList && mediaList.length > 1 ? mediaList : [{
     uri: fileUri,
@@ -583,23 +621,26 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   };
 
   const saveToDevice = async () => {
+    if (isSaving) return;
     try {
       setIsSaving(true);
-      trackViewerEvent({ stage: 'save', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
+      // Prioritize the physical local file on disk over remote URL
+      const targetUri = resolvedUris[activeItem.uri] || activeItem.uri;
+      trackViewerEvent({ stage: 'save', uri: targetUri, fileType: activeItem.type, fileName: activeItem.name });
       
       const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
-      const result = await saveMediaToDevice(activeItem.uri, mimeType, activeItem.name);
+      const result = await saveMediaToDevice(targetUri, mimeType, activeItem.name);
       
       if (result.success) {
         setIsSaved(true);
-        showToast('✓ Saved to Device');
+        showToast('Saved to device successfully');
         setTimeout(() => setIsSaved(false), 3000);
       } else {
-        Alert.alert('Save Failed', result.error || 'Could not save the file.');
+        showToast(result.error || 'Could not save the file.');
       }
     } catch (err: any) {
-      captureViewerError('save', err, { uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
-      Alert.alert('Error', 'Could not save file.');
+      captureViewerError('save', err, { uri: resolvedUris[activeItem.uri] || activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
+      showToast('Could not save file.');
     } finally {
       setIsSaving(false);
     }
@@ -609,18 +650,24 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     if (isSharing) return;
     setIsSharing(true);
     try {
-      trackViewerEvent({ stage: 'share', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
+      // Prioritize the physical local file on disk over remote URL
+      const targetUri = resolvedUris[activeItem.uri] || activeItem.uri;
+      trackViewerEvent({ stage: 'share', uri: targetUri, fileType: activeItem.type, fileName: activeItem.name });
       
       const mimeType = mimeMap[activeItem.type] || 'application/octet-stream';
-      await shareMedia(activeItem.uri, mimeType, activeItem.name);
+      await shareMedia(targetUri, mimeType, activeItem.name);
       
     } catch (err: any) {
-      captureViewerError('share', err, { uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
-      Alert.alert('Error', 'Could not share this file.');
+      captureViewerError('share', err, { uri: resolvedUris[activeItem.uri] || activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
+      showToast('Could not share this file.');
     } finally {
       setIsSharing(false);
     }
   };
+
+  const isMedia = activeItem.type === 'image' || activeItem.type === 'video';
+  const overlayTextColor = isMedia ? '#ffffff' : colors.text;
+  const overlayBgColor = isMedia ? 'rgba(0,0,0,0.6)' : (isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)');
 
   return (
     <Modal
@@ -660,8 +707,10 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                       isVisible={isVisible}
                       pdfEngine={pdfEngine}
                       isHalfScreen={isHalfScreen}
-                      onSingleTap={() => setShowControls(!showControls)}
+                      onSingleTap={toggleControls}
                       videoResizeMode={VIDEO_ASPECT_MODES[videoAspectIndex].mode}
+                      bottomOffset={footerClearance}
+                      onLocalUriResolved={(uri) => setResolvedUris(prev => ({ ...prev, [item.uri]: uri }))}
                     />
                   </View>
                 )}
@@ -672,24 +721,26 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 isVisible={isVisible}
                 pdfEngine={pdfEngine}
                 isHalfScreen={isHalfScreen}
-                onSingleTap={() => setShowControls(!showControls)}
+                onSingleTap={toggleControls}
                 videoResizeMode={VIDEO_ASPECT_MODES[videoAspectIndex].mode}
+                bottomOffset={footerClearance}
+                onLocalUriResolved={(uri) => setResolvedUris(prev => ({ ...prev, [activeMediaList[0].uri]: uri }))}
               />
             )}
           </View>
 
           {/* Floating Header */}
           {shouldShowControls && (
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: safeTopPadding }]}>
               <TouchableOpacity onPress={() => {
                 trackViewerEvent({ stage: 'close', uri: activeItem.uri, fileType: activeItem.type, fileName: activeItem.name });
                 onClose();
               }} style={styles.closeButton}>
-                <Ionicons name="arrow-back" size={26} color={colors.text} />
+                <Ionicons name="arrow-back" size={26} color={overlayTextColor} />
               </TouchableOpacity>
 
               <View style={styles.titleContainer}>
-                <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+                <Text style={[styles.title, { color: overlayTextColor }]} numberOfLines={1}>
                   {isMultiItem ? `${currentIndex + 1} of ${activeMediaList.length}` : activeItem.name}
                 </Text>
               </View>
@@ -702,8 +753,8 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                     onPress={cycleVideoResizeMode}
                     hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                   >
-                    <Ionicons name="scan-outline" size={14} color={colors.text} style={{ marginRight: 4 }} />
-                    <Text style={[styles.aspectText, { color: colors.text }]}>{VIDEO_ASPECT_MODES[videoAspectIndex].label}</Text>
+                    <Ionicons name="scan-outline" size={14} color={overlayTextColor} style={{ marginRight: 4 }} />
+                    <Text style={[styles.aspectText, { color: overlayTextColor }]}>{VIDEO_ASPECT_MODES[videoAspectIndex].label}</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -763,7 +814,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
 
           {/* Floating Footer */}
           {shouldShowControls && (showDownload || showShare || onViewProfile) && (
-            <View style={[styles.footer, { backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)' }]}>
+            <View style={[styles.footer, { paddingBottom: safeBottomPadding, backgroundColor: overlayBgColor }]}>
               {showDownload && (
                 <TouchableOpacity
                   style={[styles.footerAction, isSaving && { opacity: 0.5 }]}
@@ -771,17 +822,17 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   disabled={isSaving}
                 >
                   {isSaving ? (
-                    <ActivityIndicator size="small" color={colors.text} />
+                    <ActivityIndicator size="small" color={overlayTextColor} />
                   ) : (
                     <View>
                       <Ionicons
                         name={isSaved ? 'checkmark' : 'download-outline'}
                         size={24}
-                        color={isSaved ? '#10b981' : colors.text}
+                        color={isSaved ? '#10b981' : overlayTextColor}
                       />
                     </View>
                   )}
-                  <Text style={[styles.footerActionText, { color: colors.text }, isSaved && { color: '#10b981' }]}>
+                  <Text style={[styles.footerActionText, { color: overlayTextColor }, isSaved && { color: '#10b981' }]}>
                     {isSaved ? 'Saved!' : 'Save'}
                   </Text>
                 </TouchableOpacity>
@@ -793,19 +844,19 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   disabled={isSharing}
                 >
                   {isSharing ? (
-                    <ActivityIndicator size="small" color={colors.text} />
+                    <ActivityIndicator size="small" color={overlayTextColor} />
                   ) : (
                     <View>
-                      <Ionicons name="share-social-outline" size={24} color={colors.text} />
+                      <Ionicons name="share-social-outline" size={24} color={overlayTextColor} />
                     </View>
                   )}
-                  <Text style={[styles.footerActionText, { color: colors.text }]}>Share</Text>
+                  <Text style={[styles.footerActionText, { color: overlayTextColor }]}>Share</Text>
                 </TouchableOpacity>
               )}
               {onViewProfile && (
                 <TouchableOpacity style={styles.footerAction} onPress={onViewProfile}>
                   <Ionicons name="person-circle-outline" size={20} color={COLORS.primary} />
-                  <Text style={[styles.footerActionText, { color: colors.text }]}>View Full Profile</Text>
+                  <Text style={[styles.footerActionText, { color: overlayTextColor }]}>View Full Profile</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -957,15 +1008,15 @@ function PdfJsViewer({ localUri, remoteUrl, scaleMultiplier = 1.0, onSingleTap }
       <View style={[{ flex: 1, width: '100%' }, rotContainer]}>
         <Pdf
           source={source}
-          style={{ flex: 1, width: '100%', backgroundColor: colors.background }}
+          style={{ flex: 1, width: Dimensions.get('window').width, height: Dimensions.get('window').height, backgroundColor: colors.background }}
           scale={zoom}
-          minScale={0.5}
+          minScale={1.0}
           maxScale={5.0}
           singlePage={false}
           enableAntialiasing={true}
           enablePaging={false}
           fitPolicy={0}
-          spacing={16}
+          spacing={0}
           onLoadComplete={(count) => { setNumPages(count); setPdfLoaded(true); setHasError(false); }}
           onPageChanged={(page) => { setCurrentPage(page); }}
           onPageSingleTap={() => onSingleTap?.()}
@@ -1199,7 +1250,6 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 50 : 40,
     paddingBottom: 15,
     paddingHorizontal: 15,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1243,7 +1293,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', 
     justifyContent: 'center', 
     padding: 20, 
-    paddingBottom: Platform.OS === 'ios' ? 40 : 30,
     backgroundColor: 'rgba(0,0,0,0.5)', 
     gap: 24,
     zIndex: 10,

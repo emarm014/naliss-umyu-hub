@@ -2631,7 +2631,7 @@ export default function ChatScreen() {
                 <KeyboardAvoidingView
                     style={{ flex: 1, backgroundColor: colors.background }}
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 12}
+                    keyboardVerticalOffset={0}
                 >
             {/* Header */}
             <View style={[styles.header, styles.headerLight, { backgroundColor: colors.background, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>

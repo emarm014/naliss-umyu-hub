@@ -438,7 +438,7 @@ export interface ExecutiveWithPhotos {
 }
 
 // Group Types
-export type GroupType = 'level' | 'department';
+export type GroupType = 'level' | 'department' | 'custom';
 
 // Department Group Name
 export const DEPARTMENT_GROUP_NAME = 'NALISS FAMILY UMYU';

@@ -23,7 +23,8 @@
         "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "naliss_uploads",
         "EXPO_PUBLIC_CLOUDINARY_SIGNED_PRESET": "naliss_signed_uploads",
 
-        "SENTRY_AUTH_TOKEN": "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"
+        "SENTRY_AUTH_TOKEN": "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",
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     },
     "production": {
@@ -37,7 +38,8 @@
         "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "naliss_uploads",
         "EXPO_PUBLIC_CLOUDINARY_SIGNED_PRESET": "naliss_signed_uploads",
 
-        "SENTRY_AUTH_TOKEN": "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"
+        "SENTRY_AUTH_TOKEN": "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",
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     }
   },

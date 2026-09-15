@@ -67,7 +67,8 @@ const getCacheBase = (): string => {
 const VIEWER_CACHE = getCacheBase();
 
 // Remove fl_inline â€” causes HTTP 400 on Cloudinary raw files
-function getCleanUrl(url: string): string {
+function getCleanUrl(url: string | undefined | null): string {
+  if (!url || typeof url !== 'string') return '';
   return url
     .replace('/raw/upload/fl_inline/', '/raw/upload/')
     .replace('/fl_inline/', '/');
@@ -78,7 +79,8 @@ function getCleanUrl(url: string): string {
 // to get the actual file bytes instead of an image transformation error.
 // NOTE: If the URL has no file extension (e.g. Cloudinary public_id without ext),
 // we trust the resource type in the URL path (/image/upload/ = image, /raw/upload/ = raw).
-function getViewerUrl(url: string): string {
+function getViewerUrl(url: string | undefined | null): string {
+  if (!url || typeof url !== 'string') return '';
   const clean = getCleanUrl(url);
   if (!clean.includes('cloudinary.com')) return clean;
   if (clean.includes('/raw/upload/')) return clean;
@@ -300,6 +302,7 @@ function ViewerItemSlide({
   videoResizeMode,
   bottomOffset,
   onLocalUriResolved,
+  imageRotation,
 }: {
   item: ViewerMediaItem;
   isVisible: boolean;

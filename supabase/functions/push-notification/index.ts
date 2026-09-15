@@ -310,7 +310,7 @@ Deno.serve(async (req: Request) => {
         sound: expoSound,
         title: targetTitle,
         body: targetBody,
-        data: data ?? {},
+        data: { ...(data ?? {}), notification_id: notifId },
         priority: expoPriority,
         channelId: expoChannelId,
       };

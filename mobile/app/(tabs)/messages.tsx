@@ -187,82 +187,86 @@ export default function MessagesScreen() {
  * Handles legacy cached data where the URL was stored instead of the label.
  */
 function sanitizeLastMessage(msg: string | null | undefined, lastMsgObj?: any, currentProfile?: any): string {
-  const currentUserId = currentProfile?.id;
-  const currentUsername = currentProfile?.username ? String(currentProfile.username).trim().toLowerCase() : null;
-  const currentFullName = currentProfile?.full_name ? String(currentProfile.full_name).trim().toLowerCase() : null;
+  try {
+    const currentUserId = currentProfile?.id;
+    const currentUsername = currentProfile?.username ? String(currentProfile.username).trim().toLowerCase() : null;
+    const currentFullName = currentProfile?.full_name ? String(currentProfile.full_name).trim().toLowerCase() : null;
 
-  if (lastMsgObj) {
-    const senderId = lastMsgObj.sender_id || lastMsgObj.sender?.id;
-    const senderUsername = (lastMsgObj.sender?.username || lastMsgObj.sender_username || '').trim().toLowerCase();
-    const senderFullName = (lastMsgObj.sender?.full_name || lastMsgObj.sender_name || '').trim().toLowerCase();
+    if (lastMsgObj) {
+      const senderId = lastMsgObj.sender_id || lastMsgObj.sender?.id;
+      const senderUsername = String(lastMsgObj.sender?.username || lastMsgObj.sender_username || '').trim().toLowerCase();
+      const senderFullName = String(lastMsgObj.sender?.full_name || lastMsgObj.sender_name || '').trim().toLowerCase();
 
-    let isSelf = false;
-    if (
-      (senderId && currentUserId && senderId === currentUserId) ||
-      (currentUsername && senderUsername && senderUsername === currentUsername) ||
-      (currentFullName && senderFullName && senderFullName === currentFullName)
-    ) {
-      isSelf = true;
+      let isSelf = false;
+      if (
+        (senderId && currentUserId && senderId === currentUserId) ||
+        (currentUsername && senderUsername && senderUsername === currentUsername) ||
+        (currentFullName && senderFullName && senderFullName === currentFullName)
+      ) {
+        isSelf = true;
+      }
+
+      const rawSenderName = lastMsgObj.sender?.username || lastMsgObj.sender?.full_name || 'Member';
+      const senderName = isSelf ? 'You' : rawSenderName;
+      const msgType = lastMsgObj.content_type || lastMsgObj.message_type || 'text';
+      const content = String(lastMsgObj.content || '');
+
+      if (msgType === 'image') return `${senderName}: 📷 Photo`;
+      if (msgType === 'document') return `${senderName}: 📎 Document`;
+      if (msgType === 'video') return `${senderName}: 🎥 Video`;
+      if (msgType === 'audio') return `${senderName}: 🎵 Audio`;
+      if (msgType === 'sticker') return `${senderName}: 😊 Sticker`;
+
+      if (content.includes('cloudinary.com') || content.includes('res.cloudinary')) {
+        const lower = content.toLowerCase();
+        if (lower.includes('/video/upload/') || lower.includes('chat-videos') || lower.match(/\.(mp4|mov|avi|webm|mkv)$/)) return `${senderName}: 🎥 Video`;
+        if (lower.includes('/image/upload/') || lower.includes('chat-images') || lower.match(/\.(jpg|jpeg|png|gif|webp)$/)) return `${senderName}: 📷 Photo`;
+        if (lower.includes('chat-docs') || lower.match(/\.(pdf|doc|docx|ppt|pptx)$/)) return `${senderName}: 📎 Document`;
+        if (lower.includes('chat-audios') || lower.match(/\.(mp3|wav|ogg|aac|m4a)$/)) return `${senderName}: 🎵 Audio`;
+        return `${senderName}: 📎 Media`;
+      }
+      
+      return `${senderName}: ${content}`;
     }
 
-    const rawSenderName = lastMsgObj.sender?.username || lastMsgObj.sender?.full_name || 'Member';
-    const senderName = isSelf ? 'You' : rawSenderName;
-    const msgType = lastMsgObj.content_type || lastMsgObj.message_type || 'text';
-    const content = lastMsgObj.content || '';
-
-    if (msgType === 'image') return `${senderName}: 📷 Photo`;
-    if (msgType === 'document') return `${senderName}: 📎 Document`;
-    if (msgType === 'video') return `${senderName}: 🎥 Video`;
-    if (msgType === 'audio') return `${senderName}: 🎵 Audio`;
-    if (msgType === 'sticker') return `${senderName}: 😊 Sticker`;
-
-    if (content.includes('cloudinary.com') || content.includes('res.cloudinary')) {
-      const lower = content.toLowerCase();
-      if (lower.includes('/video/upload/') || lower.includes('chat-videos') || lower.match(/\.(mp4|mov|avi|webm|mkv)$/)) return `${senderName}: 🎥 Video`;
-      if (lower.includes('/image/upload/') || lower.includes('chat-images') || lower.match(/\.(jpg|jpeg|png|gif|webp)$/)) return `${senderName}: 📷 Photo`;
-      if (lower.includes('chat-docs') || lower.match(/\.(pdf|doc|docx|ppt|pptx)$/)) return `${senderName}: 📎 Document`;
-      if (lower.includes('chat-audios') || lower.match(/\.(mp3|wav|ogg|aac|m4a)$/)) return `${senderName}: 🎵 Audio`;
-      return `${senderName}: 📎 Media`;
-    }
+    if (!msg) return 'No messages yet';
     
-    return `${senderName}: ${content}`;
-  }
+    let formattedMsg = String(msg);
+    const colonIndex = formattedMsg.indexOf(': ');
+    if (colonIndex !== -1 && colonIndex < 30) {
+      const rawPrefix = formattedMsg.substring(0, colonIndex).trim().toLowerCase();
+      if (
+        rawPrefix === 'you' ||
+        (currentUsername && rawPrefix === currentUsername) ||
+        (currentFullName && rawPrefix === currentFullName)
+      ) {
+        formattedMsg = `You: ${formattedMsg.substring(colonIndex + 2)}`;
+      }
+    }
 
-  if (!msg) return 'No messages yet';
-  
-  let formattedMsg = msg;
-  const colonIndex = msg.indexOf(': ');
-  if (colonIndex !== -1 && colonIndex < 30) {
-    const rawPrefix = msg.substring(0, colonIndex).trim().toLowerCase();
-    if (
-      rawPrefix === 'you' ||
-      (currentUsername && rawPrefix === currentUsername) ||
-      (currentFullName && rawPrefix === currentFullName)
-    ) {
-      formattedMsg = `You: ${msg.substring(colonIndex + 2)}`;
+    // If it's a Cloudinary URL, convert to friendly label
+    if (formattedMsg.includes('cloudinary.com') || formattedMsg.includes('res.cloudinary')) {
+      const colonIdx = formattedMsg.indexOf(': ');
+      const prefix = colonIdx !== -1 ? formattedMsg.substring(0, colonIdx + 2) : '';
+      const lower = formattedMsg.toLowerCase();
+      if (lower.includes('/video/upload/') || lower.includes('chat-videos') || lower.match(/\.(mp4|mov|avi|webm|mkv)$/)) {
+        return `${prefix}🎥 Video`;
+      }
+      if (lower.includes('/image/upload/') || lower.includes('chat-images') || lower.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+        return `${prefix}📷 Photo`;
+      }
+      if (lower.includes('chat-docs') || lower.match(/\.(pdf|doc|docx|ppt|pptx)$/)) {
+        return `${prefix}📎 Document`;
+      }
+      if (lower.includes('chat-audios') || lower.match(/\.(mp3|wav|ogg|aac|m4a)$/)) {
+        return `${prefix}🎵 Audio`;
+      }
+      return `${prefix}📎 Media`;
     }
+    return formattedMsg;
+  } catch (err) {
+    return typeof msg === 'string' ? msg : 'New message';
   }
-
-  // If it's a Cloudinary URL, convert to friendly label
-  if (formattedMsg.includes('cloudinary.com') || formattedMsg.includes('res.cloudinary')) {
-    const colonIdx = formattedMsg.indexOf(': ');
-    const prefix = colonIdx !== -1 ? formattedMsg.substring(0, colonIdx + 2) : '';
-    const lower = formattedMsg.toLowerCase();
-    if (lower.includes('/video/upload/') || lower.includes('chat-videos') || lower.match(/\.(mp4|mov|avi|webm|mkv)$/)) {
-      return `${prefix}🎥 Video`;
-    }
-    if (lower.includes('/image/upload/') || lower.includes('chat-images') || lower.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
-      return `${prefix}📷 Photo`;
-    }
-    if (lower.includes('chat-docs') || lower.match(/\.(pdf|doc|docx|ppt|pptx)$/)) {
-      return `${prefix}📎 Document`;
-    }
-    if (lower.includes('chat-audios') || lower.match(/\.(mp3|wav|ogg|aac|m4a)$/)) {
-      return `${prefix}🎵 Audio`;
-    }
-    return `${prefix}📎 Media`;
-  }
-  return formattedMsg;
 }
 
 const formatLastMessageTime = (timestamp?: string | null): string => {
@@ -273,7 +277,19 @@ const formatLastMessageTime = (timestamp?: string | null): string => {
     if (typeof format === 'function') {
       return format(date, 'p');
     }
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // Safe fallback for Hermes engines without Intl
+    if (typeof date.toLocaleTimeString === 'function') {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // Ultimate fallback if nothing else works
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const hr = hours % 12 || 12;
+    const min = minutes < 10 ? `0${minutes}` : minutes;
+    return `${hr}:${min} ${ampm}`;
   } catch {
     return '';
   }

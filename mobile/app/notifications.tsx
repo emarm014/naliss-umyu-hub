@@ -52,7 +52,8 @@ export default function NotificationsScreen() {
             
             // Skip saving chat messages to the global notifications tray
             if (notifType !== 'message' && notifType !== 'chat') {
-              const notifId = notif.request.identifier || Math.random().toString(36).substring(2);
+              const fallbackId = `local_${notif.date || 0}_${title || 'notitle'}_${notifType}`;
+              const notifId = data?.notification_id || data?.id || notif.request.identifier || fallbackId;
               const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
               
               useNotificationStore.getState().addNotification({

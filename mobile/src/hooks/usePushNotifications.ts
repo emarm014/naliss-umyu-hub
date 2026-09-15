@@ -318,8 +318,9 @@ export function usePushNotifications() {
     // Fired when a notification is received while the app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener(async (notification) => {
       const { title, body, data } = notification.request.content;
-      const notifId = notification.request.identifier || Math.random().toString(36).substring(2);
       const notifType = (data?.type as string) || 'general';
+      const fallbackId = `local_${notification.date || 0}_${title || 'notitle'}_${notifType}`;
+      const notifId = data?.notification_id || data?.id || notification.request.identifier || fallbackId;
 
       // Silent Sync pushes wake application and trigger reloading
       if (notifType === 'silent_sync' || data?.is_silent === 'true' || data?.is_silent === true) {
@@ -358,8 +359,9 @@ export function usePushNotifications() {
     // Fired when user taps a notification (foreground, background, or killed)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const { title, body, data } = response.notification.request.content;
-      const notifId = response.notification.request.identifier || Math.random().toString(36).substring(2);
       const notifType = (data?.type as string) || 'general';
+      const fallbackId = `local_${response.notification.date || 0}_${title || 'notitle'}_${notifType}`;
+      const notifId = data?.notification_id || data?.id || response.notification.request.identifier || fallbackId;
       
       const cachedData = await cacheMediaForNotification(data);
       const effectiveNotifId = notifType === 'fyb_congratulation'
@@ -426,9 +428,10 @@ export function usePushNotifications() {
         const presented = await Notifications.getPresentedNotificationsAsync();
         for (const notif of presented) {
           const { title, body, data } = notif.request.content;
-          const notifId = notif.request.identifier || Math.random().toString(36).substring(2);
-          const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
           const notifType = (data?.type as string) || 'general';
+          const fallbackId = `local_${notif.date || 0}_${title || 'notitle'}_${notifType}`;
+          const notifId = data?.notification_id || data?.id || notif.request.identifier || fallbackId;
+          const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
 
           const cachedData = await cacheMediaForNotification(data);
           

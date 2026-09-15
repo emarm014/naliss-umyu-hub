@@ -124,37 +124,16 @@ export default function AnnouncementsScreen() {
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
+            <View style={[styles.header, { backgroundColor: colors.background, paddingTop: insets.top + 12 }]}>
                 <View style={styles.headerTextRow}>
                     <View>
                         <Text style={[styles.headerTitle, { color: colors.text }]}>Updates</Text>
-                        <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>News & upcoming events</Text>
                     </View>
                     <View style={styles.headerCountBadge}>
                         <Text style={styles.headerCountText}>
                             {activeCategory === 'Event' ? filteredEvents.length : sortedAnnouncements.length}
                         </Text>
                     </View>
-                </View>
-            </View>
-
-            {/* Search */}
-            <View style={[styles.searchContainer, { backgroundColor: colors.background }]}>
-                <View style={[styles.searchBox, { backgroundColor: colors.surface }]}>
-                    <Ionicons name='search' size={18} color={colors.textMuted} />
-                    <TextInput
-                        style={[styles.searchInput, { color: colors.text }]}
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        placeholder={activeCategory === 'Event' ? 'Search events...' : 'Search announcements...'}
-                        placeholderTextColor={colors.textMuted}
-                        keyboardAppearance={isDark ? 'dark' : 'light'}
-                    />
-                    {searchQuery.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <Ionicons name='close-circle' size={18} color={colors.textMuted} />
-                        </TouchableOpacity>
-                    )}
                 </View>
             </View>
 
@@ -618,15 +597,12 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f8fafc' },
-    header: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+    header: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#fff' },
     headerTextRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     headerTitle: { fontFamily: 'Inter-Bold', fontSize: 28, color: '#0f172a' },
     headerSubtitle: { fontFamily: 'Inter-Medium', fontSize: 13, color: '#64748b', marginTop: 2 },
     headerCountBadge: { backgroundColor: '#dcfce7', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
     headerCountText: { fontFamily: 'Inter-Bold', fontSize: 14, color: '#166534' },
-    searchContainer: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff' },
-    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 14, paddingHorizontal: 14, height: 46, gap: 10 },
-    searchInput: { flex: 1, fontFamily: 'Inter-Medium', fontSize: 14, color: '#0f172a' },
     filterRow: { flexGrow: 0, flexShrink: 0, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
     filterScroll: { paddingHorizontal: 20, paddingVertical: 0, gap: 0 },
     chip: {

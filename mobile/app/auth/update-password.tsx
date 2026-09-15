@@ -9,6 +9,7 @@ import { supabase } from '../../src/api/supabase/client';
 import { COLORS } from '../../src/constants/Colors';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError } from '../../src/utils/sentry';
+import { useSignupStore } from '../../src/stores/signup.store';
 
 export default function UpdatePassword() {
   useSentryScreen('UpdatePassword');
@@ -67,10 +68,20 @@ export default function UpdatePassword() {
         return;
       }
 
-      // 5. If all resolution steps fail after grace period, show expired state
-      if (!isCancelled) {
-        setSessionError(true);
-      }
+      // 5. If all resolution steps fail, wait a short grace period for deep-link auth state to settle
+      setTimeout(() => {
+        if (!isCancelled && !useSignupStore.getState().hasCompletedPasswordReset) {
+          // Double check one last time
+          supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user && !isCancelled) {
+              setSessionError(false);
+              setSessionReady(true);
+            } else if (!isCancelled) {
+              setSessionError(true);
+            }
+          });
+        }
+      }, 1500);
     };
 
     resolveRecoverySession();

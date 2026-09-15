@@ -4,8 +4,8 @@
  * DiceBear SVGs to PNGs, or returning null to trigger fallback UI.
  */
 
-export const getCleanAvatarUrl = (url: string | null | undefined): string | null => {
-  if (!url || url.trim() === '') return null;
+export const getCleanAvatarUrl = (url: any): string | null => {
+  if (!url || typeof url !== 'string' || url.trim() === '') return null;
   
   const trimmed = url.trim();
   

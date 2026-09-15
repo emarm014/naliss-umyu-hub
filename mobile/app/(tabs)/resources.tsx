@@ -347,26 +347,8 @@ export default function ResourcesScreen() {
             </View>
             <View>
               <Text style={[styles.headerTitle, { color: colors.text }]}>Academic Library</Text>
-              <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>NALISS UMYU HUB</Text>
             </View>
           </View>
-        </View>
-
-        <View style={[styles.searchBar, { backgroundColor: colors.surface }]}>
-          <Ionicons name="search" size={20} color={colors.textMuted} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder={`Search ${activeMainTab === 'directory' ? 'staff or executives' : 'LIS codes or titles'}...`}
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            keyboardAppearance={isDark ? 'dark' : 'light'}
-          />
-          {searchQuery !== '' && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-          )}
         </View>
 
         <View style={[styles.mainTabs, { borderBottomColor: colors.border }]}>
@@ -1152,28 +1134,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Bold',
     fontSize: 20,
     color: COLORS.primary,
-  },
-  headerSubtitle: {
-    fontFamily: 'Inter-Medium',
-    fontSize: 12,
-    color: COLORS.textMuted,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    marginHorizontal: 20,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 48,
-    marginBottom: 20,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: 'Inter-Regular',
-    fontSize: 14,
-    color: COLORS.text,
-    marginLeft: 10,
   },
   mainTabs: {
     flexDirection: 'row',

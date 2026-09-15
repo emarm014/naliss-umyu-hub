@@ -27,12 +27,13 @@ export const FileService = {
   /**
    * Gets the local URI for a file â€” uses the original filename from Cloudinary
    */
-  getLocalUri(fileId: string, fileUrlOrName: string) {
+  getLocalUri(fileId: string, fileUrlOrName: string | undefined | null) {
     // If it's a URL, extract the real filename
-    const fileName = fileUrlOrName.startsWith('http')
-      ? extractFileNameFromUrl(fileUrlOrName, fileId)
-      : fileUrlOrName;
-    const safeName = fileName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
+    const safeInput = typeof fileUrlOrName === 'string' ? fileUrlOrName : '';
+    const fileName = safeInput.startsWith('http')
+      ? extractFileNameFromUrl(safeInput, fileId)
+      : safeInput;
+    const safeName = (fileName || 'file').replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
     return `${VAULT_DIRECTORY}${fileId}_${safeName}`;
   },
 
@@ -64,6 +65,7 @@ export const FileService = {
     onProgress?: (progress: number) => void
   ): Promise<string | null> {
     try {
+      if (!url || typeof url !== 'string') return null;
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return url.startsWith('file://') ? url : `file://${url}`;
       }

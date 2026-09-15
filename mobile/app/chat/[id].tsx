@@ -979,7 +979,7 @@ export default function ChatScreen() {
         // ── MEDIA that never finished uploading ───────────────────────────────
         // content is still a local URI or temp filename — need to re-upload to Cloudinary first
         if (msg.message_type !== 'text' && msg.message_type !== 'sticker') {
-            if (!msg.content?.startsWith('http')) {
+            if (typeof msg.content !== 'string' || !msg.content.startsWith('http')) {
                 // We have the local URI stored in fileUri — use it to re-upload
                 const localUri = msg.fileUri || msg.content;
 
@@ -1170,7 +1170,7 @@ export default function ChatScreen() {
         // Failed/unsent messages (temp IDs or status=failed with no Cloudinary URL)
         // — remove locally only, no DB call needed since they were never saved
         const isUnsent = messageId.startsWith('temp-') ||
-            ((msg?.status === 'failed' || msg?.status === 'unsent') && !msg?.content?.startsWith('http'));
+            ((msg?.status === 'failed' || msg?.status === 'unsent') && (typeof msg?.content !== 'string' || !msg.content.startsWith('http')));
 
         if (isUnsent) {
             setMessages(prev => prev.filter(m => m.id !== messageId));
@@ -1841,7 +1841,7 @@ export default function ChatScreen() {
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <CachedImage
-                                        remoteUrl={downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || (item.content?.startsWith('http') ? item.content : (item.fileUri || item.content)))}
+                                        remoteUrl={downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || ((typeof item.content === 'string' && item.content.startsWith('http')) ? item.content : (item.fileUri || item.content)))}
                                         style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
                                         blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
@@ -1938,7 +1938,7 @@ export default function ChatScreen() {
                                                     />
                                                 );
                                             }
-                                            if (item.content?.startsWith('http')) {
+                                            if (typeof item.content === 'string' && item.content.startsWith('http')) {
                                                 const posterUrl = item.content.replace('/video/upload/', '/video/upload/so_0,w_400,h_300,c_fill,f_jpg/').replace(/\.(mp4|mov|avi|webm|mkv|m4v)$/i, '.jpg');
                                                 return (
                                                     <CachedImage
@@ -2369,7 +2369,8 @@ export default function ChatScreen() {
     const checkDownloadedState = async (msgs: any[]) => {
         const mediaMessages = msgs.filter(m =>
             ['image', 'video', 'document', 'audio'].includes(m.message_type) &&
-            m.content?.startsWith('http')
+            typeof m.content === 'string' &&
+            m.content.startsWith('http')
         );
         const results: Record<string, boolean> = {};
         await Promise.all(mediaMessages.map(async (m) => {
@@ -2588,7 +2589,7 @@ export default function ChatScreen() {
                 }
                 return {
                     uri: uri || child.content,
-                    remoteUrl: child.content?.startsWith('http') ? child.content : undefined,
+                    remoteUrl: typeof child.content === 'string' && child.content.startsWith('http') ? child.content : undefined,
                     type: child.message_type || 'image',
                     name: child.metadata?.name || `${child.message_type}_${child.id}.jpg`,
                     fileId: child.id,
@@ -2625,10 +2626,11 @@ export default function ChatScreen() {
             // Batch viewer state updates cleanly in a single tick
             setViewerMediaList(undefined);
             setViewerInitialIndex(0);
-            const rawRemoteUrl = targetMsg.content?.startsWith('http') ? targetMsg.content : undefined;
+            const safeContent = typeof targetMsg.content === 'string' ? targetMsg.content : '';
+            const rawRemoteUrl = safeContent.startsWith('http') ? safeContent : undefined;
 
             setViewerFile({
-                uri: uri || targetMsg.content,
+                uri: uri || safeContent,
                 remoteUrl: rawRemoteUrl,
                 type: targetMsg.message_type || 'image',
                 name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
@@ -3173,7 +3175,7 @@ const styles = StyleSheet.create({
     },
     levelBadgeTextTop: { fontFamily: 'Inter-Black', fontSize: 9, color: '#FFF', letterSpacing: 0.8 },
     // Reply preview
-    replyPreview: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 8, marginBottom: 4 },
+    replyPreview: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 8, marginBottom: 4, minWidth: 150 },
     replyBar: { width: 3, backgroundColor: '#059669', borderRadius: 2, marginRight: 8 },
     replyContent: { flex: 1 },
     replyUsername: { fontFamily: 'Inter-Bold', fontSize: 11, color: '#059669' },

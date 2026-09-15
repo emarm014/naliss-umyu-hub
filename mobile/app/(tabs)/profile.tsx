@@ -218,6 +218,8 @@ export default function ProfileScreen() {
 
 
 
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const handleLogout = async () => {
     const isOnline = require('../../src/stores/network.store').useNetworkStore.getState().isOnline;
     if (!isOnline) {
@@ -231,10 +233,12 @@ export default function ProfileScreen() {
         text: 'Sign Out',
         style: 'destructive',
         onPress: () => {
+          setIsLoggingOut(true);
           setTimeout(async () => {
             try {
               await useAuthStore.getState().signOut();
             } catch (err: any) {
+              setIsLoggingOut(false);
               Alert.alert('Error', err.message || 'Failed to sign out. Please try again.');
             }
           }, 300);
@@ -641,6 +645,14 @@ export default function ProfileScreen() {
   };
 
 
+
+  if (isLoggingOut) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   if (!storeProfile) {
     return (

@@ -83,18 +83,11 @@ export default function TabsLayout() {
           alignItems: 'center',
         },
         tabBarShowLabel: true,
-        tabBarLabel: ({ focused, color, children }: { focused: boolean; color: string; children: string }) => (
-          <Text
-            style={{
-              color: isDark ? colors.textSecondary : color,
-              fontSize: 10,
-              fontFamily: 'Inter-Medium',
-              marginTop: 2,
-            }}
-          >
-            {children}
-          </Text>
-        ),
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontFamily: 'Inter-Medium',
+          marginTop: 2,
+        },
       }}
     >
       <Tabs.Screen

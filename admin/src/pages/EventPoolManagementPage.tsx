@@ -187,13 +187,13 @@ export default function EventPoolManagementPage() {
   // Voting Content Builder State
   const [candidatesList, setCandidatesList] = useState<VotingCandidate[]>([]);
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
-  const [candidateFilterLevel, setCandidateFilterLevel] = useState('all');
+  const [candidateFilterLevel] = useState('all');
   const [candidateSearchResults, setCandidateSearchResults] = useState<any[]>([]);
-  const [isCandidateSearching, setIsCandidateSearching] = useState(false);
+
   const [selectedStudentForCandidate, setSelectedStudentForCandidate] = useState<any | null>(null);
-  const [candidatePositionTitle, setCandidatePositionTitle] = useState('');
+
   const [candidatePhotoUrl, setCandidatePhotoUrl] = useState('');
-  const [candidateManifesto, setCandidateManifesto] = useState('');
+
 
   // Debate State
   const [debateTopics, setDebateTopics] = useState<DebateTopic[]>([]);
@@ -293,7 +293,6 @@ export default function EventPoolManagementPage() {
 
   // Voting Candidate Search Logic
   const fetchCandidateSearchUsers = async (query: string, level: string) => {
-    setIsCandidateSearching(true);
     try {
       let req = supabase.from('users')
         .select('id, full_name, username, avatar_url, level, role, is_external')
@@ -306,7 +305,6 @@ export default function EventPoolManagementPage() {
       if (level !== 'all') {
         if (eventAllowedLevels && !eventAllowedLevels.includes(level as any)) {
           setCandidateSearchResults([]);
-          setIsCandidateSearching(false);
           return;
         }
         req = req.eq('level', level);
@@ -326,8 +324,6 @@ export default function EventPoolManagementPage() {
       setCandidateSearchResults(filtered);
     } catch {
       setCandidateSearchResults([]);
-    } finally {
-      setIsCandidateSearching(false);
     }
   };
 
@@ -339,11 +335,6 @@ export default function EventPoolManagementPage() {
       return;
     }
     fetchCandidateSearchUsers(query, candidateFilterLevel);
-  };
-
-  const handleCandidateFilterChange = (level: string) => {
-    setCandidateFilterLevel(level);
-    fetchCandidateSearchUsers(candidateSearchQuery, level);
   };
 
   const handleSelectCandidateSearchResult = (user: any) => {

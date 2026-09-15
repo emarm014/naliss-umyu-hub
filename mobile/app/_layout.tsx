@@ -582,7 +582,7 @@ function RootLayoutNav() {
       const initialUrl = await Linking.getInitialURL();
       const pendingOAuth = mmkv?.getBoolean('oauth_in_progress') ?? false;
 
-      if (initialUrl && (initialUrl.includes('code=') || initialUrl.includes('access_token='))) {
+      if (initialUrl && (initialUrl.includes('code=') || initialUrl.includes('access_token=')) && !initialUrl.includes('type=recovery')) {
         console.log('[Auth] Handling cold-start OAuth deep link:', initialUrl);
         await handleOAuthRedirect(initialUrl);
       } else if (pendingOAuth) {
@@ -601,7 +601,7 @@ function RootLayoutNav() {
 
     // Also listen to warm incoming OAuth URLs
     const oauthSub = Linking.addEventListener('url', ({ url }) => {
-      if (url.includes('code=') || url.includes('access_token=')) {
+      if ((url.includes('code=') || url.includes('access_token=')) && !url.includes('type=recovery')) {
         handleOAuthRedirect(url);
       }
     });

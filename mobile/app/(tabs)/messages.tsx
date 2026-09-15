@@ -34,15 +34,17 @@ export default function MessagesScreen() {
   const isLoading = useGroupStore(s => s.isLoading);
   const fetchGroups = useGroupStore(s => s.fetchGroups);
   const { colors } = useTheme();
+  const clearBadge = useGroupStore(s => s.clearBadge);
+  const setCurrentTab = useGroupStore(s => s.setCurrentTab);
+
   useEffect(() => {
-    const groupState = useGroupStore.getState() as any;
-    if (typeof groupState.clearBadge === 'function') {
-      groupState.clearBadge();
+    if (typeof clearBadge === 'function') {
+      clearBadge();
     }
-    if (typeof groupState.setCurrentTab === 'function') {
-      groupState.setCurrentTab('messages');
+    if (typeof setCurrentTab === 'function') {
+      setCurrentTab('messages');
     }
-  }, []);
+  }, [clearBadge, setCurrentTab]);
 
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -71,11 +73,6 @@ export default function MessagesScreen() {
   useEffect(() => {
     if (typeof fetchGroups === 'function') {
       fetchGroups();
-    } else {
-      const storeFetch = (useGroupStore.getState() as any).fetchGroups;
-      if (typeof storeFetch === 'function') {
-        storeFetch();
-      }
     }
   }, [fetchGroups]);
 

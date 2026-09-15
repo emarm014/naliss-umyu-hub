@@ -186,14 +186,14 @@ export default function EventPoolManagementPage() {
 
   // Voting Content Builder State
   const [candidatesList, setCandidatesList] = useState<VotingCandidate[]>([]);
-  const [candidateSearchQuery, _setCandidateSearchQuery] = useState('');
-  const [candidateFilterLevel, _setCandidateFilterLevel] = useState('all');
-  const [_candidateSearchResults, setCandidateSearchResults] = useState<any[]>([]);
-  const [_isCandidateSearching, setIsCandidateSearching] = useState(false);
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
+  const [candidateFilterLevel, setCandidateFilterLevel] = useState('all');
+  const [candidateSearchResults, setCandidateSearchResults] = useState<any[]>([]);
+  const [isCandidateSearching, setIsCandidateSearching] = useState(false);
   const [selectedStudentForCandidate, setSelectedStudentForCandidate] = useState<any | null>(null);
-  const [_candidatePositionTitle, _setCandidatePositionTitle] = useState('');
+  const [candidatePositionTitle, setCandidatePositionTitle] = useState('');
   const [candidatePhotoUrl, setCandidatePhotoUrl] = useState('');
-  const [_candidateManifesto, _setCandidateManifesto] = useState('');
+  const [candidateManifesto, setCandidateManifesto] = useState('');
 
   // Debate State
   const [debateTopics, setDebateTopics] = useState<DebateTopic[]>([]);
@@ -331,15 +331,27 @@ export default function EventPoolManagementPage() {
     }
   };
 
-  // const _handleCandidateSearch = (query: string) => {
-  //   setCandidateSearchQuery(query);
-  //   fetchCandidateSearchUsers(query, candidateFilterLevel);
-  // };
+  const handleCandidateSearch = (query: string) => {
+    setCandidateSearchQuery(query);
+    if (!query.trim()) {
+      setSelectedStudentForCandidate(null);
+      setCandidateSearchResults([]);
+      return;
+    }
+    fetchCandidateSearchUsers(query, candidateFilterLevel);
+  };
 
-  // const _handleCandidateFilterChange = (level: string) => {
-  //   setCandidateFilterLevel(level);
-  //   fetchCandidateSearchUsers(candidateSearchQuery, level);
-  // };
+  const handleCandidateFilterChange = (level: string) => {
+    setCandidateFilterLevel(level);
+    fetchCandidateSearchUsers(candidateSearchQuery, level);
+  };
+
+  const handleSelectCandidateSearchResult = (user: any) => {
+    setSelectedStudentForCandidate(user);
+    setCandidateSearchQuery(user.full_name);
+    setCandidatePhotoUrl(user.avatar_url || '');
+    setCandidateSearchResults([]); // Close dropdown
+  };
 
   useEffect(() => {
     if (selectedPool?.type === 'voting' && activeView === 'content') {
@@ -921,7 +933,7 @@ export default function EventPoolManagementPage() {
    try {
      const { error } = await supabase.from('pool_candidates').insert({
        pool_id: selectedPool.id,
-       display_name: fd.get('display_name') as string,
+       display_name: candidateSearchQuery || (fd.get('display_name') as string),
        position_title: fd.get('position_title') as string,
        bio: fd.get('bio') as string,
        photo_url: candidatePhotoUrl || null,
@@ -932,6 +944,8 @@ export default function EventPoolManagementPage() {
      loadPoolDetails(selectedPool);
      setCandidatePhotoUrl('');
      setSelectedStudentForCandidate(null);
+     setCandidateSearchQuery('');
+     setCandidateSearchResults([]);
      (e.target as HTMLFormElement).reset();
    } catch (e: any) { alert('Error: ' + e.message); }
  };
@@ -1680,9 +1694,23 @@ export default function EventPoolManagementPage() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <form onSubmit={handleCreateCandidate} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
         <h5 className="font-bold text-sm">Add New Candidate</h5>
-        <div>
+        <div className="relative">
           <label className="block text-xs font-bold mb-1">Display Name *</label>
-          <input required name="display_name" type="text" className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. John Doe" />
+          <input required name="display_name" type="text" className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. John Doe (Type to search registered users)" value={candidateSearchQuery} onChange={(e) => handleCandidateSearch(e.target.value)} autoComplete="off" />
+          
+          {candidateSearchQuery.length >= 2 && candidateSearchResults.length > 0 && (
+            <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              {candidateSearchResults.map(user => (
+                <div key={user.id} className="p-2 hover:bg-slate-50 cursor-pointer flex items-center gap-2 border-b border-slate-100 last:border-b-0" onClick={() => handleSelectCandidateSearchResult(user)}>
+                  {user.avatar_url ? <img src={user.avatar_url} className="w-6 h-6 rounded-full object-cover" /> : <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center"><Users className="w-3 h-3 text-slate-400" /></div>}
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">{user.full_name}</p>
+                    <p className="text-xs text-slate-500">@{user.username} {user.level ? `• Level ${user.level}` : ''}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-xs font-bold mb-1">Position / Office *</label>

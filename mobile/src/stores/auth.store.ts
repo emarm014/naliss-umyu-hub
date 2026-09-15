@@ -429,6 +429,11 @@ export const useAuthStore = create<AuthState>()(
       },
 
       signOut: async () => {
+        const isOnline = require('./network.store').useNetworkStore.getState().isOnline;
+        if (!isOnline) {
+          throw new Error('You must be connected to the internet to sign out safely.');
+        }
+
         const { user } = get();
         const userId = user?.id;
 
@@ -465,6 +470,32 @@ export const useAuthStore = create<AuthState>()(
               .eq('user_id', userId)
               .eq('device_id', deviceId);
           } catch {}
+        }
+
+        // Wipe local database cache and vault files for the logging-out user
+        try {
+          if (typeof (get() as any).removeLocalData === 'function') {
+            await (get() as any).removeLocalData();
+          }
+        } catch (e) {
+          console.warn('[AuthStore] Failed to purge local data on logout:', e);
+        }
+
+        try {
+          // Reset chat and group state
+          const { useMessageStore } = require('./message.store');
+          useMessageStore.getState().reset?.();
+
+          const { useGroupStore } = require('./group.store');
+          useGroupStore.getState().reset?.();
+
+          const { useGlobalSyncStore } = require('./globalSync.store');
+          useGlobalSyncStore.getState().reset?.();
+
+          const { useDataRestoreStore } = require('./data-restore.store');
+          useDataRestoreStore.getState().reset?.();
+        } catch (e) {
+          console.warn('[AuthStore] Warning resetting stores on logout:', e);
         }
 
         // 3. Clear auth store state
@@ -586,7 +617,7 @@ export const useAuthStore = create<AuthState>()(
             if (activeDb) {
                 try {
                     await activeDb.runAsync('DELETE FROM local_messages');
-                    // Removed: DELETE FROM local_assets (keep device cache intact across logouts)
+                    await activeDb.runAsync('DELETE FROM local_assets');
                     await activeDb.runAsync('DELETE FROM local_media_manifest');
                     await activeDb.runAsync('DELETE FROM offline_download_jobs');
                     await activeDb.runAsync('DELETE FROM offline_download_telemetry');
@@ -631,6 +662,60 @@ export const useAuthStore = create<AuthState>()(
         try { require('./signup.store').useSignupStore.getState().reset(); } catch {}
         try { require('./notification.store').useNotificationStore.getState().clearNotifications(); } catch {}
         try { require('./data-restore.store').useDataRestoreStore.getState().reset(); } catch {}
+
+        // Clear personal study notes
+        try {
+          const { useNoteStore } = require('./note.store');
+          useNoteStore.getState().reset?.() || useNoteStore.getState().clearNotes?.();
+          await AsyncStorage.removeItem('naliss-notes-storage');
+        } catch (e) {
+          console.warn('[AuthStore] Failed to clear notes store:', e);
+        }
+
+        // CRITICAL: Drop orphaned offline mutations so they never fire under another user's token
+        try {
+          const { useMutationQueueStore } = require('./mutationQueue.store');
+          useMutationQueueStore.getState().clearQueue?.() || useMutationQueueStore.getState().reset?.();
+          await AsyncStorage.removeItem('naliss-mutation-queue');
+        } catch (e) {
+          console.warn('[AuthStore] Failed to clear mutation queue:', e);
+        }
+
+        // Clear quiz and event participation drafts
+        try {
+          const { useQuizStore } = require('./quiz.store');
+          useQuizStore.getState().reset?.();
+          await AsyncStorage.removeItem('naliss-quiz-storage');
+        } catch (e) {
+          console.warn('[AuthStore] Failed to clear quiz store:', e);
+        }
+
+        // Clear voting drafts and ballots
+        try {
+          const { useVotingStore } = require('./voting.store');
+          useVotingStore.getState().reset?.();
+          await AsyncStorage.removeItem('naliss-voting-storage');
+        } catch (e) {
+          console.warn('[AuthStore] Failed to clear voting store:', e);
+        }
+
+        // Clear debate arguments
+        try {
+          const { useDebateStore } = require('./debate.store');
+          useDebateStore.getState().reset?.();
+          await AsyncStorage.removeItem('naliss-debate-storage');
+        } catch (e) {
+          console.warn('[AuthStore] Failed to clear debate store:', e);
+        }
+
+        // Clear essay and composition drafts
+        try {
+          const { useCompositionStore } = require('./composition.store');
+          useCompositionStore.getState().reset?.();
+          await AsyncStorage.removeItem('naliss-composition-storage');
+        } catch (e) {
+          console.warn('[AuthStore] Failed to clear composition store:', e);
+        }
       },
 
       setError: (error) => set({ error }),

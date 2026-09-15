@@ -400,16 +400,18 @@ Deno.serve(async (req: Request) => {
           push_token: ut.push_token
         });
 
-        // Insert into unified history
-        historyRecords.push({
-          user_id: ut.user_id,
-          notification_id: notifId,
-          title: msg.title,
-          body: msg.body,
-          type: notifType || 'general',
-          data: data ?? {},
-          is_read: false
-        });
+        // Insert into unified history (skip chats/messages to keep tray clean)
+        if (notifType !== 'message' && notifType !== 'chat') {
+          historyRecords.push({
+            user_id: ut.user_id,
+            notification_id: notifId,
+            title: title || 'New Notification', // Use original title, not privacy-masked
+            body: body || '',
+            type: notifType || 'general',
+            data: data ?? {},
+            is_read: false
+          });
+        }
       }
     }
 

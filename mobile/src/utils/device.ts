@@ -28,31 +28,54 @@ export function getDeviceName(): string {
 let cachedDeviceId: string | null = null;
 const SECURE_DEVICE_KEY = 'naliss_secure_device_id';
 
+/**
+ * Builds a deterministic hardware fingerprint that survives uninstalls on Android.
+ */
+function getDeterministicDeviceHash(): string {
+  const brand = (Device.brand || 'unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const model = (Device.modelName || Device.designName || 'device').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const osVersion = (Device.osVersion || '').replace(/[^a-z0-9]/g, '');
+  const buildId = (Device.osBuildId || '').substring(0, 8).toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  return `hw_${brand}_${model}_${osVersion}_${buildId}`;
+}
+
 export async function getOrCreateDeviceId(): Promise<string> {
   if (cachedDeviceId) return cachedDeviceId;
 
   try {
-    // 1. ANDROID: Hardware-anchored Settings.Secure.ANDROID_ID
+    // 1. ANDROID: Try native Android ID first
     if (Platform.OS === 'android') {
-      const androidId = Application.getAndroidId();
-      if (androidId) {
-        cachedDeviceId = `android_${androidId}`;
-        return cachedDeviceId;
+      try {
+        if (typeof Application.getAndroidId === 'function') {
+          const aId = Application.getAndroidId();
+          if (aId) {
+            cachedDeviceId = `android_${aId}`;
+            console.log('[DeviceID] Using Android Hardware ID:', cachedDeviceId);
+            return cachedDeviceId;
+          }
+        }
+      } catch (e) {
+        console.warn('[DeviceID] Application.getAndroidId unavailable, falling back to hardware hash');
       }
+
+      // Android deterministic fallback: NEVER use Math.random() here because SharedPreferences is wiped on uninstall
+      cachedDeviceId = `android_${getDeterministicDeviceHash()}`;
+      console.log('[DeviceID] Using Android Deterministic Hardware Hash:', cachedDeviceId);
+      return cachedDeviceId;
     }
 
-    // 2. IOS & FALLBACK: Keychain-backed ID (Survives app uninstalls)
+    // 2. IOS: KeyChain persists across uninstalls
     let storedId = await SecureStore.getItemAsync(SECURE_DEVICE_KEY);
     if (!storedId) {
-      // Check if expo-application provides vendor identifier on iOS
       let vendorId: string | null = null;
-      if (Platform.OS === 'ios') {
+      if (Platform.OS === 'ios' && typeof Application.getIosIdForVendorAsync === 'function') {
         vendorId = await Application.getIosIdForVendorAsync();
       }
 
       storedId = vendorId 
         ? `ios_${vendorId}` 
-        : `dev_${Platform.OS}_${Math.random().toString(36).substring(2, 15)}_${Date.now().toString(36)}`;
+        : `ios_${getDeterministicDeviceHash()}`;
 
       await SecureStore.setItemAsync(SECURE_DEVICE_KEY, storedId, {
         keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
@@ -60,11 +83,13 @@ export async function getOrCreateDeviceId(): Promise<string> {
     }
 
     cachedDeviceId = storedId;
+    console.log('[DeviceID] Using SecureStore ID:', cachedDeviceId);
     return cachedDeviceId;
   } catch (error) {
-    console.error('[Device] Failed to resolve persistent device ID:', error);
-    // Temporary fallback for unexpected runtime failures
-    return `fallback_${Platform.OS}_${Date.now().toString(36)}`;
+    console.error('[DeviceID] Error resolving ID:', error);
+    const fallback = `dev_${Platform.OS}_${getDeterministicDeviceHash()}`;
+    cachedDeviceId = fallback;
+    return fallback;
   }
 }
 

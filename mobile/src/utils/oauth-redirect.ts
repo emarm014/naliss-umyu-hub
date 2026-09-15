@@ -151,7 +151,6 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
         useAuthStore.getState().setIsProfileComplete(false);
         store.setIsGoogleDelaying(false);
         clearOAuthFlags(mmkv);
-        router.replace('/auth/identity' as any);
         return;
       }
     }
@@ -161,7 +160,6 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
     await useAuthStore.getState().fetchProfile(true);
     await useAuthStore.getState().checkProfileComplete(user.id);
     clearOAuthFlags(mmkv);
-    router.replace('/(tabs)');
   } catch (err: any) {
     console.error('[Auth] OAuth redirect handling failed:', err);
     useSignupStore.getState().setIsGoogleDelaying(false);
@@ -186,7 +184,7 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
 /** Clears MMKV OAuth recovery flags. */
 function clearOAuthFlags(mmkv: any | null): void {
   if (mmkv) {
-    mmkv.delete('oauth_in_progress');
-    mmkv.delete('oauth_start_time');
+    mmkv.remove('oauth_in_progress');
+    mmkv.remove('oauth_start_time');
   }
 }

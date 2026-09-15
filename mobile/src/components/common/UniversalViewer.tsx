@@ -118,6 +118,7 @@ export interface UniversalViewerProps {
   isVisible: boolean;
   onClose: () => void;
   fileUri: string;           // remote Cloudinary URL
+  remoteUrl?: string;        // fallback remote URL
   fileType: 'image' | 'video' | 'pdf' | 'audio' | 'document';
   fileName: string;
   fileId?: string;           // material/past_question id â€” used to find vault file
@@ -146,6 +147,7 @@ interface ViewerContentProps {
   readyToPlay?: boolean;
   videoResizeMode?: ResizeMode;
   bottomOffset?: number;
+  imageRotation?: number;
 }
 
 interface ZoomableImageProps {
@@ -153,9 +155,10 @@ interface ZoomableImageProps {
   onImageError: () => void;
   isHalfScreen?: boolean;
   onSingleTap?: () => void;
+  rotation?: number;
 }
 
-const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalfScreen, onSingleTap }) => {
+const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalfScreen, onSingleTap, rotation = 0 }) => {
   const { width, height } = useWindowDimensions();
   return (
     <View style={{ width, height: isHalfScreen ? height * 0.45 : height, backgroundColor: '#000000' }}>
@@ -164,18 +167,17 @@ const ZoomableImage: React.FC<ZoomableImageProps> = ({ uri, onImageError, isHalf
         minZoom={1}
         zoomStep={0.5}
         initialZoom={1}
+        onSingleTap={onSingleTap}
         style={{ flex: 1, width: '100%', height: '100%' }}
       >
-        <TouchableWithoutFeedback onPress={onSingleTap}>
-          <View style={{ flex: 1, width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-            <Image
-              source={{ uri }}
-              style={[styles.image, { width: '100%', height: '100%' }]}
-              resizeMode="contain"
-              onError={onImageError}
-            />
-          </View>
-        </TouchableWithoutFeedback>
+        <View style={{ flex: 1, width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+          <Image
+            source={{ uri }}
+            style={[styles.image, { width: '100%', height: '100%', transform: [{ rotate: `${rotation}deg` }] }]}
+            resizeMode="contain"
+            onError={onImageError}
+          />
+        </View>
       </ReactNativeZoomableView>
     </View>
   );
@@ -198,6 +200,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
   readyToPlay = true,
   videoResizeMode = ResizeMode.CONTAIN,
   bottomOffset,
+  imageRotation,
 }) => {
   const { colors } = useTheme();
 
@@ -242,7 +245,7 @@ const ViewerContent: React.FC<ViewerContentProps> = ({
 
   switch (fileType) {
     case 'image':
-      return <ZoomableImage uri={localUri} onImageError={onImageError} isHalfScreen={isHalfScreen} onSingleTap={onSingleTap} />;
+      return <ZoomableImage uri={localUri} onImageError={onImageError} isHalfScreen={isHalfScreen} onSingleTap={onSingleTap} rotation={imageRotation} />;
 
     case 'video':
       return <CustomVideoPlayer source={{ uri: localUri.startsWith('http') ? localUri : `file://${localUri}` }} resizeMode={videoResizeMode} onSingleTap={onSingleTap} autoPlay bottomOffset={bottomOffset} />;
@@ -306,6 +309,7 @@ function ViewerItemSlide({
   videoResizeMode?: ResizeMode;
   bottomOffset?: number;
   onLocalUriResolved?: (uri: string) => void;
+  imageRotation?: number;
 }) {
   const [localUri, setLocalUri] = React.useState<string | null>(null);
   const [isDownloading, setIsDownloading] = React.useState(false);
@@ -371,13 +375,23 @@ function ViewerItemSlide({
             console.warn('[UniversalViewer] Local vault file missing or 0 bytes:', targetPath);
             trackViewerEvent({ stage: 'vault_miss', uri: targetPath, fileType: item.type, fileName: item.name });
             // Switch to remote URL if available
-            if (item.remoteUrl) {
-              viewerUrl = item.remoteUrl;
+            const fallbackHttpUrl = item.remoteUrl || (item.uri.startsWith('http') ? item.uri : null);
+            if (fallbackHttpUrl) {
+              viewerUrl = fallbackHttpUrl;
+            } else {
+              throw new Error('Local file is missing and no remote HTTP URL was provided.');
             }
           }
         } catch (e) {
           console.warn('[UniversalViewer] Error inspecting file path:', e);
-          if (item.remoteUrl) viewerUrl = item.remoteUrl;
+          const fallbackHttpUrl = item.remoteUrl || (item.uri.startsWith('http') ? item.uri : null);
+          if (fallbackHttpUrl) {
+            viewerUrl = fallbackHttpUrl;
+          } else if (e instanceof Error && e.message.includes('remote HTTP URL')) {
+            throw e;
+          } else {
+            throw new Error('Local file is missing and no remote HTTP URL was provided.');
+          }
         }
       }
 
@@ -461,6 +475,10 @@ function ViewerItemSlide({
           }
         };
 
+        if (!viewerUrl.startsWith('http')) {
+          throw new Error('Cannot download file from a non-HTTP source: ' + viewerUrl);
+        }
+
         downloadResumed = FileSystem.createDownloadResumable(viewerUrl, destinationPath, {}, callback);
         const result = await downloadResumed.downloadAsync();
 
@@ -529,6 +547,7 @@ function ViewerItemSlide({
       readyToPlay={readyToPlay}
       videoResizeMode={videoResizeMode}
       bottomOffset={bottomOffset}
+      imageRotation={imageRotation}
     />
   );
 }
@@ -540,6 +559,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
   isVisible,
   onClose,
   fileUri,
+  remoteUrl,
   fileType,
   fileName,
   fileId,
@@ -577,21 +597,30 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
     setShowControls(prev => !prev);
   }, []);
 
-  const activeMediaList = mediaList && mediaList.length > 1 ? mediaList : [{
+  const singleMediaItem = React.useMemo(() => ({
     uri: fileUri,
+    remoteUrl: remoteUrl,
     type: fileType,
-    name: fileName,
+    name: fileName || 'file',
     fileId: fileId,
-  }];
+  }), [fileUri, remoteUrl, fileType, fileName, fileId]);
+
+  const activeMediaList = mediaList && mediaList.length > 1 ? mediaList : [singleMediaItem];
   const isMultiItem = activeMediaList.length > 1;
 
   const [currentIndex, setCurrentIndex] = React.useState(initialIndex);
+  const [rotationDegrees, setRotationDegrees] = React.useState(0);
 
   React.useEffect(() => {
     if (isVisible) {
       setCurrentIndex(initialIndex && initialIndex < activeMediaList.length ? initialIndex : 0);
+      setRotationDegrees(0);
     }
   }, [isVisible, initialIndex, mediaList]);
+
+  React.useEffect(() => {
+    setRotationDegrees(0);
+  }, [currentIndex]);
 
   const activeItem = activeMediaList[currentIndex] || activeMediaList[0];
   const [pdfEngine, setPdfEngine] = React.useState<'local' | 'local_hd' | 'google' | 'microsoft'>('local');
@@ -700,7 +729,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   }
                 }}
                 keyExtractor={(item, index) => `viewer-${item.fileId || item.uri}-${index}`}
-                renderItem={({ item }) => (
+                renderItem={({ item, index }) => (
                   <View style={{ width, height: '100%', justifyContent: 'center' }}>
                     <ViewerItemSlide
                       item={item}
@@ -711,6 +740,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                       videoResizeMode={VIDEO_ASPECT_MODES[videoAspectIndex].mode}
                       bottomOffset={footerClearance}
                       onLocalUriResolved={(uri) => setResolvedUris(prev => ({ ...prev, [item.uri]: uri }))}
+                      imageRotation={currentIndex === index ? rotationDegrees : 0}
                     />
                   </View>
                 )}
@@ -725,6 +755,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                 videoResizeMode={VIDEO_ASPECT_MODES[videoAspectIndex].mode}
                 bottomOffset={footerClearance}
                 onLocalUriResolved={(uri) => setResolvedUris(prev => ({ ...prev, [activeMediaList[0].uri]: uri }))}
+                imageRotation={rotationDegrees}
               />
             )}
           </View>
@@ -755,6 +786,17 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
                   >
                     <Ionicons name="scan-outline" size={14} color={overlayTextColor} style={{ marginRight: 4 }} />
                     <Text style={[styles.aspectText, { color: overlayTextColor }]}>{VIDEO_ASPECT_MODES[videoAspectIndex].label}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : activeItem.type === 'image' ? (
+                <View style={styles.videoActionCluster}>
+                  <TouchableOpacity
+                    style={styles.aspectBadge}
+                    onPress={() => setRotationDegrees((prev) => (prev + 90) % 360)}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="sync-outline" size={16} color={overlayTextColor} style={{ marginRight: 4 }} />
+                    <Text style={[styles.aspectText, { color: overlayTextColor }]}>ROTATE</Text>
                   </TouchableOpacity>
                 </View>
               ) : (

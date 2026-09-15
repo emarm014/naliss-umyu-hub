@@ -142,16 +142,7 @@ export default function RegisterEmail() {
         Alert.alert('Account Graduated', 'This email belongs to a graduated student. Access is restricted to active students only.');
         return;
       }
-      if (provider === 'incomplete') {
-        // Idempotent Garbage Collection: Purge the ghost account so we can start fresh
-        Sentry.addBreadcrumb({ category: 'signup.email', message: 'Purging incomplete ghost account', level: 'info' });
-        const { error: purgeErr } = await (supabase as any).rpc('purge_incomplete_account', { email_addr: trimmedEmail });
-        if (purgeErr) {
-          console.warn('[RegisterEmail] Purge RPC warning:', purgeErr);
-        }
-        // Allow Supabase Auth cache and Postgres transaction to settle cleanly
-        await new Promise((resolve) => setTimeout(resolve, 600));
-      } else if (provider === 'email') {
+      if (provider === 'email') {
         Alert.alert(
           'Already Registered',
           'This email already has an account. Please sign in instead.',

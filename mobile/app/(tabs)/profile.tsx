@@ -219,6 +219,12 @@ export default function ProfileScreen() {
 
 
   const handleLogout = async () => {
+    const isOnline = require('../../src/stores/network.store').useNetworkStore.getState().isOnline;
+    if (!isOnline) {
+      Alert.alert('Offline', 'You must be connected to the internet to sign out safely.');
+      return;
+    }
+
     Alert.alert('Sign Out', 'Are you sure you want to sign out?\n\nYour offline data will be preserved for your next login.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -229,7 +235,7 @@ export default function ProfileScreen() {
             try {
               await useAuthStore.getState().signOut();
             } catch (err: any) {
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
+              Alert.alert('Error', err.message || 'Failed to sign out. Please try again.');
             }
           }, 300);
         },

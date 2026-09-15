@@ -116,6 +116,10 @@ export function FeaturedStudentPopup() {
     const isShowingRef = useRef(false);
     const sessionSuppressedIdsRef = useRef<Set<string>>(new Set());
 
+    useEffect(() => {
+        sessionSuppressedIdsRef.current.clear();
+    }, [profile?.id]);
+
     // Initialize 42 continuous tiny floating motion particles
     if (particlesRef.current.length === 0) {
         const particles: FloatingParticle[] = [];
@@ -312,9 +316,10 @@ export function FeaturedStudentPopup() {
 
             let nextFeature = null;
             for (const item of (data as any[])) {
-                const dismissedKey = `dismissed_featured_${item.id}`;
+                const userId = profile.id;
+                const dismissedKey = `dismissed_featured_${userId}_${item.id}`;
                 const isDismissedLocal = await mmkvStorage.getItem(dismissedKey);
-                const congratsKey = `congratulated_${item.id}`;
+                const congratsKey = `congratulated_${userId}_${item.id}`;
                 const didCongratulateLocal = await mmkvStorage.getItem(congratsKey);
 
                 const isDismissed = isDismissedLocal || dismissedIds.has(item.id);
@@ -372,9 +377,10 @@ export function FeaturedStudentPopup() {
     };
 
     const handleDismiss = async () => {
-        if (!feature) return;
+        if (!feature || !profile?.id) return;
         
-        await mmkvStorage.setItem(`dismissed_featured_${feature.id}`, 'true');
+        const userId = profile.id;
+        await mmkvStorage.setItem(`dismissed_featured_${userId}_${feature.id}`, 'true');
         sessionSuppressedIdsRef.current.add(feature.id);
         
         // Persist to database to sync across devices
@@ -404,7 +410,7 @@ export function FeaturedStudentPopup() {
     };
 
     const handleCongratulate = async () => {
-        if (!feature || hasCongratulated || isSubmitting) return;
+        if (!feature || !profile?.id || hasCongratulated || isSubmitting) return;
         
         setIsSubmitting(true);
         setIsBursting(true);
@@ -429,7 +435,8 @@ export function FeaturedStudentPopup() {
             }
 
             setHasCongratulated(true);
-            await mmkvStorage.setItem(`congratulated_${feature.id}`, 'true');
+            const userId = profile.id;
+            await mmkvStorage.setItem(`congratulated_${userId}_${feature.id}`, 'true');
             setFeature((prev) => (prev ? { ...prev, total_congratulations: prev.total_congratulations + 1 } : null));
 
             // Send Push Notification to the Featured Student

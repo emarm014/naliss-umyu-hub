@@ -2280,6 +2280,13 @@ export default function ChatScreen() {
                 folder = 'chat-audios';
             }
 
+            const replyToId = activeReplyTarget?.id || null;
+            const replyFromMeta = activeReplyTarget ? {
+                sender_name: activeReplyTarget.user?.full_name || activeReplyTarget.full_name || activeReplyTarget.user?.username || activeReplyTarget.username || 'user',
+                content: activeReplyTarget.content,
+                content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text'
+            } : null;
+
             // Optimistic UI
             const newMessage = {
                 id: tempId,
@@ -2293,7 +2300,16 @@ export default function ChatScreen() {
                     level: profile?.level || currentUser!.user_metadata?.level,
                     avatar_url: profile?.avatar_url || currentUser!.user_metadata?.avatar_url,
                 },
-                replyTo: null,
+                reply_to_id: replyToId,
+                reply_from_meta: replyFromMeta,
+                replyTo: activeReplyTarget ? { 
+                    id: activeReplyTarget.id, 
+                    username: activeReplyTarget.user?.username || activeReplyTarget.username || 'user',
+                    full_name: activeReplyTarget.user?.full_name || activeReplyTarget.full_name || '',
+                    content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text',
+                    content: (activeReplyTarget.content || '').substring(0, 50),
+                    is_deleted: activeReplyTarget.is_deleted 
+                } : null,
                 message_type: msgType,
                 content_type: msgType,
                 status: 'sending' as any,
@@ -2321,6 +2337,8 @@ export default function ChatScreen() {
                         group_id: id,
                         message_type: msgType,
                         content_type: msgType,
+                        reply_to_id: replyToId,
+                        reply_from_meta: replyFromMeta,
                         metadata: { name: originalName, size: file.fileSize, tempId, batchId, caption: file.caption || null }
                     }])
                     .select()
@@ -2343,6 +2361,8 @@ export default function ChatScreen() {
                 messageStore.updateMessage(id, tempId, { status: isNetwork ? 'unsent' : 'error' });
             }
         }
+        
+        setActiveReplyTarget(null);
     };
 
     // Check which media messages are already downloaded on load
@@ -2465,25 +2485,14 @@ export default function ChatScreen() {
             };
 
             if (viewerType === 'document' || type === 'pdf') {
-                Alert.alert(
-                    'Open Document',
-                    'How would you like to open this document?',
-                    [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Open in App', onPress: openInApp },
-                        { 
-                            text: 'External App', 
-                            onPress: async () => {
-                                const normalizedUri = activeUri.startsWith('file://') || activeUri.startsWith('http') ? activeUri : `file://${activeUri}`;
-                                const mime = name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : '*/*';
-                                const result = await shareMedia(normalizedUri, mime, name);
-                                if (!result.success) {
-                                    Alert.alert('Error', result.error || 'Could not open document externally.');
-                                }
-                            } 
-                        }
-                    ]
-                );
+                const { openDocumentWith } = require('../../src/utils/documentOpener');
+                const normalizedUri = activeUri.startsWith('file://') || activeUri.startsWith('http') ? activeUri : `file://${activeUri}`;
+                openDocumentWith({
+                    localUri: normalizedUri,
+                    fileType: viewerType,
+                    fileName: name,
+                    onOpenInApp: () => openInApp()
+                });
             } else {
                 openInApp();
             }
@@ -2579,6 +2588,7 @@ export default function ChatScreen() {
                 }
                 return {
                     uri: uri || child.content,
+                    remoteUrl: child.content?.startsWith('http') ? child.content : undefined,
                     type: child.message_type || 'image',
                     name: child.metadata?.name || `${child.message_type}_${child.id}.jpg`,
                     fileId: child.id,
@@ -2592,6 +2602,7 @@ export default function ChatScreen() {
             setViewerInitialIndex(safeIdx);
             setViewerFile({
                 uri: mediaList[safeIdx]?.uri || '',
+                remoteUrl: mediaList[safeIdx]?.remoteUrl,
                 type: mediaList[safeIdx]?.type || 'image',
                 name: mediaList[safeIdx]?.name || 'Media',
             });
@@ -2614,8 +2625,11 @@ export default function ChatScreen() {
             // Batch viewer state updates cleanly in a single tick
             setViewerMediaList(undefined);
             setViewerInitialIndex(0);
+            const rawRemoteUrl = targetMsg.content?.startsWith('http') ? targetMsg.content : undefined;
+
             setViewerFile({
                 uri: uri || targetMsg.content,
+                remoteUrl: rawRemoteUrl,
                 type: targetMsg.message_type || 'image',
                 name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
             });
@@ -2630,7 +2644,7 @@ export default function ChatScreen() {
             <View style={{ flex: 1, backgroundColor: colors.background }}>
                 <KeyboardAvoidingView
                     style={{ flex: 1, backgroundColor: colors.background }}
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
                     keyboardVerticalOffset={0}
                 >
             {/* Header */}
@@ -3071,6 +3085,7 @@ export default function ChatScreen() {
                 isVisible={viewerVisible}
                 onClose={() => setViewerVisible(false)}
                 fileUri={viewerFile.uri}
+                remoteUrl={viewerFile.remoteUrl}
                 fileType={viewerFile.type}
                 fileName={viewerFile.name}
                 mediaList={viewerMediaList}

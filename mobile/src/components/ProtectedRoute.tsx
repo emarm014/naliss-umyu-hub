@@ -37,6 +37,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isProfileComplete = useAuthStore(s => s.isProfileComplete);
   const authLoading = useAuthStore(s => s.isLoading);
   const _hasHydrated = useAuthStore(s => s._hasHydrated);
+  const isGoogleDelaying = useSignupStore(s => s.isGoogleDelaying);
 
   const isOnline = useNetworkStore(s => s.isOnline);
   
@@ -984,7 +985,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       if (isProfileComplete === true) {
         const signupState = useSignupStore.getState();
         if (signupState.isGoogleDelaying) return;
-        if (signupState.hasActiveSession()) return;
         // Fall through to allow completion redirect
       } else {
         const signupState = useSignupStore.getState();
@@ -1213,8 +1213,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   const isEvaluatingAuth = 
-    (session && isProfileComplete === null && !offlineUnblocked) ||
-    (session && isProfileComplete === true && !deviceSessionChecked);
+    !isGoogleDelaying && (
+      (session && isProfileComplete === null && !offlineUnblocked) ||
+      (session && isProfileComplete === true && !deviceSessionChecked)
+    );
 
   // BLOCK: 5-Device limit exceeded screen
   if (sessionError === 'device_limit_exceeded') {

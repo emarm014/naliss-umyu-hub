@@ -34,16 +34,16 @@ export default function TabsLayout() {
   const renderTabIcon = (iconName: string, outlineName: string) => ({ color, focused }: { color: string; focused: boolean }) => (
     <View
       style={{
-        width: 46,
-        height: 46,
-        borderRadius: 23,
+        width: 52,
+        height: 32,
+        borderRadius: 16,
         backgroundColor: focused ? (isDark ? colors.actionMint : 'rgba(0, 0, 0, 0.05)') : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
-        overflow: 'hidden',
+        marginTop: 2,
       }}
     >
-      <Ionicons name={(focused ? iconName : outlineName) as any} size={28} color={color} />
+      <Ionicons name={(focused ? iconName : outlineName) as any} size={24} color={color} />
     </View>
   );
 
@@ -61,13 +61,13 @@ export default function TabsLayout() {
       }}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: isDark ? colors.primary : colors.text,
         tabBarInactiveTintColor: isDark ? '#64748b' : colors.textMuted,
         
         tabBarStyle: {
           height: 60 + safeBottomOffset,
-          paddingBottom: safeBottomOffset,
-          paddingTop: 8,
+          paddingBottom: safeBottomOffset + 4,
+          paddingTop: 4,
           backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: isDark ? '#334155' : '#E2E8F0',
@@ -82,18 +82,25 @@ export default function TabsLayout() {
           justifyContent: 'center',
           alignItems: 'center',
         },
-        tabBarShowLabel: false,
+        tabBarShowLabel: true,
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontFamily: 'Inter-Medium',
+          marginTop: 2,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
+          tabBarLabel: 'Home',
           tabBarIcon: renderTabIcon('home', 'home-outline'),
         }}
       />
       <Tabs.Screen
         name="announcements"
         options={{
+          tabBarLabel: 'Updates',
           tabBarIcon: renderTabIcon('megaphone', 'megaphone-outline'),
         }}
       />
@@ -106,6 +113,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="messages"
         options={{
+          tabBarLabel: 'Chat',
           tabBarBadge: badgeValue,
           tabBarIcon: renderTabIcon('chatbubble-ellipses', 'chatbubble-ellipses-outline'),
         }}
@@ -113,12 +121,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="resources"
         options={{
+          tabBarLabel: 'Library',
           tabBarIcon: renderTabIcon('folder', 'folder-outline'),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
+          tabBarLabel: 'Profile',
           tabBarIcon: renderTabIcon('person', 'person-outline'),
         }}
       />

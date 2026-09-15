@@ -121,7 +121,7 @@ export default function EventPoolRoom() {
                 }
 
                 // 4. Restore Progress from MMKV Synchronous Storage
-                const savedProgress = await mmkvStorage.getItem(`pool_progress_${id}`);
+                const savedProgress = await mmkvStorage.getItem(`pool_progress_${user?.id || 'anon'}_${id}`);
                 if (savedProgress) {
                     let parsed = null;
                     try { parsed = savedProgress ? JSON.parse(savedProgress) : null; } catch { parsed = null; }
@@ -243,7 +243,7 @@ export default function EventPoolRoom() {
 
             if (rpcError) throw rpcError;
             
-            await mmkvStorage.removeItem(`pool_progress_${id}`);
+            await mmkvStorage.removeItem(`pool_progress_${user?.id || 'anon'}_${id}`);
             
             if (!autoSubmitted) {
                 Alert.alert('Success', 'Your submission has been securely recorded.', [{ text: 'OK' }]);
@@ -267,7 +267,7 @@ export default function EventPoolRoom() {
                 else if (pool.type === 'essay') dataToSave = { ...dataToSave, essayText };
                 else if (pool.type === 'challenge') dataToSave = { ...dataToSave, challengeMediaUrl, challengeMediaType };
                 
-                await mmkvStorage.setItem(`pool_progress_${id}`, JSON.stringify(dataToSave));
+                await mmkvStorage.setItem(`pool_progress_${user?.id || 'anon'}_${id}`, JSON.stringify(dataToSave));
             } catch (e) {
                 console.error('Failed to save progress locally:', e);
             }

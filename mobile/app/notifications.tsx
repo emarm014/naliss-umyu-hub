@@ -48,18 +48,23 @@ export default function NotificationsScreen() {
           const presented = await Notifications.getPresentedNotificationsAsync();
           presented.forEach(notif => {
             const { title, body, data } = notif.request.content;
-            const notifId = notif.request.identifier || Math.random().toString(36).substring(2);
-            const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
+            const notifType = (data?.type as string) || 'general';
             
-            useNotificationStore.getState().addNotification({
-              id: notifId,
-              type: (data?.type as string) || 'general',
-              title: title || 'New Notification',
-              message: body || '',
-              date: dateStr,
-              isRead: false,
-              data: data,
-            });
+            // Skip saving chat messages to the global notifications tray
+            if (notifType !== 'message' && notifType !== 'chat') {
+              const notifId = notif.request.identifier || Math.random().toString(36).substring(2);
+              const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
+              
+              useNotificationStore.getState().addNotification({
+                id: notifId,
+                type: notifType,
+                title: title || 'New Notification',
+                message: body || '',
+                date: dateStr,
+                isRead: false,
+                data: data,
+              });
+            }
 
             if (data?.type) {
               upsertEntityFromNotification(data.type as string, data);
@@ -195,10 +200,12 @@ export default function NotificationsScreen() {
     }
 
     if (type === 'announcement') {
-      await useAnnouncementStore.getState().markAsRead(id);
-      router.push({ pathname: '/announcement/[id]', params: { id } } as any);
+      const targetId = data?.id || data?.announcement_id || id;
+      await useAnnouncementStore.getState().markAsRead(targetId);
+      router.push({ pathname: '/announcement/[id]', params: { id: targetId } } as any);
     } else if (type === 'event') {
-      router.push({ pathname: '/event/[id]', params: { id } } as any);
+      const targetId = data?.id || data?.event_id || id;
+      router.push({ pathname: '/event/[id]', params: { id: targetId } } as any);
     } else if (type === 'resource' || type === 'material') {
       router.push('/(tabs)/resources');
     } else if ((type === 'message' || type === 'chat') && data?.group_id) {

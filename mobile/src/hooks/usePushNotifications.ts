@@ -154,25 +154,33 @@ export function usePushNotifications() {
     if (Platform.OS !== 'android') return;
 
     (async () => {
+        try {
+            await Notifications.deleteNotificationChannelAsync('messages');
+            await Notifications.deleteNotificationChannelAsync('announcements');
+        } catch (_) {}
+
         // Messages — heads-up + lock screen (like WhatsApp)
-        await Notifications.setNotificationChannelAsync('messages', {
-            name: 'Messages',
-            importance: Notifications.AndroidImportance.HIGH,
+        await Notifications.setNotificationChannelAsync('messages_v2', {
+            name: 'Messages & Chat',
+            importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#4F46E5',
+            lightColor: '#064e3b',
             sound: 'default',
+            enableVibrate: true,
             showBadge: true,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         });
 
         // Announcements — heads-up
-        await Notifications.setNotificationChannelAsync('announcements', {
+        await Notifications.setNotificationChannelAsync('announcements_v2', {
             name: 'Announcements',
-            importance: Notifications.AndroidImportance.HIGH,
-            vibrationPattern: [0, 200],
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#064e3b',
             sound: 'default',
+            enableVibrate: true,
             showBadge: true,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         });
 
         // Featured Students — heads-up

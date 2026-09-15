@@ -152,8 +152,7 @@ export default function LoginScreen() {
           // Log successful login (best-effort, fire-and-forget)
           (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${emailToUse}`, metadata: { email: emailToUse, method: 'email' } }); } catch (_) {} })();
           
-          // EXPLICIT NAVIGATION: Force transition immediately without waiting on unmounted listener
-          router.replace('/(tabs)');
+          // ProtectedRoute will handle the transition once the profile is verified.
           break;
       }
     } catch (err: any) {
@@ -220,8 +219,8 @@ export default function LoginScreen() {
         setIsGoogleLoading(false);
         useSignupStore.getState().setIsGoogleDelaying(false);
         if (mmkv) {
-          mmkv.delete('oauth_in_progress');
-          mmkv.delete('oauth_start_time');
+          mmkv.remove('oauth_in_progress');
+          mmkv.remove('oauth_start_time');
         }
       }, 45_000);
 
@@ -245,15 +244,15 @@ export default function LoginScreen() {
         // User dismissed browser or backed out
         useSignupStore.getState().setIsGoogleDelaying(false);
         if (mmkv) {
-          mmkv.delete('oauth_in_progress');
-          mmkv.delete('oauth_start_time');
+          mmkv.remove('oauth_in_progress');
+          mmkv.remove('oauth_start_time');
         }
       }
     } catch (err: any) {
       useSignupStore.getState().setIsGoogleDelaying(false);
       if (mmkv) {
-        mmkv.delete('oauth_in_progress');
-        mmkv.delete('oauth_start_time');
+        mmkv.remove('oauth_in_progress');
+        mmkv.remove('oauth_start_time');
       }
       // Log Google auth failure (best-effort)
       (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: 'Failed Google sign-in attempt', metadata: { reason: err?.message || 'Unknown', method: 'google' } }); } catch (_) {} })();

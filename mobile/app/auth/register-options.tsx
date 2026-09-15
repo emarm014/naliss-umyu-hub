@@ -240,15 +240,6 @@ export default function RegisterOptions() {
 
       if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
 
-      // ── Clean up any previous abandoned signup for this exact Google email ─────
-      try {
-        const { data: existingStatus } = await (supabase as any).rpc('check_existing_account', { email_addr: user.email });
-        if (existingStatus === 'incomplete') {
-          await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email });
-        } else if (existingStatus === 'email' && user?.app_metadata?.provider !== 'email') {
-          await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email });
-        }
-      } catch (e) { /* silent best-effort */ }
 
       // ── STEP 6: Check account status & profile completion ──────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 6: Checking account status', level: 'info' });
@@ -292,7 +283,6 @@ export default function RegisterOptions() {
         useAuthStore.getState().setIsProfileComplete(true);
         store.setIsGoogleDelaying(false);
         if (isMounted.current) setIsGoogleLoading(false);
-        router.replace('/(tabs)' as any);
         return;
       }
 
@@ -311,7 +301,6 @@ export default function RegisterOptions() {
       if (isMounted.current) {
         setIsGoogleLoading(false);
       }
-      router.replace('/auth/identity' as any);
 
     } catch (err: any) {
       useSignupStore.getState().setIsGoogleDelaying(false);

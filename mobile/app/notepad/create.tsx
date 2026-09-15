@@ -492,7 +492,8 @@ export default function CreateNoteScreen() {
     return (
         <KeyboardAvoidingView 
             style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
             <View style={[styles.header, { paddingTop: top > 0 ? top : 12 }]}>
                 <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => router.back()}>

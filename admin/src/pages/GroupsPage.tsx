@@ -47,7 +47,7 @@ export default function GroupsPage() {
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [createForm, setCreateForm] = useState({
-    name: '', description: '', group_type: 'other' as 'level' | 'department' | 'other',
+    name: '', description: '', group_type: 'custom' as 'level' | 'department' | 'custom',
     level: '' as string, avatar_url: '', is_official: false, chat_enabled: true, allow_media: true,
   });
   const [editForm, setEditForm] = useState<GroupWithDetails | null>(null);
@@ -78,8 +78,8 @@ export default function GroupsPage() {
         }
         return g.moderator_id === profile?.id;
       }
-      // 'department' filter matches both 'department' and 'other' group types
-      if (typeFilter === 'department' && g.group_type !== 'department' && g.group_type !== 'other') return false;
+      // 'department' filter matches both 'department' and 'custom' group types
+      if (typeFilter === 'department' && g.group_type !== 'department' && g.group_type !== 'custom') return false;
       if (typeFilter === 'level' && g.group_type !== 'level') return false;
       if (searchQuery && !g.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
@@ -305,7 +305,7 @@ export default function GroupsPage() {
     if (!createForm.name.trim()) return;
     setIsSubmitting(true);
     try {
-      // Other groups always use group_type='other' to avoid interfering with
+      // Other groups always use group_type='custom' to avoid interfering with
       // the auto-join trigger which only targets 'department' and 'level' types.
       const isLevelGroup = createForm.group_type === 'level';
       const { data, error } = await supabase.from('groups').insert({
@@ -359,7 +359,7 @@ export default function GroupsPage() {
       }
 
       closeModal();
-      setCreateForm({ name: '', description: '', group_type: 'other', level: '', avatar_url: '', is_official: false, chat_enabled: true, allow_media: true });
+      setCreateForm({ name: '', description: '', group_type: 'custom', level: '', avatar_url: '', is_official: false, chat_enabled: true, allow_media: true });
       showSuccess(`Group "${createForm.name}" created successfully.`);
     } catch (err: unknown) {
       setGroupFormError((err as any)?.message || 'Failed to create group. Please try again.');
@@ -685,7 +685,7 @@ export default function GroupsPage() {
   const stats = useMemo(() => ({
     total: levelScopedGroups.length,
     level: levelScopedGroups.filter(g => g.group_type === 'level').length,
-    department: levelScopedGroups.filter(g => g.group_type === 'department' || g.group_type === 'other').length,
+    department: levelScopedGroups.filter(g => g.group_type === 'department' || g.group_type === 'custom').length,
     withModerator: levelScopedGroups.filter(g => g.moderator_id).length,
   }), [levelScopedGroups]);
 
@@ -1231,11 +1231,11 @@ export default function GroupsPage() {
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Group Type *</label>
                   <select
                     value={createForm.group_type}
-                    onChange={e => setCreateForm({ ...createForm, group_type: e.target.value as 'level' | 'department' | 'other', level: '', is_official: e.target.value === 'level' })}
+                    onChange={e => setCreateForm({ ...createForm, group_type: e.target.value as 'level' | 'department' | 'custom', level: '', is_official: e.target.value === 'level' })}
                     disabled={isModerator}
                     className="w-full px-5 py-3.5 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary-950 shadow-inner appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <option value="other">Other</option>
+                    <option value="custom">Other</option>
                     {!isModerator && <option value="level">Academic Level</option>}
                   </select>
                   {isModerator && (

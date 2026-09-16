@@ -625,6 +625,9 @@ export const useAuthStore = create<AuthState>()(
                     await activeDb.runAsync('DELETE FROM sync_journal');
                     await activeDb.runAsync('DELETE FROM media_sync_jobs');
                     await activeDb.runAsync('DELETE FROM offline_sync_state');
+                    await activeDb.runAsync('DELETE FROM content_manifest');
+                    await activeDb.runAsync('DELETE FROM offline_search_index');
+                    await activeDb.runAsync('DELETE FROM local_user_session');
                     Logger.info('auth.store', 'SQLite database completely wiped.');
                 } catch (e) {
                     console.error('Failed to wipe SQLite database:', e);
@@ -647,6 +650,16 @@ export const useAuthStore = create<AuthState>()(
         
         // Clear Zustand stores in memory
         set({ profile: null, confirmedAvatarUrl: null, localAvatarUrl: null, pendingAvatarUpload: null });
+        
+        // Clear all persistent storage keys in MMKV/AsyncStorage
+        try {
+            const { clearAllUserStorage } = require('./mmkv.storage');
+            await clearAllUserStorage();
+            Logger.info('auth.store', 'All persistent MMKV/AsyncStorage keys cleared.');
+        } catch (e) {
+            console.error('Failed to clear MMKV storage:', e);
+        }
+
         try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}
         try { require('./group.store').useGroupStore.getState().clearGroups(); } catch {}
         try { require('./globalSync.store').useGlobalSyncStore.getState().terminate(); } catch {}

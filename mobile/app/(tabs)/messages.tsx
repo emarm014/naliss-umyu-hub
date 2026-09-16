@@ -62,8 +62,9 @@ export default function MessagesScreen() {
   const isStudent = !['super_admin', 'moderator'].includes(profile?.role || '');
   const showReadOnlyBanner = readOnlyMode && isStudent;
 
-  const conversations = groups.map(group => {
-    const isLevelGroup = group.group_type === 'level' || group.name.includes('Level');
+  const conversations = (groups && Array.isArray(groups) ? groups : []).map(group => {
+    const groupName = group?.name || '';
+    const isLevelGroup = group?.group_type === 'level' || groupName.includes('Level');
     return {
       ...group,
       category: isLevelGroup ? 'Level Groups' : 'General Groups',
@@ -79,7 +80,9 @@ export default function MessagesScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await fetchGroups();
+      if (typeof fetchGroups === 'function') {
+        await fetchGroups();
+      }
     } finally {
       setRefreshing(false);
     }

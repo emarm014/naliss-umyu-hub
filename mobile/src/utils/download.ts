@@ -1,4 +1,4 @@
-﻿import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
 import { getVaultBase } from './vault';
 import { AssetPathResolver } from './assetResolver';
 import { UnifiedDownloadEngine } from './unifiedDownload';
@@ -37,9 +37,9 @@ export const extractFileNameFromUrl = (url: string, fallbackName?: string): stri
 /**
  * Get a safe local file path in the vault directory.
  */
-export const getVaultFilePath = (fileId: string, fileName: string, remoteUrl?: string): string => {
+export const getVaultFilePath = (fileId: string, fileName: string, remoteUrl?: string, type?: string): string => {
     if (remoteUrl) {
-        return AssetPathResolver.resolveLocalPath(fileId, 'document', remoteUrl);
+        return AssetPathResolver.resolveLocalPath(fileId, type ? `chat_${type}` : 'document', remoteUrl);
     }
     const safeName = fileName.replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
     return `${VAULT_DIRECTORY}${fileId}_${safeName}`;

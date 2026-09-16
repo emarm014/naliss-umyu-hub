@@ -101,6 +101,37 @@ export const getRawStorage = (): any | null => {
   return storage;
 };
 
+// Wipes all persisted MMKV and AsyncStorage keys EXCEPT theme-storage (to keep light/dark mode)
+export const clearAllUserStorage = async () => {
+  await initPromise;
+  
+  // 1. Clear AsyncStorage as a fallback/safety net
+  try {
+    const allAsyncKeys = await AsyncStorage.getAllKeys();
+    const keysToRemove = allAsyncKeys.filter(k => k !== 'theme-storage');
+    if (keysToRemove.length > 0) {
+      await AsyncStorage.multiRemove(keysToRemove);
+    }
+  } catch (e) {
+    Logger.warn('mmkv.storage', 'Failed to clear AsyncStorage', e as any);
+  }
+
+  // 2. Clear MMKV storage
+  if (storage) {
+    try {
+      const allKeys = storage.getAllKeys();
+      for (const key of allKeys) {
+        if (key !== 'theme-storage' && key !== 'migrated_from_asyncstorage') {
+          storage.delete(key);
+        }
+      }
+      Logger.info('mmkv.storage', 'Successfully cleared all user MMKV storage.');
+    } catch (e) {
+      Logger.error('mmkv.storage', 'Failed to clear MMKV storage', e as any);
+    }
+  }
+};
+
 // Programmatic migration check from AsyncStorage to MMKV (only runs if MMKV is active)
 export const migrateAsyncStorageToMMKV = async () => {
   await initPromise;

@@ -17,7 +17,7 @@ export default function Index() {
         Linking.getInitialURL().then((url) => {
             // If the app was opened via a deep link containing an auth token,
             // we stall the default redirect so _layout.tsx can handle it.
-            if (url && (url.includes('type=recovery') || url.includes('access_token='))) {
+            if (url && (url.includes('type=recovery') || url.includes('access_token=') || url.includes('code='))) {
                 setHasAuthLink(true);
             }
             setInitialUrlChecked(true);

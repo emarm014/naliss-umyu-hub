@@ -400,7 +400,7 @@ function ViewerItemSlide({
 
       try {
         if (item.fileId) {
-          const vaultPath = getVaultFilePath(item.fileId, item.name, item.uri);
+          const vaultPath = getVaultFilePath(item.fileId, item.name, item.uri, item.type);
           const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
           if (vaultInfo.exists && (vaultInfo as any).size > 0) {
             trackViewerEvent({ stage: 'vault_hit', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
@@ -430,7 +430,7 @@ function ViewerItemSlide({
         }
 
         const destinationPath = item.fileId
-          ? getVaultFilePath(item.fileId, item.name, item.uri)
+          ? getVaultFilePath(item.fileId, item.name, item.uri, item.type)
           : (() => {
               const realName = extractFileNameFromUrl(viewerUrl, item.name);
               let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -449,6 +449,16 @@ function ViewerItemSlide({
             setLocalUri(viewerUrl);
             setIsOffline(false); // It's streaming from network
             setIsDownloading(false);
+            
+            // BACKGROUND CACHING FOR OFFLINE AVAILABILITY
+            if (item.fileId && viewerUrl.startsWith('http')) {
+                try {
+                    const { UnifiedDownloadEngine } = require('../../utils/unifiedDownload');
+                    UnifiedDownloadEngine.download(viewerUrl, item.fileId, undefined, `chat_${item.type}`).catch(() => {});
+                } catch (e) {
+                    console.warn('[UniversalViewer] Failed to start background cache for stream:', e);
+                }
+            }
           }
           return;
         }

@@ -88,16 +88,11 @@ export default function DeleteAccountScreen() {
 
     const clearAllLocalData = async () => {
         try {
-            // Clear MMKV stores (auth, messages, network, etc.)
-            // Import and clear each store
+            // Use the centralized wipe logic that deletes SQLite, Vault, and MMKV
             const { useAuthStore } = require('../../src/stores/auth.store');
-            const { useMessageStore } = require('../../src/stores/message.store');
-            
-            // Clear each MMKV instance (adjust based on your MMKV setup)
-            useAuthStore.persist?.clearStorage?.();
-            useMessageStore.persist?.clearStorage?.();
+            await useAuthStore.getState().removeLocalData();
 
-            // Clear cached files
+            // Clear temporary cache directory as a bonus
             try {
                 const cacheDir = FileSystem.cacheDirectory;
                 if (cacheDir) {
@@ -110,12 +105,7 @@ export default function DeleteAccountScreen() {
                 }
             } catch (e) { /* non-critical */ }
 
-            // Clear SecureStore keys
-            try {
-                await SecureStore.deleteItemAsync('mmkv_encryption_key');
-            } catch (e) { /* non-critical */ }
-
-            console.log('[DeleteAccount] Local data cleared');
+            console.log('[DeleteAccount] Local data completely cleared');
         } catch (error) {
             console.warn('[DeleteAccount] Failed to clear some local data:', error);
             // Don't throw — account is already deleted server-side

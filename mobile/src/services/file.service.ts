@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 import { Alert } from 'react-native';
 import { extractFileNameFromUrl } from '../utils/download';
 import { getVaultBase } from '../utils/vault';
+import { AssetPathResolver } from '../utils/assetResolver';
 import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
 import { Logger } from '../utils/logger';
 import { getAssetCacheByUrl } from '../lib/database';
@@ -27,18 +28,17 @@ export const FileService = {
   /**
    * Gets the local URI for a file â€” uses the original filename from Cloudinary
    */
-  getLocalUri(fileId: string, fileUrlOrName: string | undefined | null) {
-    // If it's a URL, extract the real filename
+  getLocalUri(fileId: string, fileUrlOrName: string | undefined | null, type?: string) {
     const safeInput = typeof fileUrlOrName === 'string' ? fileUrlOrName : '';
-    const fileName = safeInput.startsWith('http')
-      ? extractFileNameFromUrl(safeInput, fileId)
-      : safeInput;
-    const safeName = (fileName || 'file').replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
+    if (safeInput.startsWith('http')) {
+        return AssetPathResolver.resolveLocalPath(fileId, type ? `chat_${type}` : 'document', safeInput);
+    }
+    const safeName = (safeInput || 'file').replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
     return `${VAULT_DIRECTORY}${fileId}_${safeName}`;
   },
 
-  async isDownloaded(fileId: string, fileUrlOrName: string): Promise<boolean> {
-    const localUri = this.getLocalUri(fileId, fileUrlOrName);
+  async isDownloaded(fileId: string, fileUrlOrName: string, type?: string): Promise<boolean> {
+    const localUri = this.getLocalUri(fileId, fileUrlOrName, type);
     try {
         const info = await FileSystem.getInfoAsync(localUri);
         if (!info.exists) return false;
@@ -62,6 +62,7 @@ export const FileService = {
     url: string,
     fileId: string,
     _displayName?: string,
+    type?: string,
     onProgress?: (progress: number) => void
   ): Promise<string | null> {
     try {
@@ -69,7 +70,7 @@ export const FileService = {
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return url.startsWith('file://') ? url : `file://${url}`;
       }
-      const localPath = this.getLocalUri(fileId, _displayName || url);
+      const localPath = this.getLocalUri(fileId, _displayName || url, type);
       const folder = localPath.substring(0, localPath.lastIndexOf('/') + 1);
       const dirInfo = await FileSystem.getInfoAsync(folder);
       if (!dirInfo.exists) {
@@ -134,8 +135,8 @@ export const FileService = {
     }
   },
 
-  async deleteFile(fileId: string, fileUrlOrName: string) {
-    const localUri = this.getLocalUri(fileId, fileUrlOrName);
+  async deleteFile(fileId: string, fileUrlOrName: string, type?: string) {
+    const localUri = this.getLocalUri(fileId, fileUrlOrName, type);
     try {
         await FileSystem.deleteAsync(localUri, { idempotent: true });
     } catch (error) {

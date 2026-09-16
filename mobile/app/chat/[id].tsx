@@ -1483,14 +1483,10 @@ export default function ChatScreen() {
         const liveMember = members.find(m => m.id === item.sender_id);
         const displayUser = liveMember || item.user || {};
 
-        const prevMsg = index > 0 ? groupedMessages[index - 1] : null;
-        const isConsecutive = !!(prevMsg && prevMsg.sender_id === item.sender_id && item.sender_id !== 'system');
-        const isWithinTimeThreshold = !!(
-            prevMsg?.created_at &&
-            item.created_at &&
-            (new Date(item.created_at).getTime() - new Date(prevMsg.created_at).getTime()) < 5 * 60 * 1000
-        );
-        const shouldGroupMessages = isConsecutive && isWithinTimeThreshold;
+        const olderMsg = index < groupedMessages.length - 1 ? groupedMessages[index + 1] : null;
+        const isConsecutive = !!(olderMsg && olderMsg.sender_id === item.sender_id && item.sender_id !== 'system');
+        // Group strictly until someone interferes (removed time threshold)
+        const shouldGroupMessages = isConsecutive;
 
         const isMedia = item.message_type === 'image' || item.message_type === 'video' || item.message_type === 'audio' || item.isAlbum || item.message_type === 'document';
         const Wrapper = Pressable;
@@ -1514,14 +1510,14 @@ export default function ChatScreen() {
                     styles.messageWrapper, 
                     isMe ? styles.messageWrapperRight : styles.messageWrapperLeft,
                     {
-                        marginTop: shouldGroupMessages ? 4 : 16,
-                        marginBottom: 0,
+                        marginTop: 1,
+                        marginBottom: shouldGroupMessages ? 1 : 6,
                     },
                     isHighlighted && { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.18)' : 'rgba(14, 165, 233, 0.12)' }
                 ]}>
                     {!isMe && !isSystem && (
                         shouldGroupMessages ? (
-                            <View style={{ width: 36, marginRight: 8 }} />
+                            <View style={{ width: 24, marginRight: 8 }} />
                         ) : (
                             <TouchableOpacity 
                                 style={styles.messageAvatarContainer} 
@@ -1574,10 +1570,17 @@ export default function ChatScreen() {
                                 style={[
                                     styles.replyPreview, 
                                     { 
-                                        backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.06)',
+                                        backgroundColor: isMe ? (isDark ? '#1a3a2a' : '#dcf8c6') : (isDark ? '#1e293b' : '#FFF'),
                                         flexDirection: 'row',
                                         justifyContent: 'space-between',
-                                        alignItems: 'center'
+                                        alignItems: 'center',
+                                        marginBottom: 0,
+                                        borderBottomLeftRadius: 0,
+                                        borderBottomRightRadius: 0,
+                                        borderTopLeftRadius: isMe ? 18 : 4,
+                                        borderTopRightRadius: isMe ? 4 : 18,
+                                        padding: 0,
+                                        overflow: 'hidden'
                                     }
                                 ]}
                                 onPress={() => {
@@ -1586,12 +1589,13 @@ export default function ChatScreen() {
                                     }
                                 }}
                             >
-                                <View style={{ flexDirection: 'row', flex: 1, paddingRight: 8 }}>
-                                    <View style={[styles.replyBar, { backgroundColor: isMe ? '#10b981' : '#059669' }]} />
-                                    <View style={[styles.replyContent, { flex: 1 }]}>
-                                        <Text style={[styles.replyUsername, { color: isMe ? '#10b981' : '#059669', fontFamily: 'Inter-Bold', fontWeight: 'bold' }]} numberOfLines={1}>
-                                            {item.reply_from_meta?.sender_name || item.replyTo?.full_name || item.replyTo?.username || 'user'}
-                                        </Text>
+                                <View style={{ flex: 1, flexDirection: 'row', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.06)', padding: 8, borderRadius: 0 }}>
+                                    <View style={{ flexDirection: 'row', flex: 1, paddingRight: 8 }}>
+                                        <View style={[styles.replyBar, { backgroundColor: isMe ? '#10b981' : '#059669' }]} />
+                                        <View style={[styles.replyContent, { flex: 1 }]}>
+                                            <Text style={[styles.replyUsername, { color: isMe ? '#10b981' : '#059669', fontFamily: 'Inter-Bold', fontWeight: 'bold' }]} numberOfLines={1}>
+                                                {item.reply_from_meta?.sender_name || item.replyTo?.full_name || item.replyTo?.username || 'user'}
+                                            </Text>
                                         
                                         {(() => {
                                             const isReplyDeleted = item.reply_from_meta?.is_deleted || item.replyTo?.is_deleted;
@@ -1683,17 +1687,18 @@ export default function ChatScreen() {
                                     }
                                     return null;
                                 })()}
+                                </View>
                             </Pressable>
                         )}
 
                         {item.is_deleted ? (
-                            <View style={[styles.messageBubble, isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }] : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }]]}>
+                            <View style={[styles.messageBubble, isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }] : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }], item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }]}>
                                 <Text style={[styles.messageText, { fontStyle: 'italic', color: isDark ? '#94a3b8' : '#64748b' }]}>
                                     This message was deleted by the sender.
                                 </Text>
                             </View>
                         ) : item.message_type === 'sticker' ? (
-                            <View style={[styles.stickerBubble, isMe ? styles.stickerBubbleMe : [styles.stickerBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#fff' }]]}>
+                            <View style={[styles.stickerBubble, isMe ? styles.stickerBubbleMe : [styles.stickerBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#fff' }], item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }]}>
                                 <Text style={styles.stickerEmoji}>{item.content}</Text>
                                 <View style={styles.stickerTimeRow}>
                                     <Text style={[styles.messageTime, isMe ? styles.messageTimeMe : styles.messageTimeOther]}>
@@ -1708,7 +1713,8 @@ export default function ChatScreen() {
                                 isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }]
                                      : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }],
                                 isSystem && styles.messageBubbleSystem,
-                                { padding: 4 } // Override padding for album grid
+                                { padding: 4 }, // Override padding for album grid
+                                item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }
                             ]}>
                                 <View style={styles.albumContainer}>
                                     <View style={styles.albumGrid}>
@@ -1716,7 +1722,7 @@ export default function ChatScreen() {
                                             const isVideo = child.message_type === 'video';
                                             const isDownloading = downloadingIds[child.id] !== undefined;
                                             const isUploading = uploadingIds[child.id] !== undefined;
-                                            const isDownloaded = downloadedIds[child.id];
+                                            const isDownloaded = downloadedIds[child.id] || child.local_media_path;
                                             const totalItems = item.albumItems.length;
                                             
                                             // Determine grid item style
@@ -1725,7 +1731,7 @@ export default function ChatScreen() {
                                             
                                             let mediaUrl = child.content;
                                             if (isDownloaded && !isMe) {
-                                                mediaUrl = FileService.getLocalUri(child.id, child.content);
+                                                mediaUrl = FileService.getLocalUri(child.id, child.content, child.message_type);
                                             } else if (isMe && child.fileUri) {
                                                 mediaUrl = child.fileUri;
                                             }
@@ -1776,7 +1782,7 @@ export default function ChatScreen() {
                                     {/* Album Download All Overlay (WhatsApp style) */}
                                     {(() => {
                                         if (isMe) return null;
-                                        const notDownloadedItems = item.albumItems.filter((child: any) => !downloadedIds[child.id]);
+                                        const notDownloadedItems = item.albumItems.filter((child: any) => !(downloadedIds[child.id] || child.local_media_path));
                                         const isDownloadingAlbum = item.albumItems.some((child: any) => downloadingIds[child.id] !== undefined);
                                         
                                         if (notDownloadedItems.length > 0) {
@@ -1789,7 +1795,7 @@ export default function ChatScreen() {
                                                     onPress={() => {
                                                         notDownloadedItems.forEach((child: any) => {
                                                             if (downloadingIds[child.id] === undefined) {
-                                                                handleDownloadMedia(child.id, child.content, child.metadata?.name || `${child.message_type}_${child.id}.jpg`);
+                                                                handleDownloadMedia(child.id, child.content, child.message_type, child.metadata?.name || `${child.message_type}_${child.id}.jpg`);
                                                             }
                                                         });
                                                     }}
@@ -1838,18 +1844,18 @@ export default function ChatScreen() {
                             </View>
                         ) : item.message_type === 'image' ? (
                             <View hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                                <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther]}>
+                                <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther, item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <CachedImage
-                                        remoteUrl={downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || ((typeof item.content === 'string' && item.content.startsWith('http')) ? item.content : (item.fileUri || item.content)))}
-                                        style={[styles.messageImage, !downloadedIds[item.id] && !isMe && { opacity: 0.55 }]}
+                                        remoteUrl={(downloadedIds[item.id] || item.local_media_path) ? FileService.getLocalUri(item.id, item.content, item.message_type) : (item.local_media_path || ((typeof item.content === 'string' && item.content.startsWith('http')) ? item.content : (item.fileUri || item.content)))}
+                                        style={[styles.messageImage, !(downloadedIds[item.id] || item.local_media_path) && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
-                                        blurRadius={!downloadedIds[item.id] && !isMe ? 3 : 0}
+                                        blurRadius={!(downloadedIds[item.id] || item.local_media_path) && !isMe ? 3 : 0}
                                         entityId={`chat_media_${item.id}`}
                                         assetType="chat_media"
                                         onPress={() => {
-                                            if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
-                                                handleDownloadMedia(item.id, item.content, item.metadata?.name || `image_${item.id}.jpg`);
+                                            if (!isMe && !(downloadedIds[item.id] || item.local_media_path) && downloadingIds[item.id] === undefined) {
+                                                handleDownloadMedia(item.id, item.content, item.message_type, item.metadata?.name || `image_${item.id}.jpg`);
                                             } else {
                                                 handleOpenSwipeableMedia(item.id);
                                             }
@@ -1858,7 +1864,7 @@ export default function ChatScreen() {
                                     />
 
                                     {/* Upload/Download Overlay */}
-                                    {(isMe && uploadingIds[item.id] !== undefined) || (!isMe && !downloadedIds[item.id]) ? (
+                                    {(isMe && uploadingIds[item.id] !== undefined) || (!isMe && !(downloadedIds[item.id] || item.local_media_path)) ? (
                                         <View style={styles.imageUploadOverlay}>
                                             {(isMe && uploadingIds[item.id] !== undefined) ? (
                                                 <View style={styles.mediaOverlayProgress}>
@@ -1906,7 +1912,8 @@ export default function ChatScreen() {
                                 item.message_type === 'video' ? styles.imageMessageContainer : styles.messageBubble,
                                 isMe ? (item.message_type === 'video' ? styles.imageBubbleMe : [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }])
                                      : (item.message_type === 'video' ? styles.imageBubbleOther : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }]),
-                                isSystem && styles.messageBubbleSystem
+                                isSystem && styles.messageBubbleSystem,
+                                item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }
                             ]}>
                                 {item.message_type === 'video' ? (
                                     // ── VIDEO — thumbnail preview with play button ────────────
@@ -1917,8 +1924,8 @@ export default function ChatScreen() {
                                         onLongPress={() => setLongPressedMessage(item)}
                                         delayLongPress={400}
                                         onPress={() => {
-                                            if (!isMe && !downloadedIds[item.id] && downloadingIds[item.id] === undefined) {
-                                                handleDownloadMedia(item.id, item.content, item.metadata?.name || `video_${item.id}.mp4`);
+                                            if (!isMe && !(downloadedIds[item.id] || item.local_media_path) && downloadingIds[item.id] === undefined) {
+                                                handleDownloadMedia(item.id, item.content, item.message_type, item.metadata?.name || `video_${item.id}.mp4`);
                                             } else {
                                                 handleOpenSwipeableMedia(item.id);
                                             }
@@ -1926,7 +1933,7 @@ export default function ChatScreen() {
                                     >
                                         {/* Video thumbnail frame */}
                                         {(() => {
-                                            const localUri = downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content) : (item.local_media_path || item.fileUri);
+                                            const localUri = (downloadedIds[item.id] || item.local_media_path) ? FileService.getLocalUri(item.id, item.content, item.message_type) : (item.local_media_path || item.fileUri);
                                             if (localUri) {
                                                 return (
                                                     <Video
@@ -1979,7 +1986,7 @@ export default function ChatScreen() {
                                         )}
 
                                         {/* Downloaded badge */}
-                                        {downloadedIds[item.id] && (
+                                        {(downloadedIds[item.id] || item.local_media_path) && (
                                             <View style={[styles.mediaSizeLabel, { right: 8, left: 'auto' as any }]}>
                                                 <Ionicons name="checkmark-circle" size={14} color="#10b981" />
                                             </View>
@@ -2017,15 +2024,15 @@ export default function ChatScreen() {
                                                 handleOpenMedia(item.id, item.local_media_path || item.content, item.message_type, fileName);
                                                 return;
                                             }
-                                            if (downloadedIds[item.id]) {
+                                            if (downloadedIds[item.id] || item.local_media_path) {
                                                 handleOpenMedia(item.id, item.content, item.message_type, fileName);
                                             } else if (downloadingIds[item.id] === undefined) {
-                                                handleDownloadMedia(item.id, item.content, fileName);
+                                                handleDownloadMedia(item.id, item.content, item.message_type, fileName);
                                             }
                                         }}
                                     >
                                         {/* File type icon */}
-                                        <View style={[styles.documentIconBox, downloadedIds[item.id] && styles.documentIconBoxDone]}>
+                                        <View style={[styles.documentIconBox, (downloadedIds[item.id] || item.local_media_path) && styles.documentIconBoxDone]}>
                                             {isMe && uploadingIds[item.id] !== undefined ? (
                                                 <Text style={styles.mediaCircleProgressText}>{Math.min(Math.round(uploadingIds[item.id]), 100)}%</Text>
                                             ) : downloadingIds[item.id] !== undefined ? (
@@ -2046,7 +2053,7 @@ export default function ChatScreen() {
                                             <Text style={[styles.documentSize, { color: isDark ? '#94a3b8' : '#64748b' }]}>
                                                 {item.metadata?.size
                                                     ? formatFileSize(item.metadata.size)
-                                                    : downloadedIds[item.id] ? 'Saved' : 'PDF Document'}
+                                                    : (downloadedIds[item.id] || item.local_media_path) ? 'Saved' : 'PDF Document'}
                                             </Text>
                                         </View>
 
@@ -2060,7 +2067,7 @@ export default function ChatScreen() {
                                                 <View style={styles.mediaCircleProgress}>
                                                     <Text style={styles.mediaCircleProgressText}>{Math.min(downloadingIds[item.id], 100)}%</Text>
                                                 </View>
-                                            ) : downloadedIds[item.id] ? (
+                                            ) : (downloadedIds[item.id] || item.local_media_path) ? (
                                                 <Ionicons name="checkmark-circle" size={20} color="#10b981" />
                                             ) : !isMe ? (
                                                 <Ionicons name="cloud-download-outline" size={24} color="#64748b" />
@@ -2375,7 +2382,7 @@ export default function ChatScreen() {
         const results: Record<string, boolean> = {};
         await Promise.all(mediaMessages.map(async (m) => {
             // Pass the original URL so FileService extracts the real filename matching UnifiedDownloadEngine
-            const isLocal = await FileService.isDownloaded(m.id, m.content);
+            const isLocal = await FileService.isDownloaded(m.id, m.content, m.message_type);
             if (isLocal) results[m.id] = true;
         }));
         if (Object.keys(results).length > 0) {
@@ -2384,13 +2391,13 @@ export default function ChatScreen() {
     };
 
     // Download media to local vault — real progress, no fake actions
-    const handleDownloadMedia = async (messageId: string, url: string, name: string) => {
+    const handleDownloadMedia = async (messageId: string, url: string, type: string, name: string) => {
         if (downloadingIds[messageId] !== undefined) return;
         if (downloadedIds[messageId]) return;
 
         setDownloadingIds(prev => ({ ...prev, [messageId]: 1 }));
         try {
-            const localUri = await FileService.downloadFile(url, messageId, name, (p: number) => {
+            const localUri = await FileService.downloadFile(url, messageId, name, type, (p: number) => {
                 const pct = Math.round(p * 100);
                 setDownloadingIds(prev => ({ ...prev, [messageId]: Math.max(pct, 1) }));
             });
@@ -2439,7 +2446,7 @@ export default function ChatScreen() {
 
         setDownloadingIds(prev => ({ ...prev, [messageId]: 1 }));
         try {
-            const localUri = await FileService.downloadFile(url, messageId, name, (p: number) => {
+            const localUri = await FileService.downloadFile(url, messageId, name, type, (p: number) => {
                 const pct = Math.round(p * 100);
                 setDownloadingIds(prev => ({ ...prev, [messageId]: Math.max(pct, 1) }));
             });
@@ -2467,7 +2474,7 @@ export default function ChatScreen() {
     const handleOpenMedia = async (messageId: string, url: string, type: any, customName?: string) => {
         try {
             const isLocal = await FileService.isDownloaded(messageId, url);
-            const computedLocalUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url);
+            const computedLocalUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url, type);
 
             // If physically on disk, use local path; otherwise use remote url
             const activeUri = isLocal ? computedLocalUri : url;
@@ -2508,15 +2515,15 @@ export default function ChatScreen() {
             const ext = msg.message_type === 'video' ? 'mp4' : msg.message_type === 'audio' ? 'mp3' : msg.message_type === 'document' ? 'pdf' : 'jpg';
             const fileName = msg.metadata?.name || `${msg.message_type}_${msg.id}.${ext}`;
             
-            const isDownloaded = downloadedIds[msg.id];
+            const isDownloaded = downloadedIds[msg.id] || msg.local_media_path;
             const isMe = msg.sender_id === currentUser?.id;
             
             if (isDownloaded) {
-                localUri = FileService.getLocalUri(msg.id, msg.content);
+                localUri = FileService.getLocalUri(msg.id, msg.content, msg.message_type);
             } else if (isMe && msg.fileUri) {
                 localUri = msg.fileUri;
             } else {
-                localUri = FileService.getLocalUri(msg.id, fileName);
+                localUri = FileService.getLocalUri(msg.id, fileName, msg.message_type);
                 const downloaded = await FileService.downloadFile(msg.content, msg.id, fileName);
                 if (!downloaded) {
                     Alert.alert('Save Failed', 'Could not retrieve file to save.');
@@ -2545,15 +2552,15 @@ export default function ChatScreen() {
             const ext = msg.message_type === 'video' ? 'mp4' : msg.message_type === 'audio' ? 'mp3' : msg.message_type === 'document' ? 'pdf' : 'jpg';
             const fileName = msg.metadata?.name || `${msg.message_type}_${msg.id}.${ext}`;
             
-            const isDownloaded = downloadedIds[msg.id];
+            const isDownloaded = downloadedIds[msg.id] || msg.local_media_path;
             const isMe = msg.sender_id === currentUser?.id;
             
             if (isDownloaded) {
-                localUri = FileService.getLocalUri(msg.id, msg.content);
+                localUri = FileService.getLocalUri(msg.id, msg.content, msg.message_type);
             } else if (isMe && msg.fileUri) {
                 localUri = msg.fileUri;
             } else {
-                localUri = FileService.getLocalUri(msg.id, fileName);
+                localUri = FileService.getLocalUri(msg.id, fileName, msg.message_type);
                 const downloaded = await FileService.downloadFile(msg.content, msg.id, fileName);
                 if (!downloaded) {
                     Alert.alert('Share Failed', 'Could not retrieve file to share.');
@@ -2577,11 +2584,11 @@ export default function ChatScreen() {
     const handleOpenSwipeableMedia = (targetMessageId: string, albumItems?: any[]) => {
         if (albumItems && albumItems.length > 1) {
             const mediaList = albumItems.map((child: any) => {
-                const isDownloaded = downloadedIds[child.id];
+                const isDownloaded = downloadedIds[child.id] || child.local_media_path;
                 const isMe = child.sender_id === currentUser?.id;
                 let uri = child.content;
                 if (isDownloaded) {
-                    uri = FileService.getLocalUri(child.id, child.content);
+                    uri = FileService.getLocalUri(child.id, child.content, child.message_type);
                 } else if (isMe && child.fileUri) {
                     uri = child.fileUri?.startsWith('file://') ? child.fileUri : `file://${child.fileUri}`;
                 } else if (child.local_media_path) {
@@ -2612,11 +2619,11 @@ export default function ChatScreen() {
             const targetMsg = messages.find(m => m.id === targetMessageId);
             if (!targetMsg) return;
 
-            const isDownloaded = downloadedIds[targetMsg.id];
+            const isDownloaded = downloadedIds[targetMsg.id] || targetMsg.local_media_path;
             const isMe = targetMsg.sender_id === currentUser?.id;
             let uri = targetMsg.content;
             if (isDownloaded) {
-                uri = FileService.getLocalUri(targetMsg.id, targetMsg.content);
+                uri = FileService.getLocalUri(targetMsg.id, targetMsg.content, targetMsg.message_type);
             } else if (isMe && targetMsg.fileUri) {
                 uri = targetMsg.fileUri?.startsWith('file://') ? targetMsg.fileUri : `file://${targetMsg.fileUri}`;
             } else if (targetMsg.local_media_path) {
@@ -2634,6 +2641,7 @@ export default function ChatScreen() {
                 remoteUrl: rawRemoteUrl,
                 type: targetMsg.message_type || 'image',
                 name: targetMsg.metadata?.name || `${targetMsg.message_type}_${targetMsg.id}`,
+                fileId: targetMsg.id,
             });
             setViewerVisible(true);
         }
@@ -3129,13 +3137,12 @@ const styles = StyleSheet.create({
     headerSubtitleLight: { fontFamily: 'Inter-Medium', fontSize: 11, color: COLORS.textMuted },
     // Messages
     messagesList: { padding: 16, paddingBottom: 24 },
-    messageWrapper: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-end' },
+    messageWrapper: { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-start' },
     messageWrapperLeft: { justifyContent: 'flex-start' },
     messageWrapperRight: { justifyContent: 'flex-end' },
     messageAvatarContainer: { marginRight: 8, position: 'relative' },
-    messageAvatarImage: { width: 36, height: 36, borderRadius: 18 },
+    messageAvatarImage: { width: 24, height: 24, borderRadius: 12 },
     messageAvatarPlaceholder: {
-        width: 36, height: 36, borderRadius: 18, backgroundColor: '#cbd5e1',
         alignItems: 'center', justifyContent: 'center',
     },
     messageAvatarText: { fontFamily: 'Inter-Bold', fontSize: 14, color: '#FFF' },
@@ -3175,7 +3182,7 @@ const styles = StyleSheet.create({
     },
     levelBadgeTextTop: { fontFamily: 'Inter-Black', fontSize: 9, color: '#FFF', letterSpacing: 0.8 },
     // Reply preview
-    replyPreview: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 8, marginBottom: 4, minWidth: 150 },
+    replyPreview: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 8, marginBottom: 0, minWidth: 150 },
     replyBar: { width: 3, backgroundColor: '#059669', borderRadius: 2, marginRight: 8 },
     replyContent: { flex: 1 },
     replyUsername: { fontFamily: 'Inter-Bold', fontSize: 11, color: '#059669' },
@@ -3200,7 +3207,7 @@ const styles = StyleSheet.create({
     stickerStatusRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 2 },
     // Bubbles
     messageBubble: {
-        paddingVertical: 8, paddingHorizontal: 12, borderRadius: 18,
+        paddingVertical: 4, paddingHorizontal: 8, borderRadius: 16,
         shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05, shadowRadius: 1, elevation: 1,
     },

@@ -1630,14 +1630,25 @@ export const reconcileAssetCache = async () => {
                 const info = await FileSystem.getInfoAsync(localPath);
                 if (!info.exists || (info as any).size === 0) continue;
 
-                // Reconstruct entityId and assetType from filename: assetType_entityId_urlHash.jpg
-                const nameWithoutExt = file.replace('.jpg', '');
-                const parts = nameWithoutExt.split('_');
-                if (parts.length < 3) continue; // Needs at least: type, entityId, hash
+                let assetType = '';
+                for (const prefix of KNOWN_PREFIXES) {
+                    if (file.startsWith(prefix)) {
+                        assetType = prefix.replace(/_$/, ''); // remove trailing underscore
+                        break;
+                    }
+                }
+                
+                if (!assetType) continue;
 
-                const assetType = parts[0];
-                // entityId is everything between first and last underscore segment
-                const entityId = parts.slice(1, -1).join('_');
+                // The filename format is: assetType_entityId_hash.jpg
+                // Remove assetType + '_' from start, and '.jpg' from end
+                const remaining = file.slice(assetType.length + 1, -4);
+                
+                // The remaining part is entityId_hash. The hash is always the last segment after the last underscore.
+                const lastUnderscoreIndex = remaining.lastIndexOf('_');
+                if (lastUnderscoreIndex === -1) continue;
+                
+                const entityId = remaining.slice(0, lastUnderscoreIndex);
                 if (!entityId) continue;
 
                 validEntries.push({ entityId, localPath, assetType });

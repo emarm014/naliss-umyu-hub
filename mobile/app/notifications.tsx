@@ -57,7 +57,7 @@ export default function NotificationsScreen() {
               const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
               
               useNotificationStore.getState().addNotification({
-                id: notifId,
+                id: String(notifId || ''),
                 type: notifType,
                 title: title || 'New Notification',
                 message: body || '',

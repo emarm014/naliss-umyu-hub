@@ -77,7 +77,7 @@ export default function CourseDetailScreen() {
                 material.file_url,
                 material.id,
                 material.file_url,
-                () => {}
+                ''
             );
             if (localUri) {
                 await FileService.shareFile(localUri);

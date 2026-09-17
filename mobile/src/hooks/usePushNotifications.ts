@@ -340,7 +340,7 @@ export function usePushNotifications() {
         : notifId;
 
       useNotificationStore.getState().addNotification({
-        id: effectiveNotifId,
+        id: String(effectiveNotifId || ''),
         type: notifType,
         title: title || 'New Notification',
         message: body || '',
@@ -369,7 +369,7 @@ export function usePushNotifications() {
         : notifId;
 
       useNotificationStore.getState().addNotification({
-        id: effectiveNotifId,
+        id: String(effectiveNotifId || ''),
         type: notifType,
         title: title || 'New Notification',
         message: body || '',
@@ -386,9 +386,9 @@ export function usePushNotifications() {
 
       // Handle Quick Actions
       if (actionId === 'mark_read') {
-        useNotificationStore.getState().markAsRead(notifId);
+        useNotificationStore.getState().markAsRead(String(notifId || ''));
         try {
-          await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', notifId);
+          await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', String(notifId || ''));
         } catch (err: any) {
           console.error('[PushNotifications] mark notification read failed:', err);
         }
@@ -436,7 +436,7 @@ export function usePushNotifications() {
           const cachedData = await cacheMediaForNotification(data);
           
           useNotificationStore.getState().addNotification({
-            id: notifId,
+            id: String(notifId || ''),
             type: notifType,
             title: title || 'New Notification',
             message: body || '',

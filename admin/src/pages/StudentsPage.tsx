@@ -364,13 +364,13 @@ export default function StudentsPage() {
       // Step 1: Ban first — triggers realtime kick-out on mobile immediately
       // so the user loses access even before the row is deleted
       await supabase.from('users').update({ status: 'banned', banned_reason: 'Account deleted by administrator' }).eq('id', user.id);
-      // Step 2: Remove from all group memberships
-      await supabase.from('group_members').delete().eq('user_id', user.id);
-      // Step 3: Delete the public profile row
-      const { error } = await supabase.from('users').delete().eq('id', user.id);
+      
+      // Step 2: Call the RPC to archive and delete the user account properly
+      const { error } = await supabase.rpc('delete_user_account', {
+        user_id_to_delete: user.id,
+      });
       if (error) throw error;
-      // Note: auth.users record requires Supabase dashboard or service-role key to delete.
-      // The ban in step 1 ensures the user cannot log in even if the auth record persists.
+
       await supabase.from('activity_logs').insert({
         user_id: currentAdmin?.id,
         action: 'user.delete',

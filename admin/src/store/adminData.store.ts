@@ -617,6 +617,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         case 'activity_logs': set(s => ({ activityLogs: s.activityLogs.filter(l => l.id !== id) })); break;
         case 'message_reports': set(s => ({ messageReports: s.messageReports.filter(r => r.id !== id) })); break;
         case 'muted_users': set(s => ({ mutedUsers: s.mutedUsers.filter(u => u.id !== id) })); break;
+        case 'deleted_accounts': set(s => ({ deletedAccounts: s.deletedAccounts.filter(d => d.id !== id) })); break;
       }
       return;
     }
@@ -643,6 +644,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         case 'activity_logs': set(s => ({ activityLogs: [recordToUse as any, ...s.activityLogs] })); break;
         case 'message_reports': set(s => ({ messageReports: [recordToUse as any, ...s.messageReports] })); break;
         case 'muted_users': set(s => ({ mutedUsers: [recordToUse as any, ...s.mutedUsers] })); break;
+        case 'deleted_accounts': set(s => ({ deletedAccounts: [recordToUse as any, ...s.deletedAccounts] })); break;
         case 'messages':
           if ((recordToUse as any).is_flagged && !(recordToUse as any).is_deleted) {
             set(s => ({ flaggedMessages: [recordToUse as any, ...s.flaggedMessages] }));
@@ -675,6 +677,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
         case 'activity_logs': set(s => ({ activityLogs: s.activityLogs.map(l => l.id === id ? { ...l, ...recordToUse } as any : l) })); break;
         case 'message_reports': set(s => ({ messageReports: s.messageReports.map(r => r.id === id ? { ...r, ...recordToUse } as any : r) })); break;
         case 'muted_users': set(s => ({ mutedUsers: s.mutedUsers.map(u => u.id === id ? { ...u, ...recordToUse } as any : u) })); break;
+        case 'deleted_accounts': set(s => ({ deletedAccounts: s.deletedAccounts.map(d => d.id === id ? { ...d, ...recordToUse } as any : d) })); break;
         case 'messages':
           if (!(recordToUse as any).is_flagged || (recordToUse as any).is_deleted) {
             set(s => ({ flaggedMessages: s.flaggedMessages.filter(m => m.id !== id) }));
@@ -692,7 +695,8 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
       'events', 'courses', 'lecturers', 'executives',
       'resources', 'messages', 'message_reports', 'muted_users',
       'graduates', 'groups', 'activity_logs', 'system_settings',
-      'archives', 'news', 'event_pools', 'moderator_permissions'
+      'archives', 'news', 'event_pools', 'moderator_permissions',
+      'deleted_accounts'
     ];
     realtimeCoordinator.registerTables(tables);
     realtimeCoordinator.subscribe(get().handleRealtimeEvent);

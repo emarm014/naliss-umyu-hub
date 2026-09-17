@@ -1,4 +1,4 @@
-﻿import { getVaultBase } from './vault';
+import { getVaultBase } from './vault';
 
 export { getVaultBase };
 
@@ -32,8 +32,26 @@ export const AssetPathResolver = {
     resolveLocalPath(assetId: string, assetType: string, remoteUrl: string): string {
         const vaultBase = getVaultBase();
         const folder = this.getFolderForType(assetType);
-        const cleanUrl = remoteUrl.split('?')[0];
-        const ext = cleanUrl.split('.').pop() || 'dat';
+        
+        let ext = 'dat';
+        if (remoteUrl) {
+            const cleanUrl = remoteUrl.split('?')[0];
+            // Extract the filename part (after the last slash) to avoid matching dots in the domain (e.g. res.cloudinary.com)
+            const fileName = cleanUrl.substring(cleanUrl.lastIndexOf('/') + 1);
+            if (fileName.includes('.')) {
+                ext = fileName.split('.').pop() || 'dat';
+            }
+        }
+
+        // Provide better default extensions if no extension is present in the URL
+        if (ext === 'dat') {
+            const type = assetType.toLowerCase();
+            if (type.includes('image') || type.includes('avatar') || type.includes('cover')) ext = 'jpg';
+            else if (type.includes('video')) ext = 'mp4';
+            else if (type.includes('audio') || type.includes('voice')) ext = 'mp3';
+            else if (type.includes('pdf')) ext = 'pdf';
+        }
+
         return `${vaultBase}${folder}${assetId}.${ext}`;
     }
 };

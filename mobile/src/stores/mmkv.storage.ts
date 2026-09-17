@@ -119,7 +119,7 @@ export const clearAllUserStorage = async () => {
   // 2. Clear MMKV storage
   if (storage) {
     try {
-      const allKeys = storage.keys();
+      const allKeys = storage.getAllKeys();
       for (const key of allKeys) {
         if (key !== 'theme-storage' && key !== 'migrated_from_asyncstorage') {
           storage.delete(key);

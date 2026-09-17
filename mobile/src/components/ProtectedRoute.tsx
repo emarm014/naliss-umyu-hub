@@ -1112,7 +1112,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     // and causes the guard to re-run unnecessarily, creating infinite loops.
     // The safeNavigate ref already has its own pathname check internally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, isProfileComplete, segments, authLoading, offlineUnblocked, restrictionInfo, deviceSessionChecked, sessionError]);
+  }, [session, isProfileComplete, segments, authLoading, offlineUnblocked, restrictionInfo, deviceSessionChecked, sessionError, isGoogleDelaying]);
 
   // BLOCK: Ban / Suspension screen â€” shown immediately, persists until user chooses to logout
   if (restrictionInfo) {

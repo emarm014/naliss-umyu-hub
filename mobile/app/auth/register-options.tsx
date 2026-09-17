@@ -125,8 +125,6 @@ export default function RegisterOptions() {
         return;
       }
 
-
-
       store.reset();
 
       // Track the attempt
@@ -134,7 +132,9 @@ export default function RegisterOptions() {
 
       // ── STEP 1: Get OAuth URL ─────────────────────────────────────────────
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 1: Getting OAuth URL', level: 'info' });
-      const redirectUrl = Linking.createURL('/');
+      // CRITICAL FIX: Use auth/callback to match login.tsx so the deep link routes to callback.tsx,
+      // avoiding index.tsx which kicks incomplete users to the login screen.
+      const redirectUrl = Linking.createURL('auth/callback');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
@@ -147,171 +147,29 @@ export default function RegisterOptions() {
       Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 2: Opening OAuth browser', level: 'info' });
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 
-      // Wait for auth state to settle (max 3s) to eliminate race condition
-      const activeSession = await new Promise<any | null>((resolve) => {
-          const timeout = setTimeout(() => resolve(null), 3000);
-          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-              if (event === 'SIGNED_IN' && session) {
-                  clearTimeout(timeout);
-                  subscription.unsubscribe();
-                  resolve(session);
-              }
-          });
-          // Also check immediately in case it's already set
-          supabase.auth.getSession().then(({ data }) => {
-              if (data.session) {
-                  clearTimeout(timeout);
-                  subscription.unsubscribe();
-                  resolve(data.session);
-              }
-          });
-      });
-
-      if ((result.type !== 'success' || !(result as any).url) && !activeSession) {
+      if (result.type === 'success' && (result as any).url) {
+        // Let the global OAuth redirect handler parse the tokens and setup the store
+        const { handleOAuthRedirect } = require('../../src/utils/oauth-redirect');
+        await handleOAuthRedirect((result as any).url);
+      } else {
         Sentry.addBreadcrumb({ category: 'signup.google', message: 'OAuth cancelled by user', level: 'info' });
         store.setIsGoogleDelaying(false);
         store.reset();
-        if (isMounted.current) setIsGoogleLoading(false);
-        return;
-      }
-
-      if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
-
-      // ── STEP 3: Parse tokens ──────────────────────────────────────────────
-      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 3: Parsing OAuth tokens', level: 'info' });
-      
-      let user = activeSession?.user || null;
-      let accessToken = activeSession?.access_token || null;
-      let refreshToken = activeSession?.refresh_token || null;
-
-      if (!accessToken || !refreshToken) {
-        if ((result as any).url) {
-          const url = (result as any).url;
-          const hashPart = url.split('#')[1] || '';
-          const queryPart = url.split('?')[1]?.split('#')[0] || '';
-          const hashParams = new URLSearchParams(hashPart);
-          const queryParams = new URLSearchParams(queryPart);
-          accessToken = hashParams.get('access_token') || queryParams.get('access_token');
-          refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
-        }
-      }
-
-      if (!accessToken || !refreshToken) {
-        Sentry.captureMessage('Google OAuth: missing tokens in redirect URL and no active session', 'warning');
-        store.setIsGoogleDelaying(false);
-        store.reset();
-        if (isMounted.current) {
-          setIsGoogleLoading(false);
-          Alert.alert('Sign In Failed', 'Could not complete Google sign-in. Please try again.');
-        }
-        return;
-      }
-
-      // ── STEP 4: Set session ───────────────────────────────────────────────
-      if (!activeSession) {
-        Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 4: Setting Supabase session', level: 'info' });
-        const { data: { user: sessionUser }, error: sessionError } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-
-        if (sessionError) throw sessionError;
-        user = sessionUser;
-      }
-
-      if (!user) throw new Error('No user returned from Google');
-
-      // ── STEP 5: Validate email domain ─────────────────────────────────────
-      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 5: Validating institutional email', level: 'info', data: { email: user.email } });
-      if (!user.email || !INSTITUTIONAL_EMAIL_REGEX.test(user.email)) {
-        store.setIsGoogleDelaying(false);
-        // Purge invalid Google account from Supabase so it does not pollute users list
-        try {
-          await (supabase as any).rpc('purge_incomplete_account', { email_addr: user.email || '' });
-        } catch {}
-        await supabase.auth.signOut();
-        store.reset();
-        if (isMounted.current) {
-          setIsGoogleLoading(false);
-          Alert.alert('Wrong Google Account', 'Please use your UMYU institutional Google account (@students.umyu.edu.ng).');
-        }
-        return;
-      }
-
-      if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
-
-
-      // ── STEP 6: Check account status & profile completion ──────────────────
-      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 6: Checking account status', level: 'info' });
-      let isFullyRegistered = false;
-
-      try {
-        const { data: accountStatus } = await (supabase as any).rpc('check_existing_account', { email_addr: user.email });
-
-        if (accountStatus === 'graduated') {
-          store.setIsGoogleDelaying(false);
-          await supabase.auth.signOut();
-          store.reset();
-          if (isMounted.current) { setIsGoogleLoading(false); Alert.alert('Account Graduated', 'This email belongs to a graduated student. Access is restricted to active students only.'); }
-          return;
-        }
-        if (accountStatus === 'email' || user?.app_metadata?.provider === 'email') {
-          store.setIsGoogleDelaying(false);
-          await supabase.auth.signOut();
-          store.reset();
-          if (isMounted.current) { setIsGoogleLoading(false); Alert.alert('Account Exists', 'This email is already registered via Email & Password. Please sign in with your password.'); }
-          return;
-        }
-
-        // Verify if public profile is fully created (registration_number and level are present)
-        const { data: publicProfile } = await (supabase as any)
-          .from('users')
-          .select('id, level, registration_number')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        if (publicProfile?.level && publicProfile?.registration_number) {
-          isFullyRegistered = true;
-        }
-      } catch (rpcErr) {
-        Sentry.addBreadcrumb({ category: 'signup.google', message: 'check_existing_account RPC failed — proceeding to identity', level: 'warning', data: { error: (rpcErr as any)?.message } });
-      }
-
-      if (isFullyRegistered) {
-        Sentry.addBreadcrumb({ category: 'signup.google', message: 'Existing complete Google account — redirecting to app', level: 'info' });
-        await useAuthStore.getState().fetchProfile(true);
-        useAuthStore.getState().setIsProfileComplete(true);
-        store.setIsGoogleDelaying(false);
-        if (isMounted.current) setIsGoogleLoading(false);
-        return;
-      }
-
-      if (!isMounted.current) { store.setIsGoogleDelaying(false); return; }
-
-      // ── STEP 7: Navigate to identity screen (Step 2 of registration) ───────
-      Sentry.addBreadcrumb({ category: 'signup.google', message: 'Step 7: Navigating to identity screen', level: 'info' });
-      store.setProvider('google');
-      store.setCredentials(user.email!, undefined);
-      store.setGoogleTokens(user.email!, accessToken, refreshToken);
-      store.setCurrentStep(2);
-      store.touchActivity();
-      useAuthStore.getState().setIsProfileComplete(false);
-      store.setIsGoogleDelaying(false);
-
-      if (isMounted.current) {
-        setIsGoogleLoading(false);
       }
 
     } catch (err: any) {
-      useSignupStore.getState().setIsGoogleDelaying(false);
-      useSignupStore.getState().reset();
+      store.setIsGoogleDelaying(false);
+      store.reset();
       if (isMounted.current) {
-        setIsGoogleLoading(false);
         const msg = err?.message || '';
         if (!msg.includes('cancelled') && !msg.includes('cancel')) {
           captureUIError('RegisterOptions.handleGoogleAuth', err);
           Alert.alert('Sign In Failed', 'Google sign-in failed. Please try again.');
         }
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsGoogleLoading(false);
       }
     }
   };

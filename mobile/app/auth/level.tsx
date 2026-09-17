@@ -235,16 +235,15 @@ export default function RegisterLevel() {
       await new Promise(r => setTimeout(r, 800));
 
       useSignupStore.getState().setIsGoogleDelaying(false);
-      
-      // Delay the store reset so the underlying UI doesn't abruptly re-render
-      // with empty data while the navigation transition is happening.
+      finishTransaction('ok');
+
+      // Imperatively navigate to tabs instead of hanging on ProtectedRoute
+      router.replace('/(tabs)');
+
+      // Clean up signup store after navigation has initiated
       setTimeout(() => {
         useSignupStore.getState().reset();
-      }, 500);
-
-      finishTransaction('ok');
-      if (!isMounted.current) return;
-      // ProtectedRoute will handle the redirect once isGoogleDelaying is false
+      }, 1000);
 
     } catch (err: any) {
       finishTransaction('error');

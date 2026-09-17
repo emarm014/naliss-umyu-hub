@@ -1,4 +1,4 @@
-﻿import 'react-native-url-polyfill/auto';
+import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { mmkvStorage } from '../../stores/mmkv.storage';
 import { Database } from './database.types';
@@ -27,11 +27,15 @@ const sentryFetch: typeof fetch = async (url, options) => {
     return response;
   } catch (err) {
     const durationMs = Date.now() - startMs;
+    const errorMsg = (err as Error)?.message || String(err);
+    const isNetwork = errorMsg.toLowerCase().includes('network request failed') || 
+                      errorMsg.toLowerCase().includes('failed to fetch');
+    
     Sentry.addBreadcrumb({
       category: 'api.supabase',
       message: `Failed: ${options?.method ?? 'GET'} (${durationMs}ms)`,
-      data: { error: (err as Error)?.message, durationMs },
-      level: 'error',
+      data: { error: errorMsg, durationMs },
+      level: isNetwork ? 'warning' : 'error',
     });
     throw err;
   }

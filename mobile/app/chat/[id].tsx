@@ -217,7 +217,7 @@ export default function ChatScreen() {
     const [viewerMediaList, setViewerMediaList] = useState<any[] | undefined>(undefined);
     const [viewerInitialIndex, setViewerInitialIndex] = useState<number>(0);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-    const [viewerFile, setViewerFile] = useState<{ uri: string, remoteUrl?: string, type: any, name: string, isProfile?: boolean, profileData?: any }>({ uri: '', type: 'document', name: '' });
+    const [viewerFile, setViewerFile] = useState<{ uri: string, remoteUrl?: string, type: any, name: string, isProfile?: boolean, profileData?: any, fileId?: string }>({ uri: '', type: 'document', name: '' });
     const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
     const [uploadingIds, setUploadingIds] = useState<Record<string, number>>({});
     const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
@@ -381,8 +381,10 @@ export default function ChatScreen() {
                     // silent catch
                 }
             })();
-            if (realtimeChannelRef.current) {
-                supabase.removeChannel(realtimeChannelRef.current);
+            if (realtimeChannelRef.current && Array.isArray(realtimeChannelRef.current)) {
+                realtimeChannelRef.current.forEach((unsub: any) => {
+                    if (typeof unsub === 'function') unsub();
+                });
                 realtimeChannelRef.current = null;
             }
         };
@@ -3098,6 +3100,7 @@ export default function ChatScreen() {
                 remoteUrl={viewerFile.remoteUrl}
                 fileType={viewerFile.type}
                 fileName={viewerFile.name}
+                fileId={viewerFile.fileId}
                 mediaList={viewerMediaList}
                 initialIndex={viewerInitialIndex}
                 showDownload={!viewerFile.isProfile}

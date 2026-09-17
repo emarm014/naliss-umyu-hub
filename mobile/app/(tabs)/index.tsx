@@ -339,8 +339,10 @@ export default function HomeScreen() {
   }, [baseTheme, isDark]);
 
   const userPoints = React.useMemo(() =>
-    materials.reduce((t, m) => t + 10 + (m.download_count || 0), 0),
-    [materials]
+    materials
+      .filter(m => m.uploaded_by === user?.id)
+      .reduce((t, m) => t + 10 + (m.download_count || 0), 0),
+    [materials, user?.id]
   );
   const rank = getUserRank(userPoints);
 

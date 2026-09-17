@@ -361,10 +361,12 @@ function ViewerItemSlide({
     setDownloadProgress(0);
 
     const resolve = async () => {
-      let viewerUrl = getViewerUrl(item.uri);
+      // Sanitize duplicated file schemes (e.g., file://file:///)
+      const safeUri = item.uri ? item.uri.replace(/^(file:\/\/)+/, 'file://') : '';
+      let viewerUrl = getViewerUrl(safeUri);
 
-      if (item.uri.startsWith('file://') || item.uri.startsWith('/')) {
-        const targetPath = item.uri.startsWith('file://') ? item.uri : `file://${item.uri}`;
+      if (safeUri.startsWith('file://') || safeUri.startsWith('/')) {
+        const targetPath = safeUri.startsWith('file://') ? safeUri : `file://${safeUri}`;
         try {
           const fileInfo = await FileSystem.getInfoAsync(targetPath);
           if (fileInfo.exists && (fileInfo as any).size > 0) {
@@ -379,7 +381,7 @@ function ViewerItemSlide({
             console.warn('[UniversalViewer] Local vault file missing or 0 bytes:', targetPath);
             trackViewerEvent({ stage: 'vault_miss', uri: targetPath, fileType: item.type, fileName: item.name });
             // Switch to remote URL if available
-            const fallbackHttpUrl = item.remoteUrl || (item.uri.startsWith('http') ? item.uri : null);
+            const fallbackHttpUrl = item.remoteUrl || (safeUri.startsWith('http') ? safeUri : null);
             if (fallbackHttpUrl) {
               viewerUrl = fallbackHttpUrl;
             } else {
@@ -388,7 +390,7 @@ function ViewerItemSlide({
           }
         } catch (e) {
           console.warn('[UniversalViewer] Error inspecting file path:', e);
-          const fallbackHttpUrl = item.remoteUrl || (item.uri.startsWith('http') ? item.uri : null);
+          const fallbackHttpUrl = item.remoteUrl || (safeUri.startsWith('http') ? safeUri : null);
           if (fallbackHttpUrl) {
             viewerUrl = fallbackHttpUrl;
           } else if (e instanceof Error && e.message.includes('remote HTTP URL')) {
@@ -401,7 +403,7 @@ function ViewerItemSlide({
 
       try {
         if (item.fileId) {
-          const vaultPath = getVaultFilePath(item.fileId, item.name, item.uri, item.type);
+          const vaultPath = getVaultFilePath(item.fileId, item.name, safeUri, item.type);
           const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
           if (vaultInfo.exists && (vaultInfo as any).size > 0) {
             trackViewerEvent({ stage: 'vault_hit', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
@@ -416,7 +418,7 @@ function ViewerItemSlide({
           }
         }
 
-        const cachedSqlitePath = await getAssetCacheByUrl(item.uri);
+        const cachedSqlitePath = await getAssetCacheByUrl(safeUri);
         if (cachedSqlitePath) {
           const sqliteFileInfo = await FileSystem.getInfoAsync(cachedSqlitePath);
           if (sqliteFileInfo.exists && (sqliteFileInfo as any).size > 0) {
@@ -431,7 +433,7 @@ function ViewerItemSlide({
         }
 
         const destinationPath = item.fileId
-          ? getVaultFilePath(item.fileId, item.name, item.uri, item.type)
+          ? getVaultFilePath(item.fileId, item.name, safeUri, item.type)
           : (() => {
               const realName = extractFileNameFromUrl(viewerUrl, item.name);
               let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -515,7 +517,7 @@ function ViewerItemSlide({
           if (isNet) {
             setDownloadError('Network connection required to view full size media. Please connect to the internet and tap retry.');
           } else {
-            setLocalUri(item.uri);
+            setLocalUri(safeUri);
           }
           setIsDownloading(false);
         }

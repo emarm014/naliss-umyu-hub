@@ -610,27 +610,42 @@ export const useAuthStore = create<AuthState>()(
         // Clear SQLite user profile
         await clearLocalUserSession();
         
-        // Clear all SQLite tables
+        // Clear all SQLite tables safely without triggering APM/Sentry span errors
         const { getDB, enqueueTransaction } = require('../lib/database');
         await enqueueTransaction(async () => {
             const activeDb = getDB();
             if (activeDb) {
                 try {
-                    await activeDb.runAsync('DELETE FROM local_messages');
-                    await activeDb.runAsync('DELETE FROM local_assets');
-                    await activeDb.runAsync('DELETE FROM local_media_manifest');
-                    await activeDb.runAsync('DELETE FROM offline_download_jobs');
-                    await activeDb.runAsync('DELETE FROM offline_download_telemetry');
-                    await activeDb.runAsync('DELETE FROM sync_checkpoint');
-                    await activeDb.runAsync('DELETE FROM sync_journal');
-                    await activeDb.runAsync('DELETE FROM media_sync_jobs');
-                    await activeDb.runAsync('DELETE FROM offline_sync_state');
-                    await activeDb.runAsync('DELETE FROM content_manifest');
-                    await activeDb.runAsync('DELETE FROM offline_search_index');
-                    await activeDb.runAsync('DELETE FROM local_user_session');
+                    const result = await activeDb.getAllAsync("SELECT name FROM sqlite_master WHERE type='table'");
+                    const existingTables = (result as any[]).map(r => r.name);
+
+                    const tables = [
+                        'local_messages',
+                        'local_assets',
+                        'local_media_manifest',
+                        'offline_download_jobs',
+                        'offline_download_telemetry',
+                        'sync_checkpoint',
+                        'sync_journal',
+                        'media_sync_jobs',
+                        'offline_sync_state',
+                        'content_manifest',
+                        'offline_search_index',
+                        'local_user_session'
+                    ];
+
+                    for (const table of tables) {
+                        if (existingTables.includes(table)) {
+                            try {
+                                await activeDb.runAsync(`DELETE FROM ${table}`);
+                            } catch (e) {
+                                console.warn(`[auth.store] Failed to clear table ${table}:`, e);
+                            }
+                        }
+                    }
                     Logger.info('auth.store', 'SQLite database completely wiped.');
-                } catch (e) {
-                    console.error('Failed to wipe SQLite database:', e);
+                } catch (err) {
+                    console.warn('[auth.store] Error wiping SQLite database:', err);
                 }
             }
         });

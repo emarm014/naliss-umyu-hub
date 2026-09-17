@@ -1045,8 +1045,15 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         const defaultRoute = isGoogleProvider ? '/auth/identity' : '/auth/register-password';
         const targetRoute = (step && resumeRoutes[step]) ? resumeRoutes[step] : defaultRoute;
         
-        // Prevent redirect loop: only replace if we aren't already there
-        safeNavigate.current(targetRoute);
+        const isInSignupFlow = (step && step > 0) || isGoogleProvider;
+        
+        if (isInSignupFlow) {
+          safeNavigate.current(targetRoute);
+        } else {
+          if (!inAuthGroup) {
+            safeNavigate.current('/auth/identity');
+          }
+        }
 
       } else if (isProfileComplete === true) {
         if (inAuthGroup) {

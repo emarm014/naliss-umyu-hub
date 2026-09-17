@@ -39,10 +39,13 @@ import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 
 const { width } = Dimensions.get('window');
 
-const calculateUserPoints = (materials: Material[]) => {
-  return materials.reduce((total, material) => {
-    return total + 10 + (material.download_count || 0);
-  }, 0);
+const calculateUserPoints = (materials: Material[], userId?: string) => {
+  if (!userId) return 0;
+  return materials
+    .filter(m => m.uploaded_by === userId)
+    .reduce((total, material) => {
+      return total + 10 + (material.download_count || 0);
+    }, 0);
 };
 
 const getUserRank = (points: number) => {
@@ -763,7 +766,7 @@ export default function ProfileScreen() {
       {/* Stats Row - Compact & Premium */}
       <View style={[styles.statsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.text }]}>{calculateUserPoints(materials)}</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>{calculateUserPoints(materials, storeProfile?.id)}</Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Points</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.divider }]} />
@@ -773,7 +776,7 @@ export default function ProfileScreen() {
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.divider }]} />
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.text }]}>{getUserRank(calculateUserPoints(materials))}</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>{getUserRank(calculateUserPoints(materials, storeProfile?.id))}</Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Rank</Text>
         </View>
       </View>

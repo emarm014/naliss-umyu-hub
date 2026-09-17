@@ -43,7 +43,35 @@ export default function LoginScreen() {
   const setError = useAuthStore(s => s.setError);
 
   const doLogin = async (emailToUse: string): Promise<'ok' | 'google' | 'graduated' | 'incomplete' | 'not_found'> => {
-    const { data: provider, error: providerError } = await (supabase as any).rpc('check_existing_account', { email_addr: emailToUse });
+    // 1. Attempt password sign-in first since user provided a password
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: emailToUse,
+      password,
+    });
+
+    // 2. If password authentication succeeded, verify user account status
+    if (!authError && authData.user) {
+      await AuthGuardian.clearFailures(emailToUse);
+
+      const { data: provider, error: providerError } = await (supabase as any)
+        .rpc('check_existing_account', { email_addr: emailToUse });
+
+      if (!providerError) {
+        if (provider === 'graduated') {
+          await supabase.auth.signOut({ scope: 'local' });
+          return 'graduated';
+        }
+        if (provider === 'incomplete') {
+          return 'incomplete';
+        }
+      }
+
+      return 'ok';
+    }
+
+    // 3. If password sign-in failed, check whether this account is exclusively Google-authenticated
+    const { data: provider, error: providerError } = await (supabase as any)
+      .rpc('check_existing_account', { email_addr: emailToUse });
 
     if (!providerError) {
       if (provider === 'google') return 'google';
@@ -52,10 +80,9 @@ export default function LoginScreen() {
       if (provider === 'none') return 'not_found';
     }
 
-    await AuthGuardian.clearFailures(emailToUse);
-    const { error } = await supabase.auth.signInWithPassword({ email: emailToUse, password });
-    if (error) throw error;
-    
+    // If it's a standard bad password / auth failure, throw the original auth error
+    if (authError) throw authError;
+
     return 'ok';
   };
 
@@ -149,10 +176,27 @@ export default function LoginScreen() {
             data: { email: emailToUse, method: 'email' },
             level: 'info',
           });
-          // Log successful login (best-effort, fire-and-forget)
-          (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_success', entity_type: 'auth', description: `Successful login: ${emailToUse}`, metadata: { email: emailToUse, method: 'email' } }); } catch (_) {} })();
-          
-          // ProtectedRoute will handle the transition once the profile is verified.
+
+          (async () => {
+            try {
+              await (supabase as any).from('activity_logs' as any).insert({
+                action: 'auth.login_success',
+                entity_type: 'auth',
+                description: `Successful login: ${emailToUse}`,
+                metadata: { email: emailToUse, method: 'email' }
+              });
+            } catch (_) {}
+          })();
+
+          // Explicitly hydrate profile and transition immediately to tabs
+          try {
+            await useAuthStore.getState().fetchProfile(true);
+            useAuthStore.getState().setIsProfileComplete(true);
+            router.replace('/(tabs)');
+          } catch (navErr) {
+            console.warn('[Login] Direct navigation warning:', navErr);
+            router.replace('/(tabs)');
+          }
           break;
       }
     } catch (err: any) {

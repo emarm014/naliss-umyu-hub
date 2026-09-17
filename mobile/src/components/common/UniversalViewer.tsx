@@ -51,6 +51,7 @@ import { CustomVideoPlayer } from './CustomVideoPlayer';
 import { getAssetCacheByUrl } from '../../lib/database';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ReactNativeZoomableView } from '@openspacelabs/react-native-zoomable-view';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const { width, height } = Dimensions.get('window');
 
@@ -719,7 +720,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]}>
+      <GestureHandlerRootView style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]}>
         <View style={styles.container}>
           
           {/* Main Content Area (Rendered first so header floats on top) */}
@@ -917,7 +918,7 @@ export const UniversalViewer: React.FC<UniversalViewerProps> = ({
             </View>
           )}
         </View>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 };

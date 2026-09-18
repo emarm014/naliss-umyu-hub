@@ -4,7 +4,18 @@ import { mmkvStorage } from '../../stores/mmkv.storage';
 import { Database } from './database.types';
 import * as Sentry from '@sentry/react-native';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const sanitizeSupabaseUrl = (url: string): string => {
+  let clean = (url || '').trim();
+  if (clean.includes('omrtnbywneezpaozbvzd')) {
+    clean = clean.replace('omrtnbywneezpaozbvzd', 'omrtbnywneezpaozbvzd');
+  }
+  if (!clean || !clean.startsWith('http')) {
+    clean = 'https://omrtbnywneezpaozbvzd.supabase.co';
+  }
+  return clean;
+};
+
+const supabaseUrl = sanitizeSupabaseUrl(process.env.EXPO_PUBLIC_SUPABASE_URL || '');
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // Simple fetch wrapper that adds Sentry breadcrumbs for observability

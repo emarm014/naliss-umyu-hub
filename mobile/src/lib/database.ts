@@ -859,8 +859,13 @@ export const insertOrReplaceMessage = async (msg: any, groupId: string) => {
         const localMediaPath = msg.local_media_path || null;
         
         await database.runAsync(
-            `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
-             VALUES (?, ?, ?, ?, ?)`,
+            `INSERT INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET 
+                 raw_data = excluded.raw_data,
+                 created_at = excluded.created_at,
+                 group_id = excluded.group_id,
+                 local_media_path = COALESCE(excluded.local_media_path, local_messages.local_media_path)`,
             [msg.id, groupId, createdAt, rawData, localMediaPath]
         );
     });
@@ -879,8 +884,13 @@ export const batchInsertMessages = async (messages: any[], groupId: string) => {
                 const chunk = messages.slice(i, i + BATCH_SIZE);
                 await withSafeTransactionAsync(activeDb, async () => {
                     const statement = await activeDb.prepareAsync(
-                        `INSERT OR REPLACE INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
-                         VALUES ($id, $groupId, $createdAt, $rawData, $localMediaPath)`
+                        `INSERT INTO local_messages (id, group_id, created_at, raw_data, local_media_path) 
+                         VALUES ($id, $groupId, $createdAt, $rawData, $localMediaPath)
+                         ON CONFLICT(id) DO UPDATE SET 
+                             raw_data = excluded.raw_data,
+                             created_at = excluded.created_at,
+                             group_id = excluded.group_id,
+                             local_media_path = COALESCE(excluded.local_media_path, local_messages.local_media_path)`
                     );
                     try {
                         for (const msg of chunk) {
@@ -943,6 +953,24 @@ export const clearAllMessages = async () => {
 export const updateLocalMediaPath = async (id: string, localPath: string) => {
     return writeQuery(async (database) => {
         await database.runAsync('UPDATE local_messages SET local_media_path = ? WHERE id = ?', [localPath, id]);
+        // Also update local_media_path inside raw_data JSON so JSON.parse retains it
+        try {
+            const row = await database.getFirstAsync<{ raw_data: string }>('SELECT raw_data FROM local_messages WHERE id = ?', [id]);
+            if (row?.raw_data) {
+                const parsed = JSON.parse(row.raw_data);
+                parsed.local_media_path = localPath;
+                await database.runAsync('UPDATE local_messages SET raw_data = ? WHERE id = ?', [safeJsonStringify(parsed), id]);
+            }
+        } catch {}
+        // Also record in local_media_manifest
+        try {
+            await database.runAsync(
+                `INSERT OR REPLACE INTO local_media_manifest (
+                    id, message_id, local_path, downloaded, verified, updated_at
+                ) VALUES (?, ?, ?, 1, 1, datetime('now'))`,
+                [`manifest_${id}`, id, localPath]
+            );
+        } catch {}
     });
 };
 

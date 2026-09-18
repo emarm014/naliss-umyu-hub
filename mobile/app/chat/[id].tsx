@@ -286,6 +286,7 @@ export default function ChatScreen() {
                     messageStore.setMessages(id, cached);
                     setMessages(cached);
                     setIsLoading(false);
+                    checkDownloadedState(cached);
                 }
 
                 // 2. Mark group as read immediately
@@ -540,20 +541,32 @@ export default function ChatScreen() {
                 isOnline: msg.user?.last_active_at ? (new Date().getTime() - new Date(msg.user.last_active_at).getTime() < 60000) : false
             })).reverse(); // Reverse because we fetched descending to get the latest 300
 
-            // Preserve unsent local media & text messages so offline queue items are NEVER wiped out
+            // Preserve unsent local media & text messages and retain local_media_path from memory
             setMessages(prev => {
+                const existingLocalMedia = new Map<string, string>();
+                prev.forEach(m => {
+                    if (m?.id && m.local_media_path) {
+                        existingLocalMedia.set(m.id, m.local_media_path);
+                    }
+                });
+
+                const formattedWithLocal = formattedMessages.map(m => {
+                    const localPath = existingLocalMedia.get(m.id) || m.local_media_path;
+                    return localPath ? { ...m, local_media_path: localPath } : m;
+                });
+
                 const pendingLocal = prev.filter(m => 
                     (m.id && String(m.id).startsWith('temp-')) || 
                     ['unsent', 'sending', 'failed', 'error'].includes(m.status)
                 );
                 const serverTempIds = new Set(formattedMessages.map(s => s.metadata?.tempId || s.id));
                 const unconfirmedLocal = pendingLocal.filter(p => !serverTempIds.has(p.id) && !serverTempIds.has(p.metadata?.tempId));
-                const mergedMessages = [...formattedMessages, ...unconfirmedLocal].sort(
+                const mergedMessages = [...formattedWithLocal, ...unconfirmedLocal].sort(
                     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 );
 
                 if (isFiltered) {
-                    return formattedMessages;
+                    return formattedWithLocal;
                 } else {
                     messageStore.setMessages(id, mergedMessages);
                     return mergedMessages;
@@ -1519,7 +1532,7 @@ export default function ChatScreen() {
                 ]}>
                     {!isMe && !isSystem && (
                         shouldGroupMessages ? (
-                            <View style={{ width: 24, marginRight: 8 }} />
+                            <View style={{ width: 28, marginRight: 8 }} />
                         ) : (
                             <TouchableOpacity 
                                 style={styles.messageAvatarContainer} 
@@ -1579,8 +1592,8 @@ export default function ChatScreen() {
                                         marginBottom: 0,
                                         borderBottomLeftRadius: 0,
                                         borderBottomRightRadius: 0,
-                                        borderTopLeftRadius: isMe ? 18 : 4,
-                                        borderTopRightRadius: isMe ? 4 : 18,
+                                        borderTopLeftRadius: isMe ? 14 : 3,
+                                        borderTopRightRadius: isMe ? 3 : 14,
                                         padding: 0,
                                         overflow: 'hidden'
                                     }
@@ -1591,8 +1604,8 @@ export default function ChatScreen() {
                                     }
                                 }}
                             >
-                                <View style={{ flex: 1, flexDirection: 'row', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.06)', padding: 8, borderRadius: 0 }}>
-                                    <View style={{ flexDirection: 'row', flex: 1, paddingRight: 8 }}>
+                                <View style={{ flex: 1, flexDirection: 'row', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.06)', paddingVertical: 4, paddingHorizontal: 6, borderRadius: 0 }}>
+                                    <View style={{ flexDirection: 'row', flex: 1, paddingRight: 6 }}>
                                         <View style={[styles.replyBar, { backgroundColor: isMe ? '#10b981' : '#059669' }]} />
                                         <View style={[styles.replyContent, { flex: 1 }]}>
                                             <Text style={[styles.replyUsername, { color: isMe ? '#10b981' : '#059669', fontFamily: 'Inter-Bold', fontWeight: 'bold' }]} numberOfLines={1}>
@@ -1605,7 +1618,7 @@ export default function ChatScreen() {
 
                                             if (isReplyDeleted) {
                                                 return (
-                                                    <Text style={[styles.replyText, { color: textColor, marginTop: 2, fontStyle: 'italic' }]} numberOfLines={1}>
+                                                    <Text style={[styles.replyText, { color: textColor, marginTop: 1, fontStyle: 'italic' }]} numberOfLines={1}>
                                                         This message was deleted
                                                     </Text>
                                                 );
@@ -1616,47 +1629,47 @@ export default function ChatScreen() {
                                             
                                             if (replyType === 'image') {
                                                 return (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                                        <Ionicons name="camera" size={14} color={textColor} />
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+                                                        <Ionicons name="camera" size={12} color={textColor} />
                                                         <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Photo</Text>
                                                     </View>
                                                 );
                                             }
                                             if (replyType === 'document') {
                                                 return (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                                        <Ionicons name="document-text" size={14} color={textColor} />
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+                                                        <Ionicons name="document-text" size={12} color={textColor} />
                                                         <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Document</Text>
                                                     </View>
                                                 );
                                             }
                                             if (replyType === 'video') {
                                                 return (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                                        <Ionicons name="videocam" size={14} color={textColor} />
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+                                                        <Ionicons name="videocam" size={12} color={textColor} />
                                                         <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Video</Text>
                                                     </View>
                                                 );
                                             }
                                             if (replyType === 'audio') {
                                                 return (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                                        <Ionicons name="mic" size={14} color={textColor} />
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+                                                        <Ionicons name="mic" size={12} color={textColor} />
                                                         <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Audio</Text>
                                                     </View>
                                                 );
                                             }
                                             if (replyType === 'sticker') {
                                                 return (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                                        <Ionicons name="star" size={14} color={textColor} />
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+                                                        <Ionicons name="star" size={12} color={textColor} />
                                                         <Text style={[styles.replyText, { color: textColor }]} numberOfLines={1}>Sticker</Text>
                                                     </View>
                                                 );
                                             }
                                             
                                             return (
-                                                <Text style={[styles.replyText, { color: textColor, marginTop: 2 }]} numberOfLines={1}>
+                                                <Text style={[styles.replyText, { color: textColor, marginTop: 1 }]} numberOfLines={1}>
                                                     {replyContent}
                                                 </Text>
                                             );
@@ -1674,7 +1687,7 @@ export default function ChatScreen() {
                                         return (
                                             <CachedImage 
                                                 remoteUrl={replyContent} 
-                                                style={{ width: 36, height: 36, borderRadius: 4, marginRight: 8, marginVertical: 4 }} 
+                                                style={{ width: 28, height: 28, borderRadius: 3, marginRight: 4, marginVertical: 2 }} 
                                                 entityId={`chat_media_${item.id}`}
                                                 assetType="chat_media"
                                             />
@@ -1682,8 +1695,8 @@ export default function ChatScreen() {
                                     }
                                     if (replyType === 'video' && replyContent) {
                                         return (
-                                            <View style={{ width: 36, height: 36, borderRadius: 4, marginRight: 8, marginVertical: 4, backgroundColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center', alignItems: 'center' }}>
-                                                <Ionicons name="videocam" size={18} color={isDark ? '#94a3b8' : '#64748b'} />
+                                            <View style={{ width: 28, height: 28, borderRadius: 3, marginRight: 4, marginVertical: 2, backgroundColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center', alignItems: 'center' }}>
+                                                <Ionicons name="videocam" size={14} color={isDark ? '#94a3b8' : '#64748b'} />
                                             </View>
                                         );
                                     }
@@ -1694,7 +1707,7 @@ export default function ChatScreen() {
                         )}
 
                         {item.is_deleted ? (
-                            <View style={[styles.messageBubble, isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }] : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }], item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }]}>
+                            <View style={[styles.messageBubble, isMe ? [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }] : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }], item.reply_to_id && { borderTopLeftRadius: isMe ? 14 : 0, borderTopRightRadius: isMe ? 0 : 14 }]}>
                                 <Text style={[styles.messageText, { fontStyle: 'italic', color: isDark ? '#94a3b8' : '#64748b' }]}>
                                     This message was deleted by the sender.
                                 </Text>
@@ -1915,7 +1928,7 @@ export default function ChatScreen() {
                                 isMe ? (item.message_type === 'video' ? styles.imageBubbleMe : [styles.messageBubbleMe, { backgroundColor: isDark ? '#1a3a2a' : '#dcf8c6' }])
                                      : (item.message_type === 'video' ? styles.imageBubbleOther : [styles.messageBubbleOther, { backgroundColor: isDark ? '#1e293b' : '#FFF' }]),
                                 isSystem && styles.messageBubbleSystem,
-                                item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }
+                                item.reply_to_id && { borderTopLeftRadius: isMe ? 14 : 0, borderTopRightRadius: isMe ? 0 : 14 }
                             ]}>
                                 {item.message_type === 'video' ? (
                                     // ── VIDEO — thumbnail preview with play button ────────────
@@ -2015,19 +2028,22 @@ export default function ChatScreen() {
                                     // ── DOC / AUDIO — tap to download then open ──────────────
                                     <>
                                         <TouchableOpacity
-                                        style={[styles.documentActionArea, { width: 260 }]}
+                                        style={[styles.documentActionArea, { width: 225 }]}
                                         activeOpacity={0.8}
                                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         onPress={() => {
-                                            const fileName = item.metadata?.name || (
+                                            let fileName = item.metadata?.name || (
                                                 item.message_type === 'audio' ? `audio_${item.id}.mp3` : `document_${item.id}.pdf`
                                             );
+                                            if (item.message_type === 'document' && !fileName.includes('.')) {
+                                                fileName = `${fileName}.pdf`;
+                                            }
                                             if (isMe && (item.local_media_path || item.content)) {
                                                 handleOpenMedia(item.id, item.local_media_path || item.content, item.message_type, fileName);
                                                 return;
                                             }
                                             if (downloadedIds[item.id] || item.local_media_path) {
-                                                handleOpenMedia(item.id, item.content, item.message_type, fileName);
+                                                handleOpenMedia(item.id, item.local_media_path || item.content, item.message_type, fileName);
                                             } else if (downloadingIds[item.id] === undefined) {
                                                 handleDownloadMedia(item.id, item.content, item.message_type, fileName);
                                             }
@@ -2042,7 +2058,7 @@ export default function ChatScreen() {
                                             ) : (
                                                 <Ionicons
                                                     name={item.message_type === 'audio' ? 'musical-notes' : 'document-text'}
-                                                    size={24} color={isDark ? '#e2e8f0' : '#475569'}
+                                                    size={20} color={isDark ? '#e2e8f0' : '#475569'}
                                                 />
                                             )}
                                         </View>
@@ -2070,9 +2086,9 @@ export default function ChatScreen() {
                                                     <Text style={styles.mediaCircleProgressText}>{Math.min(downloadingIds[item.id], 100)}%</Text>
                                                 </View>
                                             ) : (downloadedIds[item.id] || item.local_media_path) ? (
-                                                <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                                                <Ionicons name="checkmark-circle" size={18} color="#10b981" />
                                             ) : !isMe ? (
-                                                <Ionicons name="cloud-download-outline" size={24} color="#64748b" />
+                                                <Ionicons name="cloud-download-outline" size={20} color="#64748b" />
                                             ) : null}
                                         </View>
                                     </TouchableOpacity>
@@ -2376,16 +2392,30 @@ export default function ChatScreen() {
 
     // Check which media messages are already downloaded on load
     const checkDownloadedState = async (msgs: any[]) => {
+        if (!msgs || msgs.length === 0) return;
         const mediaMessages = msgs.filter(m =>
-            ['image', 'video', 'document', 'audio'].includes(m.message_type) &&
-            typeof m.content === 'string' &&
-            m.content.startsWith('http')
+            ['image', 'video', 'document', 'audio'].includes(m.message_type)
         );
         const results: Record<string, boolean> = {};
         await Promise.all(mediaMessages.map(async (m) => {
-            // Pass the original URL so FileService extracts the real filename matching UnifiedDownloadEngine
-            const isLocal = await FileService.isDownloaded(m.id, m.content, m.message_type);
-            if (isLocal) results[m.id] = true;
+            // 1. Check if m.local_media_path is already set and valid
+            if (m.local_media_path) {
+                try {
+                    const info = await FileSystem.getInfoAsync(m.local_media_path);
+                    if (info.exists && (info.size ?? 0) > 0) {
+                        results[m.id] = true;
+                        return;
+                    }
+                } catch {}
+            }
+            // 2. Scan vault disk for existing file
+            const onDiskUri = await FileService.findLocalUri(m.id, m.content, m.message_type);
+            if (onDiskUri) {
+                results[m.id] = true;
+                m.local_media_path = onDiskUri;
+                updateLocalMediaPath(m.id, onDiskUri).catch(() => {});
+                messageStore.updateMessage(id, m.id, { local_media_path: onDiskUri });
+            }
         }));
         if (Object.keys(results).length > 0) {
             setDownloadedIds(prev => ({ ...prev, ...results }));
@@ -2413,6 +2443,9 @@ export default function ChatScreen() {
                         
                         // Update in-memory message store so re-renders know it's downloaded
                         messageStore.updateMessage(id, messageId, { local_media_path: localUri });
+
+                        // Update current React component state
+                        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, local_media_path: localUri } : m));
                         
                         setDownloadingIds(prev => ({ ...prev, [messageId]: 100 }));
                         setTimeout(() => {
@@ -2453,6 +2486,9 @@ export default function ChatScreen() {
                 setDownloadingIds(prev => ({ ...prev, [messageId]: Math.max(pct, 1) }));
             });
             if (localUri) {
+                await updateLocalMediaPath(messageId, localUri);
+                messageStore.updateMessage(id, messageId, { local_media_path: localUri });
+                setMessages(prev => prev.map(m => m.id === messageId ? { ...m, local_media_path: localUri } : m));
                 setDownloadingIds(prev => ({ ...prev, [messageId]: 100 }));
                 setTimeout(() => {
                     if (!isMounted.current) return;
@@ -2475,8 +2511,9 @@ export default function ChatScreen() {
     // Open media — only from local vault, never from remote URL
     const handleOpenMedia = async (messageId: string, url: string, type: any, customName?: string) => {
         try {
-            const isLocal = await FileService.isDownloaded(messageId, url);
-            const computedLocalUri = url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url, type);
+            const onDiskUri = await FileService.findLocalUri(messageId, url, type);
+            const isLocal = !!onDiskUri;
+            const computedLocalUri = onDiskUri || (url.startsWith('file://') ? url : FileService.getLocalUri(messageId, url, type));
 
             // If physically on disk, use local path; otherwise use remote url
             const activeUri = isLocal ? computedLocalUri : url;
@@ -2495,12 +2532,22 @@ export default function ChatScreen() {
             };
 
             if (viewerType === 'document' || type === 'pdf') {
+                if (!isLocal && url.startsWith('http')) {
+                    // Not local yet — stream in app viewer
+                    openInApp();
+                    return;
+                }
                 const { openDocumentWith } = require('../../src/utils/documentOpener');
-                const normalizedUri = activeUri.startsWith('file://') || activeUri.startsWith('http') ? activeUri : `file://${activeUri}`;
+                const normalizedUri = activeUri.startsWith('file://') ? activeUri : `file://${activeUri}`;
+                // Ensure name has document extension (e.g. .pdf) for external viewer app matching
+                let docFileName = name;
+                if (!docFileName.includes('.')) {
+                    docFileName = `${docFileName}.pdf`;
+                }
                 openDocumentWith({
                     localUri: normalizedUri,
                     fileType: viewerType,
-                    fileName: name,
+                    fileName: docFileName,
                     onOpenInApp: () => openInApp()
                 });
             } else {
@@ -3144,7 +3191,7 @@ const styles = StyleSheet.create({
     messageWrapperLeft: { justifyContent: 'flex-start' },
     messageWrapperRight: { justifyContent: 'flex-end' },
     messageAvatarContainer: { marginRight: 8, position: 'relative' },
-    messageAvatarImage: { width: 24, height: 24, borderRadius: 12 },
+    messageAvatarImage: { width: 28, height: 28, borderRadius: 14 },
     messageAvatarPlaceholder: {
         alignItems: 'center', justifyContent: 'center',
     },
@@ -3162,7 +3209,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1.5,
     },
-    messageContentWrapper: { maxWidth: '80%' },
+    messageContentWrapper: { maxWidth: '78%' },
     senderInfoCol: { flexDirection: 'column', alignItems: 'flex-start', paddingLeft: 4, marginBottom: 2 },
     senderInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     senderName: { fontFamily: 'Inter-Bold', fontSize: 13, color: '#059669' },
@@ -3185,11 +3232,11 @@ const styles = StyleSheet.create({
     },
     levelBadgeTextTop: { fontFamily: 'Inter-Black', fontSize: 9, color: '#FFF', letterSpacing: 0.8 },
     // Reply preview
-    replyPreview: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 8, marginBottom: 0, minWidth: 150 },
-    replyBar: { width: 3, backgroundColor: '#059669', borderRadius: 2, marginRight: 8 },
+    replyPreview: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.04)', borderRadius: 10, padding: 8, marginBottom: 0, minWidth: 110 },
+    replyBar: { width: 2.5, backgroundColor: '#059669', borderRadius: 2, marginRight: 6 },
     replyContent: { flex: 1 },
-    replyUsername: { fontFamily: 'Inter-Bold', fontSize: 11, color: '#059669' },
-    replyText: { fontFamily: 'Inter-Regular', fontSize: 12, color: '#64748b' },
+    replyUsername: { fontFamily: 'Inter-Bold', fontSize: 10.5, color: '#059669', lineHeight: 14 },
+    replyText: { fontFamily: 'Inter-Regular', fontSize: 11, color: '#64748b', lineHeight: 14 },
     // Sticker — circular bubble
     stickerBubble: {
         width: 80, height: 80, borderRadius: 40,
@@ -3210,27 +3257,27 @@ const styles = StyleSheet.create({
     stickerStatusRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 2 },
     // Bubbles
     messageBubble: {
-        paddingVertical: 4, paddingHorizontal: 8, borderRadius: 16,
+        paddingVertical: 3.5, paddingHorizontal: 7.5, borderRadius: 14,
         shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05, shadowRadius: 1, elevation: 1,
     },
-    messageBubbleMe: { backgroundColor: '#dcf8c6', borderBottomRightRadius: 4 },
-    messageBubbleOther: { backgroundColor: '#FFF', borderTopLeftRadius: 4 },
+    messageBubbleMe: { backgroundColor: '#dcf8c6', borderBottomRightRadius: 3 },
+    messageBubbleOther: { backgroundColor: '#FFF', borderTopLeftRadius: 3 },
     imageBubbleMe: { backgroundColor: '#dcf8c6', borderBottomRightRadius: 4, padding: 2 },
     imageBubbleOther: { backgroundColor: '#FFF', borderTopLeftRadius: 4, padding: 2 },
     messageBubbleSystem: {
         backgroundColor: '#f1f5f9', alignSelf: 'center', borderRadius: 12,
         maxWidth: '90%', borderColor: 'transparent', paddingVertical: 6, paddingHorizontal: 16,
     },
-    messageText: { fontFamily: 'Inter-Regular', fontSize: 15, lineHeight: 20 },
+    messageText: { fontFamily: 'Inter-Regular', fontSize: 14, lineHeight: 18.5 },
     messageTextMe: { color: '#0f172a' },
     messageTextOther: { color: '#0f172a' },
     messageTextSystem: { color: COLORS.textMuted, fontSize: 12, textAlign: 'center', fontStyle: 'italic' },
     mentionText: { color: '#059669', fontFamily: 'Inter-Bold' },
     urlText: { color: '#2563eb', textDecorationLine: 'underline' },
-    timeEditRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 2, gap: 4 },
+    timeEditRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 1, gap: 3 },
     editedLabel: { fontFamily: 'Inter-Regular', fontSize: 9, color: '#94a3b8', fontStyle: 'italic' },
-    messageTime: { fontFamily: 'Inter-Medium', fontSize: 10 },
+    messageTime: { fontFamily: 'Inter-Medium', fontSize: 9.5 },
     messageTimeMe: { color: '#64748b' },
     messageTimeOther: { color: '#94a3b8' },
     // Resend
@@ -3468,30 +3515,30 @@ const styles = StyleSheet.create({
     documentActionArea: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 12,
+        padding: 8,
         backgroundColor: 'rgba(0,0,0,0.04)',
-        borderRadius: 12,
+        borderRadius: 10,
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.05)',
-        gap: 12,
-        marginBottom: 4,
+        gap: 8,
+        marginBottom: 2,
     },
     documentIconBox: {
-        width: 44,
-        height: 44,
-        borderRadius: 10,
+        width: 36,
+        height: 36,
+        borderRadius: 8,
         backgroundColor: 'rgba(255,255,255,0.6)',
         alignItems: 'center',
         justifyContent: 'center',
     },
     documentName: {
         fontFamily: 'Inter-Bold',
-        fontSize: 14,
+        fontSize: 13,
         color: COLORS.text,
     },
     documentSize: {
         fontFamily: 'Inter-Medium',
-        fontSize: 11,
+        fontSize: 10.5,
         color: '#94a3b8',
     },
     searchSubmitButton: {

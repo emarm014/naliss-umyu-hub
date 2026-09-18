@@ -712,6 +712,11 @@ function RootLayoutNav() {
     return null;
   }
 
+  // Sanitize Supabase URL if it contains the known typo
+  if (process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_URL.includes('omrtnbywneezpaozbvzd')) {
+    process.env.EXPO_PUBLIC_SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL.replace('omrtnbywneezpaozbvzd', 'omrtbnywneezpaozbvzd');
+  }
+
   // Check for critical environment variables before mounting the app
   if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
     return (

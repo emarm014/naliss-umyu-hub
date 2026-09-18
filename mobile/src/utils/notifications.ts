@@ -6,7 +6,9 @@
 
 import { supabase } from '../api/supabase/client';
 
-const PUSH_FUNCTION_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/push-notification`;
+const baseSupabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://omrtbnywneezpaozbvzd.supabase.co')
+  .replace('omrtnbywneezpaozbvzd', 'omrtbnywneezpaozbvzd');
+const PUSH_FUNCTION_URL = `${baseSupabaseUrl}/functions/v1/push-notification`;
 
 interface PushPayload {
   targetUserIds: string[];

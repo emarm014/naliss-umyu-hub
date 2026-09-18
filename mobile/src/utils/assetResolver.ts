@@ -33,23 +33,28 @@ export const AssetPathResolver = {
         const vaultBase = getVaultBase();
         const folder = this.getFolderForType(assetType);
         
-        let ext = 'dat';
+        let ext = '';
         if (remoteUrl) {
-            const cleanUrl = remoteUrl.split('?')[0];
+            const cleanUrl = remoteUrl.split('?')[0].split('#')[0];
             // Extract the filename part (after the last slash) to avoid matching dots in the domain (e.g. res.cloudinary.com)
             const fileName = cleanUrl.substring(cleanUrl.lastIndexOf('/') + 1);
             if (fileName.includes('.')) {
-                ext = fileName.split('.').pop() || 'dat';
+                const candidate = fileName.split('.').pop()?.toLowerCase() || '';
+                // Only accept valid file extensions (alphanumeric, 1-6 chars)
+                if (candidate && /^[a-z0-9]{1,6}$/i.test(candidate)) {
+                    ext = candidate;
+                }
             }
         }
 
-        // Provide better default extensions if no extension is present in the URL
-        if (ext === 'dat') {
+        // Provide standard default extensions if no valid extension is present in the URL
+        if (!ext || ext === 'dat') {
             const type = assetType.toLowerCase();
             if (type.includes('image') || type.includes('avatar') || type.includes('cover')) ext = 'jpg';
             else if (type.includes('video')) ext = 'mp4';
             else if (type.includes('audio') || type.includes('voice')) ext = 'mp3';
-            else if (type.includes('pdf')) ext = 'pdf';
+            else if (type.includes('document') || type.includes('pdf') || type.includes('lecture') || type.includes('study')) ext = 'pdf';
+            else ext = 'dat';
         }
 
         return `${vaultBase}${folder}${assetId}.${ext}`;

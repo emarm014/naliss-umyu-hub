@@ -30,32 +30,49 @@ export const FileService = {
    */
   getLocalUri(fileId: string, fileUrlOrName: string | undefined | null, type?: string) {
     const safeInput = typeof fileUrlOrName === 'string' ? fileUrlOrName : '';
-    if (safeInput.startsWith('http')) {
-        return AssetPathResolver.resolveLocalPath(fileId, type ? `chat_${type}` : 'document', safeInput);
-    }
-    const safeName = (safeInput || 'file').replace(/[^a-z0-9._-]/gi, '_').toLowerCase();
-    return `${VAULT_DIRECTORY}${fileId}_${safeName}`;
+    // Always use the robust AssetPathResolver to ensure consistent directory structures (e.g. chat_media/, videos/)
+    // This ensures that isDownloaded (which passes the URL) and downloadFile (which might pass just the filename)
+    // always resolve to the exact same local file path on disk.
+    return AssetPathResolver.resolveLocalPath(fileId, type ? `chat_${type}` : 'document', safeInput);
   },
 
-  async isDownloaded(fileId: string, fileUrlOrName: string, type?: string): Promise<boolean> {
-    const localUri = this.getLocalUri(fileId, fileUrlOrName, type);
+  /**
+   * Scans for an existing file for this assetId in the target vault folder across all standard extensions.
+   * Returns the absolute local URI if a non-empty file exists on disk, or null otherwise.
+   */
+  async findLocalUri(fileId: string, fileUrlOrName?: string | null, type?: string): Promise<string | null> {
+    if (!fileId) return null;
+    // 1. Check the primary expected local path
+    const primary = this.getLocalUri(fileId, fileUrlOrName, type);
     try {
-        const info = await FileSystem.getInfoAsync(localUri);
-        if (!info.exists) return false;
-        // Validate real content — not an empty file
-        if ((info as any).size !== undefined && (info as any).size === 0) {
-            try {
-                await FileSystem.deleteAsync(localUri, { idempotent: true });
-            } catch (deleteError) {
-                console.warn('[FileService] Failed to delete file in isDownloaded:', deleteError);
-            }
-            return false;
+      const info = await FileSystem.getInfoAsync(primary);
+      if (info.exists && (info.size ?? 0) > 0) return primary;
+      if (info.exists && info.size === 0) {
+        await FileSystem.deleteAsync(primary, { idempotent: true }).catch(() => {});
+      }
+    } catch {}
+
+    // 2. Scan alternative extensions in the same directory (e.g. .pdf vs .dat vs .jpg vs .png)
+    const folder = primary.substring(0, primary.lastIndexOf('/') + 1);
+    const candidateExts = ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'pdf', 'mp3', 'm4a', 'aac', 'dat'];
+    for (const ext of candidateExts) {
+      const altPath = `${folder}${fileId}.${ext}`;
+      if (altPath === primary) continue;
+      try {
+        const altInfo = await FileSystem.getInfoAsync(altPath);
+        if (altInfo.exists && (altInfo.size ?? 0) > 0) return altPath;
+        if (altInfo.exists && altInfo.size === 0) {
+          await FileSystem.deleteAsync(altPath, { idempotent: true }).catch(() => {});
         }
-        return true;
-    } catch (error) {
-        console.warn('[FileService] isDownloaded check failed:', error);
-        return false;
+      } catch {}
     }
+
+    return null;
+  },
+
+  async isDownloaded(fileId: string, fileUrlOrName?: string | null, type?: string): Promise<boolean> {
+    const existing = await this.findLocalUri(fileId, fileUrlOrName, type);
+    return !!existing;
   },
 
   async downloadFile(
@@ -70,6 +87,14 @@ export const FileService = {
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return url.startsWith('file://') ? url : `file://${url}`;
       }
+
+      // If already downloaded and valid on disk, immediately return existing path without network usage
+      const existingUri = await this.findLocalUri(fileId, _displayName || url, type);
+      if (existingUri) {
+        onProgress?.(1);
+        return existingUri;
+      }
+
       const localPath = this.getLocalUri(fileId, _displayName || url, type);
       const folder = localPath.substring(0, localPath.lastIndexOf('/') + 1);
       const dirInfo = await FileSystem.getInfoAsync(folder);

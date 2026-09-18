@@ -35,35 +35,53 @@ const getUTI = (mimeType: string): string => {
 };
 
 const launchExternal = async (localUri: string, fileName: string) => {
-    const extMatch = fileName.match(/\.[0-9a-z]+$/i);
-    const ext = extMatch ? extMatch[0].toLowerCase() : '';
-    const mimeType = MIME_MAP[ext] || 'application/pdf'; // Default to PDF for unknown documents rather than octet-stream to force document viewers
+    let extMatch = fileName.match(/\.[0-9a-z]+$/i);
+    let ext = extMatch ? extMatch[0].toLowerCase() : '';
+    if (!ext) {
+        extMatch = localUri.match(/\.[0-9a-z]+$/i);
+        ext = extMatch ? extMatch[0].toLowerCase() : '';
+    }
+    if (!ext) ext = '.pdf';
+    const mimeType = MIME_MAP[ext] || 'application/pdf';
+
+    const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
 
     if (Platform.OS === 'android') {
-        const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
-
-        // Wrap native bridge calls in a timeout to prevent indefinite hangs.
-        // If ProGuard strips FileProvider or IntentLauncher native classes,
-        // getContentUriAsync/startActivityAsync hang forever on the native bridge.
         const NATIVE_TIMEOUT_MS = 10000;
 
-        const contentUri = await Promise.race([
-            FileSystem.getContentUriAsync(fileUri),
-            new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('getContentUriAsync timed out — native module may be missing')), NATIVE_TIMEOUT_MS)
-            ),
-        ]);
+        try {
+            const contentUri = await Promise.race([
+                FileSystem.getContentUriAsync(fileUri),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('getContentUriAsync timed out')), NATIVE_TIMEOUT_MS)
+                ),
+            ]);
 
-        await Promise.race([
-            IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-                data: contentUri,
-                flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-                type: mimeType,
-            }),
-            new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('IntentLauncher timed out — native module may be missing')), NATIVE_TIMEOUT_MS)
-            ),
-        ]);
+            await Promise.race([
+                IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+                    data: contentUri,
+                    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+                    type: mimeType,
+                }),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('IntentLauncher timed out')), NATIVE_TIMEOUT_MS)
+                ),
+            ]);
+            return;
+        } catch (intentErr) {
+            console.warn('[documentOpener] IntentLauncher failed, falling back to Sharing.shareAsync:', intentErr);
+        }
+
+        // Native Android app chooser fallback — displays all installed PDF/document viewers
+        if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri, {
+                mimeType,
+                dialogTitle: `Open ${fileName}`,
+            });
+            return;
+        }
+
+        throw new Error('No application can open this file.');
     } else {
         const fileUri = localUri.startsWith('file://') ? localUri : `file://${localUri}`;
         const isAvail = await Sharing.isAvailableAsync();

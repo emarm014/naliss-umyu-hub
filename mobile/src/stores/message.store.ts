@@ -102,11 +102,27 @@ export const useMessageStore = create<MessageState>()(
                     ? messages[messages.length - 1]?.created_at
                     : null;
 
+                // Preserve existing local_media_path from memory cache so server refreshes never clear it
+                const existingCache = get().cache[groupId] || [];
+                const localMediaMap = new Map<string, string>();
+                for (const m of existingCache) {
+                    if (m?.id && m.local_media_path) {
+                        localMediaMap.set(m.id, m.local_media_path);
+                    }
+                }
+
+                const preservedMessages = messages.map(msg => {
+                    if (msg?.id && !msg.local_media_path && localMediaMap.has(msg.id)) {
+                        return { ...msg, local_media_path: localMediaMap.get(msg.id) };
+                    }
+                    return msg;
+                });
+
                 // Insert raw messages instantly so UI renders immediately
-                await batchInsertMessages(messages, groupId);
+                await batchInsertMessages(preservedMessages, groupId);
 
                 set((state) => ({
-                    cache: { ...state.cache, [groupId]: messages },
+                    cache: { ...state.cache, [groupId]: preservedMessages },
                     lastSeenAt: latest
                         ? { ...state.lastSeenAt, [groupId]: latest }
                         : state.lastSeenAt,

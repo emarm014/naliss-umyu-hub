@@ -151,6 +151,7 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
         useAuthStore.getState().setIsProfileComplete(false);
         store.setIsGoogleDelaying(false);
         clearOAuthFlags(mmkv);
+        router.replace('/auth/identity' as any);
         return;
       }
     }
@@ -160,6 +161,7 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
     await useAuthStore.getState().fetchProfile(true);
     await useAuthStore.getState().checkProfileComplete(user.id);
     clearOAuthFlags(mmkv);
+    router.replace('/(tabs)' as any);
   } catch (err: any) {
     console.error('[Auth] OAuth redirect handling failed:', err);
     useSignupStore.getState().setIsGoogleDelaying(false);

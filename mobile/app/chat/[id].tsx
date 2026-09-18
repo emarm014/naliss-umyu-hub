@@ -57,6 +57,7 @@ import { getCleanAvatarUrl } from '../../src/utils';
 import { WhatsAppMediaEditor, FinalizedMedia } from '../../src/components/messaging/WhatsAppMediaEditor';
 import { openDocumentWith } from '../../src/utils/documentOpener';
 import { updateLocalMediaPath } from '../../src/lib/database';
+import { AssetPathResolver } from '../../src/utils/assetResolver';
 
 const MAX_CHARS = 500;
 
@@ -111,6 +112,7 @@ interface SelectedFile {
 }
 
 const EMPTY_ARRAY: any[] = [];
+const EMPTY_OBJECT: Record<string, any> = {};
 
 export default function ChatScreen() {
     useSentryScreen('ChatScreen');
@@ -173,13 +175,11 @@ export default function ChatScreen() {
     // Add legacy support wrappers for over-engineered breakage
     const messageStore = useMessageStore.getState();
     const setMessages = React.useCallback((updater: any[] | ((prev: any[]) => any[])) => {
-        const ms = useMessageStore.getState();
-        const currentMessages = ms.getMessages(id);
-        if (typeof updater === 'function') {
-            ms.setMessages(id, updater(currentMessages));
-        } else {
-            ms.setMessages(id, updater);
-        }
+        useMessageStore.setState(state => {
+            const currentMessages = state.cache[id] || EMPTY_ARRAY;
+            const updated = typeof updater === 'function' ? updater(currentMessages) : updater;
+            return { cache: { ...state.cache, [id]: updated } };
+        });
     }, [id]);
 
     const [group, setGroup] = useState<any>(null);
@@ -219,7 +219,9 @@ export default function ChatScreen() {
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
     const [viewerFile, setViewerFile] = useState<{ uri: string, remoteUrl?: string, type: any, name: string, isProfile?: boolean, profileData?: any, fileId?: string }>({ uri: '', type: 'document', name: '' });
     const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({});
-    const [uploadingIds, setUploadingIds] = useState<Record<string, number>>({});
+    const [localUploadingIds, setUploadingIds] = useState<Record<string, number>>({});
+    const storeUploadProgress = useMessageStore(state => state.uploadProgress || EMPTY_OBJECT);
+    const uploadingIds = useMemo(() => ({ ...localUploadingIds, ...storeUploadProgress }), [localUploadingIds, storeUploadProgress]);
     const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({});
 
 
@@ -425,6 +427,10 @@ export default function ChatScreen() {
             reconnecting = true;
             if (setupRealtimeRef.current) setupRealtimeRef.current();
             if (fetchMissedMessagesRef.current) fetchMissedMessagesRef.current();
+            // Automatically flush queued unsent messages when reconnected
+            useMessageStore.getState().flushUnsentMessageQueue().catch((e) => {
+                console.warn('[Chat] Failed to auto-flush unsent messages on reconnect:', e);
+            });
             // Reset guard after a short delay to allow future reconnects
             setTimeout(() => { reconnecting = false; }, 3000);
         };
@@ -889,6 +895,9 @@ export default function ChatScreen() {
                 content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text'
             } : null;
 
+            const isOnline = useNetworkStore.getState().isOnline;
+            const initialStatus = isOnline ? 'sending' : 'unsent';
+
             const newMessage = {
                 id: tempId,
                 content,
@@ -914,17 +923,22 @@ export default function ChatScreen() {
                 is_edited: false,
                 message_type: 'text',
                 content_type: 'text',
-                status: 'sending' as any,
+                status: initialStatus as any,
             };
 
-            setMessages(prev => [...prev, newMessage]);
-            messageStore.addMessage(id, newMessage); // Optimistic cache update
+            await messageStore.addMessage(id, newMessage); // Optimistic cache & SQLite persistence
             setInputText('');
             setActiveReplyTarget(null);
 
             setTimeout(() => {
                 flatListRef.current?.scrollToEnd({ animated: true });
             }, 100);
+
+            if (!isOnline) {
+                // Offline: message is safely saved as 'unsent' in Zustand & SQLite.
+                // It will be auto-flushed upon reconnection or user can tap to retry.
+                return;
+            }
 
             const payload = {
                 content,
@@ -937,48 +951,18 @@ export default function ChatScreen() {
             };
 
             try {
-                const isOnline = useNetworkStore.getState().isOnline;
-                if (!isOnline) {
-                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
-                    messageStore.updateMessage(id, tempId, { status: 'unsent' });
-                } else {
-                    const { data, error } = await (supabase as any).from('messages')
-                        .insert([payload])
-                        .select()
-                        .single();
+                const { data, error } = await (supabase as any).from('messages')
+                    .insert([payload])
+                    .select()
+                    .single();
 
-                    if (error) throw error;
+                if (error) throw error;
 
-                    // Confirm the temp message — but only if realtime hasn't already done it
-                    // (realtime may have already swapped tempId → real ID)
-                    setMessages(prev => {
-                        // If tempId still exists as 'sending', confirm it
-                        const stillPending = prev.find(m => m.id === tempId && m.status === 'sending');
-                        if (stillPending) {
-                            messageStore.updateMessage(id, tempId, { id: (data as any).id, status: 'sent' });
-                            return prev.map(m => m.id === tempId ? { ...m, id: (data as any).id, status: 'sent' } : m);
-                        }
-                        // Realtime already confirmed it — nothing to do
-                        return prev;
-                    });
-                }
+                // Confirm the temp message
+                messageStore.updateMessage(id, tempId, { id: (data as any).id, status: 'sent', created_at: (data as any).created_at });
             } catch (err: any) {
-                const isNetwork = err?.status === 0 || 
-                                  err?.name === 'AbortError' ||
-                                  err?.name === 'TimeoutError' ||
-                                  err?.message?.toLowerCase().includes('network') || 
-                                  err?.message?.toLowerCase().includes('fetch') ||
-                                  err?.message?.toLowerCase().includes('abort') ||
-                                  err?.message?.toLowerCase().includes('timeout');
-                if (isNetwork) {
-                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
-                    messageStore.updateMessage(id, tempId, { status: 'unsent' });
-                } else {
-                    captureUIError('ChatScreen.sendMessage', err, { groupId: id });
-                    // Mark temp message as failed
-                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'unsent' } : m));
-                    messageStore.updateMessage(id, tempId, { status: 'unsent' });
-                }
+                captureUIError('ChatScreen.sendMessage', err, { groupId: id });
+                messageStore.updateMessage(id, tempId, { status: 'unsent' });
             }
         } finally {
             setIsSending(false);
@@ -989,116 +973,34 @@ export default function ChatScreen() {
         const msg = messages.find(m => m.id === messageId);
         if (!msg || !currentUser) return;
 
-        const resendTempId = `temp-resend-${Date.now()}`;
-
-        // ── MEDIA that never finished uploading ───────────────────────────────
-        // content is still a local URI or temp filename — need to re-upload to Cloudinary first
-        if (msg.message_type !== 'text' && msg.message_type !== 'sticker') {
-            if (typeof msg.content !== 'string' || !msg.content.startsWith('http')) {
-                // We have the local URI stored in fileUri — use it to re-upload
-                const localUri = msg.fileUri || msg.content;
-
-                // If no local URI available (e.g. app was killed mid-upload), can't recover
-                if (!localUri || localUri.startsWith('http') === false && !localUri.startsWith('file://') && !localUri.startsWith('/')) {
-                    Alert.alert(
-                        'Cannot Resend',
-                        'The original file is no longer available. Please select it again from your gallery.',
-                        [{ text: 'OK' }]
-                    );
-                    return;
-                }
-
-                // Mark as sending with upload progress
-                setMessages(prev => prev.map(m =>
-                    m.id === messageId ? { ...m, id: resendTempId, status: 'sending' as any } : m
-                ));
-                messageStore.updateMessage(id, messageId, { id: resendTempId, status: 'sending' });
-                setUploadingIds(prev => ({ ...prev, [resendTempId]: 1 }));
-
-                try {
-                    const type = msg.message_type as string;
-                    const originalName = msg.metadata?.name || `${type}_${Date.now()}`;
-                    const uploadName = `${Date.now()}-${originalName}`;
-                    const mimeType = type === 'image' ? 'image/jpeg'
-                        : type === 'video' ? 'video/mp4'
-                        : type === 'audio' ? 'audio/mpeg'
-                        : 'application/octet-stream';
-                    const folder = type === 'image' ? 'chat-images'
-                        : type === 'video' ? 'chat-videos'
-                        : type === 'audio' ? 'chat-audios'
-                        : 'chat-docs';
-
-                    const fileUrl = await uploadLocalFileToCloudinary(
-                        localUri,
-                        uploadName,
-                        folder,
-                        mimeType,
-                        (p: number) => setUploadingIds(prev => ({ ...prev, [resendTempId]: Math.min(Math.round(p), 99) }))
-                    );
-
-                    setUploadingIds(prev => { const next = { ...prev }; delete next[resendTempId]; return next; });
-
-                    // Now insert to DB with the real Cloudinary URL
-                    const { data, error } = await ((supabase as any).from('messages')
-                        .insert([{
-                            content: fileUrl,
-                            sender_id: currentUser.id,
-                            group_id: id,
-                            message_type: type,
-                            metadata: { name: originalName, size: msg.metadata?.size, tempId: resendTempId },
-                        }])
-                        .select()
-                        .single() as any);
-
-                    if (error) throw error;
-
-                    setMessages(prev => prev.map(m =>
-                        m.id === resendTempId ? { ...m, id: data.id, content: fileUrl, status: 'sent', created_at: data.created_at } : m
-                    ));
-                    messageStore.updateMessage(id, resendTempId, { id: data.id, content: fileUrl, status: 'sent', created_at: data.created_at });
-                } catch (err: any) {
-                    captureUIError('ChatScreen.resendMessage', err, { groupId: id });
-                    setUploadingIds(prev => { const next = { ...prev }; delete next[resendTempId]; return next; });
-                    const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network');
-                    setMessages(prev => prev.map(m =>
-                        m.id === resendTempId ? { ...m, id: messageId, status: isNetwork ? 'unsent' : 'error' } : m
-                    ));
-                    messageStore.updateMessage(id, resendTempId, { id: messageId, status: isNetwork ? 'unsent' : 'error' });
-                }
-                return;
-            }
+        const isOnline = useNetworkStore.getState().isOnline;
+        if (!isOnline) {
+            Alert.alert(
+                'Offline',
+                'You are currently offline. Your message is saved and will be sent automatically as soon as you reconnect.',
+                [{ text: 'OK' }]
+            );
+            return;
         }
 
-        // ── TEXT / STICKER or media that already has a Cloudinary URL ────────
-        setMessages(prev => prev.map(m =>
-            m.id === messageId ? { ...m, id: resendTempId, status: 'sending' as any } : m
-        ));
-        messageStore.updateMessage(id, messageId, { id: resendTempId, status: 'sending' });
+        const isMediaMessage = msg.message_type !== 'text' && msg.message_type !== 'sticker';
+        const localUri = msg.fileUri || (typeof msg.content === 'string' && (msg.content.startsWith('file://') || msg.content.startsWith('/')) ? msg.content : null);
+
+        if (isMediaMessage && !localUri && (typeof msg.content !== 'string' || !msg.content.startsWith('http'))) {
+            Alert.alert(
+                'Cannot Resend',
+                'The original file is no longer available. Please select it again from your gallery.',
+                [{ text: 'OK' }]
+            );
+            return;
+        }
 
         try {
-            const { data, error } = await ((supabase as any).from('messages')
-                .insert([{
-                    content: msg.content,
-                    sender_id: currentUser.id,
-                    group_id: id,
-                    reply_to_id: msg.replyTo?.id || null,
-                    message_type: msg.message_type || 'text',
-                    metadata: { tempId: resendTempId },
-                }])
-                .select()
-                .single() as any);
-
-            if (error) throw error;
-            setMessages(prev => prev.map(m =>
-                m.id === resendTempId ? { ...m, id: data.id, status: 'sent', created_at: data.created_at } : m
-            ));
-            messageStore.updateMessage(id, resendTempId, { id: data.id, status: 'sent', created_at: data.created_at });
+            messageStore.updateMessage(id, messageId, { status: 'sending' });
+            await messageStore.processUnifiedQueueItem(id, msg);
         } catch (err: any) {
-            const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed');
-            setMessages(prev => prev.map(m =>
-                m.id === resendTempId ? { ...m, id: messageId, status: isNetwork ? 'unsent' : 'error' } : m
-            ));
-            messageStore.updateMessage(id, resendTempId, { id: messageId, status: isNetwork ? 'unsent' : 'error' });
+            console.warn('[ChatScreen] Resend failed:', err);
+            messageStore.updateMessage(id, messageId, { status: 'unsent' });
         }
     };
 
@@ -1108,6 +1010,7 @@ export default function ChatScreen() {
             return;
         }
         if (!currentUser) return;
+        const isOnline = useNetworkStore.getState().isOnline;
         const tempId = `temp-sticker-${Date.now()}`;
         
         const newMessage = {
@@ -1124,12 +1027,16 @@ export default function ChatScreen() {
             replyTo: null,
             isEdited: false,
             message_type: 'sticker',
-            status: 'sending' as any,
+            content_type: 'sticker',
+            status: (isOnline ? 'sending' : 'unsent') as any,
         };
 
-        setMessages(prev => [...prev, newMessage]);
-        messageStore.addMessage(id, newMessage);
+        await messageStore.addMessage(id, newMessage);
         setShowStickerPicker(false);
+
+        if (!isOnline) {
+            return;
+        }
 
         try {
             const { data, error } = await ((supabase as any).from('messages')
@@ -1144,13 +1051,10 @@ export default function ChatScreen() {
                 .single() as any);
 
             if (error) throw error;
-            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id, status: 'sent' } : m));
-            messageStore.updateMessage(id, tempId, { id: data.id, status: 'sent' });
+            messageStore.updateMessage(id, tempId, { id: data.id, status: 'sent', created_at: data.created_at });
         } catch (err: any) {
             captureUIError('ChatScreen.sendSticker', err, { groupId: id });
-            const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed');
-            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: isNetwork ? 'unsent' : 'failed' } : m));
-            messageStore.updateMessage(id, tempId, { status: isNetwork ? 'unsent' : 'failed' });
+            messageStore.updateMessage(id, tempId, { status: 'unsent' });
         }
     };
 
@@ -1744,12 +1648,7 @@ export default function ChatScreen() {
                                             let itemStyle: any = styles.albumGridItemHalf; // default 2 columns
                                             if (totalItems === 3 && childIndex === 0) itemStyle = styles.albumGridItemFull;
                                             
-                                            let mediaUrl = child.content;
-                                            if (isDownloaded && !isMe) {
-                                                mediaUrl = FileService.getLocalUri(child.id, child.content, child.message_type);
-                                            } else if (isMe && child.fileUri) {
-                                                mediaUrl = child.fileUri;
-                                            }
+                                            let mediaUrl = child.local_media_path || ((downloadedIds[child.id] && !isMe) ? FileService.getLocalUri(child.id, child.content, child.message_type) : (child.fileUri || child.content));
                                             return (
                                                 <View 
                                                     key={child.id}
@@ -1862,7 +1761,7 @@ export default function ChatScreen() {
                                 <View style={[styles.imageMessageContainer, isMe ? styles.imageBubbleMe : styles.imageBubbleOther, item.reply_to_id && { borderTopLeftRadius: isMe ? 18 : 0, borderTopRightRadius: isMe ? 0 : 18 }]}>
                                     {/* Blurred thumbnail — always visible from Cloudinary */}
                                     <CachedImage
-                                        remoteUrl={(downloadedIds[item.id] || item.local_media_path) ? FileService.getLocalUri(item.id, item.content, item.message_type) : (item.local_media_path || ((typeof item.content === 'string' && item.content.startsWith('http')) ? item.content : (item.fileUri || item.content)))}
+                                        remoteUrl={item.local_media_path || (downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content, item.message_type) : ((typeof item.content === 'string' && item.content.startsWith('http')) ? item.content : (item.fileUri || item.content)))}
                                         style={[styles.messageImage, !(downloadedIds[item.id] || item.local_media_path) && !isMe && { opacity: 0.55 }]}
                                         resizeMode="cover"
                                         blurRadius={!(downloadedIds[item.id] || item.local_media_path) && !isMe ? 3 : 0}
@@ -1948,7 +1847,7 @@ export default function ChatScreen() {
                                     >
                                         {/* Video thumbnail frame */}
                                         {(() => {
-                                            const localUri = (downloadedIds[item.id] || item.local_media_path) ? FileService.getLocalUri(item.id, item.content, item.message_type) : (item.local_media_path || item.fileUri);
+                                            const localUri = item.local_media_path || (downloadedIds[item.id] ? FileService.getLocalUri(item.id, item.content, item.message_type) : item.fileUri);
                                             if (localUri) {
                                                 return (
                                                     <Video
@@ -2280,6 +2179,7 @@ export default function ChatScreen() {
         setUnprocessedImages([]); // Close the editor
 
         const batchId = Date.now().toString();
+        const isOnline = useNetworkStore.getState().isOnline;
 
         for (const file of finalizedAssets) {
             const tempId = `temp-upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -2312,11 +2212,14 @@ export default function ChatScreen() {
                 content_type: activeReplyTarget.message_type || activeReplyTarget.content_type || 'text'
             } : null;
 
-            // Optimistic UI
+            const initialStatus = isOnline ? 'sending' : 'unsent';
+
+            // Optimistic UI - use file.uri so preview renders offline!
             const newMessage = {
                 id: tempId,
-                content: msgType === 'image' ? file.uri : originalName,
+                content: file.uri,
                 fileUri: file.uri,
+                local_media_path: file.uri,
                 created_at: new Date().toISOString(),
                 sender_id: currentUser!.id,
                 user: {
@@ -2337,14 +2240,19 @@ export default function ChatScreen() {
                 } : null,
                 message_type: msgType,
                 content_type: msgType,
-                status: 'sending' as any,
+                status: initialStatus as any,
                 metadata: { name: originalName, size: file.fileSize, tempId, batchId },
                 caption: file.caption || null
             };
 
-            setMessages(prev => [...prev, newMessage]);
-            messageStore.addMessage(id, newMessage);
+            await messageStore.addMessage(id, newMessage);
             setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+
+            if (!isOnline) {
+                // Offline: media item is stored in Zustand and SQLite with status 'unsent'.
+                // Background queue or manual retry will upload and send when reconnected.
+                continue;
+            }
 
             try {
                 const fileUrl = await uploadLocalFileToCloudinary(
@@ -2371,19 +2279,41 @@ export default function ChatScreen() {
 
                 if (error) throw error;
 
+                const realId = (data as any).id;
+                let vaultCopyPath: string | null = null;
+                // Save local copy to vault for offline access
+                if (file.uri && file.uri.startsWith('file://')) {
+                    try {
+                        const assetType = `chat_${msgType}`;
+                        vaultCopyPath = AssetPathResolver.resolveLocalPath(realId, assetType, fileUrl);
+                        await FileSystem.makeDirectoryAsync(
+                            vaultCopyPath.substring(0, vaultCopyPath.lastIndexOf('/')),
+                            { intermediates: true }
+                        );
+                        await FileSystem.copyAsync({ from: file.uri, to: vaultCopyPath });
+                        await updateLocalMediaPath(realId, vaultCopyPath);
+                    } catch (e) {
+                        console.warn('[Chat] Failed to save media to vault:', e);
+                    }
+                }
+
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
-                setMessages(prev => prev.map(m =>
-                    m.id === tempId
-                        ? { ...m, id: (data as any).id, content: fileUrl, status: 'sent', caption: file.caption || null, created_at: (data as any).created_at }
-                        : m
-                ));
-                messageStore.updateMessage(id, tempId, { id: (data as any).id, content: fileUrl, status: 'sent', caption: file.caption || null, created_at: (data as any).created_at });
+                const updates: any = {
+                    id: realId,
+                    content: fileUrl,
+                    status: 'sent',
+                    caption: file.caption || null,
+                    created_at: (data as any).created_at,
+                    fileUri: undefined
+                };
+                if (vaultCopyPath) {
+                    updates.local_media_path = vaultCopyPath;
+                }
+                messageStore.updateMessage(id, tempId, updates);
             } catch (err: any) {
                 captureUIError('ChatScreen.sendSelectedFileQueue', err, { groupId: id });
                 setUploadingIds(prev => { const next = { ...prev }; delete next[tempId]; return next; });
-                const isNetwork = err?.status === 0 || err?.message?.toLowerCase().includes('network request failed') || err?.message?.toLowerCase().includes('network error');
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: isNetwork ? 'unsent' : 'error' } : m));
-                messageStore.updateMessage(id, tempId, { status: isNetwork ? 'unsent' : 'error' });
+                messageStore.updateMessage(id, tempId, { status: 'unsent' });
             }
         }
         
@@ -2635,13 +2565,13 @@ export default function ChatScreen() {
             const mediaList = albumItems.map((child: any) => {
                 const isDownloaded = downloadedIds[child.id] || child.local_media_path;
                 const isMe = child.sender_id === currentUser?.id;
-                let uri = child.content;
-                if (isDownloaded) {
+                let uri = child.local_media_path;
+                if (!uri && downloadedIds[child.id]) {
                     uri = FileService.getLocalUri(child.id, child.content, child.message_type);
-                } else if (isMe && child.fileUri) {
+                } else if (!uri && isMe && child.fileUri) {
                     uri = child.fileUri?.startsWith('file://') ? child.fileUri : `file://${child.fileUri}`;
-                } else if (child.local_media_path) {
-                    uri = child.local_media_path;
+                } else if (!uri) {
+                    uri = child.content;
                 }
                 return {
                     uri: uri || child.content,
@@ -2670,13 +2600,13 @@ export default function ChatScreen() {
 
             const isDownloaded = downloadedIds[targetMsg.id] || targetMsg.local_media_path;
             const isMe = targetMsg.sender_id === currentUser?.id;
-            let uri = targetMsg.content;
-            if (isDownloaded) {
+            let uri = targetMsg.local_media_path;
+            if (!uri && downloadedIds[targetMsg.id]) {
                 uri = FileService.getLocalUri(targetMsg.id, targetMsg.content, targetMsg.message_type);
-            } else if (isMe && targetMsg.fileUri) {
+            } else if (!uri && isMe && targetMsg.fileUri) {
                 uri = targetMsg.fileUri?.startsWith('file://') ? targetMsg.fileUri : `file://${targetMsg.fileUri}`;
-            } else if (targetMsg.local_media_path) {
-                uri = targetMsg.local_media_path;
+            } else if (!uri) {
+                uri = targetMsg.content;
             }
 
             // Batch viewer state updates cleanly in a single tick

@@ -8,6 +8,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as BackgroundTask from 'expo-background-task';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
+import { useSignupStore } from '../stores/signup.store';
 import { useNotificationStore } from '../stores/notification.store';
 import { upsertEntityFromNotification } from '../utils/notifications';
 import { extractFileNameFromUrl } from '../utils/download';
@@ -143,7 +144,7 @@ async function cacheMediaForNotification(data: any): Promise<any> {
 }
 
 export function usePushNotifications() {
-  const { user } = useAuthStore();
+  const { user, isProfileComplete } = useAuthStore();
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
@@ -278,7 +279,10 @@ export function usePushNotifications() {
     let tokenListener: any = null;
     let appStateSub: any = null;
 
-    if (user) {
+    // Only register automatically for fully registered users who are NOT in the middle of signup
+    const isSigningUp = useSignupStore.getState().hasActiveSession() || isProfileComplete === false;
+
+    if (user && !isSigningUp) {
       registerForPushNotificationsAsync().then(token => {
         if (token && !IS_EXPO_GO) {
           currentPushToken = token;
@@ -470,22 +474,23 @@ export function usePushNotifications() {
         appStateSub.remove();
       }
     };
-  }, [user?.id]);
+  }, [user?.id, isProfileComplete]);
+}
 
-  async function saveTokenToDatabase(token: string) {
-    if (!user) return;
+export async function saveTokenToDatabase(token: string) {
+  const user = useAuthStore.getState().user || (await supabase.auth.getUser()).data.user;
+  if (!user) return;
 
-    try {
-      const { error } = await (supabase as any).from('user_push_tokens')
-        .upsert(
-          { user_id: user.id, push_token: token, updated_at: new Date().toISOString() },
-          { onConflict: 'user_id,push_token' }
-        );
+  try {
+    const { error } = await (supabase as any).from('user_push_tokens')
+      .upsert(
+        { user_id: user.id, push_token: token, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id,push_token' }
+      );
 
-      if (error) throw error;
-    } catch {
-      // silent
-    }
+    if (error) throw error;
+  } catch {
+    // silent
   }
 }
 
@@ -592,7 +597,7 @@ async function configureNotificationCategories() {
   }
 }
 
-async function registerForPushNotificationsAsync() {
+export async function registerForPushNotificationsAsync() {
   let token;
 
   // Configure Interactive Categories in parallel — doesn't need to complete before token registration
@@ -661,6 +666,10 @@ async function registerForPushNotificationsAsync() {
     
     try {
       token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      if (token && !IS_EXPO_GO) {
+        currentPushToken = token;
+        await saveTokenToDatabase(token);
+      }
     } catch {
       // silent
     }

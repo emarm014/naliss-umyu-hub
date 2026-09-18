@@ -94,19 +94,7 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
       return;
     }
 
-    // 3b. Block Google login for email-registered accounts
-    if (user.app_metadata?.provider === 'email') {
-      Alert.alert(
-        'Use Email Sign-In',
-        'This account is registered via Email and Password. Please sign in using your password.',
-        [{ text: 'OK', style: 'default' }]
-      );
-      await supabase.auth.signOut();
-      clearOAuthFlags(mmkv);
-      return;
-    }
-
-    // 3c. Profile checks (graduated, external moderator, incomplete)
+    // 3b. Profile checks (graduated, external moderator, incomplete)
     if (user.id) {
       const { data: profileCheck } = await (supabase as any).from('users')
         .select('status, level, registration_number, role, is_external')

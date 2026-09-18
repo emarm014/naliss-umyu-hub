@@ -929,10 +929,19 @@ export const updateLocalMessage = async (id: string, updates: any) => {
             // Allow ID changes (temp -> real)
             const newId = updates.id || id;
             const safeMerged = safeJsonStringify(merged);
+            const localMediaPath = updates.local_media_path !== undefined ? updates.local_media_path : null;
             if (newId !== id) {
-                await database.runAsync('UPDATE local_messages SET id = ?, raw_data = ? WHERE id = ?', [newId, safeMerged, id]);
+                if (localMediaPath) {
+                    await database.runAsync('UPDATE local_messages SET id = ?, raw_data = ?, local_media_path = ? WHERE id = ?', [newId, safeMerged, localMediaPath, id]);
+                } else {
+                    await database.runAsync('UPDATE local_messages SET id = ?, raw_data = ? WHERE id = ?', [newId, safeMerged, id]);
+                }
             } else {
-                await database.runAsync('UPDATE local_messages SET raw_data = ? WHERE id = ?', [safeMerged, id]);
+                if (localMediaPath) {
+                    await database.runAsync('UPDATE local_messages SET raw_data = ?, local_media_path = ? WHERE id = ?', [safeMerged, localMediaPath, id]);
+                } else {
+                    await database.runAsync('UPDATE local_messages SET raw_data = ? WHERE id = ?', [safeMerged, id]);
+                }
             }
         }
     });

@@ -115,9 +115,11 @@ export function FeaturedStudentPopup() {
     
     const isShowingRef = useRef(false);
     const sessionSuppressedIdsRef = useRef<Set<string>>(new Set());
+    const initialCheckDoneRef = useRef(false);
 
     useEffect(() => {
         sessionSuppressedIdsRef.current.clear();
+        initialCheckDoneRef.current = false;
     }, [profile?.id]);
 
     // Initialize 42 continuous tiny floating motion particles
@@ -183,11 +185,18 @@ export function FeaturedStudentPopup() {
         const isInSignupFlow = !!signupEmail || (signupStep != null && signupStep > 0);
         const isNotOnTabs = segments[0] !== '(tabs)';
         if (!profile || isProfileComplete !== true || isInSignupFlow || isNotOnTabs) return;
-        
-        checkForActiveFeature();
+
+        // 10-second grace period after successful login/sign-up to allow background sync to complete uninterrupted
+        let timer: any = null;
+        if (!initialCheckDoneRef.current) {
+            initialCheckDoneRef.current = true;
+            timer = setTimeout(() => {
+                checkForActiveFeature();
+            }, 10000);
+        }
 
         // Realtime listener for INSTANT popup when Admin adds a featured student
-          const channel = supabase
+        const channel = supabase
             .channel(`global_featured_students_listener_${Date.now()}`)
             .on(
                 'postgres_changes',
@@ -223,9 +232,10 @@ export function FeaturedStudentPopup() {
             .subscribe();
 
         return () => {
+            if (timer) clearTimeout(timer);
             supabase.removeChannel(channel);
         };
-    }, [profile, isProfileComplete, signupEmail, signupStep, segments[0], feature?.id, scaleAnim, opacityAnim]);
+    }, [profile?.id, isProfileComplete, signupEmail, signupStep, segments[0], feature?.id, scaleAnim, opacityAnim]);
 
     // Realtime listener for incoming congratulations on featured student device
     useEffect(() => {

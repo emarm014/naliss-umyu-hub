@@ -118,9 +118,7 @@ export const useMessageStore = create<MessageState>()(
                     return msg;
                 });
 
-                // Insert raw messages instantly so UI renders immediately
-                await batchInsertMessages(preservedMessages, groupId);
-
+                // 1. Update in-memory Zustand cache IMMEDIATELY so UI renders with zero latency
                 set((state) => ({
                     cache: { ...state.cache, [groupId]: preservedMessages },
                     lastSeenAt: latest
@@ -128,7 +126,10 @@ export const useMessageStore = create<MessageState>()(
                         : state.lastSeenAt,
                 }));
 
-                // Process media downloads sequentially in the background without blocking the UI
+                // 2. Persist to SQLite in background
+                await batchInsertMessages(preservedMessages, groupId);
+
+                // 3. Process media downloads sequentially in the background without blocking the UI
                 setTimeout(async () => {
                     for (const msg of messages) {
                         if (msg.media_url && !msg.local_media_path) {
@@ -141,8 +142,7 @@ export const useMessageStore = create<MessageState>()(
             addMessage: async (groupId, message) => {
                 Logger.info('message.store', 'addMessage called', { groupId, messageId: message.id, status: message.status });
                 
-                await insertOrReplaceMessage(message, groupId);
-
+                // 1. Update in-memory Zustand cache IMMEDIATELY so UI reflects optimistic message with 0ms delay
                 set((state) => {
                     const existing = state.cache[groupId] || [];
                     if (existing.some(m => m.id === message.id)) {
@@ -151,46 +151,9 @@ export const useMessageStore = create<MessageState>()(
                     }
 
                     const updated = [...existing, message]
-                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
                     const isConfirmed = message.id && !String(message.id).startsWith('temp-');
-
-                    // Process media in background
-                    if (message.media_url && !message.local_media_path) {
-                        setTimeout(() => interceptAndDownloadMedia(message), 100);
-                    }
-
-                    // Update group last message preview instantly (online or offline or pending)
-                    try {
-                        const { useGroupStore } = require('./group.store');
-                        const { useAuthStore } = require('./auth.store');
-                        const profile = useAuthStore.getState().profile;
-                        
-                        const senderId = message.sender_id || message.sender?.id;
-                        const isSelf = (senderId && profile?.id && senderId === profile.id) || !senderId;
-                        const senderName = isSelf ? 'You' : (message.sender?.username || message.sender?.full_name || 'Member');
-                        
-                        const msgType = message.content_type || message.message_type || 'text';
-                        const content = message.content || '';
-                        let previewText = `${senderName}: ${content}`;
-
-                        if (msgType === 'image') previewText = `${senderName}: 📷 Photo`;
-                        else if (msgType === 'document') previewText = `${senderName}: 📎 Document`;
-                        else if (msgType === 'video') previewText = `${senderName}: 🎥 Video`;
-                        else if (msgType === 'audio') previewText = `${senderName}: 🎵 Audio`;
-                        else if (msgType === 'sticker') previewText = `${senderName}: 😊 Sticker`;
-                        else if (content.includes('cloudinary.com') || content.includes('res.cloudinary')) {
-                            const lower = content.toLowerCase();
-                            if (lower.includes('/video/upload/') || lower.includes('chat-videos')) previewText = `${senderName}: 🎥 Video`;
-                            else if (lower.includes('/image/upload/') || lower.includes('chat-images')) previewText = `${senderName}: 📷 Photo`;
-                            else if (lower.includes('chat-docs')) previewText = `${senderName}: 📎 Document`;
-                            else if (lower.includes('chat-audios')) previewText = `${senderName}: 🎵 Audio`;
-                        }
-
-                        useGroupStore.getState().updateGroupLastMessage(groupId, previewText, message.created_at, message);
-                    } catch {
-                        // silent
-                    }
 
                     return {
                         cache: { ...state.cache, [groupId]: updated },
@@ -199,6 +162,50 @@ export const useMessageStore = create<MessageState>()(
                             : state.lastSeenAt,
                     };
                 });
+
+                // 2. Persist to SQLite
+                try {
+                    await insertOrReplaceMessage(message, groupId);
+                } catch (e) {
+                    Logger.error('message.store', 'Failed to persist message to SQLite', { groupId, messageId: message.id, error: e });
+                }
+
+                // 3. Process media in background if it's already a remote URL
+                if (message.media_url && !message.local_media_path) {
+                    setTimeout(() => interceptAndDownloadMedia(message), 100);
+                }
+
+                // 4. Update group last message preview instantly (online, offline, or pending)
+                try {
+                    const { useGroupStore } = require('./group.store');
+                    const { useAuthStore } = require('./auth.store');
+                    const profile = useAuthStore.getState().profile;
+                    
+                    const senderId = message.sender_id || message.sender?.id;
+                    const isSelf = (senderId && profile?.id && senderId === profile.id) || !senderId;
+                    const senderName = isSelf ? 'You' : (message.sender?.username || message.sender?.full_name || 'Member');
+                    
+                    const msgType = message.content_type || message.message_type || 'text';
+                    const content = message.content || '';
+                    let previewText = `${senderName}: ${content}`;
+
+                    if (msgType === 'image') previewText = `${senderName}: 📷 Photo`;
+                    else if (msgType === 'document') previewText = `${senderName}: 📎 Document`;
+                    else if (msgType === 'video') previewText = `${senderName}: 🎥 Video`;
+                    else if (msgType === 'audio') previewText = `${senderName}: 🎵 Audio`;
+                    else if (msgType === 'sticker') previewText = `${senderName}: 😊 Sticker`;
+                    else if (content.includes('cloudinary.com') || content.includes('res.cloudinary')) {
+                        const lower = content.toLowerCase();
+                        if (lower.includes('/video/upload/') || lower.includes('chat-videos')) previewText = `${senderName}: 🎥 Video`;
+                        else if (lower.includes('/image/upload/') || lower.includes('chat-images')) previewText = `${senderName}: 📷 Photo`;
+                        else if (lower.includes('chat-docs')) previewText = `${senderName}: 📎 Document`;
+                        else if (lower.includes('chat-audios')) previewText = `${senderName}: 🎵 Audio`;
+                    }
+
+                    useGroupStore.getState().updateGroupLastMessage(groupId, previewText, message.created_at, message);
+                } catch {
+                    // silent
+                }
             },
 
             updateMessage: (groupId, messageId, updates) => {
@@ -384,20 +391,24 @@ export const useMessageStore = create<MessageState>()(
 
             processUnifiedQueueItem: async (groupId: string, msg: any) => {
                 let finalContentUrl = msg.content;
-                let payload = {
+                let payload: any = {
                     content: msg.content,
                     sender_id: msg.sender_id,
                     group_id: groupId,
                     reply_to_id: msg.reply_to_id || msg.replyTo?.id || null,
                     reply_from_meta: msg.reply_from_meta || null,
                     message_type: msg.message_type || 'text',
-                    metadata: { ...msg.metadata, tempId: msg.id }
+                    metadata: { 
+                        ...msg.metadata, 
+                        caption: msg.caption || msg.metadata?.caption || null,
+                        tempId: msg.id 
+                    }
                 };
 
-                const isMediaMessage = msg.media_url || msg.fileUri;
-                const localUri = isMediaMessage ? (msg.fileUri || msg.media_url) : null;
+                const isMediaMessage = msg.message_type !== 'text' && msg.message_type !== 'sticker';
+                const localUri = msg.fileUri || (typeof msg.content === 'string' && (msg.content.startsWith('file://') || msg.content.startsWith('/')) ? msg.content : null);
 
-                if (msg.message_type !== 'text' && msg.message_type !== 'sticker' && isMediaMessage && localUri) {
+                if (isMediaMessage && localUri) {
                     const type = msg.message_type;
                     const mimeType = type === 'image' ? 'image/jpeg'
                         : type === 'video' ? 'video/mp4'
@@ -409,7 +420,8 @@ export const useMessageStore = create<MessageState>()(
                         : type === 'audio' ? 'chat-audios'
                         : 'chat-docs';
 
-                    const uploadName = `${Date.now()}-${msg.metadata?.name || 'file'}`;
+                    const originalName = msg.metadata?.name || `${type}-${Date.now()}`;
+                    const uploadName = `${Date.now()}-${originalName}`;
 
                     finalContentUrl = await uploadLocalFileToCloudinary(
                         localUri,
@@ -451,9 +463,18 @@ export const useMessageStore = create<MessageState>()(
                     }
                 }
 
-                const updates: any = { id: realId, content: finalContentUrl, status: 'sent', fileUri: undefined };
+                const updates: any = { 
+                    id: realId, 
+                    content: finalContentUrl, 
+                    status: 'sent', 
+                    created_at: (data as any).created_at,
+                    fileUri: undefined 
+                };
                 if (localMediaPath) {
                     updates.local_media_path = localMediaPath;
+                }
+                if (msg.caption) {
+                    updates.caption = msg.caption;
                 }
                 get().updateMessage(groupId, msg.id, updates);
             },
@@ -486,7 +507,10 @@ export const useMessageStore = create<MessageState>()(
                     const allGroups = get().cache;
                     
                     for (const groupId of Object.keys(allGroups)) {
-                        const unsentMessages = allGroups[groupId].filter(m => m.status === 'unsent' || m.status === 'sending');
+                        const unsentMessages = allGroups[groupId].filter(m => 
+                            (m.status === 'unsent' || m.status === 'sending' || m.status === 'error' || m.status === 'failed') &&
+                            (String(m.id).startsWith('temp-') || m.status === 'unsent')
+                        );
                         if (unsentMessages.length === 0) continue;
 
                         Logger.info('message.store', `Flushing ${unsentMessages.length} unsent messages for group ${groupId}`);

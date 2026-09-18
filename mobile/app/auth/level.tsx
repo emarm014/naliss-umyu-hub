@@ -13,6 +13,7 @@ import { NalissLogo } from '../../src/components/NalissLogo';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError,  startTransaction } from '../../src/utils/sentry';
+import { registerForPushNotificationsAsync } from '../../src/hooks/usePushNotifications';
 
 const LEVELS = [
   { id: '100', title: '100 Level', desc: 'Freshman year — foundation courses' },
@@ -236,6 +237,13 @@ export default function RegisterLevel() {
 
       useSignupStore.getState().setIsGoogleDelaying(false);
       finishTransaction('ok');
+
+      // Request notification permissions now that account creation is complete, before showing home tab
+      try {
+        await registerForPushNotificationsAsync();
+      } catch (notifErr) {
+        console.warn('[Level] Push notification registration error:', notifErr);
+      }
 
       // Imperatively navigate to tabs instead of hanging on ProtectedRoute
       router.replace('/(tabs)');

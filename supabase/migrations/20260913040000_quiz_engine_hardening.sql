@@ -101,7 +101,8 @@ GRANT EXECUTE ON FUNCTION public.submit_quiz(UUID, JSONB) TO authenticated;
 -- ========================================================================
 -- 3. DETERMINISTIC LEADERBOARD VIEW WITH TIE-BREAKING
 -- ========================================================================
-CREATE OR REPLACE VIEW public.pool_quiz_leaderboard AS
+CREATE OR REPLACE VIEW public.pool_quiz_leaderboard 
+WITH (security_invoker = true) AS
 SELECT 
     p.pool_id,
     p.user_id,

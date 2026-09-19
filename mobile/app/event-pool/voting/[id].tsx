@@ -77,6 +77,17 @@ export default function VotingEngineScreen() {
     initVoting();
   }, [id, user]);
 
+  const isLive = useMemo(() => {
+    if (!poolInfo) return false;
+    if (poolInfo.status === 'live') return true;
+    if (poolInfo.status === 'scheduled' && poolInfo.start_time) {
+      const now = new Date();
+      const start = new Date(poolInfo.start_time);
+      return now >= start;
+    }
+    return false;
+  }, [poolInfo]);
+
   const groupedCandidates = useMemo(() => {
     return candidates.reduce((acc: Record<string, Candidate[]>, cand) => {
       acc[cand.position_title] = acc[cand.position_title] || [];
@@ -212,7 +223,7 @@ export default function VotingEngineScreen() {
         )}
 
         {/* BALLOT SELECTION (Only if not voted and live) */}
-        {!ballotReceipt && poolInfo?.status === 'live' && (
+        {!ballotReceipt && isLive && (
           <View style={{ marginTop: 24 }}>
              {Object.entries(groupedCandidates).map(([office, cands]) => (
                 <View key={`vote-${office}`} style={{ marginBottom: 24 }}>
@@ -250,7 +261,7 @@ export default function VotingEngineScreen() {
         )}
       </ScrollView>
 
-      {!ballotReceipt && poolInfo?.status === 'live' && (
+      {!ballotReceipt && isLive && (
         <View style={[styles.bottomBar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
           <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
             {selectionsCount} of {officesCount} offices selected

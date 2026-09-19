@@ -120,10 +120,17 @@ export const clearAllUserStorage = async () => {
   if (storage) {
     try {
       const allKeys = storage.getAllKeys();
-      for (const key of allKeys) {
-        if (key !== 'theme-storage' && key !== 'migrated_from_asyncstorage') {
-          storage.delete(key);
+      // Guard: getAllKeys() can return undefined on corrupted/encrypted MMKV instances
+      if (Array.isArray(allKeys)) {
+        for (const key of allKeys) {
+          if (key !== 'theme-storage' && key !== 'migrated_from_asyncstorage') {
+            storage.delete(key);
+          }
         }
+      } else {
+        // Fallback: clearAll() wipes everything including theme — but better than crashing
+        Logger.warn('mmkv.storage', 'getAllKeys() returned non-array, falling back to clearAll()');
+        try { storage.clearAll(); } catch {}
       }
       Logger.info('mmkv.storage', 'Successfully cleared all user MMKV storage.');
     } catch (e) {

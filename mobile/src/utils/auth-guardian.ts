@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mmkvStorage } from '../stores/mmkv.storage';
 
 /**
  * AuthGuardian - Local Rate Limiting and Security Utility
@@ -19,7 +19,7 @@ export const AuthGuardian = {
    */
   async checkBanStatus(email: string): Promise<number | null> {
     try {
-      const banTime = await AsyncStorage.getItem(`ban_${email}`);
+      const banTime = await mmkvStorage.getItem(`ban_${email}`);
       if (!banTime) return null;
 
       const now = Date.now();
@@ -31,8 +31,8 @@ export const AuthGuardian = {
         return Math.max(1, Math.ceil(diffMs / (1000 * 60)));
       } else {
         // Ban expired, clean up
-        await AsyncStorage.removeItem(`ban_${email}`);
-        await AsyncStorage.removeItem(`fail_${email}`);
+        await mmkvStorage.removeItem(`ban_${email}`);
+        await mmkvStorage.removeItem(`fail_${email}`);
         return null;
       }
     } catch {
@@ -42,13 +42,13 @@ export const AuthGuardian = {
 
   async recordFailure(email: string): Promise<number> {
     try {
-      const currentFailuresStr = await AsyncStorage.getItem(`fail_${email}`);
+      const currentFailuresStr = await mmkvStorage.getItem(`fail_${email}`);
       const currentFailures = currentFailuresStr ? parseInt(currentFailuresStr, 10) : 0;
       const nextFailures = currentFailures + 1;
-      await AsyncStorage.setItem(`fail_${email}`, nextFailures.toString());
+      await mmkvStorage.setItem(`fail_${email}`, nextFailures.toString());
       if (nextFailures >= MAX_ATTEMPTS) {
         const banExpires = Date.now() + (BAN_DURATION_MINUTES * 60 * 1000);
-        await AsyncStorage.setItem(`ban_${email}`, banExpires.toString());
+        await mmkvStorage.setItem(`ban_${email}`, banExpires.toString());
       }
       return nextFailures;
     } catch {
@@ -58,8 +58,8 @@ export const AuthGuardian = {
 
   async clearFailures(email: string): Promise<void> {
     try {
-      await AsyncStorage.removeItem(`fail_${email}`);
-      await AsyncStorage.removeItem(`ban_${email}`);
+      await mmkvStorage.removeItem(`fail_${email}`);
+      await mmkvStorage.removeItem(`ban_${email}`);
     } catch {
       // silent
     }
@@ -69,17 +69,17 @@ export const AuthGuardian = {
     try {
       const key = `reset_count_${email}`;
       const timeKey = `reset_first_time_${email}`;
-      const countStr = await AsyncStorage.getItem(key);
-      const firstTimeStr = await AsyncStorage.getItem(timeKey);
+      const countStr = await mmkvStorage.getItem(key);
+      const firstTimeStr = await mmkvStorage.getItem(timeKey);
       const now = Date.now();
       const count = countStr ? parseInt(countStr, 10) : 0;
       const firstTime = firstTimeStr ? parseInt(firstTimeStr, 10) : now;
       if (now - firstTime > RESET_WINDOW_HOURS * 60 * 60 * 1000) {
-        await AsyncStorage.setItem(key, "1");
-        await AsyncStorage.setItem(timeKey, now.toString());
+        await mmkvStorage.setItem(key, "1");
+        await mmkvStorage.setItem(timeKey, now.toString());
       } else {
-        await AsyncStorage.setItem(key, (count + 1).toString());
-        if (!firstTimeStr) await AsyncStorage.setItem(timeKey, now.toString());
+        await mmkvStorage.setItem(key, (count + 1).toString());
+        if (!firstTimeStr) await mmkvStorage.setItem(timeKey, now.toString());
       }
     } catch {
       // silent
@@ -90,8 +90,8 @@ export const AuthGuardian = {
     try {
       const key = `reset_count_${email}`;
       const timeKey = `reset_first_time_${email}`;
-      const countStr = await AsyncStorage.getItem(key);
-      const firstTimeStr = await AsyncStorage.getItem(timeKey);
+      const countStr = await mmkvStorage.getItem(key);
+      const firstTimeStr = await mmkvStorage.getItem(timeKey);
       if (!countStr || !firstTimeStr) return null;
       const count = parseInt(countStr, 10);
       const firstTime = parseInt(firstTimeStr, 10);
@@ -102,8 +102,8 @@ export const AuthGuardian = {
           return Math.ceil((expires - now) / (1000 * 60 * 60));
         }
       } else {
-        await AsyncStorage.removeItem(key);
-        await AsyncStorage.removeItem(timeKey);
+        await mmkvStorage.removeItem(key);
+        await mmkvStorage.removeItem(timeKey);
       }
       return null;
     } catch {

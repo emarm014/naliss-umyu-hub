@@ -27,6 +27,50 @@ function formatLockCountdown(ms: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+/**
+ * Safely extracts a 6-digit OTP from text copied to the clipboard.
+ * Returns null if the text is an email address, URL, matriculation number, phone number,
+ * or contains non-OTP context.
+ */
+function extractOtpFromText(rawText: string | null | undefined): string | null {
+  if (!rawText) return null;
+  const text = rawText.trim();
+  if (!text) return null;
+
+  // Never match if text contains email address, URLs, or path separators
+  if (text.includes('@') || text.includes('http://') || text.includes('https://') || text.includes('/')) {
+    return null;
+  }
+
+  // Exact 6-digit standalone code
+  if (/^\d{6}$/.test(text)) {
+    return text;
+  }
+
+  // Bracketed code: e.g. "[123456]"
+  const bracketMatch = text.match(/\[(\d{6})\]/);
+  if (bracketMatch && bracketMatch[1]) {
+    return bracketMatch[1];
+  }
+
+  // Explicit OTP keyword context: e.g. "code: 123456", "verification code is 123456", "OTP: 123456"
+  const otpKeywordMatch = text.match(/(?:code|otp|verification|token)\D{0,15}(\b\d{6}\b)/i);
+  if (otpKeywordMatch && otpKeywordMatch[1]) {
+    return otpKeywordMatch[1];
+  }
+
+  // If text is short (< 80 chars) and contains ONLY a single 6-digit number and NO other numbers
+  const allNumbers = text.match(/\d+/g);
+  if (allNumbers && allNumbers.length === 1 && allNumbers[0].length === OTP_LENGTH && text.length < 80) {
+    const wordBoundMatch = text.match(/\b(\d{6})\b/);
+    if (wordBoundMatch && wordBoundMatch[1]) {
+      return wordBoundMatch[1];
+    }
+  }
+
+  return null;
+}
+
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
     <View style={{ flexDirection: 'row', gap: 5, marginBottom: 28 }}>
@@ -57,6 +101,8 @@ export default function RegisterOTP() {
   const autoVerifyAttempted = useRef(false); // prevents double auto-verify
   const isVerifyingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastProcessedClipboardRef = useRef<string>('');
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const router = useRouter();
 
   // Lock countdown ticker
@@ -109,48 +155,30 @@ export default function RegisterOTP() {
   }, [otp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Unified Clipboard Parsing ─────────────────────────────────────────────
-  // We aggressively check the clipboard when the component mounts and whenever
-  // the app transitions from the background to active state (e.g. returning from email).
+  // Only checks clipboard when user returns to the app from background (e.g. copying OTP from email).
+  // Never runs on mount to prevent picking up stale data (e.g. student email with matric digits).
   const latestOtpRef = useRef(otp);
   useEffect(() => { latestOtpRef.current = otp; }, [otp]);
 
   const checkClipboardForAuthCode = async () => {
-    if (!isMounted.current || isLoading) return;
+    if (!isMounted.current || isLoading || isVerifyingRef.current) return;
     try {
       const text = await Clipboard.getStringAsync();
-      // Extract the first 6 digits. This handles both "123456" and the full push 
-      // notification text "[123456] is your NALISS HUB verification code"
-      const digits = text?.replace(/\D/g, '').slice(0, OTP_LENGTH);
-      
-      if (digits?.length === OTP_LENGTH) {
+      if (!text || text === lastProcessedClipboardRef.current) return;
+
+      const code = extractOtpFromText(text);
+      if (code && code.length === OTP_LENGTH) {
+        lastProcessedClipboardRef.current = text;
         const current = latestOtpRef.current.join('');
-        if (current === digits) return; // already filled
-        
-        const newOtp = digits.split('');
+        if (current === code) return; // already filled
+
+        const newOtp = code.split('');
         setOtp(newOtp);
-        // Clear clipboard so we don't re-trigger accidentally on the same code later
-        await Clipboard.setStringAsync('');
       }
     } catch {
       // silent — clipboard access is best-effort
     }
   };
-
-  useEffect(() => {
-    // Check immediately on mount
-    checkClipboardForAuthCode();
-
-    // Check again whenever the app comes to the foreground
-    const appStateSub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') {
-        checkClipboardForAuthCode();
-      }
-    });
-
-    return () => {
-      appStateSub.remove();
-    };
-  }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sendFreshCode = useCallback(async (isAutoSend = false) => {
     if (!email) return;
@@ -212,29 +240,28 @@ export default function RegisterOTP() {
         if (lockedUntil) setLockedUntilMs(lockedUntil);
       }
 
-      const prevStep = store.currentStep;
-      const alreadyVerified = prevStep !== undefined && prevStep >= 3;
       store.setCurrentStep(2);
 
-      if (alreadyVerified) return;
-
-      // Send a fresh code only on first arrival at this screen (prevStep < 2).
-      // If prevStep === 2 the user is returning (e.g. from email app) — keep
-      // the existing code alive, do NOT resend (would invalidate the old one).
-      const isFirstArrival = !prevStep || prevStep < 2;
-      if (isFirstArrival) {
-        await sendFreshCode(true);
-      }
+      // NOTE: RegisterEmail already dispatched the verification OTP immediately
+      // before routing to this screen. We do NOT call sendFreshCode() on mount.
+      // Auto-sending on mount causes Supabase to generate a 2nd OTP, invalidating
+      // the 1st OTP that the user is about to open in their inbox.
     };
 
     init();
 
-    // AppState: when user comes back from minimizing, keep screen alive
+    // AppState: when user returns from background (e.g. email client), keep session alive
+    // and check clipboard safely for the copied OTP code.
     const appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      if (nextState === 'active' && isMounted.current) {
+      const wasBackground = appStateRef.current === 'background' || appStateRef.current === 'inactive';
+      appStateRef.current = nextState;
+
+      if (wasBackground && nextState === 'active' && isMounted.current) {
         useSignupStore.getState().touchActivity();
-        // Re-focus first empty box for convenience
-        const firstEmpty = otp.findIndex(d => !d);
+        checkClipboardForAuthCode();
+
+        // Re-focus first empty box for convenience if incomplete
+        const firstEmpty = latestOtpRef.current.findIndex(d => !d);
         if (firstEmpty >= 0) {
           setTimeout(() => inputRefs.current[firstEmpty]?.focus(), 300);
         }
@@ -319,13 +346,26 @@ export default function RegisterOTP() {
       captureUIError('RegisterOTP.handleVerify', err, { email });
       if (!isMounted.current) return;
 
-      const errMsg = err?.message || '';
-      if (errMsg.includes('expired') || errMsg.includes('Token has expired')) {
-        Alert.alert('Code Expired', 'Your verification code has expired. Please request a new one.');
-      } else if (errMsg.includes('invalid') || errMsg.includes('Invalid')) {
+      // Clear the invalid digits and refocus first box so user can retry cleanly
+      setOtp(Array(OTP_LENGTH).fill(''));
+      setTimeout(() => inputRefs.current[0]?.focus(), 150);
+
+      const errMsg = (err?.message || '').toLowerCase();
+      const isExpiredOrInvalid = 
+        errMsg.includes('token has expired or is invalid') ||
+        (errMsg.includes('expired') && errMsg.includes('invalid'));
+
+      if (isExpiredOrInvalid) {
+        Alert.alert(
+          'Invalid Code',
+          'The verification code is incorrect or has expired. Please check your email or tap "Resend Code" for a new one.'
+        );
+      } else if (errMsg.includes('expired')) {
+        Alert.alert('Code Expired', 'Your verification code has expired. Please tap "Resend Code" to request a new one.');
+      } else if (errMsg.includes('invalid')) {
         Alert.alert('Wrong Code', 'The code you entered is incorrect. Please check and try again.');
       } else {
-        Alert.alert('Verification Failed', errMsg || 'Could not verify the code. Please try again.');
+        Alert.alert('Verification Failed', err?.message || 'Could not verify the code. Please try again.');
       }
     } finally {
       useSignupStore.getState().setIsGoogleDelaying(false);

@@ -874,27 +874,6 @@ export function FeaturedStudentPopup() {
                                 Just sent you love and congratulated you on being Featured Student! 🎉💖
                             </Text>
 
-                            <TouchableOpacity 
-                                style={[styles.toastAppreciateBtn, hasAppreciated && styles.toastAppreciatedBtn]}
-                                onPress={() => {
-                                    if (incomingCongratulator?.id) {
-                                        sendPushNotification({
-                                            targetUserIds: [incomingCongratulator.id],
-                                            title: '💕 Appreciation Received!',
-                                            body: `${profile?.full_name || 'The Featured Student'} sent you appreciation: "Thank you so much for the love! 💕"`,
-                                            data: { type: 'fyb_appreciation' },
-                                        });
-                                        setHasAppreciated(true);
-                                    }
-                                }}
-                                disabled={hasAppreciated}
-                            >
-                                <Ionicons name="heart" size={18} color="#fff" />
-                                <Text style={styles.toastAppreciateBtnText}>
-                                    {hasAppreciated ? 'Appreciation Sent 💕' : 'Send Appreciation 💕'}
-                                </Text>
-                            </TouchableOpacity>
-
                             <TouchableOpacity
                                 style={[styles.toastProfileBtn, { borderColor: colors.border }]}
                                 onPress={() => {

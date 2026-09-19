@@ -245,23 +245,6 @@ export function FeaturedStudentCongratsCard({ userId }: { userId: string }) {
                                             </View>
                                         </TouchableOpacity>
 
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.appreciateBtn,
-                                                isAppreciated && styles.appreciatedBtn
-                                            ]}
-                                            onPress={() => handleSendAppreciation(u)}
-                                            disabled={isAppreciated || sendingAppreciationId === u?.id}
-                                            activeOpacity={0.8}
-                                        >
-                                            {sendingAppreciationId === u?.id ? (
-                                                <ActivityIndicator size="small" color="#fff" />
-                                            ) : (
-                                                <Text style={[styles.appreciateBtnText, isAppreciated && { color: colors.textMuted }]}>
-                                                    {isAppreciated ? 'Appreciated 💕' : 'Appreciate 💕'}
-                                                </Text>
-                                            )}
-                                        </TouchableOpacity>
                                     </View>
                                 );
                             }}

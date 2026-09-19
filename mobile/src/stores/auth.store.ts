@@ -484,13 +484,13 @@ export const useAuthStore = create<AuthState>()(
         try {
           // Reset chat and group state
           const { useMessageStore } = require('./message.store');
-          useMessageStore.getState().reset?.();
+          useMessageStore.getState().clearCache?.();
 
           const { useGroupStore } = require('./group.store');
-          useGroupStore.getState().reset?.();
+          useGroupStore.getState().clearGroups?.();
 
           const { useGlobalSyncStore } = require('./globalSync.store');
-          useGlobalSyncStore.getState().reset?.();
+          useGlobalSyncStore.getState().terminate?.();
 
           const { useDataRestoreStore } = require('./data-restore.store');
           useDataRestoreStore.getState().reset?.();
@@ -694,7 +694,7 @@ export const useAuthStore = create<AuthState>()(
         // Clear personal study notes
         try {
           const { useNoteStore } = require('./note.store');
-          useNoteStore.getState().reset?.() || useNoteStore.getState().clearNotes?.();
+          useNoteStore.getState().clearAllNotes?.();
           await AsyncStorage.removeItem('naliss-notes-storage');
         } catch (e) {
           console.warn('[AuthStore] Failed to clear notes store:', e);

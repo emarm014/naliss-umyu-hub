@@ -867,7 +867,7 @@ export default function EventPoolManagementPage() {
 
  // If a podium status was assigned, also write winner_position to pool_participants
  if (podiumInput) {
- const positionMap: Record<string, number> = { 'Winner': 1, '1st Runner-Up': 2, '2nd Runner-Up': 3 };
+ const positionMap: Record<string, number> = { 'Winner': 1, '1st Runner-Up': 2, '2nd Runner-Up': 3, '4th Position': 4, '5th Position': 5 };
  const winnerPosition = positionMap[podiumInput] || null;
 
  if (winnerPosition) {
@@ -895,27 +895,25 @@ export default function EventPoolManagementPage() {
  }
  };
 
- const handleDeclareAndFeatureWinner = async () => {
- if (!selectedPool) return;
- const winnerSub = submissions.find(s => s.podium_status === 'Winner');
- if (!winnerSub) { alert('No Winner has been assigned yet. Use the Evaluate tab to assign a podium status first.'); return; }
- if (!window.confirm(`Feature "${winnerSub.users?.full_name}" as Event Winner for "${selectedPool.title}"?`)) return;
- try {
-   const { error } = await supabase.from('featured_students').insert([{
-     user_id: winnerSub.user_id,
-     type: 'event_winner',
-     scope: 'department',
-     title: `Event Pool Winner — ${selectedPool.title}`,
-     subtitle: `Winner of ${selectedPool.title}`,
-     pool_id: selectedPool.id,
-     is_active: true,
-   }]);
-   if (error) throw error;
-   alert('🎉 Winner has been featured! Students will see the announcement in their app.');
- } catch (e: any) {
-   alert('Failed to feature winner: ' + e.message);
- }
- };
+  const handleDeclareAndFeatureSpecificWinner = async (winnerSub: any) => {
+  if (!selectedPool) return;
+  if (!window.confirm(`Feature "${winnerSub.users?.full_name}" as ${winnerSub.podium_status} for "${selectedPool.title}"?`)) return;
+  try {
+    const { error } = await supabase.from('featured_students').insert([{
+      user_id: winnerSub.user_id,
+      type: 'event_winner',
+      scope: 'department',
+      title: `${winnerSub.podium_status} — ${selectedPool.title}`,
+      subtitle: `${winnerSub.podium_status} of ${selectedPool.title}`,
+      pool_id: selectedPool.id,
+      is_active: true,
+    }]);
+    if (error) throw error;
+    alert(`${winnerSub.users?.full_name} successfully featured!`);
+  } catch (e: any) {
+    alert('Failed to feature winner: ' + e.message);
+  }
+  };
 
  const handleCreateCandidate = async (e: React.FormEvent<HTMLFormElement>) => {
    e.preventDefault();
@@ -2464,6 +2462,8 @@ export default function EventPoolManagementPage() {
  <option value="Winner">Winner</option>
  <option value="1st Runner-Up">1st Runner-Up</option>
  <option value="2nd Runner-Up">2nd Runner-Up</option>
+ <option value="4th Position">4th Position</option>
+ <option value="5th Position">5th Position</option>
  </select>
  </div>
  </div>
@@ -2483,19 +2483,24 @@ export default function EventPoolManagementPage() {
  </div>
  )}
 
- {/* Declare & Feature Winner Button */}
- {submissions.some(s => s.podium_status === 'Winner') && (
- <div className="mt-6 p-5 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between shadow-sm">
-  <div className="flex items-center gap-3">
-   <div className="bg-amber-100 p-3 rounded-lg"><Crown className="h-5 w-5 text-amber-600" /></div>
-   <div>
-    <p className="font-bold text-amber-900">Winner Assigned</p>
-    <p className="text-sm text-amber-600">{submissions.find(s => s.podium_status === 'Winner')?.users?.full_name} — Tap to feature them in the app.</p>
-   </div>
-  </div>
-  <button onClick={handleDeclareAndFeatureWinner} className="px-5 py-2.5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-all shadow-lg shadow-amber-600/20 flex items-center gap-2 text-sm">
-   <Crown className="h-4 w-4" /> Feature Winner
-  </button>
+ {/* Feature Winners Section */}
+ {submissions.some(s => s.podium_status) && (
+ <div className="mt-6 space-y-3">
+   <h4 className="font-bold text-gray-900 flex items-center gap-2"><Crown className="h-5 w-5 text-amber-500"/> Feature Declared Winners</h4>
+   {submissions.filter(s => s.podium_status).map(sub => (
+     <div key={sub.id} className="p-4 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between shadow-sm">
+      <div className="flex items-center gap-3">
+       <div className="bg-amber-100 p-2 rounded-lg"><Crown className="h-4 w-4 text-amber-600" /></div>
+       <div>
+        <p className="font-bold text-amber-900">{sub.podium_status} Assigned</p>
+        <p className="text-sm text-amber-700">{sub.users?.full_name}</p>
+       </div>
+      </div>
+      <button onClick={() => handleDeclareAndFeatureSpecificWinner(sub)} className="px-4 py-2 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md text-sm flex items-center gap-2">
+       Feature in App
+      </button>
+     </div>
+   ))}
  </div>
  )}
  </div>

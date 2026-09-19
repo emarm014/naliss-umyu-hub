@@ -282,13 +282,22 @@ export default function EventPoolRoom() {
             const fetchLeaderboard = async () => {
                 setIsLoadingLeaderboard(true);
                 try {
-                    const { data, error } = await (supabase as any)
+                    let query = (supabase as any)
                         .from('pool_participants')
-                        .select('id, user_id, final_score, completed_at, users:user_id (full_name, username, avatar_url)')
-                        .eq('pool_id', pool.id)
-                        .order('final_score', { ascending: false })
-                        .order('completed_at', { ascending: true })
-                        .limit(50);
+                        .select('id, user_id, final_score, completed_at, winner_position, users:user_id (full_name, username, avatar_url, level)')
+                        .eq('pool_id', pool.id);
+
+                    if (pool.type === 'quiz') {
+                        query = query.order('final_score', { ascending: false })
+                                     .order('completed_at', { ascending: true })
+                                     .limit(10); // Show top 10 as winners for auto-graded quizzes
+                    } else {
+                        query = query.not('winner_position', 'is', null)
+                                     .order('winner_position', { ascending: true })
+                                     .limit(50);
+                    }
+                    
+                    const { data, error } = await query;
                     
                     if (error) throw error;
                     setLeaderboard((data || []) as LeaderboardEntry[]);
@@ -396,7 +405,7 @@ export default function EventPoolRoom() {
         const tabs: { id: TabId; label: string }[] = [
             { id: 'overview', label: 'Overview' },
             { id: 'live', label: 'Live Action' },
-            { id: 'leaderboard', label: 'Leaderboard' },
+            { id: 'leaderboard', label: 'Winners' },
             { id: 'results', label: 'Results' },
         ];
 
@@ -823,8 +832,8 @@ export default function EventPoolRoom() {
             return (
                 <View style={styles.centeredContainer}>
                     <Ionicons name="podium-outline" size={48} color={subtextColor} style={{ marginBottom: 16, opacity: 0.5 }} />
-                    <Text style={[styles.bannerTitle, { color: textColor }]}>Scoreboard Pending</Text>
-                    <Text style={[styles.bannerText, { color: subtextColor }]}>Rankings will be generated once live submissions begin.</Text>
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Winners Pending</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor }]}>Winners will be declared and featured here once evaluations are completed.</Text>
                 </View>
             );
         }
@@ -833,7 +842,7 @@ export default function EventPoolRoom() {
             <ScrollView contentContainerStyle={styles.leaderboardContainer}>
                 {leaderboard.map((entry, index) => {
                     const isMe = user?.id === entry.user_id;
-                    const rank = index + 1;
+                    const rank = entry.winner_position || index + 1;
                     let rankColor = subtextColor;
                     if (rank === 1) rankColor = '#fbbf24'; // Gold
                     else if (rank === 2) rankColor = '#94a3b8'; // Silver
@@ -848,9 +857,11 @@ export default function EventPoolRoom() {
                                 <Text style={[styles.leaderboardName, { color: isMe ? brandColor : textColor }]} numberOfLines={1}>
                                     {entry.users?.full_name || entry.users?.username || 'Anonymous Participant'}
                                 </Text>
-                                <Text style={[styles.leaderboardTime, { color: subtextColor }]}>
-                                    {format(new Date(entry.completed_at), 'h:mm:ss a')}
-                                </Text>
+                                {entry.users?.level && (
+                                    <Text style={[styles.leaderboardTime, { color: subtextColor }]}>
+                                        Level {entry.users.level}
+                                    </Text>
+                                )}
                             </View>
                             <View style={styles.scoreBadge}>
                                 <Text style={styles.scoreText}>{entry.final_score} PTS</Text>

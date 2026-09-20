@@ -10,7 +10,7 @@
     "sdkVersion": "54.0.0",
     "jsEngine": "hermes",
     "updates": {
-      "url": "https://u.expo.dev/9eb7911b-09b9-4238-a5c9-7979713f409c",
+      "url": "https://u.expo.dev/6d1bcc1c-20b2-4de4-a5e4-4b7f26e34eb8",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0

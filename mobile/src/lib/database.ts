@@ -761,7 +761,7 @@ export function safeJsonStringify(obj: any): string | null {
                 return value;
             });
         } catch (err) {
-            return String(obj);
+            return "{}"; // Fallback to empty object string if serialization completely fails
         }
     }
 }
@@ -1599,7 +1599,7 @@ export const getCachedEntityList = async (contentType: string): Promise<any[]> =
     if (!db) return [];
     try {
         let offset = 0;
-        const limit = 500;
+        const limit = 50;
         const allRows: any[] = [];
         let hasMore = true;
 

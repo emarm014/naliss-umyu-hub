@@ -115,8 +115,30 @@ export function isNetworkError(error: any): boolean {
     return true;
   }
 
-  // Also filter out expected 401 Unauthorized status codes (e.g. from clean logout sequences)
+// Also filter out expected 401 Unauthorized status codes (e.g. from clean logout sequences)
   if ((error as any).status === 401) return true;
+
+  return false;
+}
+
+export function isUserAuthError(error: any): boolean {
+  if (!error) return false;
+  
+  const errStr = typeof error === 'object' ? String((error as Error).message || error) : String(error);
+  const lowerErrStr = errStr.toLowerCase();
+  
+  if (
+    lowerErrStr.includes('token has expired or is invalid') ||
+    lowerErrStr.includes('invalid login credentials') ||
+    lowerErrStr.includes('user already registered') ||
+    lowerErrStr.includes('email not confirmed')
+  ) {
+    return true;
+  }
+  
+  if (error && typeof error === 'object' && 'name' in error && error.name === 'AuthApiError') {
+    return true;
+  }
 
   return false;
 }
@@ -154,6 +176,10 @@ export function captureStoreError(
     console.warn(`[Store Network Error] ${store}.${action}:`, error);
     return;
   }
+  if (isUserAuthError(error)) {
+    console.warn(`[Store Auth Error] ${store}.${action}:`, error);
+    return;
+  }
   Sentry.captureException(normalizeError(error), {
     tags: { store, action, location: `${store}.${action}` },
     extra: { ...extra, originalError: error },
@@ -167,6 +193,10 @@ export function captureUIError(
 ) {
   if (isNetworkError(error)) {
     console.warn(`[UI Network Error] ${component}:`, error);
+    return;
+  }
+  if (isUserAuthError(error)) {
+    console.warn(`[UI Auth Error] ${component}:`, error);
     return;
   }
   Sentry.captureException(normalizeError(error), {
@@ -183,6 +213,10 @@ export function captureApiError(
 ) {
   if (isNetworkError(error)) {
     console.warn(`[API Network Error] ${table}.${operation}:`, error);
+    return;
+  }
+  if (isUserAuthError(error)) {
+    console.warn(`[API Auth Error] ${table}.${operation}:`, error);
     return;
   }
   Sentry.captureException(normalizeError(error), {
@@ -315,10 +349,10 @@ export function captureDatabaseError(op: string, error: unknown, extra?: Record<
       for (const [key, value] of Object.entries(extra)) {
         if (typeof value === 'function') continue;
         if (key === 'args' && Array.isArray(value)) {
-          safeExtra.args = value.map(arg => typeof arg === 'function' ? '[Function]' : (arg && typeof arg === 'object') ? (function(){ try { return JSON.stringify(arg); } catch { return String(arg); } })() : arg);
+          safeExtra.args = value.map(arg => typeof arg === 'function' ? '[Function]' : (arg && typeof arg === 'object') ? String(arg) : arg);
         } else if (typeof value === 'object' && value !== null) {
           try {
-            safeExtra[key] = JSON.stringify(value);
+            safeExtra[key] = String(value);
           } catch {
             safeExtra[key] = String(value);
           }

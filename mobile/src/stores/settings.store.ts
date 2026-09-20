@@ -25,6 +25,8 @@ function parseBool(value: string | undefined | null, defaultVal: boolean): boole
   return defaultVal;
 }
 
+let _settingsFetchPromise: Promise<void> | null = null;
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -39,45 +41,59 @@ export const useSettingsStore = create<SettingsState>()(
       setSettings: (settings) => set((state) => ({ ...state, ...settings })),
 
       fetchSettings: async () => {
-        set({ isLoading: true });
-        try {
-          // SESSION GUARD: skip when unauthenticated to avoid 401 errors
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) {
-            set({ isLoading: false });
-            return;
-          }
+        // TTL guard: skip if last fetch was less than 5 seconds ago
+        const now = Date.now();
+        const state = useSettingsStore.getState();
+        if (now - state.lastFetchedAt < 5000) return;
 
-          const { data, error } = await (supabase as any)
-            .from('system_settings')
-            .select('key, value')
-            .in('key', [
-              'maintenance_mode',
-              'maintenance_message',
-              'maintenance_estimated_end',
-              'read_only_mode',
-              'allow_registration',
-            ]);
+        // In-flight deduplication: if a fetch is already running, piggyback on it
+        if (_settingsFetchPromise) return _settingsFetchPromise;
 
-          if (error) throw error;
-          if (data && data.length > 0) {
-            const map: Record<string, string> = {};
-            data.forEach((item: any) => { map[item.key] = item.value; });
-            set({
-              maintenanceMode: parseBool(map.maintenance_mode, false),
-              readOnlyMode: parseBool(map.read_only_mode, false),
-              allowRegistration: parseBool(map.allow_registration, true),
-              maintenanceMessage: map.maintenance_message ?? '',
-              maintenanceEstimatedEnd: map.maintenance_estimated_end ?? '',
-              isLoading: false,
-              lastFetchedAt: Date.now(),
-            });
-          } else {
+        _settingsFetchPromise = (async () => {
+          set({ isLoading: true });
+          try {
+            // SESSION GUARD: skip when unauthenticated to avoid 401 errors
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+              set({ isLoading: false });
+              return;
+            }
+
+            const { data, error } = await (supabase as any)
+              .from('system_settings')
+              .select('key, value')
+              .in('key', [
+                'maintenance_mode',
+                'maintenance_message',
+                'maintenance_estimated_end',
+                'read_only_mode',
+                'allow_registration',
+              ]);
+
+            if (error) throw error;
+            if (data && data.length > 0) {
+              const map: Record<string, string> = {};
+              data.forEach((item: any) => { map[item.key] = item.value; });
+              set({
+                maintenanceMode: parseBool(map.maintenance_mode, false),
+                readOnlyMode: parseBool(map.read_only_mode, false),
+                allowRegistration: parseBool(map.allow_registration, true),
+                maintenanceMessage: map.maintenance_message ?? '',
+                maintenanceEstimatedEnd: map.maintenance_estimated_end ?? '',
+                isLoading: false,
+                lastFetchedAt: Date.now(),
+              });
+            } else {
+              set({ isLoading: false });
+            }
+          } catch {
             set({ isLoading: false });
+          } finally {
+            _settingsFetchPromise = null;
           }
-        } catch {
-          set({ isLoading: false });
-        }
+        })();
+
+        return _settingsFetchPromise;
       },
 
       initializeListener: () => {
@@ -112,9 +128,6 @@ export const useSettingsStore = create<SettingsState>()(
               } else if (key === 'maintenance_estimated_end') {
                 set({ maintenanceEstimatedEnd: val ?? '' });
               }
-
-              // Sync all settings cleanly
-              useSettingsStore.getState().fetchSettings();
             }
           )
           .subscribe();
@@ -126,10 +139,10 @@ export const useSettingsStore = create<SettingsState>()(
           }
         });
 
-        // 3. Fallback poll every 30 seconds
+        // 3. Fallback poll every 60 seconds (realtime + AppState already provide timely updates)
         const pollInterval = setInterval(() => {
           useSettingsStore.getState().fetchSettings();
-        }, 30000);
+        }, 60000);
 
         return () => {
           clearInterval(pollInterval);

@@ -380,19 +380,24 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // 1. Initialize Settings Store & Realtime Listener
+  // 1. Initialize Settings Store & Realtime Listener (mount-once)
+  // CRITICAL: This must NOT depend on isOnline — tearing down and recreating
+  // the listener on every network flap creates duplicate realtime channels,
+  // duplicate AppState listeners, and duplicate poll intervals.
   useEffect(() => {
-    // Only fetch settings if online â€” cached values are used offline
-    if (isOnline) {
-      useSettingsStore.getState().fetchSettings();
-    }
     const unsubscribeSettings = useSettingsStore.getState().initializeListener();
     
     return () => {
       unsubscribeSettings();
     };
-    // CRITICAL: Do NOT include store functions in dependencies â€” they can be
-    // recreated on every render, causing infinite loops. Use getState() instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 1a. Fetch settings when coming back online
+  useEffect(() => {
+    if (isOnline) {
+      useSettingsStore.getState().fetchSettings();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
 

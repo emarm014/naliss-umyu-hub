@@ -18,8 +18,25 @@ const sanitizeSupabaseUrl = (url: string): string => {
 const supabaseUrl = sanitizeSupabaseUrl(process.env.EXPO_PUBLIC_SUPABASE_URL || '');
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Simple fetch wrapper that adds Sentry breadcrumbs for observability
+// Simple fetch wrapper that adds Sentry breadcrumbs for observability.
+// Includes an offline guard to prevent zombie requests when the device is
+// known to be offline — avoids fake 264-second "slow" warnings and
+// TypeError: Network request failed Sentry errors.
 const sentryFetch: typeof fetch = async (url, options) => {
+  // Offline fast-fail: if the network store reports offline, reject immediately
+  // instead of waiting 15-30s for the OS-level timeout. The lazy require avoids
+  // a circular import (client.ts ← mmkv.storage ← network.store ← client.ts).
+  try {
+    const { useNetworkStore } = require('../../stores/network.store');
+    if (!useNetworkStore.getState().isOnline) {
+      throw new TypeError('Network request failed');
+    }
+  } catch (e: any) {
+    // If the error is our own offline guard, rethrow it
+    if (e?.message === 'Network request failed') throw e;
+    // Otherwise (store not initialized yet), proceed with the fetch normally
+  }
+
   const startMs = Date.now();
   try {
     const response = await fetch(url as any, options);

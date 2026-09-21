@@ -22,6 +22,7 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
 import { getCleanAvatarUrl } from '../../src/utils';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { trackFeature, captureUIError } from '../../src/utils/sentry';
 import { isBefore } from 'date-fns';
 import { useEventPoolStore } from '../../src/stores/event-pool.store';
@@ -223,26 +224,30 @@ export default function HomeScreen() {
       const randomSeed = Math.random().toString(36).substring(7);
       const stickerUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${randomSeed}&size=200`;
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      let response: Response;
-      try {
-        response = await fetch(stickerUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
-      } catch (fetchErr: any) {
-        clearTimeout(timeoutId);
-        if (fetchErr?.name === 'AbortError') {
-          throw new Error('Request timed out. Please check your connection and try again.');
-        }
-        throw fetchErr;
+      // Download the sticker to a local temp file first — React Native's blob API
+      // is unreliable and causes "network error" when passed to FormData.
+      // Using FileSystem.downloadAsync is the proven, working pattern.
+      const tempPath = `${FileSystem.cacheDirectory}sticker-${Date.now()}.png`;
+      const downloadResult = await FileSystem.downloadAsync(stickerUrl, tempPath);
+
+      if (downloadResult.status !== 200) {
+        throw new Error(`Failed to download sticker (HTTP ${downloadResult.status})`);
       }
 
-      if (!response.ok) throw new Error(`Failed to fetch sticker (${response.status})`);
-      const blob = await response.blob();
+      // Verify the file was actually saved
+      const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+      if (!fileInfo.exists) {
+        throw new Error('Downloaded sticker file not found on disk.');
+      }
 
-      const hostedUrl = await uploadToCloudinary(blob, 'avatars', 'image/png');
+      // Upload to Cloudinary using the reliable local-file method
+      const fileName = `${user.id}-sticker-${Date.now()}.png`;
+      const hostedUrl = await uploadLocalFileToCloudinary(downloadResult.uri, fileName, 'avatars', 'image/png');
 
       await updateProfile({ avatar_url: hostedUrl });
+
+      // Clean up temp file (fire-and-forget)
+      FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => {});
 
       Alert.alert('Done!', 'Your profile picture has been updated.');
     } catch (err: any) {

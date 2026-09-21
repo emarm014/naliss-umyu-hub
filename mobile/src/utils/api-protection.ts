@@ -67,15 +67,12 @@ export const withRetry = async <T>(
 
   // Fast-fail if device is offline — skip all retry loops
   try {
-    const NetInfo = require('@react-native-community/netinfo').default;
-    const netState = await NetInfo.fetch();
-    if (!netState.isConnected) {
+    const { useNetworkStore } = require('../stores/network.store');
+    if (!useNetworkStore.getState().isOnline) {
       throw new Error(`Network request failed`);
     }
   } catch (e: any) {
-    // If the check itself fails with a network message, propagate it
     if (e?.message?.includes('Network request failed')) throw e;
-    // Otherwise (e.g., NetInfo not available), proceed normally
   }
 
   let attempt = 1;
@@ -86,10 +83,16 @@ export const withRetry = async <T>(
       return await withTimeout(operation(), timeoutMs, operationName);
     } catch (error: any) {
       // Determine if we should retry
-      const isTransientError = isNetworkError(error) || error instanceof TimeoutError;
+      const isTransientError = isNetworkError(error) || error instanceof TimeoutError || error?.name === 'TimeoutError';
       
-      if (!isTransientError || attempt >= maxRetries) {
-        // If it's a hard error (e.g., 401 Auth) or we've exhausted retries, fail fast
+      let isOnlineNow = true;
+      try {
+        const { useNetworkStore } = require('../stores/network.store');
+        isOnlineNow = useNetworkStore.getState().isOnline;
+      } catch (_) {}
+
+      if (!isTransientError || attempt >= maxRetries || !isOnlineNow) {
+        // If it's a hard error, device is offline, or we've exhausted retries, fail fast
         throw error;
       }
 

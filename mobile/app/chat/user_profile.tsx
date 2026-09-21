@@ -71,7 +71,7 @@ export default function UserProfileScreen() {
                 const { data, error } = await (supabase as any).from('users')
                     .select('*, department:departments(name)')
                     .eq('id', id as string)
-                    .single();
+                    .maybeSingle();
 
                 if (error) throw error;
                 if (mounted && data) {

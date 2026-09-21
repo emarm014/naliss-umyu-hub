@@ -121,7 +121,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchProfile: async (force = false) => {
-        const { user, lastFetch, profile } = get();
+        const currentUser = get().user || get().session?.user;
+        const user = currentUser;
+        const { lastFetch, profile } = get();
         if (!user) return;
 
         if (!force && lastFetch && Date.now() - lastFetch < 30000 && profile) {
@@ -134,8 +136,8 @@ export const useAuthStore = create<AuthState>()(
 
         // Fast-path: if offline, skip network fetch entirely and keep local cache
         try {
-          const netState = await NetInfo.fetch();
-          if (!netState.isConnected) {
+          const { useNetworkStore } = require('./network.store');
+          if (!useNetworkStore.getState().isOnline) {
             Logger.info('auth.store', 'Device is offline, serving profile from local cache.');
             return;
           }
@@ -146,7 +148,7 @@ export const useAuthStore = create<AuthState>()(
             withRetry(async () => {
               const result = await (supabase as any).from('users')
                 .select('*')
-                .eq('id', user.id)
+                .eq('id', currentUser.id)
                 .maybeSingle();
               if (result.error) throw result.error;
               return result;
@@ -164,7 +166,19 @@ export const useAuthStore = create<AuthState>()(
           }
 
           if (!data || Object.keys(data).length === 0) {
-            console.log('[AuthStore] Profile not yet created for user:', user.id);
+            console.log('[AuthStore] Profile not yet created for user:', currentUser.id);
+            const repaired = await get().attemptProfileRepair();
+            if (repaired) {
+              const { data: retryData } = await (supabase as any).from('users')
+                .select('*')
+                .eq('id', currentUser.id)
+                .maybeSingle();
+              if (retryData) {
+                set({ profile: retryData, isProfileComplete: true });
+                setSentryUserContext(retryData);
+                return;
+              }
+            }
             set({ profile: null, isProfileComplete: false });
             return;
           }
@@ -238,6 +252,8 @@ export const useAuthStore = create<AuthState>()(
           if (!isNetworkError(err)) {
             set({ error: err.message || 'Failed to load profile' });
             captureStoreError('auth', 'fetchProfile', err, { userId: user.id });
+          } else {
+            Logger.info('auth.store', 'Network/timeout during fetchProfile. Retaining local cache.');
           }
         }
       },
@@ -387,7 +403,18 @@ export const useAuthStore = create<AuthState>()(
           // â”€â”€ SELF-HEALING: If no profile row but user is logged in, attempt repair â”€â”€
           if (!complete) {
             const success = await get().attemptProfileRepair();
-            if (success) set({ isProfileComplete: true });
+            if (success) {
+              const { data: repairedData } = await (supabase as any).from('users')
+                .select('*')
+                .eq('id', userId)
+                .maybeSingle();
+              if (repairedData) {
+                set({ profile: repairedData, isProfileComplete: true });
+                setSentryUserContext(repairedData);
+              } else {
+                set({ isProfileComplete: true });
+              }
+            }
           }
         } catch (err: any) {
           set({ error: err.message, isProfileComplete: false });
@@ -395,10 +422,10 @@ export const useAuthStore = create<AuthState>()(
       },
 
       attemptProfileRepair: async () => {
-        const { user } = get();
-        if (!user || !user.email) return false;
+        const currentUser = get().user || get().session?.user;
+        if (!currentUser || !currentUser.email) return false;
 
-        const metadata = user.user_metadata;
+        const metadata = currentUser.user_metadata;
         const regNum = metadata?.registration_number;
         const level = metadata?.level;
 
@@ -406,13 +433,13 @@ export const useAuthStore = create<AuthState>()(
         if (regNum && level) {
           try {
             const { error: rpcError } = await ((supabase as any).rpc as any)('create_user_profile', {
-              p_id: user.id,
+              p_id: currentUser.id,
               p_full_name: metadata.full_name || 'Student',
-              p_email: user.email,
+              p_email: currentUser.email,
               p_registration_number: regNum,
               p_level: level.toString(),
-              p_avatar_url: metadata.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200`,
-              p_username: metadata.username || (metadata.full_name || 'user').toLowerCase().replace(/\s+/g, '_') + '_' + user.id.slice(0, 6),
+              p_avatar_url: metadata.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${currentUser.id}&size=200`,
+              p_username: metadata.username || (metadata.full_name || 'user').toLowerCase().replace(/\s+/g, '_') + '_' + currentUser.id.slice(0, 6),
             });
             return !rpcError;
           } catch {

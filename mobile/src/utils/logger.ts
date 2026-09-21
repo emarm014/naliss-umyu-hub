@@ -1,10 +1,10 @@
 import * as Sentry from '@sentry/react-native';
 import { TimeoutError } from './api-protection';
 
-// Errors that are transient/environmental â€” should never create Sentry issues
+// Errors that are transient/environmental — should never create Sentry issues
 function isTransientError(error: any): boolean {
   if (!error) return false;
-  if (error instanceof TimeoutError) return true;
+  if (error instanceof TimeoutError || error?.name === 'TimeoutError' || error?.name === 'AuthRetryableFetchError') return true;
   const msg = (error?.message || '').toLowerCase();
   return (
     msg.includes('network request failed') ||

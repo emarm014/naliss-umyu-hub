@@ -306,8 +306,16 @@ export function usePushNotifications() {
       // AppState listener to re-sync history and badge when app resumes to foreground
       appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
         if (nextState === 'active') {
-          syncNotificationHistory();
-          syncDeliveredNotifications();
+          try {
+            const { useNetworkStore } = require('../stores/network.store');
+            if (useNetworkStore.getState().isOnline) {
+              syncNotificationHistory();
+              syncDeliveredNotifications();
+            }
+          } catch (_) {
+            syncNotificationHistory();
+            syncDeliveredNotifications();
+          }
         }
       });
 
@@ -604,6 +612,46 @@ export async function registerForPushNotificationsAsync() {
   const categoriesPromise = configureNotificationCategories();
 
   if (Platform.OS === 'android') {
+    // Create every channel used by the server before this device saves its push
+    // token. This removes the startup race where a server push could arrive
+    // before the effect above had created its target channel.
+    await Notifications.setNotificationChannelAsync('messages_v2', {
+      name: 'Messages & Chat',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#064e3b',
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+    await Notifications.setNotificationChannelAsync('announcements_v2', {
+      name: 'Announcements',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#064e3b',
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+    await Notifications.setNotificationChannelAsync('featured', {
+      name: 'Featured Students',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 300, 100, 300],
+      lightColor: '#F59E0B',
+      sound: 'default',
+      showBadge: false,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+    await Notifications.setNotificationChannelAsync('general', {
+      name: 'General',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      sound: 'default',
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+    });
+
     // One-time cleanup of legacy channel — only attempt if it still exists
     try {
       const legacyChannel = await Notifications.getNotificationChannelAsync('default');

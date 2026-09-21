@@ -6,7 +6,6 @@ import { trackSqlTransaction, captureDatabaseError } from '../utils/sentry';
 let db: SQLite.SQLiteDatabase | null = null;
 let readDb: SQLite.SQLiteDatabase | null = null; // Dedicated read-only connection
 let recoveryPromise: Promise<boolean> | null = null;
-let currentRawDb: SQLite.SQLiteDatabase | null = null;
 let isRecovering = false;
 let activeDbName = 'chat.db';
 let _queueDepth = 0; // Track how many writes are pending in the queue
@@ -125,9 +124,9 @@ function isNativeNpe(error: any): boolean {
   try {
     const msg = typeof error === 'string'
       ? error
-      : (error && typeof error === 'object' && typeof error.message === 'string')
+      : (typeof error?.message === 'string')
         ? error.message
-        : String(error);
+        : null;
     return typeof msg === 'string' && msg.includes('NullPointerException');
   } catch (_) {
     return false;
@@ -146,9 +145,9 @@ function isReadonlyError(error: any): boolean {
   try {
     const msg = typeof error === 'string'
       ? error
-      : (error && typeof error === 'object' && typeof error.message === 'string')
+      : (typeof error?.message === 'string')
         ? error.message
-        : String(error);
+        : null;
     return typeof msg === 'string' && (
       msg.includes('attempt to write a readonly database') ||
       msg.includes('SQLITE_READONLY') ||
@@ -164,10 +163,13 @@ export function isTransactionRecoveryError(error: any): boolean {
   try {
     const msg = typeof error === 'string'
       ? error
-      : (error && typeof error === 'object' && typeof error.message === 'string')
+      : (typeof error?.message === 'string')
         ? error.message
-        : String(error);
-    return typeof msg === 'string' && (msg.includes('cannot commit - no transaction is active') || msg.includes('cannot rollback - no transaction is active'));
+        : null;
+    return typeof msg === 'string' && (
+      msg.includes('cannot commit - no transaction is active') ||
+      msg.includes('cannot rollback - no transaction is active')
+    );
   } catch (_) {
     return false;
   }
@@ -231,7 +233,6 @@ async function recoverDatabase(): Promise<boolean> {
       try { await (readDb as any)?.closeAsync?.(); } catch (_) {}
       db = null;
       readDb = null;
-      currentRawDb = null;
       try {
         await SQLite.deleteDatabaseAsync(activeDbName);
         console.warn('SQLite deleted corrupted database using deleteDatabaseAsync');
@@ -271,97 +272,40 @@ async function recoverDatabase(): Promise<boolean> {
   return recoveryPromise;
 }
 
-function wrapStatementMethods(stmt: any): void {
-  if (stmt._isWrapped) return;
-  stmt._isWrapped = true;
-
-  const origExecute = stmt.executeAsync.bind(stmt);
-  const origFinalize = stmt.finalizeAsync.bind(stmt);
-
-  stmt.executeAsync = async (...args: any[]) => {
-    try {
-      return await origExecute(...args);
-    } catch (error) {
-      if (isNativeNpe(error) || isReadonlyError(error)) {
-        if (isReadonlyError(error)) {
-            readonlyFailCount++;
-            if (readonlyFailCount >= 5) {
-                require('../utils/storageErrorAlert').showStorageErrorAlert();
-            }
-        }
-        let recovered = false;
-        if (isRecovering && recoveryPromise) recovered = await recoveryPromise;
-        else if (!isRecovering) recovered = await recoverDatabase();
-        if (recovered) return; // DB recovered — caller should retry at a higher level
-      }
-      throw error;
-    }
-  };
-
-  stmt.finalizeAsync = async (...args: any[]) => {
-    try {
-      return await origFinalize(...args);
-    } catch (error) {
-      if (isNativeNpe(error) || isReadonlyError(error)) {
-        if (isReadonlyError(error)) {
-            readonlyFailCount++;
-            if (readonlyFailCount >= 5) {
-                require('../utils/storageErrorAlert').showStorageErrorAlert();
-            }
-        }
-        let recovered = false;
-        if (isRecovering && recoveryPromise) recovered = await recoveryPromise;
-        else if (!isRecovering) recovered = await recoverDatabase();
-        if (recovered) return; // Cannot retry statement but we recovered DB
-      }
-      throw error;
-    }
-  };
-}
-
 function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLite.SQLiteDatabase {
   if ((originalDb as any)._isWrapped) {
     return originalDb;
   }
-
-  const rawMethods: Record<string, Function> = {};
-  const methodNames = ['execAsync', 'runAsync', 'getAllAsync', 'getFirstAsync', 'prepareAsync', 'withTransactionAsync'];
-
-  for (const name of methodNames) {
-    if (typeof (originalDb as any)[name] === 'function') {
-      rawMethods[name] = (originalDb as any)[name].bind(originalDb);
-    }
-  }
-
-  (originalDb as any)._rawMethods = rawMethods;
   (originalDb as any)._isWrapped = true;
 
+  // Preserve the original native methods directly from originalDb.
+  // Note: We intentionally do NOT wrap prepareAsync or monkey-patch statement objects.
+  // In expo-sqlite, getAllAsync, getFirstAsync, and runAsync internally call prepareAsync
+  // and manage the native statement lifecycle (execute + finalize).
+  // Leaving prepareAsync untouched avoids stack recursion, prevents JSI SharedObject
+  // release corruption on Android/Hermes, and eliminates duplicate Sentry tracking.
+  const origMethods: Record<string, Function> = {
+    execAsync: originalDb.execAsync.bind(originalDb),
+    runAsync: originalDb.runAsync.bind(originalDb),
+    getAllAsync: originalDb.getAllAsync.bind(originalDb),
+    getFirstAsync: originalDb.getFirstAsync.bind(originalDb),
+  };
+
   const wrap = (methodName: string) => {
+    const origMethod = origMethods[methodName];
+    if (!origMethod) return (originalDb as any)[methodName];
+
     return async (...args: any[]): Promise<any> => {
       const sql = typeof args[0] === 'string' ? args[0] : '';
 
       for (let attempt = 1; attempt <= 2; attempt++) {
-        if (isRecovering && recoveryPromise && originalDb !== currentRawDb) {
-            try { await recoveryPromise; } catch (_) {}
+        if (isRecovering && recoveryPromise) {
+          try { await recoveryPromise; } catch (_) {}
         }
-
-        let method: Function | undefined;
-        if (currentRawDb && (currentRawDb as any)._rawMethods && typeof (currentRawDb as any)._rawMethods[methodName] === 'function') {
-          method = (currentRawDb as any)._rawMethods[methodName];
-        } else {
-          method = rawMethods[methodName];
-        }
-
-        if (!method) break;
 
         const start = Date.now();
         try {
-          const result = await method(...args);
-
-          if (methodName === 'prepareAsync' && result) {
-            wrapStatementMethods(result);
-          }
-
+          const result = await origMethod(...args);
           const duration = Date.now() - start;
           if (sql) trackSqlTransaction(methodName, sql, duration);
           return result;
@@ -371,37 +315,37 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
           if (isNativeNpe(error)) {
             let recovered = false;
             if (isRecovering && recoveryPromise) {
-                recovered = await recoveryPromise;
+              recovered = await recoveryPromise;
             } else if (!isRecovering) {
-                recovered = await recoverDatabase();
+              recovered = await recoverDatabase();
             }
-            
+
             if (recovered && attempt < 2) continue;
-            
+
             if (sql) {
-                captureDatabaseError('DatabaseNPE_RecoveryFailed', error, { sql, args, duration });
+              captureDatabaseError('DatabaseNPE_RecoveryFailed', error, { sql, args, duration });
             }
             throw new Error('Database connection lost and recovery failed');
           }
 
-          // SQLITE_READONLY: the write connection is poisoned or storage became read-only.
+          // SQLITE_READONLY: the connection is poisoned or storage became read-only.
           // Trigger the same recovery path as NPE — close everything and reopen fresh.
           if (isReadonlyError(error)) {
             readonlyFailCount++;
             if (readonlyFailCount >= 5) {
-                require('../utils/storageErrorAlert').showStorageErrorAlert();
+              require('../utils/storageErrorAlert').showStorageErrorAlert();
             }
             let recovered = false;
             if (isRecovering && recoveryPromise) {
-                recovered = await recoveryPromise;
+              recovered = await recoveryPromise;
             } else if (!isRecovering) {
-                recovered = await recoverDatabase();
+              recovered = await recoverDatabase();
             }
-            
+
             if (recovered && attempt < 2) continue; // retry once after recovery
-            
+
             if (sql) {
-                captureDatabaseError('DatabaseReadonly_RecoveryFailed', error, { sql, args, duration });
+              captureDatabaseError('DatabaseReadonly_RecoveryFailed', error, { sql, args, duration });
             }
             throw error;
           }
@@ -425,10 +369,7 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
   dbObj.runAsync = wrap('runAsync');
   dbObj.getAllAsync = wrap('getAllAsync');
   dbObj.getFirstAsync = wrap('getFirstAsync');
-  dbObj.prepareAsync = wrap('prepareAsync');
-  if (typeof dbObj.withTransactionAsync === 'function') {
-    dbObj.withTransactionAsync = wrap('withTransactionAsync');
-  }
+
   return dbObj as SQLite.SQLiteDatabase;
 }
 
@@ -448,7 +389,6 @@ export const initDB = async () => {
                 } catch (_) {}
             }
             const rawDb = await SQLite.openDatabaseAsync(activeDbName);
-            currentRawDb = rawDb;
         db = wrapDatabaseWithObservability(rawDb);
         // Enforce busy timeout loop to insulate the database against thread blockages
         await db.execAsync('PRAGMA busy_timeout = 5000;');
@@ -624,12 +564,12 @@ export const initDB = async () => {
         // Helper to safely add columns if they don't exist
         const ensureColumn = async (table: string, column: string, typeDef: string) => {
             try {
-                if (!currentRawDb) return;
-                const tableInfo = await (currentRawDb as any).getAllAsync(`PRAGMA table_info(${table})`);
+                if (!rawDb) return;
+                const tableInfo = await (rawDb as any).getAllAsync(`PRAGMA table_info(${table})`);
                 const exists = tableInfo.some((info: any) => info.name === column || info.name === column.toLowerCase());
                 if (!exists) {
                     try {
-                        await currentRawDb.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeDef};`);
+                        await rawDb.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeDef};`);
                     } catch (alterErr: any) {
                         if (!String(alterErr).includes('duplicate column name')) {
                             throw alterErr;
@@ -720,12 +660,13 @@ export const getAssetCache = async (entityId: string) => {
     if (assetMemoryCache.has(entityId)) {
         return assetMemoryCache.get(entityId) || null;
     }
-    if (!db) return null;
     try {
-        const result = await db.getFirstAsync<{ local_path: string, remote_url: string }>(
-            'SELECT local_path, remote_url FROM local_assets WHERE entity_id = ?',
-            [entityId]
-        );
+        const result = await readQuery(async (database) => {
+            return database.getFirstAsync<{ local_path: string, remote_url: string }>(
+                'SELECT local_path, remote_url FROM local_assets WHERE entity_id = ?',
+                [entityId]
+            );
+        });
         assetMemoryCache.set(entityId, result || null);
         return result || null;
     } catch (e) {
@@ -790,11 +731,12 @@ export const saveLocalUserSession = async (profile: any) => {
 };
 
 export const getLocalUserSession = async () => {
-    if (!db) return null;
     try {
-        const result = await db.getFirstAsync<any>(
-            'SELECT * FROM local_user_session LIMIT 1'
-        );
+        const result = await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM local_user_session LIMIT 1'
+            );
+        });
         if (result) {
             let profile: any = {};
             if (result.raw_profile_json) {
@@ -825,15 +767,17 @@ export const clearLocalUserSession = async () => {
 };
 
 export const getMessagesByGroup = async (groupId: string, limit = 100000) => {
-    if (!db) return [];
     try {
         // Fetch the newest messages up to the limit, sorted ascending chronologically
-        const result = await db.getAllAsync<{ id: string, raw_data: string, local_media_path: string | null }>(
-            `SELECT * FROM (
-                SELECT * FROM local_messages WHERE group_id = ? ORDER BY created_at DESC LIMIT ?
-             ) ORDER BY created_at ASC`,
-            [groupId, limit]
-        );
+        const result = await readQuery(async (database) => {
+            return database.getAllAsync<{ id: string, raw_data: string, local_media_path: string | null }>(
+                `SELECT * FROM (
+                    SELECT * FROM local_messages WHERE group_id = ? ORDER BY created_at DESC LIMIT ?
+                 ) ORDER BY created_at ASC`,
+                [groupId, limit]
+            );
+        });
+        if (!result) return [];
         return result.map((row: any) => {
             try {
                 const msg = JSON.parse(row.raw_data);
@@ -984,12 +928,13 @@ export const updateLocalMediaPath = async (id: string, localPath: string) => {
 };
 
 export const getMaxTimestampByGroup = async (groupId: string): Promise<string | null> => {
-    if (!db) return null;
     try {
-        const result = await db.getFirstAsync<{ max_ts: string }>(
-            'SELECT MAX(created_at) as max_ts FROM local_messages WHERE group_id = ? AND id NOT LIKE "temp-%"',
-            [groupId]
-        );
+        const result = await readQuery(async (database) => {
+            return database.getFirstAsync<{ max_ts: string }>(
+                'SELECT MAX(created_at) as max_ts FROM local_messages WHERE group_id = ? AND id NOT LIKE "temp-%"',
+                [groupId]
+            );
+        });
         return result?.max_ts || null;
     } catch (e) {
         return null;
@@ -1030,12 +975,13 @@ export const upsertMediaManifest = async (manifest: any) => {
 };
 
 export const getMediaManifest = async (id: string): Promise<any | null> => {
-    if (!db) return null;
     try {
-        const row = await db.getFirstAsync<any>(
-            'SELECT * FROM local_media_manifest WHERE id = ?',
-            [id]
-        );
+        const row = await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM local_media_manifest WHERE id = ?',
+                [id]
+            );
+        });
         if (row) {
             return {
                 ...row,
@@ -1051,12 +997,14 @@ export const getMediaManifest = async (id: string): Promise<any | null> => {
 };
 
 export const getMediaManifestsForGroup = async (groupId: string): Promise<any[]> => {
-    if (!db) return [];
     try {
-        const rows = await db.getAllAsync<any>(
-            'SELECT * FROM local_media_manifest WHERE group_id = ?',
-            [groupId]
-        );
+        const rows = await readQuery(async (database) => {
+            return database.getAllAsync<any>(
+                'SELECT * FROM local_media_manifest WHERE group_id = ?',
+                [groupId]
+            );
+        });
+        if (!rows) return [];
         return rows.map((row: any) => ({
             ...row,
             downloaded: row.downloaded === 1,
@@ -1069,11 +1017,13 @@ export const getMediaManifestsForGroup = async (groupId: string): Promise<any[]>
 };
 
 export const getAllPendingMediaManifests = async (): Promise<any[]> => {
-    if (!db) return [];
     try {
-        const rows = await db.getAllAsync<any>(
-            'SELECT * FROM local_media_manifest WHERE downloaded = 0'
-        );
+        const rows = await readQuery(async (database) => {
+            return database.getAllAsync<any>(
+                'SELECT * FROM local_media_manifest WHERE downloaded = 0'
+            );
+        });
+        if (!rows) return [];
         return rows.map((row: any) => ({
             ...row,
             downloaded: row.downloaded === 1,
@@ -1111,12 +1061,13 @@ export const updateMediaSyncJob = async (job: any) => {
 };
 
 export const getMediaSyncJob = async (jobId: string): Promise<any | null> => {
-    if (!db) return null;
     try {
-        return await db.getFirstAsync<any>(
-            'SELECT * FROM media_sync_jobs WHERE job_id = ?',
-            [jobId]
-        );
+        return await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM media_sync_jobs WHERE job_id = ?',
+                [jobId]
+            );
+        });
     } catch (e) {
         console.error('SQLite getMediaSyncJob error:', e);
         return null;
@@ -1124,12 +1075,13 @@ export const getMediaSyncJob = async (jobId: string): Promise<any | null> => {
 };
 
 export const getLastActiveMediaSyncJob = async (userId: string): Promise<any | null> => {
-    if (!db) return null;
     try {
-        return await db.getFirstAsync<any>(
-            'SELECT * FROM media_sync_jobs WHERE user_id = ? ORDER BY started_at DESC LIMIT 1',
-            [userId]
-        );
+        return await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM media_sync_jobs WHERE user_id = ? ORDER BY started_at DESC LIMIT 1',
+                [userId]
+            );
+        });
     } catch (e) {
         console.error('SQLite getLastActiveMediaSyncJob error:', e);
         return null;
@@ -1212,12 +1164,13 @@ export const upsertSyncJournal = async (entry: any) => {
 };
 
 export const getLastJournalEntry = async (deviceId: string, stage: string): Promise<any | null> => {
-    if (!db) return null;
     try {
-        return await db.getFirstAsync<any>(
-            'SELECT * FROM sync_journal WHERE device_id = ? AND stage = ? ORDER BY id DESC LIMIT 1',
-            [deviceId, stage]
-        );
+        return await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM sync_journal WHERE device_id = ? AND stage = ? ORDER BY id DESC LIMIT 1',
+                [deviceId, stage]
+            );
+        });
     } catch (e) {
         console.error('SQLite getLastJournalEntry error:', e);
         return null;
@@ -1288,12 +1241,13 @@ export const batchUpsertContentManifest = async (entries: any[]) => {
 };
 
 export const getContentManifest = async (contentType: string, contentId: string): Promise<any | null> => {
-    if (!db) return null;
     try {
-        const row = await db.getFirstAsync<any>(
-            'SELECT * FROM content_manifest WHERE content_type = ? AND content_id = ?',
-            [contentType, contentId]
-        );
+        const row = await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM content_manifest WHERE content_type = ? AND content_id = ?',
+                [contentType, contentId]
+            );
+        });
         if (row && row.raw_data) {
             return {
                 ...row,
@@ -1308,12 +1262,14 @@ export const getContentManifest = async (contentType: string, contentId: string)
 };
 
 export const getContentManifestsByType = async (contentType: string): Promise<any[]> => {
-    if (!db) return [];
     try {
-        const rows = await db.getAllAsync<any>(
-            'SELECT * FROM content_manifest WHERE content_type = ?',
-            [contentType]
-        );
+        const rows = await readQuery(async (database) => {
+            return database.getAllAsync<any>(
+                'SELECT * FROM content_manifest WHERE content_type = ?',
+                [contentType]
+            );
+        });
+        if (!rows) return [];
         return rows.map((row: any) => ({
             ...row,
             raw_data: row.raw_data ? JSON.parse(row.raw_data) : null
@@ -1325,13 +1281,14 @@ export const getContentManifestsByType = async (contentType: string): Promise<an
 };
 
 export const getSyncCheckpoint = async (deviceId: string, userId: string): Promise<any | null> => {
-    if (!db) return null;
     const id = `${deviceId}_${userId}`;
     try {
-        return await db.getFirstAsync<any>(
-            'SELECT * FROM sync_checkpoint WHERE id = ?',
-            [id]
-        );
+        return await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM sync_checkpoint WHERE id = ?',
+                [id]
+            );
+        });
     } catch (e) {
         console.error('SQLite getSyncCheckpoint error:', e);
         return null;
@@ -1472,7 +1429,6 @@ export const indexEntity = async (
 };
 
 export const searchOffline = async (query: string, filters?: { type?: string; groupId?: string }): Promise<any[]> => {
-    if (!db) return [];
     try {
         const cleanQuery = query.replace(/[^\w\s]/g, '').trim().split(/\s+/).map(t => `${t}*`).join(' AND ');
         if (!cleanQuery) return [];
@@ -1490,7 +1446,10 @@ export const searchOffline = async (query: string, filters?: { type?: string; gr
         }
 
         sql += ' ORDER BY rank';
-        return await db.getAllAsync<any>(sql, params);
+        const result = await readQuery(async (database) => {
+            return database.getAllAsync<any>(sql, params);
+        });
+        return result || [];
     } catch (e) {
         console.error('SQLite searchOffline error:', e);
         return [];
@@ -1516,12 +1475,13 @@ export const updateSyncState = async (userId: string, state: any) => {
 };
 
 export const getSyncState = async (userId: string): Promise<any | null> => {
-    if (!db) return null;
     try {
-        return await db.getFirstAsync<any>(
-            'SELECT * FROM offline_sync_state WHERE user_id = ?',
-            [userId]
-        );
+        return await readQuery(async (database) => {
+            return database.getFirstAsync<any>(
+                'SELECT * FROM offline_sync_state WHERE user_id = ?',
+                [userId]
+            );
+        });
     } catch (e) {
         console.error('SQLite getSyncState error:', e);
         return null;
@@ -1590,38 +1550,40 @@ export const cacheEntityList = async (contentType: string, entities: any[], user
         } else {
             console.error('SQLite cacheEntityList error:', e);
         }
-        throw e;
+        return;
     }
     });
 };
 
 export const getCachedEntityList = async (contentType: string): Promise<any[]> => {
-    if (!db) return [];
     try {
-        let offset = 0;
-        const limit = 50;
-        const allRows: any[] = [];
-        let hasMore = true;
+        const allRows = await readQuery(async (database) => {
+            let offset = 0;
+            const limit = 50;
+            const rowsList: any[] = [];
+            let hasMore = true;
 
-        while (hasMore) {
-            const rows = await db.getAllAsync<any>(
-                'SELECT * FROM content_manifest WHERE content_type = ? ORDER BY local_updated_at DESC LIMIT ? OFFSET ?',
-                [contentType, limit, offset]
-            );
-            if (rows.length === 0) {
-                hasMore = false;
-            } else {
-                for (const row of rows) {
-                    try {
-                        const parsed = row.raw_data ? JSON.parse(row.raw_data) : null;
-                        if (parsed) allRows.push(parsed);
-                    } catch { /* ignore parse error */ }
+            while (hasMore) {
+                const rows = await database.getAllAsync<any>(
+                    'SELECT * FROM content_manifest WHERE content_type = ? ORDER BY local_updated_at DESC LIMIT ? OFFSET ?',
+                    [contentType, limit, offset]
+                );
+                if (!rows || rows.length === 0) {
+                    hasMore = false;
+                } else {
+                    for (const row of rows) {
+                        try {
+                            const parsed = row.raw_data ? JSON.parse(row.raw_data) : null;
+                            if (parsed) rowsList.push(parsed);
+                        } catch { /* ignore parse error */ }
+                    }
+                    offset += limit;
+                    if (rows.length < limit) hasMore = false;
                 }
-                offset += limit;
-                if (rows.length < limit) hasMore = false;
             }
-        }
-        return allRows;
+            return rowsList;
+        });
+        return allRows || [];
     } catch (e) {
         console.error('SQLite getCachedEntityList error:', e);
         return [];

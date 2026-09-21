@@ -98,6 +98,13 @@ export async function getOrCreateDeviceId(): Promise<string> {
  * Falls back gracefully if offline or request fails.
  */
 export async function fetchIpAddress(): Promise<string> {
+  try {
+    const { useNetworkStore } = require('../stores/network.store');
+    if (!useNetworkStore.getState().isOnline) {
+      return 'Offline / Unknown';
+    }
+  } catch (_) {}
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 3000);
   try {
@@ -107,7 +114,6 @@ export async function fetchIpAddress(): Promise<string> {
     return data.ip || 'Unknown IP';
   } catch (err) {
     clearTimeout(timeoutId);
-    console.warn('Could not fetch public IP address:', err);
     return 'Offline / Unknown';
   }
 }

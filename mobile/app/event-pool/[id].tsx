@@ -39,10 +39,12 @@ type LeaderboardEntry = {
     user_id: string;
     final_score: number;
     completed_at: string;
+    winner_position?: number | null;
     users?: {
         full_name: string;
         username: string;
         avatar_url: string;
+        level?: string;
     };
 };
 
@@ -105,8 +107,13 @@ export default function EventPoolRoom() {
                     .from('event_pools')
                     .select('*')
                     .eq('id', id)
-                    .single();
+                    .maybeSingle();
                 if (poolErr) throw poolErr;
+                if (!poolData) {
+                    Alert.alert('Not Found', 'This event pool could not be found.');
+                    router.back();
+                    return;
+                }
                 setPool(poolData as EventPoolDetail);
 
                 // 3. If quiz, fetch questions

@@ -20,7 +20,7 @@ import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { AuthGuardian } from '../../src/utils/auth-guardian';
 import { useNetworkStore } from '../../src/stores/network.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
-import { startTransaction, trackUserAction } from '../../src/utils/sentry';
+import { startTransaction, trackUserAction, isNetworkError } from '../../src/utils/sentry';
 import { getRawStorage } from '../../src/stores/mmkv.storage';
 import { handleOAuthRedirect } from '../../src/utils/oauth-redirect';
 
@@ -67,6 +67,11 @@ export default function LoginScreen() {
       }
 
       return 'ok';
+    }
+
+    // If password sign-in failed due to network error, throw immediately (skip secondary RPC)
+    if (authError && (isNetworkError(authError) || (authError as any).status === 0)) {
+      throw authError;
     }
 
     // 3. If password sign-in failed, check whether this account is exclusively Google-authenticated
@@ -200,18 +205,27 @@ export default function LoginScreen() {
           break;
       }
     } catch (err: any) {
+      const isNet = isNetworkError(err) || (err as any)?.status === 0 || err?.message?.toLowerCase().includes('network');
       finishTransaction('error');
       const msg = err.message || 'Login failed. Please try again.';
       
-      Sentry.captureException(err, {
-        tags: { location: 'LoginScreen.handleLogin' },
-        extra: { email: emailToUse, errorMessage: msg },
-      });
+      if (!isNet) {
+        Sentry.captureException(err, {
+          tags: { location: 'LoginScreen.handleLogin' },
+          extra: { email: emailToUse, errorMessage: msg },
+        });
 
-      // Log failed login attempt server-side (best-effort, fire-and-forget)
-      (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${emailToUse}`, metadata: { email: emailToUse, reason: msg, method: 'email' } }); } catch (_) {} })();
+        // Log failed login attempt server-side (best-effort, fire-and-forget)
+        (async () => { try { await (supabase as any).from('activity_logs' as any).insert({ action: 'auth.login_failed', entity_type: 'auth', description: `Failed login attempt: ${emailToUse}`, metadata: { email: emailToUse, reason: msg, method: 'email' } }); } catch (_) {} })();
+      }
 
-      if (msg.includes('timed out') || msg.includes('timeout')) {
+      if (isNet) {
+        Alert.alert(
+          'No Connection',
+          'Unable to connect to the server. Please check your internet connection and try again.',
+          [{ text: 'OK' }]
+        );
+      } else if (msg.includes('timed out') || msg.includes('timeout')) {
         Alert.alert(
             'Connection Slow',
             'Your login is taking too long. Check your network and try again.\n\nIf this keeps happening, you may already be logged in — try reopening the app.',

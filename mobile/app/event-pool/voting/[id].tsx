@@ -48,9 +48,14 @@ export default function VotingEngineScreen() {
           .from('event_pools')
           .select('*')
           .eq('id', id)
-          .single();
+          .maybeSingle();
 
         if (poolError) throw poolError;
+        if (!poolData) {
+          Alert.alert('Not Found', 'This voting pool could not be found.');
+          router.back();
+          return;
+        }
         setPoolInfo(poolData);
 
         const receiptStr = await mmkvStorage.getItem(receiptKey);
@@ -301,7 +306,7 @@ export default function VotingEngineScreen() {
             </Text>
           </ScrollView>
           <View style={{ padding: 24 }}>
-            {!ballotReceipt && poolInfo?.status === 'live' ? (
+            {!ballotReceipt && isLive ? (
               <TouchableOpacity 
                 style={[styles.castBtn, { backgroundColor: colors.primary }]}
                 onPress={() => {

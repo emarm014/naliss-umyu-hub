@@ -39,6 +39,11 @@ class RealtimeManager {
 
     private handleAppStateChange = async (nextAppState: AppStateStatus) => {
         if (nextAppState === 'active') {
+            try {
+                const { useNetworkStore } = require('../stores/network.store');
+                if (!useNetworkStore.getState().isOnline) return;
+            } catch (_) {}
+
             if (this.isReconnecting) return;
 
             // If channel is already joined or in the process of joining, do nothing

@@ -237,8 +237,8 @@ export function RegistrationOverlay({ poolId, user, onClose }: { poolId: string,
                 if (sTime) setServerTime(new Date(sTime));
 
                 // Fetch pool
-                const { data: pool } = await (supabase as any).from('event_pools').select('*').eq('id', poolId).single();
-                setPoolData(pool);
+                const { data: pool } = await (supabase as any).from('event_pools').select('*').eq('id', poolId).maybeSingle();
+                if (pool) setPoolData(pool);
 
                 // Fetch applicant count
                 const { count } = await (supabase as any).from('pool_applications').select('*', { count: 'exact', head: true }).eq('pool_id', poolId);

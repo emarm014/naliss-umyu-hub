@@ -125,9 +125,10 @@ export const useGalleryStore = create<GalleryState>()(
                 .from('gallery_topics')
                 .select('*')
                 .eq('id' as any, topicId as any)
-                .single();
+                .maybeSingle();
                 
             if (error) throw error;
+            if (!data) return existing || null;
             
             const topic = data as unknown as GalleryTopic;
             set(state => ({

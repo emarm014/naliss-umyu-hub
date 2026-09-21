@@ -113,9 +113,14 @@ export default function EssayEngineScreen() {
                     .from('event_pools')
                     .select('id, title, status, end_time, target_constraints')
                     .eq('id', id)
-                    .single();
+                    .maybeSingle();
                 
                 if (poolError) throw poolError;
+                if (!poolData) {
+                    Alert.alert('Not Found', 'This essay event could not be found.');
+                    router.back();
+                    return;
+                }
                 if (poolData.status !== 'live') {
                     Alert.alert('Closed', 'This event is no longer active.');
                     router.back();

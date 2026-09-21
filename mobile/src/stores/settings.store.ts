@@ -59,6 +59,15 @@ export const useSettingsStore = create<SettingsState>()(
               return;
             }
 
+            // OFFLINE GUARD: skip network query when offline
+            try {
+              const { useNetworkStore } = require('./network.store');
+              if (!useNetworkStore.getState().isOnline) {
+                set({ isLoading: false });
+                return;
+              }
+            } catch (_) {}
+
             const { data, error } = await (supabase as any)
               .from('system_settings')
               .select('key, value')
@@ -135,7 +144,14 @@ export const useSettingsStore = create<SettingsState>()(
         // 2. AppState listener — instant fetch when returning to foreground
         const appStateSub = require('react-native').AppState.addEventListener('change', (nextState: string) => {
           if (nextState === 'active') {
-            useSettingsStore.getState().fetchSettings();
+            try {
+              const { useNetworkStore } = require('./network.store');
+              if (useNetworkStore.getState().isOnline) {
+                useSettingsStore.getState().fetchSettings();
+              }
+            } catch (_) {
+              useSettingsStore.getState().fetchSettings();
+            }
           }
         });
 

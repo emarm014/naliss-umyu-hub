@@ -464,9 +464,9 @@ export default function ChatScreen() {
             const { data, error } = await (supabase as any).from('groups')
                 .select('*')
                 .eq('id', id)
-                .single();
+                .maybeSingle();
             if (error) throw error;
-            setGroup(data);
+            if (data) setGroup(data);
         } catch {
             // silent — group details cached from store
         }
@@ -746,7 +746,7 @@ export default function ChatScreen() {
                             reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
                         `)
                         .eq('id', newMsg.id)
-                        .single();
+                        .maybeSingle();
                     if (fullData) {
                         const formatted = {
                             ...(fullData as any),
@@ -807,7 +807,7 @@ export default function ChatScreen() {
                 const { data: userProfile } = await (supabase as any).from('users')
                     .select('id, username, full_name, avatar_url, level, role')
                     .eq('id', newUserId)
-                    .single();
+                    .maybeSingle();
                 if (userProfile) {
                     const updated = [
                         ...membersRef.current.filter(m => m.id !== newUserId),
@@ -1231,7 +1231,7 @@ export default function ChatScreen() {
             const { data } = await (supabase as any).from('users')
                 .select('id')
                 .eq('username', clean)
-                .single();
+                .maybeSingle();
             if (data) {
                 router.push({
                     pathname: '/chat/user_profile' as any,

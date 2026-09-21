@@ -259,7 +259,7 @@ export function FeaturedStudentPopup() {
                         .from('users')
                         .select('id, full_name, username, avatar_url, level')
                         .eq('id' as any, newUserId)
-                        .single();
+                        .maybeSingle();
 
                     if (userData) {
                         setIncomingCongratulator(userData);

@@ -51,8 +51,19 @@ export function useHeartbeat() {
         };
 
         const pingPresence = async () => {
-            // Only ping if the app is active
+            // Only ping if the app is active and online
             if (appState.current !== 'active') return;
+
+            try {
+                const { useNetworkStore } = require('../stores/network.store');
+                if (!useNetworkStore.getState().isOnline) {
+                    if (appState.current === 'active') {
+                        const nextTick = 60000 + Math.random() * 15000;
+                        timeoutId = setTimeout(pingPresence, nextTick);
+                    }
+                    return;
+                }
+            } catch (_) {}
 
             try {
                 // Attempt to call RPC if it exists, otherwise fallback to profiles update
@@ -98,8 +109,15 @@ export function useHeartbeat() {
             appState.current = nextAppState;
             
             if (wasBackgrounded && nextAppState === 'active') {
-                // App has come to the foreground, trigger an immediate ping
-                pingPresence();
+                // App has come to the foreground, trigger an immediate ping if online
+                try {
+                    const { useNetworkStore } = require('../stores/network.store');
+                    if (useNetworkStore.getState().isOnline) {
+                        pingPresence();
+                    }
+                } catch (_) {
+                    pingPresence();
+                }
             } else if (nextAppState === 'background' || nextAppState === 'inactive') {
                 stopPing();
             }

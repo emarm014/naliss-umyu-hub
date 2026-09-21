@@ -43,20 +43,19 @@ export function FeaturedStudentCongratsCard({ userId }: { userId: string }) {
     const fetchFeaturedAndCongrats = async () => {
         try {
             // Find active feature owned by this user
-            const { data: featDataRaw } = await (supabase.from('featured_students') as any)
+            const { data: featDataRaw, error: featError } = await (supabase.from('featured_students') as any)
                 .select('id, title, total_congratulations')
                 .eq('user_id', userId)
                 .eq('is_active', true)
                 .order('published_at', { ascending: false })
-                .limit(1)
-                .single();
+                .limit(1);
 
-            const featData = featDataRaw as any;
-
-            if (!featData) {
+            if (featError || !featDataRaw || featDataRaw.length === 0) {
                 setFeaturedId(null);
                 return;
             }
+
+            const featData = featDataRaw[0] as any;
 
             setFeaturedId(featData.id);
             setFeaturedTitle(featData.title);
@@ -102,7 +101,7 @@ export function FeaturedStudentCongratsCard({ userId }: { userId: string }) {
                     const { data: userData } = await (supabase.from('users') as any)
                         .select('id, full_name, username, avatar_url, level')
                         .eq('id', newUserId)
-                        .single();
+                        .maybeSingle();
 
                     if (userData) {
                         const newCongratulator: Congratulator = {

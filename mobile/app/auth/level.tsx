@@ -213,10 +213,13 @@ export default function RegisterLevel() {
           data: { full_name, username, registration_number: reg_number, level: numericLevel.toString(), provider },
         });
       } else {
-        const { error: updateError } = await supabase.auth.updateUser({
-          password: password!,
+        const updatePayload: Record<string, any> = {
           data: { full_name, username, registration_number: reg_number, level: numericLevel.toString(), provider: 'email' },
-        });
+        };
+        if (password) {
+          updatePayload.password = password;
+        }
+        const { error: updateError } = await supabase.auth.updateUser(updatePayload);
         if (updateError && !updateError.message?.toLowerCase().includes('same password')) {
           console.warn('[Level] Non-fatal auth metadata update warning:', updateError);
         }

@@ -107,13 +107,14 @@ export const useGroupStore = create<GroupState>()(
                             const missingToJoin = defaultGroups.filter((g: any) => !groupIds.includes(g.id));
                             if (missingToJoin.length > 0) {
                                 try {
-                                    // Silently try to insert them into the missing groups
-                                    await (supabase as any).from('group_members').insert(
-                                        missingToJoin.map((g: any) => ({ group_id: g.id, user_id: session.user.id, role: 'member' }))
+                                    // Silently try to upsert them into the missing groups (avoid 409 duplicate conflict)
+                                    await (supabase as any).from('group_members').upsert(
+                                        missingToJoin.map((g: any) => ({ group_id: g.id, user_id: session.user.id, role: 'member' })),
+                                        { onConflict: 'group_id,user_id', ignoreDuplicates: true }
                                     );
                                     missingToJoin.forEach((g: any) => groupIds.push(g.id));
                                 } catch (e) {
-                                    // Ignore RLS errors if any, just push the IDs so they can at least try to load them
+                                    // Ignore errors if any, just push the IDs so they can at least try to load them
                                     missingToJoin.forEach((g: any) => groupIds.push(g.id));
                                 }
                             }

@@ -90,9 +90,14 @@ export default function QuizEngineScreen() {
                     .from('event_pools')
                     .select('id, title, status, end_time, target_constraints')
                     .eq('id', id)
-                    .single();
+                    .maybeSingle();
                 
                 if (poolError) throw poolError;
+                if (!poolData) {
+                    Alert.alert('Not Found', 'This quiz could not be found.');
+                    router.back();
+                    return;
+                }
                 if (poolData.status !== 'live') {
                     Alert.alert('Quiz Closed', 'This quiz is no longer active.');
                     router.back();
@@ -337,7 +342,7 @@ export default function QuizEngineScreen() {
                     .from('event_pools')
                     .select('id, title, status, end_time, target_constraints')
                     .eq('id', id)
-                    .single();
+                    .maybeSingle();
                 if (!error && data) {
                     setPoolInfo((prev: any) => prev ? { ...prev, ...data } : data);
                 }

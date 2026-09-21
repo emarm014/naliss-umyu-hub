@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
 import { supabase } from '../../lib/supabase';
 import { getFirstAccessibleRoute } from '../../utils/access';
+import { isNetworkError } from '../../lib/sentry';
 import LoadingSpinner from '../ui/LoadingSpinner';
 
 const getOrCreateDeviceId = () => {
@@ -34,20 +35,38 @@ const getBrowserAndOS = () => {
   return { os, browser };
 };
 
+let cachedIp: string | null = null;
+let lastIpFetchTime = 0;
+const IP_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 const fetchIpAddress = async (): Promise<string> => {
+  if (cachedIp && Date.now() - lastIpFetchTime < IP_CACHE_TTL) {
+    return cachedIp;
+  }
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return cachedIp || 'Offline / Unknown';
+  }
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3000);
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
   try {
     const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
     clearTimeout(timeoutId);
     const data = await res.json();
-    return data.ip || 'Unknown IP';
-  } catch (err) {
+    if (data?.ip) {
+      cachedIp = data.ip;
+      lastIpFetchTime = Date.now();
+      return data.ip;
+    }
+    return cachedIp || 'Unknown IP';
+  } catch {
     clearTimeout(timeoutId);
-    console.warn('Could not fetch IP:', err);
-    return 'Unknown IP';
+    return cachedIp || 'Unknown IP';
   }
 };
+
+let isRegisteringSession = false;
+let lastRegisteredAt = 0;
+const SESSION_VERIFY_COOLDOWN = 60 * 1000; // 60 seconds
 
 export default function ProtectedRoute() {
   const { user, profile, permissions, isAdminOrModerator, isLoading, signOut } = useAuthStore();
@@ -59,7 +78,13 @@ export default function ProtectedRoute() {
     const deviceId = getOrCreateDeviceId();
     let isSubscribed = true;
 
-    const checkAndRegisterSession = async () => {
+    const checkAndRegisterSession = async (isRetry: boolean = false) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!isSubscribed) return;
+      if (isRegisteringSession) return;
+      if (!isRetry && Date.now() - lastRegisteredAt < SESSION_VERIFY_COOLDOWN) return;
+
+      isRegisteringSession = true;
       try {
         // 1. Check if the session is still active in DB
         const { data, error } = await supabase
@@ -97,15 +122,31 @@ export default function ProtectedRoute() {
           }, { onConflict: 'user_id,device_id' });
 
         if (upsertError) throw upsertError;
+        lastRegisteredAt = Date.now();
       } catch (err: any) {
         // Ignore RLS/Auth errors caused by expired sessions during component unmount
         if (err?.code === '42501' || err?.status === 401 || !isSubscribed) return;
-        // Lock contention (AbortError) is expected during StrictMode double-mount — downgrade to warn
+
+        // Lock contention or transient network errors: downgrade to warn and schedule background retry
+        if (isNetworkError(err) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          console.warn('[ProtectedRoute] Session verify/register deferred due to network error:', err?.message || err);
+          if (!isRetry && isSubscribed) {
+            setTimeout(() => {
+              if (isSubscribed && (typeof navigator === 'undefined' || navigator.onLine)) {
+                checkAndRegisterSession(true);
+              }
+            }, 4000);
+          }
+          return;
+        }
+
         if (err?.name === 'AbortError' || err?.message?.includes('Lock broken') || err?.details?.includes?.('AbortError')) {
           console.warn('Failed to verify/register session:', err);
         } else {
           console.error('Failed to verify/register session:', err);
         }
+      } finally {
+        isRegisteringSession = false;
       }
     };
 
@@ -186,7 +227,7 @@ export default function ProtectedRoute() {
       isSubscribed = false;
       supabase.removeChannel(channel);
     };
-  }, [user, isAdminOrModerator, signOut]);
+  }, [user?.id, isAdminOrModerator, signOut]);
 
   if (isLoading) {
     return (

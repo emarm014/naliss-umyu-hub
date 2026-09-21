@@ -216,6 +216,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Keep one ID for the push ticket, history row, and app-side deduplication.
+    // It must be created before constructing the Expo payload below.
+    const notifId = data?.id || data?.notification_id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
     // Map custom priorities to Expo options
     const payloadPriority = data?.priority ?? "high";
     let expoPriority: "default" | "normal" | "high" = "high";
@@ -224,9 +228,9 @@ Deno.serve(async (req: Request) => {
     // Default to general, override based on type
     let expoChannelId = "general";
     if (notifType === "message") {
-      expoChannelId = "messages";
+      expoChannelId = "messages_v2";
     } else if (notifType === "announcement") {
-      expoChannelId = "announcements";
+      expoChannelId = "announcements_v2";
     } else if (notifType === "fyb_congratulation" || notifType === "featured_student") {
       expoChannelId = "featured";
     }
@@ -346,8 +350,6 @@ Deno.serve(async (req: Request) => {
     // Send in batches of 100 concurrently (Expo Push API recommendation)
     const BATCH_SIZE = 100;
     const batchPromises = [];
-    const notifId = data?.id || data?.notification_id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE);
       const batchTokens = uniqueTokens.slice(i, i + BATCH_SIZE);

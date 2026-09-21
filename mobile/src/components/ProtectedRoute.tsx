@@ -109,17 +109,33 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             .eq('is_active', true)
             .order('last_active_at', { ascending: false });
 
-          const upsertPromise = (supabase as any)
-            .from('user_sessions')
-            .upsert({
-              user_id: session.user.id,
-              device_id: deviceId,
-              device_name: deviceName,
-              os: Platform.OS,
-              ip_address: ipAddress,
-              is_active: true,
-              last_active_at: new Date().toISOString()
-            }, { onConflict: 'user_id,device_id' });
+          const upsertSessionSafe = async () => {
+            try {
+              const { error: upsertErr } = await (supabase as any)
+                .from('user_sessions')
+                .upsert({
+                  user_id: session.user.id,
+                  device_id: deviceId,
+                  device_name: deviceName,
+                  os: Platform.OS,
+                  ip_address: ipAddress,
+                  is_active: true,
+                  last_active_at: new Date().toISOString()
+                }, { onConflict: 'user_id,device_id' });
+
+              if (upsertErr) {
+                if (upsertErr.code === '23503') {
+                  // Foreign key violation means user row in public.users is not yet committed/created.
+                  // Defer gracefully — session registration will self-heal once user record exists.
+                  console.warn('[ProtectedRoute] user_sessions upsert deferred: user record not yet present in public.users');
+                } else {
+                  console.warn('[ProtectedRoute] Session upsert warning:', upsertErr.message || upsertErr);
+                }
+              }
+            } catch (err: any) {
+              console.warn('[ProtectedRoute] Session upsert non-blocking error:', err?.message || err);
+            }
+          };
 
           let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
           const timeoutPromise = new Promise((_, reject) => {
@@ -131,7 +147,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             Promise.race([fetchPromise, timeoutPromise]).finally(() => {
               if (timeoutTimer) clearTimeout(timeoutTimer);
             }) as any,
-            Promise.resolve(upsertPromise).catch((err: any) => console.warn('Session upsert failed:', err)),
+            upsertSessionSafe(),
           ]);
 
           if (fetchErr) throw normalizeError(fetchErr);
@@ -206,9 +222,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             setDeviceSessionChecked(true);
           }
         } catch (err: any) {
-          // If we hit an RLS/Auth error or the query fails, we must still allow the app to render
+          // If we hit an RLS/Auth error or FK error during registration, we must still allow the app to render
           // otherwise the user is permanently stuck on the splash screen.
-          console.error('Device session verification failed:', err);
+          if (err?.code === '23503') {
+            console.warn('[ProtectedRoute] Device session verification deferred: public.users record pending');
+          } else {
+            console.error('Device session verification failed:', err);
+          }
           if (isSubscribed) {
             setSessionError(null);
             setDeviceSessionChecked(true);
@@ -224,7 +244,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
   }, [session, isProfileComplete]);
 
-  // â”€â”€ Remote Logout Check on App Focus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Remote Logout Check on App Focus ─────────────────────────────────────────
   useEffect(() => {
     if (!session || !deviceSessionChecked || sessionError) return;
 
@@ -254,7 +274,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           }
           return;
         }
-        if (!data || data.is_active === false) {
+        if (data && data.is_active === false) {
           Alert.alert('Session Terminated', 'This device has been logged out remotely.');
           await supabase.auth.signOut();
           useAuthStore.getState().setSession(null);
@@ -263,6 +283,27 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           useAuthStore.getState().setProfile(null);
           router.replace('/auth/login' as any);
           return;
+        }
+
+        // If no session row exists for this device, attempt to self-heal by registering it
+        // (Do NOT kick the user out — missing record is NOT a remote revocation)
+        if (!data) {
+          try {
+            const ipAddress = await fetchIpAddress().catch(() => null);
+            await (supabase as any)
+              .from('user_sessions')
+              .upsert({
+                user_id: session.user.id,
+                device_id: deviceId,
+                device_name: getDeviceName(),
+                os: Platform.OS,
+                ip_address: ipAddress,
+                is_active: true,
+                last_active_at: new Date().toISOString()
+              }, { onConflict: 'user_id,device_id' });
+          } catch {
+            // Silently ignore if profile is still being created or FK is pending
+          }
         }
       } catch {
         // silent offline fallback
@@ -772,13 +813,21 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       // Don't run heartbeat during password recovery — recovery sessions have no user_sessions row
       if (useSignupStore.getState().isRecoveryFlow) return;
 
+      // DO NOT fire REST queries when device is offline
+      if (!useNetworkStore.getState().isOnline) {
+        if (isSubscribed) {
+          timer = setTimeout(performHeartbeatCheck, 15000);
+        }
+        return;
+      }
+
       try {
         const deviceId = await getOrCreateDeviceId();
         
         // Parallel REST fetch to check user status and session status
         const [userRes, sessionRes] = await Promise.all([
-          (supabase as any).from('users').select('status, banned_reason, suspension_reason, suspended_until').eq('id', userId).single(),
-          (supabase as any).from('user_sessions').select('is_active').eq('user_id', userId).eq('device_id', deviceId).single()
+          (supabase as any).from('users').select('status, banned_reason, suspension_reason, suspended_until').eq('id', userId).maybeSingle(),
+          (supabase as any).from('user_sessions').select('is_active').eq('user_id', userId).eq('device_id', deviceId).maybeSingle()
         ]);
 
         if (!isSubscribed) return;
@@ -889,7 +938,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     // 4. AppState listener — perform instant check when returning to foreground
     const appStateSub = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        performHeartbeatCheck();
+        if (useNetworkStore.getState().isOnline) {
+          performHeartbeatCheck();
+        }
       }
     });
 

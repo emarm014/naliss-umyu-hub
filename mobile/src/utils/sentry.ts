@@ -108,6 +108,7 @@ export function isNetworkError(error: any): boolean {
     lowerErrStr.includes('failed to fetch') || 
     lowerErrStr.includes('timeout') ||
     lowerErrStr.includes('timed out') ||
+    lowerErrStr.includes('timeouterror') ||
     lowerErrStr.includes('software caused connection abort') ||
     lowerErrStr.includes('unable to resolve host') ||
     lowerErrStr.includes('networkerror')
@@ -115,7 +116,13 @@ export function isNetworkError(error: any): boolean {
     return true;
   }
 
-// Also filter out expected 401 Unauthorized status codes (e.g. from clean logout sequences)
+  // Filter out status 0 (client offline / connection dropped)
+  if ((error as any).status === 0) return true;
+
+  // Filter out custom timeout and retryable fetch error classes
+  if ((error as any)?.name === 'TimeoutError' || (error as any)?.name === 'AuthRetryableFetchError') return true;
+
+  // Also filter out expected 401 Unauthorized status codes (e.g. from clean logout sequences)
   if ((error as any).status === 401) return true;
 
   return false;
@@ -328,6 +335,10 @@ export function clearSentryUserContext() {
 
 export function trackSqlTransaction(op: string, sql: string, durationMs: number, error?: any) {
   setTimeout(() => {
+    let errorMsg: string | undefined;
+    if (error) {
+      try { errorMsg = error.message ?? String(error); } catch { errorMsg = '[Error accessing message]'; }
+    }
     Sentry.addBreadcrumb({
       category: 'db.sqlite',
       message: `SQL ${op} (${durationMs}ms)`,
@@ -335,26 +346,35 @@ export function trackSqlTransaction(op: string, sql: string, durationMs: number,
         op,
         sql: sql?.slice(0, 200),
         durationMs,
-        error: error ? (error.message ?? String(error)) : undefined,
+        error: errorMsg,
       },
       level: error ? 'error' : 'debug',
     });
   }, 0);
 }
 
+let _isCapturingDbError = false;
 export function captureDatabaseError(op: string, error: unknown, extra?: Record<string, any>) {
+  // Re-entrancy guard: accessing error.message or extra properties can trigger
+  // getters that re-enter this function, causing infinite stack overflow.
+  if (_isCapturingDbError) return;
+  _isCapturingDbError = true;
   try {
     const safeExtra: Record<string, any> = {};
     if (extra) {
       for (const [key, value] of Object.entries(extra)) {
         if (typeof value === 'function') continue;
         if (key === 'args' && Array.isArray(value)) {
-          safeExtra.args = value.map(arg => typeof arg === 'function' ? '[Function]' : (arg && typeof arg === 'object') ? String(arg) : arg);
+          safeExtra.args = value.map(arg => {
+            try {
+              return typeof arg === 'function' ? '[Function]' : (arg && typeof arg === 'object') ? '[Object]' : arg;
+            } catch { return '[Unserializable]'; }
+          });
         } else if (typeof value === 'object' && value !== null) {
           try {
             safeExtra[key] = String(value);
           } catch {
-            safeExtra[key] = String(value);
+            safeExtra[key] = '[Unserializable]';
           }
         } else {
           safeExtra[key] = value;
@@ -366,7 +386,10 @@ export function captureDatabaseError(op: string, error: unknown, extra?: Record<
       tags: { location: 'db.sqlite', op },
       extra: safeExtra,
     });
-  } catch (_) {}
+  } catch (_) {
+  } finally {
+    _isCapturingDbError = false;
+  }
 }
 
 export function trackOfflineSync(

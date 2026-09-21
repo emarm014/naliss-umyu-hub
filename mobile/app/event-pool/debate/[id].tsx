@@ -77,9 +77,14 @@ export default function DebateEngineScreen() {
                     .from('event_pools')
                     .select('id, title, status, end_time, target_constraints, description, type')
                     .eq('id', id)
-                    .single();
+                    .maybeSingle();
 
                 if (poolError) throw poolError;
+                if (!poolData) {
+                    Alert.alert('Not Found', 'This debate could not be found.');
+                    router.back();
+                    return;
+                }
                 if (poolData.status !== 'live' && poolData.status !== 'completed') {
                     Alert.alert('Closed', 'This debate is no longer active.');
                     router.back();

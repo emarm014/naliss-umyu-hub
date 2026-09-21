@@ -366,11 +366,14 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
           }),
         ];
 
-        // Run all queries concurrently. Modern browsers (HTTP/2) handle 20+ multiplexed requests instantly.
-        // TanStack Query will also deduplicate any identical in-flight queries.
+        // Batch queries in concurrent chunks of 6 to prevent HTTP pipeline saturation on high-latency networks
         const combinedResults: Record<string, any> = {};
-        const batchResults = await Promise.all(tasks.map(t => t()));
-        batchResults.forEach(res => Object.assign(combinedResults, res));
+        const BATCH_SIZE = 6;
+        for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+          const chunk = tasks.slice(i, i + BATCH_SIZE);
+          const chunkResults = await Promise.all(chunk.map(t => t()));
+          chunkResults.forEach(res => Object.assign(combinedResults, res));
+        }
 
         set({
           analytics: combinedResults.analytics,

@@ -20,6 +20,8 @@ const generateSecureKey = () => {
   return result;
 };
 
+const PRESERVED_KEYS = ['theme-storage', 'naliss-theme', 'migrated_from_asyncstorage'];
+
 const initStorage = async () => {
   try {
     // Dynamic require ensures no crashes in environments where native C++ module isn't loaded (like Expo Go)
@@ -42,6 +44,31 @@ const initStorage = async () => {
       id: 'naliss-app-storage',
       encryptionKey 
     });
+
+    // Backwards-compatibility polyfill: MMKV v4 uses .remove(key), older versions used .delete(key)
+    if (storage) {
+      if (typeof storage.remove === 'function' && typeof storage.delete !== 'function') {
+        try {
+          Object.defineProperty(storage, 'delete', {
+            value: (key: string) => storage.remove(key),
+            configurable: true,
+            writable: true,
+          });
+        } catch {
+          try { (storage as any).delete = (key: string) => storage.remove(key); } catch {}
+        }
+      } else if (typeof storage.delete === 'function' && typeof storage.remove !== 'function') {
+        try {
+          Object.defineProperty(storage, 'remove', {
+            value: (key: string) => storage.delete(key),
+            configurable: true,
+            writable: true,
+          });
+        } catch {
+          try { (storage as any).remove = (key: string) => storage.delete(key); } catch {}
+        }
+      }
+    }
   } catch (e) {
     Logger.warn('mmkv.storage', 'MMKV/SecureStore could not be initialized. Falling back to AsyncStorage.');
     useFallback = true;
@@ -77,7 +104,11 @@ export const mmkvStorage: StateStorage = {
     if (useFallback || !storage) {
       await AsyncStorage.removeItem(name);
     } else {
-      storage.remove(name);
+      if (typeof storage.remove === 'function') {
+        storage.remove(name);
+      } else if (typeof storage.delete === 'function') {
+        storage.delete(name);
+      }
     }
   },
 };
@@ -93,7 +124,17 @@ export const setSyncItem = (name: string, value: string): void => {
   }
 };
 
-// Returns the raw MMKV instance for synchronous operations (getBoolean, set, delete).
+export const removeSyncItem = (name: string): void => {
+  if (!useFallback && storage) {
+    if (typeof storage.remove === 'function') {
+      storage.remove(name);
+    } else if (typeof storage.delete === 'function') {
+      storage.delete(name);
+    }
+  }
+};
+
+// Returns the raw MMKV instance for synchronous operations (getBoolean, set, remove, delete).
 // Used by OAuth hardening code to persist recovery flags synchronously before the browser opens.
 // Returns null if MMKV isn't available (AsyncStorage fallback mode).
 export const getRawStorage = (): any | null => {
@@ -101,14 +142,14 @@ export const getRawStorage = (): any | null => {
   return storage;
 };
 
-// Wipes all persisted MMKV and AsyncStorage keys EXCEPT theme-storage (to keep light/dark mode)
+// Wipes all persisted MMKV and AsyncStorage keys EXCEPT theme storage (to keep light/dark mode)
 export const clearAllUserStorage = async () => {
   await initPromise;
   
   // 1. Clear AsyncStorage as a fallback/safety net
   try {
     const allAsyncKeys = await AsyncStorage.getAllKeys();
-    const keysToRemove = allAsyncKeys.filter(k => k !== 'theme-storage');
+    const keysToRemove = allAsyncKeys.filter(k => !PRESERVED_KEYS.includes(k));
     if (keysToRemove.length > 0) {
       await AsyncStorage.multiRemove(keysToRemove);
     }
@@ -119,18 +160,32 @@ export const clearAllUserStorage = async () => {
   // 2. Clear MMKV storage
   if (storage) {
     try {
-      const allKeys = storage.getAllKeys();
+      const allKeys = typeof storage.getAllKeys === 'function' ? storage.getAllKeys() : [];
       // Guard: getAllKeys() can return undefined on corrupted/encrypted MMKV instances
       if (Array.isArray(allKeys)) {
         for (const key of allKeys) {
-          if (key !== 'theme-storage' && key !== 'migrated_from_asyncstorage') {
-            storage.delete(key);
+          if (!PRESERVED_KEYS.includes(key)) {
+            if (typeof storage.remove === 'function') {
+              storage.remove(key);
+            } else if (typeof storage.delete === 'function') {
+              storage.delete(key);
+            }
           }
         }
       } else {
-        // Fallback: clearAll() wipes everything including theme — but better than crashing
+        // Fallback: clearAll() wipes everything including theme — preserve theme if possible
         Logger.warn('mmkv.storage', 'getAllKeys() returned non-array, falling back to clearAll()');
-        try { storage.clearAll(); } catch {}
+        try {
+          const preservedTheme = typeof storage.getString === 'function' ? storage.getString('naliss-theme') : undefined;
+          const preservedThemeOld = typeof storage.getString === 'function' ? storage.getString('theme-storage') : undefined;
+          storage.clearAll?.();
+          if (preservedTheme !== undefined && typeof storage.set === 'function') {
+            storage.set('naliss-theme', preservedTheme);
+          }
+          if (preservedThemeOld !== undefined && typeof storage.set === 'function') {
+            storage.set('theme-storage', preservedThemeOld);
+          }
+        } catch {}
       }
       Logger.info('mmkv.storage', 'Successfully cleared all user MMKV storage.');
     } catch (e) {

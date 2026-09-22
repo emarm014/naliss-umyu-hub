@@ -11,6 +11,7 @@ import { getCleanAvatarUrl } from '../../src/utils/avatar';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { normalizeError } from '../../src/utils/sentry';
 
 export default function UserProfileScreen() {
     const { id, initialData } = useLocalSearchParams();
@@ -73,7 +74,7 @@ export default function UserProfileScreen() {
                     .eq('id', id as string)
                     .maybeSingle();
 
-                if (error) throw error;
+                if (error) throw normalizeError(error);
                 if (mounted && data) {
                     setProfile(data);
                     

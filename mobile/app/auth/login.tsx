@@ -23,6 +23,7 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { startTransaction, trackUserAction, isNetworkError } from '../../src/utils/sentry';
 import { getRawStorage } from '../../src/stores/mmkv.storage';
 import { handleOAuthRedirect } from '../../src/utils/oauth-redirect';
+import { normalizeError } from '../../src/utils/sentry';
 
 const { height } = Dimensions.get('window');
 
@@ -71,7 +72,7 @@ export default function LoginScreen() {
 
     // If password sign-in failed due to network error, throw immediately (skip secondary RPC)
     if (authError && (isNetworkError(authError) || (authError as any).status === 0)) {
-      throw authError;
+      throw normalizeError(authError);
     }
 
     // 3. If password sign-in failed, check whether this account is exclusively Google-authenticated
@@ -86,7 +87,7 @@ export default function LoginScreen() {
     }
 
     // If it's a standard bad password / auth failure, throw the original auth error
-    if (authError) throw authError;
+    if (authError) throw normalizeError(authError);
 
     return 'ok';
   };
@@ -288,7 +289,7 @@ export default function LoginScreen() {
         options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
       });
 
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       if (!data.url) throw new Error('No OAuth URL returned');
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);

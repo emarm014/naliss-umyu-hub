@@ -9,6 +9,7 @@ import { COLORS } from '../../src/constants/Colors';
 import { supabase } from '../../src/api/supabase/client';
 import { captureUIError } from '../../src/utils/sentry';
 import { showToast } from '../../src/components/common/overlays';
+import { normalizeError } from '../../src/utils/sentry';
 
 export default function SecuritySettingsScreen() {
     const router = useRouter();
@@ -56,7 +57,7 @@ export default function SecuritySettingsScreen() {
                 .eq('is_active', true)
                 .order('last_active_at', { ascending: false });
             
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             if (data) {
                 // Map the data to add 'is_current' flag based on the deviceId
                 const mappedSessions = data.map((session: any) => ({
@@ -89,7 +90,7 @@ export default function SecuritySettingsScreen() {
                 password: newPassword,
             });
 
-            if (error) throw error;
+            if (error) throw normalizeError(error);
 
             Alert.alert('Success', 'Your password has been successfully updated.');
             setNewPassword('');

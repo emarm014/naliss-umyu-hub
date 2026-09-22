@@ -10,6 +10,7 @@ import { COLORS } from '../../src/constants/Colors';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError } from '../../src/utils/sentry';
 import { useSignupStore } from '../../src/stores/signup.store';
+import { normalizeError } from '../../src/utils/sentry';
 
 export default function UpdatePassword() {
   useSentryScreen('UpdatePassword');
@@ -126,7 +127,7 @@ export default function UpdatePassword() {
       });
       const updatePromise = supabase.auth.updateUser({ password });
       const { error } = await Promise.race([updatePromise, timeoutPromise]) as any;
-      if (error) throw error;
+      if (error) throw normalizeError(error);
 
       // Success — mark ref BEFORE signOut so the listener ignores the SIGNED_OUT event
       didSucceedRef.current = true;

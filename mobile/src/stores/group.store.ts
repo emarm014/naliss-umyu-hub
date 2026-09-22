@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { captureStoreError } from '../utils/sentry';
+import { normalizeError } from '../utils/sentry';
 
 interface GroupState {
     groups: any[];
@@ -87,7 +88,7 @@ export const useGroupStore = create<GroupState>()(
                             .select('group_id')
                             .eq('user_id', session.user.id) as any);
 
-                        if (memError) throw memError;
+                        if (memError) throw normalizeError(memError);
                         groupIds = (memberships || []).map((m: any) => m.group_id);
 
                         // Auto-repair missing default groups for students (official Department and Level groups only)
@@ -263,7 +264,8 @@ export const useGroupStore = create<GroupState>()(
                     const { error } = await (supabase as any).rpc('mark_group_as_read', { p_group_id: groupId });
                     if (error) {
                         const isNetErr = error?.message?.includes('Network') || error?.details?.includes('Network');
-                        if (!isNetErr) {
+                        const isAuthErr = error?.code === '42501' || error?.code === 'PGRST301' || error?.message?.includes('permission denied');
+                        if (!isNetErr && !isAuthErr) {
                             console.error('Failed to mark group as read via RPC:', error);
                         }
                     }

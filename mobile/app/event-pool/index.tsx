@@ -206,14 +206,24 @@ export default function EventPoolDashboard() {
                                 <Text style={[styles.joinBtnText, { color: '#9ca3af' }]}>Pending Setup</Text>
                             </View>
                         ) : isLive ? (
-                            <TouchableOpacity 
-                                style={[styles.joinBtn, (!isRegistered && !isRegistrationEnabled) && { backgroundColor: '#9ca3af' }]}
-                                onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: item.id } } as any)}
-                                disabled={!isRegistered && !isRegistrationEnabled}
-                            >
-                                <Ionicons name="enter-outline" size={18} color="#fff" />
-                                <Text style={styles.joinBtnText}>Join Event Room</Text>
-                            </TouchableOpacity>
+                            eligibilityMsg ? (
+                                <View style={[styles.joinBtn, { backgroundColor: '#f3f4f6' }]}>
+                                    <Ionicons name="lock-closed" size={18} color="#9ca3af" />
+                                    <Text style={[styles.joinBtnText, { color: '#9ca3af' }]}>{eligibilityMsg}</Text>
+                                </View>
+                            ) : (
+                                <TouchableOpacity 
+                                    style={[
+                                        styles.joinBtn, 
+                                        (!isRegistered && !isRegistrationEnabled && item.participation_rule !== 'open' && item.type?.toLowerCase() !== 'voting') && { backgroundColor: '#9ca3af' }
+                                    ]}
+                                    onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: item.id } } as any)}
+                                    disabled={!isRegistered && !isRegistrationEnabled && item.participation_rule !== 'open' && item.type?.toLowerCase() !== 'voting'}
+                                >
+                                    <Ionicons name="enter-outline" size={18} color="#fff" />
+                                    <Text style={styles.joinBtnText}>Join Event Room</Text>
+                                </TouchableOpacity>
+                            )
                         ) : (
                             <View>
                                 {isRegistered || appStatus === 'approved' ? (

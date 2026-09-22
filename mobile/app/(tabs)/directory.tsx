@@ -27,7 +27,7 @@ export default function DirectoryScreen() {
     const [activeTab, setActiveTab] = useState<DirectoryTab>('staff');
     const [searchQuery, setSearchQuery] = useState('');
     const [viewerVisible, setViewerVisible] = useState(false);
-    const [viewerFile, setViewerFile] = useState({ uri: '', name: '' });
+    const [viewerFile, setViewerFile] = useState<{ uri: string; name: string; remoteUrl?: string }>({ uri: '', name: '' });
     const [refreshing, setRefreshing] = useState(false);
 
     const {
@@ -155,8 +155,8 @@ export default function DirectoryScreen() {
                                     <StaffCard 
                                         key={staff.id} 
                                         staff={staff} 
-                                        onPressAvatar={(uri, name) => {
-                                            setViewerFile({ uri, name });
+                                        onPressAvatar={(uri, name, remoteUrl) => {
+                                            setViewerFile({ uri, name, remoteUrl });
                                             setViewerVisible(true);
                                         }}
                                     />
@@ -170,8 +170,8 @@ export default function DirectoryScreen() {
                                     <ExecutiveCard 
                                         key={exec.id} 
                                         executive={exec} 
-                                        onPressAvatar={(uri, name) => {
-                                            setViewerFile({ uri, name });
+                                        onPressAvatar={(uri, name, remoteUrl) => {
+                                            setViewerFile({ uri, name, remoteUrl });
                                             setViewerVisible(true);
                                         }}
                                     />
@@ -188,6 +188,7 @@ export default function DirectoryScreen() {
                 isVisible={viewerVisible}
                 onClose={() => setViewerVisible(false)}
                 fileUri={viewerFile.uri}
+                remoteUrl={viewerFile.remoteUrl}
                 fileType="image"
                 fileName={viewerFile.name}
                 showDownload={false} // Requirement: Institutional profiles are restricted
@@ -202,7 +203,7 @@ import { getCleanAvatarUrl } from '../../src/utils';
 import { useOfflineImage } from '../../src/hooks/useOfflineImage';
 import { CachedImage } from '../../src/components/common/CachedImage';
 
-function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (uri: string, name: string) => void }) {
+function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (uri: string, name: string, remoteUrl?: string) => void }) {
     const cleanAvatar = getCleanAvatarUrl(staff.avatar_url);
     const effectiveAvatar = cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(staff.full_name)}&size=200`;
     const cachedUri = useOfflineImage(cleanAvatar);
@@ -213,7 +214,7 @@ function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => onPressAvatar(cachedUri || effectiveAvatar, staff.full_name)}
+                    onPress={() => onPressAvatar(cachedUri || effectiveAvatar, staff.full_name, effectiveAvatar)}
                     activeOpacity={0.8}
                 >
                     <CachedImage
@@ -262,7 +263,7 @@ function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (
     );
 }
 
-function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAvatar: (uri: string, name: string) => void }) {
+function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAvatar: (uri: string, name: string, remoteUrl?: string) => void }) {
     const fullName = executive.full_name || executive.user?.full_name || 'NALISS Executive';
     const rawAvatarUrl = executive.avatar_url || executive.user?.avatar_url;
     const cleanAvatar = getCleanAvatarUrl(rawAvatarUrl);
@@ -275,7 +276,7 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => onPressAvatar(cachedUri || effectiveAvatar, fullName)}
+                    onPress={() => onPressAvatar(cachedUri || effectiveAvatar, fullName, effectiveAvatar)}
                     activeOpacity={0.8}
                 >
                     <CachedImage

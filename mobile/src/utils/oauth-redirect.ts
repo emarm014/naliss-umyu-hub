@@ -6,6 +6,7 @@ import { useSignupStore } from '../stores/signup.store';
 import { getRawStorage } from '../stores/mmkv.storage';
 import { INSTITUTIONAL_EMAIL_REGEX } from './validation';
 import { AuthGuardian } from './auth-guardian';
+import { normalizeError } from './sentry';
 
 /**
  * Centralized OAuth callback handler.
@@ -69,7 +70,7 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
           access_token: accessToken,
           refresh_token: refreshToken,
         });
-        if (sessionError) throw sessionError;
+        if (sessionError) throw normalizeError(sessionError);
         user = sessionUser;
       }
     }

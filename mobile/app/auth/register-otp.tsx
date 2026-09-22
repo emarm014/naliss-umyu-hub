@@ -14,6 +14,7 @@ import { COLORS } from '../../src/constants/Colors';
 import { useSignupStore } from '../../src/stores/signup.store';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { cleanupIncompleteSignup } from '../../src/utils/signup-cleanup';
+import { normalizeError } from '../../src/utils/sentry';
 
 const OTP_LENGTH = 6;
 const MAX_RESENDS = 3;
@@ -187,7 +188,7 @@ export default function RegisterOTP() {
         email: email as string,
         options: { shouldCreateUser: true },
       });
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       if (isMounted.current) {
         setOtp(Array(OTP_LENGTH).fill(''));
         setCooldown(INITIAL_COOLDOWN);
@@ -327,7 +328,7 @@ export default function RegisterOTP() {
       if (error) {
         store.setCurrentStep(2);
         store.setIsGoogleDelaying(false);
-        throw error;
+        throw normalizeError(error);
       }
 
       succeeded = true;

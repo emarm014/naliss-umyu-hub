@@ -5,6 +5,7 @@ import { supabase } from '../api/supabase/client';
 import { Lecturer, Executive } from '../types';
 import { Logger } from '../utils/logger';
 import { sortHierarchically } from '../utils/hierarchy';
+import { normalizeError } from '../utils/sentry';
 
 interface DirectoryState {
     lecturers: Lecturer[];
@@ -60,7 +61,7 @@ export const useDirectoryStore = create<DirectoryState>()(
                         .eq('is_active', true)
                         .order('display_order', { ascending: true, nullsFirst: false });
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     let sortedData = sortHierarchically(data || [], 'lecturer');
                     
                     const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
@@ -131,7 +132,7 @@ export const useDirectoryStore = create<DirectoryState>()(
                         .eq('is_active', true)
                         .order('display_order', { ascending: true, nullsFirst: false });
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     let sortedData = sortHierarchically(data || [], 'executive');
                     
                     const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');

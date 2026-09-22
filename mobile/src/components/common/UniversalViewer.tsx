@@ -361,164 +361,220 @@ function ViewerItemSlide({
     setDownloadProgress(0);
 
     const resolve = async () => {
-      // Sanitize duplicated file schemes (e.g., file://file:///)
-      const safeUri = item.uri ? item.uri.replace(/^(file:\/\/)+/, 'file://') : '';
-      let viewerUrl = getViewerUrl(safeUri);
+      try {
+        // Sanitize duplicated file schemes (e.g., file://file:///)
+        const safeUri = item.uri ? item.uri.replace(/^(file:\/\/)+/, 'file://') : '';
+        let viewerUrl = getViewerUrl(safeUri);
 
-      if (safeUri.startsWith('file://') || safeUri.startsWith('/')) {
-        const targetPath = safeUri.startsWith('file://') ? safeUri : `file://${safeUri}`;
-        try {
-          const fileInfo = await FileSystem.getInfoAsync(targetPath);
-          if (fileInfo.exists && (fileInfo as any).size > 0) {
-            trackViewerEvent({ stage: 'vault_hit', uri: targetPath, fileType: item.type, fileName: item.name });
-            if (!cancelled) {
-              setLocalUri(targetPath);
-              setIsOffline(true);
-              setIsDownloading(false);
+        if (safeUri.startsWith('file://') || safeUri.startsWith('/')) {
+          const targetPath = safeUri.startsWith('file://') ? safeUri : `file://${safeUri}`;
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(targetPath);
+            if (fileInfo.exists && (fileInfo as any).size > 0) {
+              trackViewerEvent({ stage: 'vault_hit', uri: targetPath, fileType: item.type, fileName: item.name });
+              if (!cancelled) {
+                setLocalUri(targetPath);
+                setIsOffline(true);
+                setIsDownloading(false);
+              }
+              return;
+            } else {
+              console.warn('[UniversalViewer] Local vault file missing or 0 bytes:', targetPath);
+              trackViewerEvent({ stage: 'vault_miss', uri: targetPath, fileType: item.type, fileName: item.name });
+              
+              // 1. Try explicit remoteUrl or safeUri if HTTP
+              let fallbackHttpUrl = item.remoteUrl || (safeUri.startsWith('http') ? safeUri : null);
+
+              // 2. Try looking up in SQLite local_assets by local_path
+              if (!fallbackHttpUrl) {
+                try {
+                  const { getDB } = require('../../lib/database');
+                  const activeDb = getDB();
+                  if (activeDb) {
+                    const match = await activeDb.getFirstAsync(
+                      'SELECT remote_url FROM local_assets WHERE local_path = ? LIMIT 1',
+                      [targetPath]
+                    );
+                    if (match?.remote_url && typeof match.remote_url === 'string') {
+                      fallbackHttpUrl = match.remote_url;
+                    }
+                  }
+                } catch {}
+              }
+
+              // 3. If avatar URI, try extracting user ID to resolve avatar
+              if (!fallbackHttpUrl) {
+                const avatarMatch = targetPath.match(/user_avatar_([0-9a-fA-F-]{36})/);
+                if (avatarMatch && avatarMatch[1]) {
+                  const targetUserId = avatarMatch[1];
+                  try {
+                    const { useAuthStore } = require('../../stores/auth.store');
+                    const currentProfile = useAuthStore.getState().profile;
+                    if (currentProfile?.id === targetUserId && currentProfile?.avatar_url) {
+                      fallbackHttpUrl = currentProfile.avatar_url;
+                    } else {
+                      fallbackHttpUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${targetUserId}&size=200`;
+                    }
+                  } catch {
+                    fallbackHttpUrl = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${targetUserId}&size=200`;
+                  }
+                }
+              }
+
+              if (fallbackHttpUrl) {
+                viewerUrl = fallbackHttpUrl;
+              } else {
+                if (!cancelled) {
+                  setDownloadError('This file is not available locally and cannot be downloaded without a network link.');
+                  setIsDownloading(false);
+                }
+                return;
+              }
             }
-            return;
-          } else {
-            console.warn('[UniversalViewer] Local vault file missing or 0 bytes:', targetPath);
-            trackViewerEvent({ stage: 'vault_miss', uri: targetPath, fileType: item.type, fileName: item.name });
-            // Switch to remote URL if available
-            const fallbackHttpUrl = item.remoteUrl || (safeUri.startsWith('http') ? safeUri : null);
+          } catch (e) {
+            console.warn('[UniversalViewer] Error inspecting file path:', e);
+            let fallbackHttpUrl = item.remoteUrl || (safeUri.startsWith('http') ? safeUri : null);
             if (fallbackHttpUrl) {
               viewerUrl = fallbackHttpUrl;
             } else {
-              throw new Error('Local file is missing and no remote HTTP URL was provided.');
+              if (!cancelled) {
+                setDownloadError('Unable to open local file on this device.');
+                setIsDownloading(false);
+              }
+              return;
             }
           }
-        } catch (e) {
-          console.warn('[UniversalViewer] Error inspecting file path:', e);
-          const fallbackHttpUrl = item.remoteUrl || (safeUri.startsWith('http') ? safeUri : null);
-          if (fallbackHttpUrl) {
-            viewerUrl = fallbackHttpUrl;
-          } else if (e instanceof Error && e.message.includes('remote HTTP URL')) {
-            throw e;
-          } else {
-            throw new Error('Local file is missing and no remote HTTP URL was provided.');
-          }
         }
-      }
 
-      try {
-        if (item.fileId) {
-          const vaultPath = getVaultFilePath(item.fileId, item.name, safeUri, item.type);
-          const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
-          if (vaultInfo.exists && (vaultInfo as any).size > 0) {
-            trackViewerEvent({ stage: 'vault_hit', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
+        try {
+          if (item.fileId) {
+            const vaultPath = getVaultFilePath(item.fileId, item.name, safeUri, item.type);
+            const vaultInfo = await FileSystem.getInfoAsync(vaultPath);
+            if (vaultInfo.exists && (vaultInfo as any).size > 0) {
+              trackViewerEvent({ stage: 'vault_hit', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
+              if (!cancelled) {
+                setLocalUri(vaultPath);
+                setIsOffline(true);
+                setIsDownloading(false);
+              }
+              return;
+            } else {
+              trackViewerEvent({ stage: 'vault_miss', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
+            }
+          }
+
+          const cachedSqlitePath = await getAssetCacheByUrl(safeUri);
+          if (cachedSqlitePath) {
+            const sqliteFileInfo = await FileSystem.getInfoAsync(cachedSqlitePath);
+            if (sqliteFileInfo.exists && (sqliteFileInfo as any).size > 0) {
+              trackViewerEvent({ stage: 'cache_hit', uri: item.uri, fileType: item.type, fileName: item.name });
+              if (!cancelled) {
+                setLocalUri(cachedSqlitePath);
+                setIsOffline(true);
+                setIsDownloading(false);
+              }
+              return;
+            }
+          }
+
+          const destinationPath = item.fileId
+            ? getVaultFilePath(item.fileId, item.name, safeUri, item.type)
+            : (() => {
+                const realName = extractFileNameFromUrl(viewerUrl, item.name);
+                let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
+                const lowerName = safeName.toLowerCase();
+                if (item.type === 'video' && !lowerName.match(/\.(mp4|mkv|webm|avi|mov|flv|3gp|wmv)$/)) safeName += '.mp4';
+                else if (item.type === 'audio' && !lowerName.match(/\.(mp3|wav|m4a|aac|ogg|wma)$/)) safeName += '.mp3';
+                else if (item.type === 'pdf' && !lowerName.endsWith('.pdf')) safeName += '.pdf';
+                else if (item.type === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) safeName += '.jpg';
+                return `${VIEWER_CACHE}${safeName}`;
+              })();
+
+          // For video and audio, skip full file download to allow instant streaming playback
+          if (item.type === 'video' || item.type === 'audio') {
             if (!cancelled) {
-              setLocalUri(vaultPath);
-              setIsOffline(true);
+              trackViewerEvent({ stage: 'stream_start', uri: viewerUrl, fileType: item.type, fileName: item.name });
+              setLocalUri(viewerUrl);
+              setIsOffline(false); // It's streaming from network
               setIsDownloading(false);
+              
+              // BACKGROUND CACHING FOR OFFLINE AVAILABILITY
+              if (item.fileId && viewerUrl.startsWith('http')) {
+                  try {
+                      const { UnifiedDownloadEngine } = require('../../utils/unifiedDownload');
+                      UnifiedDownloadEngine.download(viewerUrl, item.fileId, undefined, `chat_${item.type}`).catch(() => {});
+                  } catch (e) {
+                      console.warn('[UniversalViewer] Failed to start background cache for stream:', e);
+                  }
+              }
             }
             return;
-          } else {
-            trackViewerEvent({ stage: 'vault_miss', uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
           }
-        }
 
-        const cachedSqlitePath = await getAssetCacheByUrl(safeUri);
-        if (cachedSqlitePath) {
-          const sqliteFileInfo = await FileSystem.getInfoAsync(cachedSqlitePath);
-          if (sqliteFileInfo.exists && (sqliteFileInfo as any).size > 0) {
+          const destDir = destinationPath.substring(0, destinationPath.lastIndexOf('/') + 1);
+          const dirInfo = await FileSystem.getInfoAsync(destDir);
+          if (!dirInfo.exists) {
+            await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
+          }
+
+          const cachedInfo = await FileSystem.getInfoAsync(destinationPath);
+          if (cachedInfo.exists && (cachedInfo as any).size > 0) {
             trackViewerEvent({ stage: 'cache_hit', uri: item.uri, fileType: item.type, fileName: item.name });
             if (!cancelled) {
-              setLocalUri(cachedSqlitePath);
+              setLocalUri(destinationPath);
               setIsOffline(true);
               setIsDownloading(false);
             }
             return;
           }
-        }
 
-        const destinationPath = item.fileId
-          ? getVaultFilePath(item.fileId, item.name, safeUri, item.type)
-          : (() => {
-              const realName = extractFileNameFromUrl(viewerUrl, item.name);
-              let safeName = realName.replace(/[^a-zA-Z0-9._-]/g, '_');
-              const lowerName = safeName.toLowerCase();
-              if (item.type === 'video' && !lowerName.match(/\.(mp4|mkv|webm|avi|mov|flv|3gp|wmv)$/)) safeName += '.mp4';
-              else if (item.type === 'audio' && !lowerName.match(/\.(mp3|wav|m4a|aac|ogg|wma)$/)) safeName += '.mp3';
-              else if (item.type === 'pdf' && !lowerName.endsWith('.pdf')) safeName += '.pdf';
-              else if (item.type === 'image' && !lowerName.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/)) safeName += '.jpg';
-              return `${VIEWER_CACHE}${safeName}`;
-            })();
+          trackViewerEvent({ stage: 'download_start', uri: viewerUrl, fileType: item.type, fileName: item.name });
 
-        // For video and audio, skip full file download to allow instant streaming playback
-        if (item.type === 'video' || item.type === 'audio') {
-          if (!cancelled) {
-            trackViewerEvent({ stage: 'stream_start', uri: viewerUrl, fileType: item.type, fileName: item.name });
-            setLocalUri(viewerUrl);
-            setIsOffline(false); // It's streaming from network
-            setIsDownloading(false);
-            
-            // BACKGROUND CACHING FOR OFFLINE AVAILABILITY
-            if (item.fileId && viewerUrl.startsWith('http')) {
-                try {
-                    const { UnifiedDownloadEngine } = require('../../utils/unifiedDownload');
-                    UnifiedDownloadEngine.download(viewerUrl, item.fileId, undefined, `chat_${item.type}`).catch(() => {});
-                } catch (e) {
-                    console.warn('[UniversalViewer] Failed to start background cache for stream:', e);
-                }
+          const callback = (p: FileSystem.DownloadProgressData) => {
+            if (!cancelled && p.totalBytesExpectedToWrite > 0) {
+              setDownloadProgress(Math.round((p.totalBytesWritten / p.totalBytesExpectedToWrite) * 100));
             }
+          };
+
+          if (!viewerUrl.startsWith('http')) {
+            if (!cancelled) {
+              setDownloadError('Cannot download file: no valid web address provided.');
+              setIsDownloading(false);
+            }
+            return;
           }
-          return;
-        }
 
-        const destDir = destinationPath.substring(0, destinationPath.lastIndexOf('/') + 1);
-        const dirInfo = await FileSystem.getInfoAsync(destDir);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
-        }
+          downloadResumed = FileSystem.createDownloadResumable(viewerUrl, destinationPath, {}, callback);
+          const result = await downloadResumed.downloadAsync();
 
-        const cachedInfo = await FileSystem.getInfoAsync(destinationPath);
-        if (cachedInfo.exists && (cachedInfo as any).size > 0) {
-          trackViewerEvent({ stage: 'cache_hit', uri: item.uri, fileType: item.type, fileName: item.name });
           if (!cancelled) {
-            setLocalUri(destinationPath);
-            setIsOffline(true);
+            if (result && result.status === 200) {
+              trackViewerEvent({ stage: 'download_ok', uri: item.uri, fileType: item.type, fileName: item.name });
+              setLocalUri(result.uri);
+              setIsOffline(false);
+            } else {
+              trackViewerEvent({ stage: 'download_fail', uri: item.uri, fileType: item.type, fileName: item.name, error: `HTTP ${result?.status || 'unknown'}` });
+              setDownloadError('Could not load file. Tap retry.');
+            }
             setIsDownloading(false);
           }
-          return;
-        }
-
-        trackViewerEvent({ stage: 'download_start', uri: viewerUrl, fileType: item.type, fileName: item.name });
-
-        const callback = (p: FileSystem.DownloadProgressData) => {
-          if (!cancelled && p.totalBytesExpectedToWrite > 0) {
-            setDownloadProgress(Math.round((p.totalBytesWritten / p.totalBytesExpectedToWrite) * 100));
+        } catch (err: any) {
+          if (!cancelled) {
+            const errMsg = err?.message || String(err) || '';
+            const isNet = errMsg.includes('Network') || errMsg.includes('Unable to resolve host') || errMsg.includes('connect') || errMsg.includes('Unknown host');
+            captureViewerError('download_fail', err, { uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
+            if (isNet) {
+              setDownloadError('Network connection required to view full size media. Please connect to the internet and tap retry.');
+            } else {
+              setLocalUri(safeUri);
+            }
+            setIsDownloading(false);
           }
-        };
-
-        if (!viewerUrl.startsWith('http')) {
-          throw new Error('Cannot download file from a non-HTTP source: ' + viewerUrl);
         }
-
-        downloadResumed = FileSystem.createDownloadResumable(viewerUrl, destinationPath, {}, callback);
-        const result = await downloadResumed.downloadAsync();
-
+      } catch (globalErr: any) {
         if (!cancelled) {
-          if (result && result.status === 200) {
-            trackViewerEvent({ stage: 'download_ok', uri: item.uri, fileType: item.type, fileName: item.name });
-            setLocalUri(result.uri);
-            setIsOffline(false);
-          } else {
-            trackViewerEvent({ stage: 'download_fail', uri: item.uri, fileType: item.type, fileName: item.name, error: `HTTP ${result?.status || 'unknown'}` });
-            setDownloadError('Could not load file. Tap retry.');
-          }
-          setIsDownloading(false);
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          const errMsg = err?.message || String(err) || '';
-          const isNet = errMsg.includes('Network') || errMsg.includes('Unable to resolve host') || errMsg.includes('connect') || errMsg.includes('Unknown host');
-          captureViewerError('download_fail', err, { uri: item.uri, fileType: item.type, fileName: item.name, fileId: item.fileId });
-          if (isNet) {
-            setDownloadError('Network connection required to view full size media. Please connect to the internet and tap retry.');
-          } else {
-            setLocalUri(safeUri);
-          }
+          console.warn('[UniversalViewer] Unhandled resolve error:', globalErr);
+          setDownloadError('Unable to open this file.');
           setIsDownloading(false);
         }
       }

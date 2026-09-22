@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
+import { normalizeError } from '../utils/sentry';
 
 interface SettingsState {
   maintenanceMode: boolean;
@@ -79,7 +80,7 @@ export const useSettingsStore = create<SettingsState>()(
                 'allow_registration',
               ]);
 
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             if (data && data.length > 0) {
               const map: Record<string, string> = {};
               data.forEach((item: any) => { map[item.key] = item.value; });

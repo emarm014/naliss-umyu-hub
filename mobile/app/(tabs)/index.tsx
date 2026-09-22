@@ -11,7 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
 import { router } from 'expo-router';
 import { NetworkStatusDot } from '../_layout';
-import { useNetworkStore } from '../../src/stores/network.store';
+import { useNetworkStore, registerOnlineCallback } from '../../src/stores/network.store';
 import { format } from 'date-fns';
 import { COLORS } from '../../src/constants/Colors';
 import { NalissLogo } from '../../src/components/NalissLogo';
@@ -116,6 +116,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import { supabase } from '../../src/api/supabase/client';
 import { realtimeManager } from '../../src/lib/realtimeManager';
+import { normalizeError } from '../../src/utils/sentry';
 
 const quickActions = [
   { id: 'notepad', name: 'Notepad', icon: 'document-text', lightColor: '#059669', darkColor: '#34d399', lightBg: '#ecfdf5', darkBg: 'rgba(52, 211, 153, 0.15)', route: '/notepad' },
@@ -173,7 +174,7 @@ export default function HomeScreen() {
         .eq('is_active', true)
         .neq('type', 'event_winner')
         .order('published_at', { ascending: false });
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       const result = data || [];
       try {
         await mmkvStorage.setItem(FYB_CACHE_KEY, JSON.stringify(result));
@@ -204,7 +205,7 @@ export default function HomeScreen() {
   const [showAvatarConfirm, setShowAvatarConfirm] = useState(false);
   
   const [viewerVisible, setViewerVisible] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ uri: string, type: 'image', name: string } | null>(null);
+  const [viewerFile, setViewerFile] = useState<{ uri: string, remoteUrl?: string, type: 'image', name: string } | null>(null);
 
   const localAvatarUrl = useAuthStore(s => s.localAvatarUrl);
 
@@ -396,10 +397,17 @@ export default function HomeScreen() {
     const unsubPool = realtimeManager.registerPoolListener(() => {
       fetchUpcomingEvents(user?.level || undefined);
     });
+
+    const unregisterOnline = registerOnlineCallback(() => {
+      // Background auto-refresh when network comes back online
+      fetchProfile();
+      loadData();
+    });
       
     return () => {
       unsubFeatured();
       unsubPool();
+      unregisterOnline();
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -516,8 +524,12 @@ export default function HomeScreen() {
               <TouchableOpacity
                 onPress={() => {
                   if (avatar) {
+                    const remoteAvatar = confirmedAvatarUrl
+                      || user.avatar_url
+                      || (user.id ? `https://api.dicebear.com/9.x/fun-emoji/png?seed=${user.id}&size=200` : undefined);
                     setViewerFile({
                       uri: avatar,
+                      remoteUrl: remoteAvatar,
                       type: 'image',
                       name: `${user.full_name || 'Profile'}'s Avatar`,
                     });
@@ -527,7 +539,7 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
               >
                 <View style={[styles.avatarRing, { borderColor: theme.accentColor + '80' }]}>
-                  <CachedImage entityId={user?.id || ''} remoteUrl={avatar} assetType="user" style={styles.avatar} />
+                  <CachedImage entityId={user?.id || ''} remoteUrl={confirmedAvatarUrl || user.avatar_url || avatar} assetType="user" style={styles.avatar} />
                 </View>
               </TouchableOpacity>
             </View>
@@ -801,6 +813,7 @@ export default function HomeScreen() {
             setTimeout(() => setViewerFile(null), 300);
           }}
           fileUri={viewerFile?.uri || ''}
+          remoteUrl={viewerFile?.remoteUrl}
           fileType={viewerFile?.type || 'image'}
           fileName={viewerFile?.name || ''}
         />

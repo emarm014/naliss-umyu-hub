@@ -3,6 +3,7 @@ import { supabase } from '../api/supabase/client';
 import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
 import { Logger } from '../utils/logger';
 import { updateLocalMediaPath } from '../lib/database';
+import { normalizeError } from '../utils/sentry';
 
 const RESTORE_FLAG_PREFIX = 'download_restore_';
 const RESTORE_PROGRESS_PREFIX = 'download_restore_progress_';
@@ -55,7 +56,7 @@ export const DownloadTracker = {
                 .select('asset_id, asset_type, remote_url')
                 .eq('user_id', user.id);
 
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             if (!downloads || downloads.length === 0) {
                 await AsyncStorage.setItem(DownloadTracker._restoreKey(user.id), 'true');
                 return;

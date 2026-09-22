@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { trackSqlTransaction, captureDatabaseError } from '../utils/sentry';
+import { normalizeError } from '../utils/sentry';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let readDb: SQLite.SQLiteDatabase | null = null; // Dedicated read-only connection
@@ -347,7 +348,7 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
             if (sql) {
               captureDatabaseError('DatabaseReadonly_RecoveryFailed', error, { sql, args, duration });
             }
-            throw error;
+            throw normalizeError(error);
           }
 
           if (!isTransactionRecoveryError(error)) {
@@ -358,7 +359,7 @@ function wrapDatabaseWithObservability(originalDb: SQLite.SQLiteDatabase): SQLit
               captureDatabaseError(methodName, error, { args, duration });
             }
           }
-          throw error;
+          throw normalizeError(error);
         }
       }
     };

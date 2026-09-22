@@ -6,6 +6,7 @@ import { Material, Course, MaterialType, AcademicLevel, SemesterType, PastQuesti
 import { checkFileExists, extractFileNameFromUrl } from '../utils/download';
 import { captureStoreError } from '../utils/sentry';
 import * as FileSystem from 'expo-file-system/legacy';
+import { normalizeError } from '../utils/sentry';
 
 interface ResourceState {
     materials: Material[];
@@ -85,7 +86,7 @@ export const useResourceStore = create<ResourceState>()(
 
                     const { data, error } = await query.order('created_at', { ascending: false });
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     
                     const materials = (data as unknown) as Material[];
                     const { cacheEntityList } = require('../lib/database');
@@ -134,7 +135,7 @@ export const useResourceStore = create<ResourceState>()(
 
                     const { data, error } = await query.order('created_at', { ascending: false });
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     
                     const pastQuestions = (data as unknown) as PastQuestion[];
                     const { cacheEntityList } = require('../lib/database');
@@ -177,7 +178,7 @@ export const useResourceStore = create<ResourceState>()(
                         .select('*, lecturer:lecturers!courses_lecturer_id_fkey(id, full_name, title)')
                         .eq('is_active', true);
                     const { data, error } = await query.order('code');
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     const { cacheEntityList } = require('../lib/database');
                     cacheEntityList('courses', data, '').catch(() => {});
                     set({ courses: (data as unknown) as Course[], isLoading: false, lastFetchCourses: Date.now() });
@@ -227,7 +228,7 @@ export const useResourceStore = create<ResourceState>()(
                     const { error } = await (supabase as any).rpc(rpcName as any, {
                         [paramName]: id
                     });
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
 
                     // Update local state
                     if (type === 'material') {
@@ -258,7 +259,7 @@ export const useResourceStore = create<ResourceState>()(
                     const { error } = await (supabase as any).rpc(rpcName as any, {
                         [paramName]: id
                     });
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
 
                     if (type === 'material') {
                         set((state) => ({
@@ -282,7 +283,7 @@ export const useResourceStore = create<ResourceState>()(
                 try {
                     set({ isLoading: true, error: null });
                     const { error } = await (supabase as any).from(type).delete().eq('id', id);
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     
                     if (type === 'materials') {
                         set(state => ({ materials: state.materials.filter(m => m.id !== id) }));
@@ -296,7 +297,7 @@ export const useResourceStore = create<ResourceState>()(
                         error: (error as any)?.message || 'Failed to delete resource',
                         isLoading: false
                     });
-                    throw error;
+                    throw normalizeError(error);
                 }
             },
 

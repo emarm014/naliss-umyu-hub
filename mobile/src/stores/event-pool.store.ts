@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { useNetworkStore } from './network.store';
+import { normalizeError } from '../utils/sentry';
 
 export type EventPool = {
     id: string;
@@ -97,7 +98,7 @@ export const useEventPoolStore = create<EventPoolState>()(
             .in('status', ['draft', 'scheduled', 'live', 'completed', 'archived'])
             .order('start_time', { ascending: false });
 
-          if (error) throw error;
+          if (error) throw normalizeError(error);
 
           const typedData = (data as any[]).map(pool => ({
             ...pool,

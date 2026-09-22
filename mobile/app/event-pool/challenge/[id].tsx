@@ -12,6 +12,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useQuizStore } from '../../../src/stores/quiz.store';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadLocalFileToCloudinary } from '../../../src/lib/cloudinary';
+import { normalizeError } from '../../../src/utils/sentry';
 
 export default function ChallengeEngineScreen() {
     useSentryScreen('ChallengeEngine');
@@ -86,7 +87,7 @@ export default function ChallengeEngineScreen() {
                     .eq('id', id)
                     .maybeSingle();
                 
-                if (poolError) throw poolError;
+                if (poolError) throw normalizeError(poolError);
                 if (!poolData) {
                     Alert.alert('Not Found', 'This challenge could not be found.');
                     router.back();

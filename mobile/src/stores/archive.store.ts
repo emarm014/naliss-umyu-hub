@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { useNetworkStore } from './network.store';
+import { normalizeError } from '../utils/sentry';
 
 interface ArchiveState {
   archives: any[];
@@ -97,7 +98,7 @@ export const useArchiveStore = create<ArchiveState>()(
             .order('created_at', { ascending: false })
             .range(pageIndex * 20, (pageIndex * 20) + 19);
 
-          if (error) throw error;
+          if (error) throw normalizeError(error);
           const items = (data || []) as any[];
 
           if (pageIndex === 0 && items.length > 0) {

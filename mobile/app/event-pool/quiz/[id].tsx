@@ -8,6 +8,7 @@ import { useTheme } from '../../../src/stores/theme.store';
 import { useAuthStore } from '../../../src/stores';
 import { useQuizStore } from '../../../src/stores/quiz.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
+import { normalizeError } from '../../../src/utils/sentry';
 
 
 
@@ -92,7 +93,7 @@ export default function QuizEngineScreen() {
                     .eq('id', id)
                     .maybeSingle();
                 
-                if (poolError) throw poolError;
+                if (poolError) throw normalizeError(poolError);
                 if (!poolData) {
                     Alert.alert('Not Found', 'This quiz could not be found.');
                     router.back();
@@ -129,7 +130,7 @@ export default function QuizEngineScreen() {
 
                 // 4. Fetch Questions securely
                 const { data: qData, error: qError } = await supabase.rpc('get_safe_quiz_questions', { p_pool_id: id });
-                if (qError) throw qError;
+                if (qError) throw normalizeError(qError);
                 
                 // Shuffle options for each question to prevent pattern guessing
                 const shuffledQs = ((qData as unknown as any[]) || []).map((q: any) => ({

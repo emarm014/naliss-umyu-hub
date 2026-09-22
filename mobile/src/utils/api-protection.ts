@@ -1,5 +1,6 @@
 import { Logger } from './logger';
 import { isNetworkError } from './sentry';
+import { normalizeError } from './sentry';
 
 export interface TimeoutError extends Error {
   name: 'TimeoutError';
@@ -93,7 +94,7 @@ export const withRetry = async <T>(
 
       if (!isTransientError || attempt >= maxRetries || !isOnlineNow) {
         // If it's a hard error, device is offline, or we've exhausted retries, fail fast
-        throw error;
+        throw normalizeError(error);
       }
 
       const delayMs = baseDelayMs * Math.pow(2, attempt - 1);

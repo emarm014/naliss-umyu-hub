@@ -591,8 +591,13 @@ function RootLayoutNav() {
         const startTime = Number(mmkv?.getString('oauth_start_time') || '0');
         if (Date.now() - startTime > 60_000) {
           console.warn('[Auth] Expired pending OAuth flag detected. Resetting.');
-          mmkv?.delete('oauth_in_progress');
-          mmkv?.delete('oauth_start_time');
+          if (typeof mmkv?.remove === 'function') {
+            mmkv.remove('oauth_in_progress');
+            mmkv.remove('oauth_start_time');
+          } else if (typeof mmkv?.delete === 'function') {
+            mmkv.delete('oauth_in_progress');
+            mmkv.delete('oauth_start_time');
+          }
         }
       }
     };

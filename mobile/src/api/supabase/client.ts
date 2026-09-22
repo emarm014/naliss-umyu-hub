@@ -49,7 +49,7 @@ const sentryFetch: typeof fetch = async (url, options) => {
       category: 'api.supabase',
       message: `${method} ${urlPath} ${response.status} (${durationMs}ms)`,
       data: { path: urlPath, status: response.status, durationMs },
-      level: response.ok ? (durationMs > 3000 ? 'warning' : 'debug') : 'error',
+      level: response.ok ? (durationMs > 3000 ? 'warning' : 'debug') : ([401, 403].includes(response.status) ? 'warning' : 'error'),
     });
 
     return response;

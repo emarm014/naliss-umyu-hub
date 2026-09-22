@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
+import { normalizeError } from '../utils/sentry';
 
 export interface Event {
     id: string;
@@ -130,7 +131,7 @@ export const useEventStore = create<EventState>()(
 
                     const { data, error } = await query.order('created_at', { ascending: false }).limit(30);
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
 
                     const mappedEvents = (data || []).map((ev: any) => ({
                         ...ev,

@@ -1,6 +1,6 @@
 import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
-import { trackOfflineSync, captureStoreError } from '../utils/sentry';
+import { trackOfflineSync, captureStoreError, normalizeError } from '../utils/sentry';
 import * as Sentry from '@sentry/react-native';
 import { useAuthStore } from '../stores/auth.store';
 import { useGroupStore } from '../stores/group.store';
@@ -39,7 +39,7 @@ async function withStageTimeout<T>(stage: string, task: () => Promise<T>): Promi
         ]);
     } catch (e: any) {
         Logger.warn('offline-sync', `${stage}: ${e.message || String(e)} — skipping stage`);
-        Sentry.captureException(e, { tags: { source: 'background_sync' } });
+        Sentry.captureException(normalizeError(e), { tags: { source: 'background_sync' } });
         return null;
     }
 }
@@ -97,7 +97,7 @@ export const OfflineSyncService = {
                     .select('group_id')
                     .eq('user_id', userId) as any);
 
-                if (memError) throw memError;
+                if (memError) throw normalizeError(memError);
                 const groupIds = (memberships || []).map((m: any) => m.group_id);
 
                 if (groupIds.length > 0) {
@@ -106,7 +106,7 @@ export const OfflineSyncService = {
                         .in('id', groupIds)
                         .eq('is_active', true) as any);
 
-                    if (grpError) throw grpError;
+                    if (grpError) throw normalizeError(grpError);
 
                     await useGroupStore.getState().fetchGroups(true);
 
@@ -379,7 +379,7 @@ export const OfflineSyncService = {
             await yieldToUI();
             try {
                 const { data: newsData } = await (supabase as any).from('news')
-                    .select('*').eq('is_published', true).order('created_at', { ascending: false });
+                    .select('*').order('created_at', { ascending: false });
                 if (newsData?.length) await batchUpsertContentManifest(newsData.map((n: any) => ({
                     content_type: 'news',
                     content_id: n.id,
@@ -388,7 +388,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
+            } catch (e) { Sentry.captureException(normalizeError(e), { tags: { source: 'background_sync' } }); }
 
             // ----------------------------------------------------
             // Stage 12: Sync archive
@@ -406,7 +406,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
+            } catch (e) { Sentry.captureException(normalizeError(e), { tags: { source: 'background_sync' } }); }
 
             // ----------------------------------------------------
             // Stage 13: Sync FYB (featured students)
@@ -427,7 +427,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
+            } catch (e) { Sentry.captureException(normalizeError(e), { tags: { source: 'background_sync' } }); }
 
             // ----------------------------------------------------
             // Stage 14: Sync gallery
@@ -445,7 +445,7 @@ export const OfflineSyncService = {
                     sync_version: 1,
                     device_id: deviceId
                 })));
-            } catch (e) { Sentry.captureException(e, { tags: { source: 'background_sync' } }); }
+            } catch (e) { Sentry.captureException(normalizeError(e), { tags: { source: 'background_sync' } }); }
 
             // Update Sync state metadata
             await updateSyncState(userId, {
@@ -466,7 +466,7 @@ export const OfflineSyncService = {
         } catch (e: any) {
             Logger.error('offline-sync', 'Error running bootstrap synchronization', e);
             trackOfflineSync('bootstrap', 'failed', undefined, { error: e.message || String(e) });
-            Sentry.captureException(e, { tags: { source: 'background_sync' } });
+            Sentry.captureException(normalizeError(e), { tags: { source: 'background_sync' } });
         } finally {
             _syncInProgress = false;
         }

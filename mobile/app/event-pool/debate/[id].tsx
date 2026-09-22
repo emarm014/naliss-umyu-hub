@@ -8,6 +8,7 @@ import { useAuthStore } from '../../../src/stores';
 import { useDebateStore, DebateState, DebateRound } from '../../../src/stores/debate.store';
 import { useSentryScreen } from '../../../src/hooks/useSentryScreen';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
+import { normalizeError } from '../../../src/utils/sentry';
 
 export default function DebateEngineScreen() {
     useSentryScreen('DebateEngine');
@@ -79,7 +80,7 @@ export default function DebateEngineScreen() {
                     .eq('id', id)
                     .maybeSingle();
 
-                if (poolError) throw poolError;
+                if (poolError) throw normalizeError(poolError);
                 if (!poolData) {
                     Alert.alert('Not Found', 'This debate could not be found.');
                     router.back();

@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/react-native';
 import { TimeoutError } from './api-protection';
+import { normalizeError } from './sentry';
 
 // Errors that are transient/environmental — should never create Sentry issues
 function isTransientError(error: any): boolean {
@@ -169,7 +170,7 @@ export const Logger = {
         status: 'error'
       });
       
-      throw error;
+      throw normalizeError(error);
     }
   }
 };

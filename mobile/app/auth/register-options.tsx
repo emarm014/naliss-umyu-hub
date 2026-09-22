@@ -17,6 +17,7 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError, trackFeature } from '../../src/utils/sentry';
 import * as Sentry from '@sentry/react-native';
 import { useRegistrationLimiter } from '../../src/stores/registration-limiter.store';
+import { normalizeError } from '../../src/utils/sentry';
 
 export default function RegisterOptions() {
   useSentryScreen('RegisterOptions');
@@ -140,7 +141,7 @@ export default function RegisterOptions() {
         options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
       });
 
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       if (!data.url) throw new Error('No OAuth URL returned');
 
       // ── STEP 2: Open browser ──────────────────────────────────────────────

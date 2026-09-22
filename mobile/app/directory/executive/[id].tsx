@@ -23,7 +23,7 @@ export default function ExecutiveDetailScreen() {
   const [exec, setExec] = useState<any>(null);
   const [photos, setPhotos] = useState<any[]>([]);
   const [viewerVisible, setViewerVisible] = useState(false);
-  const [activeViewerItem, setActiveViewerItem] = useState<{ uri: string; name: string } | null>(null);
+  const [activeViewerItem, setActiveViewerItem] = useState<{ uri: string; name: string; remoteUrl?: string } | null>(null);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -71,8 +71,10 @@ export default function ExecutiveDetailScreen() {
   };
 
   const openMainAvatarViewer = () => {
+    const fallbackDicebear = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(name || 'user')}&size=200`;
     setActiveViewerItem({
-      uri: cachedAvatarUri || cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(name || 'user')}&size=200`,
+      uri: cachedAvatarUri || cleanAvatar || fallbackDicebear,
+      remoteUrl: cleanAvatar || fallbackDicebear,
       name,
     });
     setViewerVisible(true);
@@ -177,8 +179,8 @@ export default function ExecutiveDetailScreen() {
                   key={photo.id}
                   photo={photo}
                   fallbackName={name}
-                  onPress={(uri, title) => {
-                    setActiveViewerItem({ uri, name: title });
+                  onPress={(uri, title, remoteUrl) => {
+                    setActiveViewerItem({ uri, name: title, remoteUrl });
                     setViewerVisible(true);
                   }}
                 />
@@ -265,6 +267,7 @@ export default function ExecutiveDetailScreen() {
         isVisible={viewerVisible}
         onClose={() => setViewerVisible(false)}
         fileUri={activeViewerItem?.uri || ''}
+        remoteUrl={activeViewerItem?.remoteUrl}
         fileType="image"
         fileName={activeViewerItem?.name || name}
         showDownload={false}
@@ -275,7 +278,7 @@ export default function ExecutiveDetailScreen() {
   );
 }
 
-function GalleryCard({ photo, fallbackName, onPress }: { photo: any; fallbackName: string; onPress: (uri: string, name: string) => void }) {
+function GalleryCard({ photo, fallbackName, onPress }: { photo: any; fallbackName: string; onPress: (uri: string, name: string, remoteUrl?: string) => void }) {
   const cleanUrl = getCleanAvatarUrl(photo.url);
   const cachedUri = useOfflineImage(cleanUrl);
   const title = photo.caption || fallbackName;
@@ -284,7 +287,7 @@ function GalleryCard({ photo, fallbackName, onPress }: { photo: any; fallbackNam
     <TouchableOpacity
       activeOpacity={0.85}
       style={styles.galleryCard}
-      onPress={() => onPress(cachedUri || cleanUrl || '', title)}
+      onPress={() => onPress(cachedUri || cleanUrl || '', title, cleanUrl || undefined)}
     >
       <CachedImage
         entityId={photo.id}

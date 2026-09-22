@@ -45,6 +45,7 @@ export default function ArchiveScreen() {
 
   const [viewerVisible, setViewerVisible] = useState(false);
   const [readerUrl, setReaderUrl] = useState<string>('');
+  const [readerRemoteUrl, setReaderRemoteUrl] = useState<string | undefined>(undefined);
   const [readerFileType, setReaderFileType] = useState<'image' | 'video' | 'pdf' | 'audio' | 'document'>('document');
   const [readerTitle, setReaderTitle] = useState('');
   const [readerId, setReaderId] = useState<string | undefined>(undefined);
@@ -154,6 +155,7 @@ export default function ArchiveScreen() {
 
       const openInViewer = () => {
         setReaderUrl(fileUri);
+        setReaderRemoteUrl(item.file_url);
         setReaderFileType(fileType);
         setReaderTitle(displayName);
         setReaderId(item.id);
@@ -361,6 +363,7 @@ export default function ArchiveScreen() {
           isVisible={viewerVisible}
           onClose={() => setViewerVisible(false)}
           fileUri={readerUrl}
+          remoteUrl={readerRemoteUrl}
           fileType={readerFileType}
           fileName={readerTitle}
           fileId={readerId}

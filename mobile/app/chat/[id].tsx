@@ -58,6 +58,7 @@ import { WhatsAppMediaEditor, FinalizedMedia } from '../../src/components/messag
 import { openDocumentWith } from '../../src/utils/documentOpener';
 import { updateLocalMediaPath } from '../../src/lib/database';
 import { AssetPathResolver } from '../../src/utils/assetResolver';
+import { normalizeError } from '../../src/utils/sentry';
 
 const MAX_CHARS = 500;
 
@@ -465,7 +466,7 @@ export default function ChatScreen() {
                 .select('*')
                 .eq('id', id)
                 .maybeSingle();
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             if (data) setGroup(data);
         } catch {
             // silent — group details cached from store
@@ -511,7 +512,7 @@ export default function ChatScreen() {
             }
 
             const { data, error } = await (query as any);
-            if (error) throw error;
+            if (error) throw normalizeError(error);
 
             // REDESIGN: Empty response from Supabase must NEVER erase local history
             if ((!data || data.length === 0) && messages.length > 0) {
@@ -656,7 +657,7 @@ export default function ChatScreen() {
                 .select('*, user:users(*, department:departments(name))')
                 .eq('group_id', id) as any);
 
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             const fetched = (data as any[])?.map(m => m.user).filter(Boolean) || [];
             
             // Asynchronously download and map member avatars for offline availability
@@ -956,7 +957,7 @@ export default function ChatScreen() {
                     .select()
                     .single();
 
-                if (error) throw error;
+                if (error) throw normalizeError(error);
 
                 // Confirm the temp message
                 messageStore.updateMessage(id, tempId, { id: (data as any).id, status: 'sent', created_at: (data as any).created_at });
@@ -1050,7 +1051,7 @@ export default function ChatScreen() {
                 .select()
                 .single() as any);
 
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             messageStore.updateMessage(id, tempId, { id: data.id, status: 'sent', created_at: data.created_at });
         } catch (err: any) {
             captureUIError('ChatScreen.sendSticker', err, { groupId: id });
@@ -2277,7 +2278,7 @@ export default function ChatScreen() {
                     .select()
                     .single();
 
-                if (error) throw error;
+                if (error) throw normalizeError(error);
 
                 const realId = (data as any).id;
                 let vaultCopyPath: string | null = null;

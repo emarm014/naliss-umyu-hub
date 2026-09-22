@@ -18,6 +18,7 @@ import { useTheme } from '../../src/stores/theme.store';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { PosterImage } from '../../src/components/PosterImage';
 import {  SafeBottomSheet, SafeOverlayContainer } from '../../src/components/common/overlays';
+import { normalizeError } from '../../src/utils/sentry';
 const { width } = Dimensions.get('window');
 
 const CATEGORIES = ['All', 'Academic', 'Social', 'Event', 'General'];
@@ -68,7 +69,7 @@ export default function AnnouncementsScreen() {
 
     const [activeApplyPoolId, setActiveApplyPoolId] = useState<string | null>(null);
     const [viewerVisible, setViewerVisible] = useState(false);
-    const [viewerFile, setViewerFile] = useState<{ uri: string, type: 'image' | 'video', name: string } | null>(null);
+    const [viewerFile, setViewerFile] = useState<{ uri: string, type: 'image' | 'video', name: string, remoteUrl?: string } | null>(null);
 
     const loadData = async () => {
         const level = user?.level || undefined;
@@ -87,7 +88,7 @@ export default function AnnouncementsScreen() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             const { error } = await (supabase as any).from('announcements').delete().eq('id', id);
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             if (user) {
                 (supabase as any).from('activity_logs').insert({
                     user_id: user.id,
@@ -95,7 +96,7 @@ export default function AnnouncementsScreen() {
                     entity_id: id,
                     entity_type: 'announcement',
                     description: 'Deleted announcement from mobile',
-                }).then(() => {}); // fire-and-forget, non-critical
+                }).then(() => {}).catch(() => {}); // fire-and-forget, non-critical
             }
             await loadData();
         } catch { Alert.alert('Error', 'Failed to remove announcement.'); }
@@ -172,7 +173,12 @@ export default function AnnouncementsScreen() {
                             event={event} 
                             onApply={() => setActiveApplyPoolId(event.pool_id || null)} 
                             onImagePress={(localUri) => {
-                                setViewerFile({ uri: localUri || event.cover_image_url || '', type: 'image', name: event.title || '' });
+                                setViewerFile({ 
+                                    uri: localUri || event.cover_image_url || '', 
+                                    remoteUrl: event.cover_image_url || undefined,
+                                    type: 'image', 
+                                    name: event.title || '' 
+                                });
                                 setViewerVisible(true);
                             }}
                         />)
@@ -186,7 +192,12 @@ export default function AnnouncementsScreen() {
                             onDelete={handleDelete} 
                             onApply={() => setActiveApplyPoolId(ann.pool_id)} 
                             onImagePress={(localUri) => {
-                                setViewerFile({ uri: localUri || ann.cover_image_url || '', type: 'image', name: ann.title || '' });
+                                setViewerFile({ 
+                                    uri: localUri || ann.cover_image_url || '', 
+                                    remoteUrl: ann.cover_image_url || undefined,
+                                    type: 'image', 
+                                    name: ann.title || '' 
+                                });
                                 setViewerVisible(true);
                             }}
                         />)
@@ -211,6 +222,7 @@ export default function AnnouncementsScreen() {
                         setTimeout(() => setViewerFile(null), 300);
                     }}
                     fileUri={viewerFile.uri}
+                    remoteUrl={viewerFile.remoteUrl}
                     fileType={viewerFile.type}
                     fileName={viewerFile.name}
                 />
@@ -287,7 +299,7 @@ export function RegistrationOverlay({ poolId, user, onClose }: { poolId: string,
                 user_id: user.id,
                 status: 'pending'
             });
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             Alert.alert('Success', 'Your application has been submitted and is pending approval.');
             onClose();
         } catch (e: any) {

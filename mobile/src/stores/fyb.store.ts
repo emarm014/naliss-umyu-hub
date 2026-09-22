@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { useNetworkStore } from './network.store';
+import { normalizeError } from '../utils/sentry';
 
 export type FeaturedStudentEntry = {
   id: string;
@@ -109,7 +110,7 @@ export const useFYBStore = create<FYBState>()(
             `)
             .order('published_at', { ascending: false });
 
-          if (error) throw error;
+          if (error) throw normalizeError(error);
 
           const items = (data || []) as unknown as FeaturedStudentEntry[];
           if (items.length > 0) {

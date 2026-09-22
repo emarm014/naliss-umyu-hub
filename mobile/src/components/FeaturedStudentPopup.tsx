@@ -14,6 +14,7 @@ import { useAuthStore } from '../stores/auth.store';
 import { useSignupStore } from '../stores/signup.store';
 import { sendPushNotification } from '../utils/notifications';
 import { CachedImage } from './common/CachedImage';
+import { normalizeError } from '../utils/sentry';
 
 const { width, height } = Dimensions.get('window');
 
@@ -441,7 +442,7 @@ export function FeaturedStudentPopup() {
             });
             
             if (error && !error.message.includes('already congratulated')) {
-                throw error;
+                throw normalizeError(error);
             }
 
             setHasCongratulated(true);

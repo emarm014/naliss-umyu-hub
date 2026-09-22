@@ -79,7 +79,7 @@ function EventDetailsContent() {
 
     useEffect(() => {
         if (!event) return;
-        ((supabase as any).rpc('increment_event_view_count' as any, { event_id: event.id }) as any).then(() => {});
+        ((supabase as any).rpc('increment_event_view_count' as any, { event_id: event.id }) as any).then(() => {}).catch(() => {});
         useNotificationStore.getState().markEntityAsRead('event', event.id);
     }, [event?.id]);
 

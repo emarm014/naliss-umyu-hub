@@ -4,7 +4,7 @@ const { withAppBuildGradle } = require('@expo/config-plugins');
  * Expo Config Plugin to inject an ndk.abiFilters block into the Android build.gradle
  * to restrict the architectures built in the APK (shrinking it dramatically).
  */
-module.exports = function withAndroidAbiFilters(config, architectures = ["arm64-v8a"]) {
+module.exports = function withAndroidAbiFilters(config, architectures = ["arm64-v8a", "armeabi-v7a"]) {
   return withAppBuildGradle(config, (config) => {
     if (config.modResults.language === 'groovy') {
       let contents = config.modResults.contents;

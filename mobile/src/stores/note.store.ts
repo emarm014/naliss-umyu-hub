@@ -5,6 +5,7 @@ import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
 import { uploadLocalFileToCloudinary } from '../lib/cloudinary';
 import { useMutationQueueStore } from './mutationQueue.store';
+import { normalizeError } from '../utils/sentry';
 
 export interface LocalNote {
     id: string;
@@ -186,7 +187,7 @@ export const useNoteStore = create<NoteState>()(
                         .eq('user_id', user.id)
                         .order('created_at', { ascending: false });
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     if (!data) return;
 
                     const cloudNotes: LocalNote[] = data.map((row: any) => ({

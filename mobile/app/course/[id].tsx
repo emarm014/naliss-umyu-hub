@@ -23,6 +23,7 @@ export default function CourseDetailScreen() {
     // UniversalViewer state
     const [readerVisible, setReaderVisible] = useState(false);
     const [readerUrl, setReaderUrl] = useState('');
+    const [readerRemoteUrl, setReaderRemoteUrl] = useState<string | undefined>(undefined);
     const [readerFileType, setReaderFileType] = useState<'image' | 'video' | 'pdf' | 'audio' | 'document'>('document');
     const [readerTitle, setReaderTitle] = useState('');
     const [readerId, setReaderId] = useState('');
@@ -57,6 +58,7 @@ export default function CourseDetailScreen() {
             } catch {}
 
             setReaderUrl(fileUri);
+            setReaderRemoteUrl(material.file_url);
             setReaderFileType(fileType);
             setReaderTitle(displayName);
             setReaderId(material.id);
@@ -233,6 +235,7 @@ export default function CourseDetailScreen() {
                 isVisible={readerVisible}
                 onClose={() => setReaderVisible(false)}
                 fileUri={readerUrl}
+                remoteUrl={readerRemoteUrl}
                 fileType={readerFileType}
                 fileName={readerTitle}
                 fileId={readerId}

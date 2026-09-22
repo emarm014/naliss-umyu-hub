@@ -8,6 +8,7 @@ import { useAuthStore } from '../../../src/stores';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { mmkvStorage } from '../../../src/stores/mmkv.storage';
 import * as Haptics from 'expo-haptics';
+import { normalizeError } from '../../../src/utils/sentry';
 
 interface Candidate {
   id: string;
@@ -50,7 +51,7 @@ export default function VotingEngineScreen() {
           .eq('id', id)
           .maybeSingle();
 
-        if (poolError) throw poolError;
+        if (poolError) throw normalizeError(poolError);
         if (!poolData) {
           Alert.alert('Not Found', 'This voting pool could not be found.');
           router.back();
@@ -64,7 +65,7 @@ export default function VotingEngineScreen() {
         }
 
         const { data, error } = await supabase.rpc('get_voting_candidates', { p_pool_id: id });
-        if (error) throw error;
+        if (error) throw normalizeError(error);
         
         const typedData = data as any;
         if (typedData) {
@@ -124,7 +125,7 @@ export default function VotingEngineScreen() {
             setIsSubmitting(true);
             try {
               const { data, error } = await supabase.rpc('cast_multi_post_ballot', { p_pool_id: id, p_selections: selections });
-              if (error) throw error;
+              if (error) throw normalizeError(error);
               
               const receiptCode = `NALISS-VOTE-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
               const receipt = { receiptCode, votedAt: new Date().toISOString(), poolId: id as string };

@@ -4,6 +4,7 @@ import { mmkvStorage } from './mmkv.storage';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../api/supabase/client';
 import { useMutationQueueStore } from './mutationQueue.store';
+import { normalizeError } from '../utils/sentry';
 
 export const updateDeviceBadge = (notifications: any[]) => {
   try {
@@ -31,7 +32,7 @@ async function syncReadStateToBackend(notificationIds: string[]): Promise<void> 
       .in('notification_id', notificationIds);
 
     if (error) {
-      throw error;
+      throw normalizeError(error);
     }
   } catch {
     // Offline or network error: Enqueue to mutation queue for reliable offline replay

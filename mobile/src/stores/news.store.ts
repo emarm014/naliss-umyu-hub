@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
+import { normalizeError } from '../utils/sentry';
 
 interface NewsState {
   news: any[];
@@ -84,7 +85,7 @@ export const useNewsStore = create<NewsState>()(
             .order('created_at', { ascending: false })
             .limit(100);
 
-          if (error) throw error;
+          if (error) throw normalizeError(error);
 
           const { cacheEntityList } = require('../lib/database');
           cacheEntityList('news', data, '').catch(() => {});

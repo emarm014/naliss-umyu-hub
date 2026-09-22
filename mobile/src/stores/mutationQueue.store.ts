@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { Logger } from '../utils/logger';
+import { normalizeError } from '../utils/sentry';
 
 export interface OfflineMutation {
   id: string;
@@ -116,7 +117,7 @@ export const useMutationQueueStore = create<MutationQueueState>()(
 
             if (mut.action === 'insert') {
               const { error } = await query.insert(mut.payload);
-              if (error) throw error;
+              if (error) throw normalizeError(error);
             } else if (mut.action === 'update') {
               let updateQuery = query.update(mut.payload);
               if (mut.queryConstraints?.eq) {
@@ -125,7 +126,7 @@ export const useMutationQueueStore = create<MutationQueueState>()(
                 }
               }
               const { error } = await updateQuery;
-              if (error) throw error;
+              if (error) throw normalizeError(error);
             } else if (mut.action === 'delete') {
               let deleteQuery = query.delete();
               if (mut.queryConstraints?.eq) {
@@ -134,10 +135,10 @@ export const useMutationQueueStore = create<MutationQueueState>()(
                 }
               }
               const { error } = await deleteQuery;
-              if (error) throw error;
+              if (error) throw normalizeError(error);
             } else if (mut.action === 'upsert') {
               const { error } = await query.upsert(mut.payload);
-              if (error) throw error;
+              if (error) throw normalizeError(error);
             }
 
             Logger.info('mutationQueue', `Successfully replayed mutation`, { id: mut.id });

@@ -1,32 +1,50 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import { mmkvStorage } from './mmkv.storage';
-import { supabase } from '../api/supabase/client';
-import { Session, User as SupabaseUser } from '@supabase/supabase-js';
-import { User as Profile } from '../types';
-import { captureStoreError, trackStoreAction, isNetworkError, setSentryUserContext, clearSentryUserContext } from '../utils/sentry';
-import { Logger } from '../utils/logger';
-import { withRetry } from '../utils/api-protection';
-import * as FileSystem from 'expo-file-system/legacy';
-import NetInfo from '@react-native-community/netinfo';
-import { saveLocalUserSession, getLocalUserSession, clearLocalUserSession } from '../lib/database';
-import { safeFire } from '../utils/safeFire';
-import { realtimeManager } from '../lib/realtimeManager';
-import { getCurrentPushToken } from '../hooks/usePushNotifications';
-import { getOrCreateDeviceId } from '../utils/device';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-const cacheAvatarLocally = async (userId: string, remoteUrl: string): Promise<string | null> => {
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { mmkvStorage } from "./mmkv.storage";
+import { supabase } from "../api/supabase/client";
+import { Session, User as SupabaseUser } from "@supabase/supabase-js";
+import { User as Profile } from "../types";
+import {
+  captureStoreError,
+  trackStoreAction,
+  isNetworkError,
+  setSentryUserContext,
+  clearSentryUserContext,
+} from "../utils/sentry";
+import { Logger } from "../utils/logger";
+import { withRetry } from "../utils/api-protection";
+import * as FileSystem from "expo-file-system/legacy";
+import NetInfo from "@react-native-community/netinfo";
+import {
+  saveLocalUserSession,
+  getLocalUserSession,
+  clearLocalUserSession,
+} from "../lib/database";
+import { safeFire } from "../utils/safeFire";
+import { realtimeManager } from "../lib/realtimeManager";
+import { getCurrentPushToken } from "../hooks/usePushNotifications";
+import { getOrCreateDeviceId } from "../utils/device";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { normalizeError } from "../utils/sentry";
+const cacheAvatarLocally = async (
+  userId: string,
+  remoteUrl: string,
+): Promise<string | null> => {
   if (!userId || !remoteUrl) return null;
-  if (!remoteUrl.startsWith('http')) {
-    return remoteUrl.startsWith('file://') ? remoteUrl : null;
+  if (!remoteUrl.startsWith("http")) {
+    return remoteUrl.startsWith("file://") ? remoteUrl : null;
   }
   try {
     const fs = FileSystem as any;
-    const docDir = fs.Paths?.document?.uri || fs.documentDirectory || fs.cacheDirectory || '';
+    const docDir =
+      fs.Paths?.document?.uri ||
+      fs.documentDirectory ||
+      fs.cacheDirectory ||
+      "";
     if (!docDir) return null;
-    const base = docDir.endsWith('/') ? docDir : `${docDir}/`;
+    const base = docDir.endsWith("/") ? docDir : `${docDir}/`;
     const localPath = `${base}avatar_${userId}.jpg`;
-    
+
     const downloadRes = await FileSystem.downloadAsync(remoteUrl, localPath);
     if (downloadRes.status === 200) {
       return downloadRes.uri;
@@ -36,6 +54,8 @@ const cacheAvatarLocally = async (userId: string, remoteUrl: string): Promise<st
   }
   return null;
 };
+
+let inFlightFetchProfilePromise: Promise<void> | null = null;
 
 interface AuthState {
   session: Session | null;
@@ -103,20 +123,31 @@ export const useAuthStore = create<AuthState>()(
       setSession: (session) => set({ session, isLoading: false }),
       setUser: (user) => set({ user }),
 
-    hydrateFromSQLite: async () => {
+      hydrateFromSQLite: async () => {
         const localProfile = await getLocalUserSession();
         if (localProfile) {
-          set({ 
+          let verifiedLocalAvatar: string | null = null;
+          if (localProfile.local_avatar_path) {
+            try {
+              const info = await FileSystem.getInfoAsync(
+                localProfile.local_avatar_path,
+              );
+              if (info.exists && (info as any).size > 0) {
+                verifiedLocalAvatar = localProfile.local_avatar_path;
+              }
+            } catch {}
+          }
+          set({
             profile: localProfile as Profile,
-            localAvatarUrl: localProfile.local_avatar_path || null
+            localAvatarUrl: verifiedLocalAvatar,
           });
           setSentryUserContext(localProfile);
           // Run self-healing check on hydrate
-          safeFire(get().verifyAndRepairProfile(), 'verifyProfile');
+          safeFire(get().verifyAndRepairProfile(), "verifyProfile");
         }
-        
+
         // Re-link existing files to SQLite after SQLite initialization
-        const { reconcileAssetCache } = require('../lib/database');
+        const { reconcileAssetCache } = require("../lib/database");
         await reconcileAssetCache();
       },
 
@@ -130,132 +161,235 @@ export const useAuthStore = create<AuthState>()(
           return; // Serve from cache
         }
 
-        const fetchStartedAt = Date.now();
-        
-        const deviceId = 'unknown';
+        if (!force && inFlightFetchProfilePromise) {
+          return inFlightFetchProfilePromise;
+        }
 
-        // Fast-path: if offline, skip network fetch entirely and keep local cache
-        try {
-          const { useNetworkStore } = require('./network.store');
-          if (!useNetworkStore.getState().isOnline) {
-            Logger.info('auth.store', 'Device is offline, serving profile from local cache.');
-            return;
-          }
-        } catch (_) {}
+        const runFetch = async () => {
+          const fetchStartedAt = Date.now();
 
-        try {
-          const { data, error } = await Logger.perf('auth.store', 'fetchProfile', () => 
-            withRetry(async () => {
-              const result = await (supabase as any).from('users')
-                .select('*')
-                .eq('id', currentUser.id)
-                .maybeSingle();
-              if (result.error) throw result.error;
-              return result;
-            }, { componentName: 'auth.store', operationName: 'fetchProfile' })
-          );
+          const deviceId = "unknown";
 
-          if (error) {
-            const isNet = error.message?.toLowerCase().includes('network') || error.status === 0;
-            if (isNet) {
-              Logger.warn('auth.store', 'Network error during fetchProfile. Keeping cached local profile.');
-              
+          // Fast-path: if offline, skip network fetch entirely and keep local cache
+          try {
+            const { useNetworkStore } = require("./network.store");
+            if (!useNetworkStore.getState().isOnline) {
+              Logger.info(
+                "auth.store",
+                "Device is offline, serving profile from local cache.",
+              );
               return;
             }
-            throw error;
-          }
+          } catch (_) {}
 
-          if (!data || Object.keys(data).length === 0) {
-            console.log('[AuthStore] Profile not yet created for user:', currentUser.id);
-            const repaired = await get().attemptProfileRepair();
-            if (repaired) {
-              const { data: retryData } = await (supabase as any).from('users')
-                .select('*')
-                .eq('id', currentUser.id)
-                .maybeSingle();
-              if (retryData) {
-                set({ profile: retryData, isProfileComplete: true });
-                setSentryUserContext(retryData);
+          try {
+            const { data, error } = await Logger.perf(
+              "auth.store",
+              "fetchProfile",
+              () =>
+                withRetry(
+                  async () => {
+                    const result = await (supabase as any)
+                      .from("users")
+                      .select("*")
+                      .eq("id", currentUser.id)
+                      .maybeSingle();
+                    if (result.error) throw result.error;
+                    return result;
+                  },
+                  {
+                    componentName: "auth.store",
+                    operationName: "fetchProfile",
+                  },
+                ),
+            );
+
+            // Abort immediately if user signed out or switched account during network call
+            const activeUser = get().user || get().session?.user;
+            if (!activeUser || activeUser.id !== currentUser.id) {
+              Logger.info(
+                "auth.store",
+                "User signed out or session changed during fetchProfile. Aborting.",
+              );
+              return;
+            }
+
+            if (error) {
+              const isNet =
+                error.message?.toLowerCase().includes("network") ||
+                error.status === 0;
+              if (isNet) {
+                Logger.warn(
+                  "auth.store",
+                  "Network error during fetchProfile. Keeping cached local profile.",
+                );
+                return;
+              }
+              throw normalizeError(error);
+            }
+
+            if (!data || Object.keys(data).length === 0) {
+              console.log(
+                "[AuthStore] Profile not yet created for user (or empty response):",
+                currentUser.id,
+              );
+
+              // OFFLINE/CAPTIVE PORTAL GUARD: If the user already has a complete profile in cache,
+              // an empty response is almost certainly a network glitch (e.g. captive portal returning {}).
+              // We MUST NOT wipe the profile and kick them to the signup screen.
+              const cachedProf = get().profile;
+              if (
+                cachedProf &&
+                ((cachedProf.registration_number && cachedProf.level) ||
+                  (cachedProf.role as string) === "super_admin" ||
+                  (cachedProf.role as string) === "system_owner")
+              ) {
+                Logger.warn(
+                  "auth.store",
+                  "Received empty profile data but user has complete cache. Assuming network glitch and keeping cache.",
+                );
+                return;
+              }
+
+              const repaired = await get().attemptProfileRepair();
+              if (repaired) {
+                const { data: retryData } = await (supabase as any)
+                  .from("users")
+                  .select("*")
+                  .eq("id", currentUser.id)
+                  .maybeSingle();
+                if (retryData) {
+                  if (!get().user || get().user?.id !== currentUser.id) return;
+                  set({ profile: retryData, isProfileComplete: true });
+                  setSentryUserContext(retryData);
+                  return;
+                }
+              }
+              if (!get().user || get().user?.id !== currentUser.id) return;
+              set({ profile: null, isProfileComplete: false });
+              return;
+            }
+
+            set({ isProfileComplete: true });
+
+            // Version Control Check
+            const localProfile = get().profile;
+            if (localProfile) {
+              const localVersion = (localProfile as any).profile_version || 1;
+              const serverVersion = (data as any).profile_version || 1;
+              const localUpdatedAt = localProfile.updated_at
+                ? new Date(localProfile.updated_at).getTime()
+                : 0;
+              const serverUpdatedAt = (data as any).updated_at
+                ? new Date((data as any).updated_at).getTime()
+                : 0;
+
+              if (
+                serverVersion < localVersion ||
+                (serverVersion === localVersion &&
+                  serverUpdatedAt <= localUpdatedAt)
+              ) {
+                Logger.info("auth.store", "Stale server profile ignored.", {
+                  localVersion,
+                  serverVersion,
+                });
                 return;
               }
             }
-            set({ profile: null, isProfileComplete: false });
-            return;
-          }
 
-          set({ isProfileComplete: true });
-
-          // Version Control Check
-          const localProfile = get().profile;
-          if (localProfile) {
-            const localVersion = (localProfile as any).profile_version || 1;
-            const serverVersion = (data as any).profile_version || 1;
-            const localUpdatedAt = localProfile.updated_at ? new Date(localProfile.updated_at).getTime() : 0;
-            const serverUpdatedAt = (data as any).updated_at ? new Date((data as any).updated_at).getTime() : 0;
-
-            if (serverVersion < localVersion || (serverVersion === localVersion && serverUpdatedAt <= localUpdatedAt)) {
-              Logger.info('auth.store', 'Stale server profile ignored.', { localVersion, serverVersion });
-              
+            const currentState = get();
+            // Guard: abort if user signed out, switched accounts, or local data was cleared while network fetch was in-flight
+            if (!currentState.user || currentState.user.id !== currentUser.id) {
+              Logger.info(
+                "auth.store",
+                "User signed out or session changed during fetchProfile. Aborting cache save.",
+              );
               return;
             }
-          }
 
-          const isBootstrap = !localProfile;
-          if (isBootstrap) {
-            
-          }
-
-          const currentState = get();
-          if (currentState.lastLocalProfileUpdateAt && currentState.lastLocalProfileUpdateAt > fetchStartedAt) {
-            return;
-          }
-
-          const merged: any = { ...(data as any), ...currentState.pendingProfileUpdates };
-          if (currentState.confirmedAvatarUrl) {
-            merged.avatar_url = currentState.confirmedAvatarUrl;
-          }
-          
-          set({ profile: merged as Profile, lastFetch: Date.now() });
-          setSentryUserContext(merged);
-          
-          // Anchor the fresh fetch payload into SQLite
-          await saveLocalUserSession(merged);
-
-          // Unify avatar download
-          if (merged.avatar_url) {
-            const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
-            const urlHash = merged.avatar_url.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || Date.now().toString();
-            
-            // Delete old cached avatar to prevent disk clutter
-            const oldLocalPath = get().localAvatarUrl;
-            if (oldLocalPath && !oldLocalPath.includes(urlHash)) {
-              try { await FileSystem.deleteAsync(oldLocalPath, { idempotent: true }); } catch (e) {}
+            if (
+              currentState.lastLocalProfileUpdateAt &&
+              currentState.lastLocalProfileUpdateAt > fetchStartedAt
+            ) {
+              return;
             }
 
-            const localUri = await UnifiedDownloadEngine.download(
-              merged.avatar_url,
-              `user_avatar_${user.id}_${urlHash}`,
-              undefined,
-              'user_avatar'
-            );
-            if (localUri) {
-              const updatedWithAvatar = { ...merged, local_avatar_path: localUri };
-              set({ localAvatarUrl: localUri, profile: updatedWithAvatar as Profile });
-              await saveLocalUserSession(updatedWithAvatar);
+            const merged: any = {
+              ...(data as any),
+              ...currentState.pendingProfileUpdates,
+            };
+            if (currentState.confirmedAvatarUrl) {
+              merged.avatar_url = currentState.confirmedAvatarUrl;
+            }
+
+            set({ profile: merged as Profile, lastFetch: Date.now() });
+            setSentryUserContext(merged);
+
+            // Anchor the fresh fetch payload into SQLite
+            await saveLocalUserSession(merged);
+
+            // Unify avatar download
+            if (merged.avatar_url) {
+              if (!get().user || get().user?.id !== currentUser.id) return;
+              const {
+                UnifiedDownloadEngine,
+              } = require("../utils/unifiedDownload");
+              const urlHash =
+                merged.avatar_url
+                  .split("/")
+                  .pop()
+                  ?.replace(/[^a-zA-Z0-9]/g, "")
+                  .slice(-10) || Date.now().toString();
+
+              // Delete old cached avatar to prevent disk clutter
+              const oldLocalPath = get().localAvatarUrl;
+              if (oldLocalPath && !oldLocalPath.includes(urlHash)) {
+                try {
+                  await FileSystem.deleteAsync(oldLocalPath, {
+                    idempotent: true,
+                  });
+                } catch (e) {}
+              }
+
+              const localUri = await UnifiedDownloadEngine.download(
+                merged.avatar_url,
+                `user_avatar_${user.id}_${urlHash}`,
+                undefined,
+                "user_avatar",
+              );
+              if (localUri) {
+                if (!get().user || get().user?.id !== currentUser.id) return;
+                const updatedWithAvatar = {
+                  ...merged,
+                  local_avatar_path: localUri,
+                };
+                set({
+                  localAvatarUrl: localUri,
+                  profile: updatedWithAvatar as Profile,
+                });
+                await saveLocalUserSession(updatedWithAvatar);
+              }
+            }
+          } catch (err: any) {
+            if (!isNetworkError(err)) {
+              set({ error: err.message || "Failed to load profile" });
+              captureStoreError("auth", "fetchProfile", err, {
+                userId: user.id,
+              });
+            } else {
+              Logger.info(
+                "auth.store",
+                "Network/timeout during fetchProfile. Retaining local cache.",
+              );
             }
           }
+        };
 
-          if (isBootstrap) {
-            
-          }
-        } catch (err: any) {
-          if (!isNetworkError(err)) {
-            set({ error: err.message || 'Failed to load profile' });
-            captureStoreError('auth', 'fetchProfile', err, { userId: user.id });
-          } else {
-            Logger.info('auth.store', 'Network/timeout during fetchProfile. Retaining local cache.');
-          }
-        }
+        inFlightFetchProfilePromise = runFetch().finally(() => {
+          inFlightFetchProfilePromise = null;
+        });
+
+        return inFlightFetchProfilePromise;
       },
 
       // Update profile fields and sync in an offline-first manner
@@ -265,14 +399,14 @@ export const useAuthStore = create<AuthState>()(
 
         // 1. Instantly merge update into memory Zustand + MMKV cache
         const merged = { ...profile, ...updates };
-        
-        // If avatar is being updated, we MUST clear the legacy local overrides 
+
+        // If avatar is being updated, we MUST clear the legacy local overrides
         // so the app correctly renders the new remote avatar.
         if (updates.avatar_url) {
-          set({ 
+          set({
             profile: merged as Profile,
             localAvatarUrl: null,
-            confirmedAvatarUrl: updates.avatar_url 
+            confirmedAvatarUrl: updates.avatar_url,
           });
         } else {
           set({ profile: merged as Profile });
@@ -284,46 +418,60 @@ export const useAuthStore = create<AuthState>()(
         // 3. Queue update to Supabase via mutationQueue in background
         const dbUpdates = { ...updates };
         delete dbUpdates.localAvatarUrl;
-        
+
         if (Object.keys(dbUpdates).length > 0) {
-          const { useMutationQueueStore } = require('./mutationQueue.store');
+          const { useMutationQueueStore } = require("./mutationQueue.store");
           useMutationQueueStore.getState().enqueue({
-            table: 'users',
-            action: 'update',
+            table: "users",
+            action: "update",
             payload: dbUpdates,
             queryConstraints: {
-              eq: { id: user.id }
-            }
+              eq: { id: user.id },
+            },
           });
           // Best-effort background queue execution
-          safeFire(useMutationQueueStore.getState().processQueue(), 'processQueue');
+          safeFire(
+            useMutationQueueStore.getState().processQueue(),
+            "processQueue",
+          );
         }
 
         // 4. Log Telemetry
-        
-        const deviceId = 'unknown';
-        
-        
+
+        const deviceId = "unknown";
 
         // 5. Update auth metadata & sender info
         const metaUpdates: Record<string, any> = {};
-        if ((updates as any).username) metaUpdates.username = (updates as any).username;
-        if ((updates as any).avatar_url) metaUpdates.avatar_url = (updates as any).avatar_url;
-        if ((updates as any).display_name) metaUpdates.display_name = (updates as any).display_name;
-        if ((updates as any).full_name) metaUpdates.full_name = (updates as any).full_name;
+        if ((updates as any).username)
+          metaUpdates.username = (updates as any).username;
+        if ((updates as any).avatar_url)
+          metaUpdates.avatar_url = (updates as any).avatar_url;
+        if ((updates as any).display_name)
+          metaUpdates.display_name = (updates as any).display_name;
+        if ((updates as any).full_name)
+          metaUpdates.full_name = (updates as any).full_name;
 
         if (Object.keys(metaUpdates).length > 0) {
           (async () => {
-            try { await supabase.auth.updateUser({ data: metaUpdates }); } catch (_) {}
+            try {
+              await supabase.auth.updateUser({ data: metaUpdates });
+            } catch (_) {}
           })();
         }
 
-        const senderPatch: { username?: string; avatar_url?: string; full_name?: string } = {};
-        if ((updates as any).username) senderPatch.username = (updates as any).username;
-        if ((updates as any).avatar_url) senderPatch.avatar_url = (updates as any).avatar_url;
-        if ((updates as any).full_name) senderPatch.full_name = (updates as any).full_name;
+        const senderPatch: {
+          username?: string;
+          avatar_url?: string;
+          full_name?: string;
+        } = {};
+        if ((updates as any).username)
+          senderPatch.username = (updates as any).username;
+        if ((updates as any).avatar_url)
+          senderPatch.avatar_url = (updates as any).avatar_url;
+        if ((updates as any).full_name)
+          senderPatch.full_name = (updates as any).full_name;
         if (Object.keys(senderPatch).length > 0) {
-          const { useMessageStore } = require('./message.store');
+          const { useMessageStore } = require("./message.store");
           useMessageStore.getState().patchSenderInfo(user.id, senderPatch);
         }
       },
@@ -334,16 +482,17 @@ export const useAuthStore = create<AuthState>()(
 
         // Optimistic local update first
         const newPending = { ...pendingProfileUpdates, ...prefs };
-        set({ 
+        set({
           pendingProfileUpdates: newPending,
           profile: { ...profile, ...prefs } as Profile,
           lastLocalProfileUpdateAt: Date.now(),
         });
 
         try {
-          const { data: rows, error } = await (supabase as any).from('users')
+          const { data: rows, error } = await (supabase as any)
+            .from("users")
             .update(prefs as any)
-            .eq('id', user.id)
+            .eq("id", user.id)
             .select();
 
           if (error) {
@@ -353,21 +502,24 @@ export const useAuthStore = create<AuthState>()(
             }
             // Real DB error â€” revert optimistic update
             const revertedPending = { ...get().pendingProfileUpdates };
-            Object.keys(prefs).forEach(k => delete revertedPending[k]);
+            Object.keys(prefs).forEach((k) => delete revertedPending[k]);
             set({ profile, pendingProfileUpdates: revertedPending });
-            throw error;
+            throw normalizeError(error);
           }
 
           // DB Success! Remove from pending
           const resolvedPending = { ...get().pendingProfileUpdates };
-          Object.keys(prefs).forEach(k => delete resolvedPending[k]);
+          Object.keys(prefs).forEach((k) => delete resolvedPending[k]);
 
           // Confirm with actual saved row
           const updatedRow = rows?.[0];
           if (updatedRow) {
-            set({ 
-              profile: { ...(updatedRow as any), ...resolvedPending } as Profile,
-              pendingProfileUpdates: resolvedPending
+            set({
+              profile: {
+                ...(updatedRow as any),
+                ...resolvedPending,
+              } as Profile,
+              pendingProfileUpdates: resolvedPending,
             });
           } else {
             set({ pendingProfileUpdates: resolvedPending });
@@ -377,7 +529,7 @@ export const useAuthStore = create<AuthState>()(
             return; // Keep optimistic update
           }
           const revertedPending = { ...get().pendingProfileUpdates };
-          Object.keys(prefs).forEach(k => delete revertedPending[k]);
+          Object.keys(prefs).forEach((k) => delete revertedPending[k]);
           set({ profile, pendingProfileUpdates: revertedPending }); // Revert
           throw err;
         }
@@ -385,28 +537,31 @@ export const useAuthStore = create<AuthState>()(
 
       checkProfileComplete: async (userId: string) => {
         try {
-          const { data, error } = await (supabase as any).from('users')
-            .select('registration_number, level, role')
-            .eq('id', userId)
+          const { data, error } = await (supabase as any)
+            .from("users")
+            .select("registration_number, level, role")
+            .eq("id", userId)
             .maybeSingle();
 
-          if (error) throw error;
-          
+          if (error) throw normalizeError(error);
+
           // Profile is complete only when BOTH registration_number AND level are set
           // (matches the same check in ProtectedRoute's onAuthStateChange)
           // Super admins and system owners bypass student checks.
-          const complete = data?.role === 'super_admin' || 
-                           data?.role === 'system_owner' || 
-                           !!(data?.registration_number && data?.level);
+          const complete =
+            data?.role === "super_admin" ||
+            data?.role === "system_owner" ||
+            !!(data?.registration_number && data?.level);
           set({ isProfileComplete: complete });
 
           // â”€â”€ SELF-HEALING: If no profile row but user is logged in, attempt repair â”€â”€
           if (!complete) {
             const success = await get().attemptProfileRepair();
             if (success) {
-              const { data: repairedData } = await (supabase as any).from('users')
-                .select('*')
-                .eq('id', userId)
+              const { data: repairedData } = await (supabase as any)
+                .from("users")
+                .select("*")
+                .eq("id", userId)
                 .maybeSingle();
               if (repairedData) {
                 set({ profile: repairedData, isProfileComplete: true });
@@ -417,7 +572,15 @@ export const useAuthStore = create<AuthState>()(
             }
           }
         } catch (err: any) {
-          set({ error: err.message, isProfileComplete: false });
+          const isNet =
+            require("../utils/sentry").isNetworkError(err) ||
+            err.message?.toLowerCase().includes("network") ||
+            err.status === 0;
+          if (!isNet) {
+            set({ error: err.message, isProfileComplete: false });
+          } else {
+            set({ error: err.message });
+          }
         }
       },
 
@@ -432,15 +595,26 @@ export const useAuthStore = create<AuthState>()(
         // If metadata has these basics, we can attempt to re-run the profile creation
         if (regNum && level) {
           try {
-            const { error: rpcError } = await ((supabase as any).rpc as any)('create_user_profile', {
-              p_id: currentUser.id,
-              p_full_name: metadata.full_name || 'Student',
-              p_email: currentUser.email,
-              p_registration_number: regNum,
-              p_level: level.toString(),
-              p_avatar_url: metadata.avatar_url || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${currentUser.id}&size=200`,
-              p_username: metadata.username || (metadata.full_name || 'user').toLowerCase().replace(/\s+/g, '_') + '_' + currentUser.id.slice(0, 6),
-            });
+            const { error: rpcError } = await ((supabase as any).rpc as any)(
+              "create_user_profile",
+              {
+                p_id: currentUser.id,
+                p_full_name: metadata.full_name || "Student",
+                p_email: currentUser.email,
+                p_registration_number: regNum,
+                p_level: level.toString(),
+                p_avatar_url:
+                  metadata.avatar_url ||
+                  `https://api.dicebear.com/9.x/fun-emoji/png?seed=${currentUser.id}&size=200`,
+                p_username:
+                  metadata.username ||
+                  (metadata.full_name || "user")
+                    .toLowerCase()
+                    .replace(/\s+/g, "_") +
+                    "_" +
+                    currentUser.id.slice(0, 6),
+              },
+            );
             return !rpcError;
           } catch {
             return false;
@@ -456,73 +630,87 @@ export const useAuthStore = create<AuthState>()(
       },
 
       signOut: async () => {
-        const isOnline = require('./network.store').useNetworkStore.getState().isOnline;
+        const isOnline =
+          require("./network.store").useNetworkStore.getState().isOnline;
         if (!isOnline) {
-          throw new Error('You must be connected to the internet to sign out safely.');
+          throw new Error(
+            "You must be connected to the internet to sign out safely.",
+          );
         }
 
         const { user } = get();
         const userId = user?.id;
+        inFlightFetchProfilePromise = null;
 
         // 1. Cleanly tear down the Realtime master socket and AppState listeners
         try {
           realtimeManager.cleanup();
         } catch (e) {
-          console.warn('[AuthStore] Realtime cleanup warning during logout:', e);
+          console.warn(
+            "[AuthStore] Realtime cleanup warning during logout:",
+            e,
+          );
         }
 
         // 2. Teardown per-device push tokens and server sessions
         if (userId) {
           try {
             await AsyncStorage.removeItem(`download_restore_${userId}`);
-            await AsyncStorage.removeItem(`download_restore_progress_${userId}`);
+            await AsyncStorage.removeItem(
+              `download_restore_progress_${userId}`,
+            );
           } catch {}
 
           try {
-            const deviceToken = typeof getCurrentPushToken === 'function' ? getCurrentPushToken() : null;
+            const deviceToken =
+              typeof getCurrentPushToken === "function"
+                ? getCurrentPushToken()
+                : null;
             if (deviceToken) {
-              await (supabase as any).from('user_push_tokens')
+              await (supabase as any)
+                .from("user_push_tokens")
                 .delete()
-                .eq('user_id', userId)
-                .eq('push_token', deviceToken);
+                .eq("user_id", userId)
+                .eq("push_token", deviceToken);
             }
           } catch (e) {
-            console.warn('[AuthStore] Push token cleanup warning:', e);
+            console.warn("[AuthStore] Push token cleanup warning:", e);
           }
 
           try {
             const deviceId = await getOrCreateDeviceId();
-            await (supabase as any).from('user_sessions')
+            await (supabase as any)
+              .from("user_sessions")
               .delete()
-              .eq('user_id', userId)
-              .eq('device_id', deviceId);
+              .eq("user_id", userId)
+              .eq("device_id", deviceId);
           } catch {}
         }
 
         // Wipe local database cache and vault files for the logging-out user
         try {
-          if (typeof (get() as any).removeLocalData === 'function') {
+          if (typeof (get() as any).removeLocalData === "function") {
             await (get() as any).removeLocalData();
           }
         } catch (e) {
-          console.warn('[AuthStore] Failed to purge local data on logout:', e);
+          console.warn("[AuthStore] Failed to purge local data on logout:", e);
         }
 
         try {
           // Reset chat and group state
-          const { useMessageStore } = require('./message.store');
+          const { useMessageStore } = require("./message.store");
           useMessageStore.getState().clearCache?.();
 
-          const { useGroupStore } = require('./group.store');
+          const { useGroupStore } = require("./group.store");
           useGroupStore.getState().clearGroups?.();
 
-          const { useGlobalSyncStore } = require('./globalSync.store');
+          const { useGlobalSyncStore } = require("./globalSync.store");
           useGlobalSyncStore.getState().terminate?.();
 
-          const { useDataRestoreStore } = require('./data-restore.store');
+          const { useDataRestoreStore } = require("./data-restore.store");
           useDataRestoreStore.getState().reset?.();
         } catch (e) {
-          console.warn('[AuthStore] Warning resetting stores on logout:', e);
+          console.warn("[AuthStore] Warning resetting stores on logout:", e);
         }
 
         // 3. Clear auth store state
@@ -544,16 +732,17 @@ export const useAuthStore = create<AuthState>()(
         const { pendingAvatarUpload, user, updateProfile } = get();
         if (!pendingAvatarUpload || !user) return;
 
-        const isOnline = require('./network.store').useNetworkStore.getState().isOnline;
+        const isOnline =
+          require("./network.store").useNetworkStore.getState().isOnline;
         if (!isOnline) return;
 
         try {
-          const { uploadLocalFileToCloudinary } = require('../lib/cloudinary');
+          const { uploadLocalFileToCloudinary } = require("../lib/cloudinary");
           const remoteUrl = await uploadLocalFileToCloudinary(
             pendingAvatarUpload.localUri,
             pendingAvatarUpload.fileName,
-            'avatars',
-            pendingAvatarUpload.mimeType
+            "avatars",
+            pendingAvatarUpload.mimeType,
           );
 
           // Update profile with the remote URL
@@ -561,9 +750,17 @@ export const useAuthStore = create<AuthState>()(
 
           // Clear the pending job on success
           set({ pendingAvatarUpload: null });
-          Logger.info('auth.store', 'Background avatar upload completed successfully.', { remoteUrl });
+          Logger.info(
+            "auth.store",
+            "Background avatar upload completed successfully.",
+            { remoteUrl },
+          );
         } catch (err) {
-          Logger.warn('auth.store', 'Background avatar upload failed, will retry.', err as any);
+          Logger.warn(
+            "auth.store",
+            "Background avatar upload failed, will retry.",
+            err as any,
+          );
         }
       },
 
@@ -572,213 +769,287 @@ export const useAuthStore = create<AuthState>()(
         if (!user) return;
 
         try {
-          const { getDB } = require('../lib/database');
+          const { getDB } = require("../lib/database");
           const db = getDB();
           if (!db) return;
 
           // 1. Repair missing SQLite profile row
           const sqliteProfile = await getLocalUserSession();
           if (!sqliteProfile && profile) {
-            Logger.warn('auth.store', 'Self-Healing: SQLite profile missing. Re-saving.');
+            Logger.warn(
+              "auth.store",
+              "Self-Healing: SQLite profile missing. Re-saving.",
+            );
             await saveLocalUserSession(profile);
-            
-            const { getOrCreateDeviceId } = require('../utils/device');
+
+            const { getOrCreateDeviceId } = require("../utils/device");
             const deviceId = await getOrCreateDeviceId();
-            
           }
 
           // 2. Repair missing MMKV cache
           if (sqliteProfile && !profile) {
-            Logger.warn('auth.store', 'Self-Healing: MMKV profile cache missing. Restoring from SQLite.');
+            Logger.warn(
+              "auth.store",
+              "Self-Healing: MMKV profile cache missing. Restoring from SQLite.",
+            );
             set({ profile: sqliteProfile });
           }
 
           // 3. Verify local avatar file integrity
           const resolvedProfile = sqliteProfile || profile;
           if (resolvedProfile?.avatar_url) {
-            const expectedPath = localAvatarUrl || resolvedProfile.local_avatar_path;
+            const expectedPath =
+              localAvatarUrl || resolvedProfile.local_avatar_path;
             let needsDownload = false;
 
             if (expectedPath) {
               const info = await FileSystem.getInfoAsync(expectedPath);
               if (!info.exists || (info as any).size === 0) {
                 needsDownload = true;
-                Logger.warn('auth.store', 'Self-Healing: Local avatar file missing/empty.');
+                Logger.warn(
+                  "auth.store",
+                  "Self-Healing: Local avatar file missing/empty.",
+                );
               }
             } else {
               needsDownload = true;
             }
 
             if (needsDownload) {
-              const { UnifiedDownloadEngine } = require('../utils/unifiedDownload');
+              const {
+                UnifiedDownloadEngine,
+              } = require("../utils/unifiedDownload");
               const localPath = await UnifiedDownloadEngine.download(
                 resolvedProfile.avatar_url,
                 `user_avatar_${user.id}`,
                 undefined,
-                'user_avatar'
+                "user_avatar",
               );
               if (localPath) {
-                const updated = { ...resolvedProfile, local_avatar_path: localPath };
+                const updated = {
+                  ...resolvedProfile,
+                  local_avatar_path: localPath,
+                };
                 set({ localAvatarUrl: localPath, profile: updated as Profile });
                 await saveLocalUserSession(updated);
 
-                const { getOrCreateDeviceId } = require('../utils/device');
+                const { getOrCreateDeviceId } = require("../utils/device");
                 const deviceId = await getOrCreateDeviceId();
-                
               }
             }
           }
         } catch (e) {
-          Logger.error('auth.store', 'Error in profile self-healing:', e);
+          Logger.error("auth.store", "Error in profile self-healing:", e);
         }
       },
 
       removeLocalData: async () => {
         // Clear SQLite user profile
         await clearLocalUserSession();
-        
+
         // Clear all SQLite tables safely without triggering APM/Sentry span errors
-        const { getDB, enqueueTransaction } = require('../lib/database');
+        const { getDB, enqueueTransaction } = require("../lib/database");
         await enqueueTransaction(async () => {
-            const activeDb = getDB();
-            if (activeDb) {
-                try {
-                    const result = await activeDb.getAllAsync("SELECT name FROM sqlite_master WHERE type='table'");
-                    const existingTables = (result as any[]).map(r => r.name);
+          const activeDb = getDB();
+          if (activeDb) {
+            try {
+              const result = await activeDb.getAllAsync(
+                "SELECT name FROM sqlite_master WHERE type='table'",
+              );
+              const existingTables = (result as any[]).map((r) => r.name);
 
-                    const tables = [
-                        'local_messages',
-                        'local_assets',
-                        'local_media_manifest',
-                        'offline_download_jobs',
-                        'offline_download_telemetry',
-                        'sync_checkpoint',
-                        'sync_journal',
-                        'media_sync_jobs',
-                        'offline_sync_state',
-                        'content_manifest',
-                        'offline_search_index',
-                        'local_user_session'
-                    ];
+              const tables = [
+                "local_messages",
+                "local_assets",
+                "local_media_manifest",
+                "offline_download_jobs",
+                "offline_download_telemetry",
+                "sync_checkpoint",
+                "sync_journal",
+                "media_sync_jobs",
+                "offline_sync_state",
+                "content_manifest",
+                "offline_search_index",
+                "local_user_session",
+              ];
 
-                    for (const table of tables) {
-                        if (existingTables.includes(table)) {
-                            try {
-                                await activeDb.runAsync(`DELETE FROM ${table}`);
-                            } catch (e) {
-                                console.warn(`[auth.store] Failed to clear table ${table}:`, e);
-                            }
-                        }
-                    }
-                    Logger.info('auth.store', 'SQLite database completely wiped.');
-                } catch (err) {
-                    console.warn('[auth.store] Error wiping SQLite database:', err);
+              for (const table of tables) {
+                if (existingTables.includes(table)) {
+                  try {
+                    await activeDb.runAsync(`DELETE FROM ${table}`);
+                  } catch (e) {
+                    console.warn(
+                      `[auth.store] Failed to clear table ${table}:`,
+                      e,
+                    );
+                  }
                 }
+              }
+              Logger.info("auth.store", "SQLite database completely wiped.");
+            } catch (err) {
+              console.warn("[auth.store] Error wiping SQLite database:", err);
             }
+          }
         });
-        
+
         // Clear all files inside naliss_vault
         try {
-            const { getVaultBase } = require('../utils/assetResolver');
-            const vaultBase = getVaultBase();
-            const info = await FileSystem.getInfoAsync(vaultBase);
-            if (info.exists) {
-                await FileSystem.deleteAsync(vaultBase, { idempotent: true });
-                Logger.info('auth.store', 'Local vault files deleted.');
-            }
+          const { getVaultBase } = require("../utils/assetResolver");
+          const vaultBase = getVaultBase();
+          const info = await FileSystem.getInfoAsync(vaultBase);
+          if (info.exists) {
+            await FileSystem.deleteAsync(vaultBase, { idempotent: true });
+            Logger.info("auth.store", "Local vault files deleted.");
+          }
         } catch (e) {
-            console.error('Failed to clear local vault files:', e);
-        }
-        
-        // Clear Zustand stores in memory
-        set({ profile: null, confirmedAvatarUrl: null, localAvatarUrl: null, pendingAvatarUpload: null });
-        
-        // Clear all persistent storage keys in MMKV/AsyncStorage
-        try {
-            const { clearAllUserStorage } = require('./mmkv.storage');
-            await clearAllUserStorage();
-            Logger.info('auth.store', 'All persistent MMKV/AsyncStorage keys cleared.');
-        } catch (e) {
-            console.error('Failed to clear MMKV storage:', e);
+          console.error("Failed to clear local vault files:", e);
         }
 
-        try { require('./message.store').useMessageStore.getState().clearCache(); } catch {}
-        try { require('./group.store').useGroupStore.getState().clearGroups(); } catch {}
-        try { require('./globalSync.store').useGlobalSyncStore.getState().terminate(); } catch {}
-        try { require('./announcement.store').useAnnouncementStore.getState().clearUserData(); } catch {}
-        try { require('./event.store').useEventStore.getState().clearUserData(); } catch {}
-        try { require('./resource.store').useResourceStore.getState().clearUserData(); } catch {}
-        try { require('./directory.store').useDirectoryStore.getState().clearUserData(); } catch {}
-        try { require('./news.store').useNewsStore.getState().clearUserData(); } catch {}
-        try { require('./archive.store').useArchiveStore.getState().clearUserData(); } catch {}
-        try { require('./fyb.store').useFYBStore.getState().clearUserData(); } catch {}
-        try { require('./gallery.store').useGalleryStore.getState().clearUserData(); } catch {}
-        try { require('./event-pool.store').useEventPoolStore.getState().clearUserData(); } catch {}
-        try { require('./signup.store').useSignupStore.getState().reset(); } catch {}
-        try { require('./notification.store').useNotificationStore.getState().clearNotifications(); } catch {}
-        try { require('./data-restore.store').useDataRestoreStore.getState().reset(); } catch {}
+        // Clear Zustand stores in memory
+        inFlightFetchProfilePromise = null;
+        set({
+          profile: null,
+          user: null,
+          session: null,
+          confirmedAvatarUrl: null,
+          localAvatarUrl: null,
+          pendingAvatarUpload: null,
+        });
+
+        // Clear all persistent storage keys in MMKV/AsyncStorage
+        try {
+          const { clearAllUserStorage } = require("./mmkv.storage");
+          await clearAllUserStorage();
+          Logger.info(
+            "auth.store",
+            "All persistent MMKV/AsyncStorage keys cleared.",
+          );
+        } catch (e) {
+          console.error("Failed to clear MMKV storage:", e);
+        }
+
+        try {
+          require("./message.store").useMessageStore.getState().clearCache();
+        } catch {}
+        try {
+          require("./group.store").useGroupStore.getState().clearGroups();
+        } catch {}
+        try {
+          require("./globalSync.store")
+            .useGlobalSyncStore.getState()
+            .terminate();
+        } catch {}
+        try {
+          require("./announcement.store")
+            .useAnnouncementStore.getState()
+            .clearUserData();
+        } catch {}
+        try {
+          require("./event.store").useEventStore.getState().clearUserData();
+        } catch {}
+        try {
+          require("./resource.store")
+            .useResourceStore.getState()
+            .clearUserData();
+        } catch {}
+        try {
+          require("./directory.store")
+            .useDirectoryStore.getState()
+            .clearUserData();
+        } catch {}
+        try {
+          require("./news.store").useNewsStore.getState().clearUserData();
+        } catch {}
+        try {
+          require("./archive.store").useArchiveStore.getState().clearUserData();
+        } catch {}
+        try {
+          require("./fyb.store").useFYBStore.getState().clearUserData();
+        } catch {}
+        try {
+          require("./gallery.store").useGalleryStore.getState().clearUserData();
+        } catch {}
+        try {
+          require("./event-pool.store")
+            .useEventPoolStore.getState()
+            .clearUserData();
+        } catch {}
+        try {
+          require("./signup.store").useSignupStore.getState().reset();
+        } catch {}
+        try {
+          require("./notification.store")
+            .useNotificationStore.getState()
+            .clearNotifications();
+        } catch {}
+        try {
+          require("./data-restore.store")
+            .useDataRestoreStore.getState()
+            .reset();
+        } catch {}
 
         // Clear personal study notes
         try {
-          const { useNoteStore } = require('./note.store');
+          const { useNoteStore } = require("./note.store");
           useNoteStore.getState().clearAllNotes?.();
-          await AsyncStorage.removeItem('naliss-notes-storage');
+          await AsyncStorage.removeItem("naliss-notes-storage");
         } catch (e) {
-          console.warn('[AuthStore] Failed to clear notes store:', e);
+          console.warn("[AuthStore] Failed to clear notes store:", e);
         }
 
         // CRITICAL: Drop orphaned offline mutations so they never fire under another user's token
         try {
-          const { useMutationQueueStore } = require('./mutationQueue.store');
-          useMutationQueueStore.getState().clearQueue?.() || useMutationQueueStore.getState().reset?.();
-          await AsyncStorage.removeItem('naliss-mutation-queue');
+          const { useMutationQueueStore } = require("./mutationQueue.store");
+          useMutationQueueStore.getState().clearQueue?.() ||
+            useMutationQueueStore.getState().reset?.();
+          await AsyncStorage.removeItem("naliss-mutation-queue");
         } catch (e) {
-          console.warn('[AuthStore] Failed to clear mutation queue:', e);
+          console.warn("[AuthStore] Failed to clear mutation queue:", e);
         }
 
         // Clear quiz and event participation drafts
         try {
-          const { useQuizStore } = require('./quiz.store');
+          const { useQuizStore } = require("./quiz.store");
           useQuizStore.getState().reset?.();
-          await AsyncStorage.removeItem('naliss-quiz-storage');
+          await AsyncStorage.removeItem("naliss-quiz-storage");
         } catch (e) {
-          console.warn('[AuthStore] Failed to clear quiz store:', e);
+          console.warn("[AuthStore] Failed to clear quiz store:", e);
         }
 
         // Clear voting drafts and ballots
         try {
-          const { useVotingStore } = require('./voting.store');
+          const { useVotingStore } = require("./voting.store");
           useVotingStore.getState().reset?.();
-          await AsyncStorage.removeItem('naliss-voting-storage');
+          await AsyncStorage.removeItem("naliss-voting-storage");
         } catch (e) {
-          console.warn('[AuthStore] Failed to clear voting store:', e);
+          console.warn("[AuthStore] Failed to clear voting store:", e);
         }
 
         // Clear debate arguments
         try {
-          const { useDebateStore } = require('./debate.store');
+          const { useDebateStore } = require("./debate.store");
           useDebateStore.getState().reset?.();
-          await AsyncStorage.removeItem('naliss-debate-storage');
+          await AsyncStorage.removeItem("naliss-debate-storage");
         } catch (e) {
-          console.warn('[AuthStore] Failed to clear debate store:', e);
+          console.warn("[AuthStore] Failed to clear debate store:", e);
         }
 
         // Clear essay and composition drafts
         try {
-          const { useCompositionStore } = require('./composition.store');
+          const { useCompositionStore } = require("./composition.store");
           useCompositionStore.getState().reset?.();
-          await AsyncStorage.removeItem('naliss-composition-storage');
+          await AsyncStorage.removeItem("naliss-composition-storage");
         } catch (e) {
-          console.warn('[AuthStore] Failed to clear composition store:', e);
+          console.warn("[AuthStore] Failed to clear composition store:", e);
         }
       },
 
       setError: (error) => set({ error }),
     }),
     {
-      name: 'naliss-auth-storage',
+      name: "naliss-auth-storage",
       storage: createJSONStorage(() => mmkvStorage),
-      partialize: (state) => ({ 
+      partialize: (state) => ({
         session: state.session,
         user: state.user,
         profile: state.profile,
@@ -796,27 +1067,27 @@ export const useAuthStore = create<AuthState>()(
         if (state) {
           state.isLoading = false;
           state._hasHydrated = true;
-          
+
           if (
             state.session &&
-            ((state.profile?.role as string) === 'super_admin' ||
-             (state.profile?.role as string) === 'system_owner' ||
-             (state.profile?.registration_number && state.profile?.level))
+            ((state.profile?.role as string) === "super_admin" ||
+              (state.profile?.role as string) === "system_owner" ||
+              (state.profile?.registration_number && state.profile?.level))
           ) {
             state.isProfileComplete = true;
           } else if (!state.session) {
             state.isProfileComplete = null;
           }
-          
+
           if (!state.confirmedAvatarUrl && state.profile?.avatar_url) {
             state.confirmedAvatarUrl = state.profile.avatar_url;
           }
-          
+
           if (state.profile) {
             setSentryUserContext(state.profile);
           }
         }
       },
-    }
-  )
+    },
+  ),
 );

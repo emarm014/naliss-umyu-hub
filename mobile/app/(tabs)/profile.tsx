@@ -36,6 +36,7 @@ import { getOrCreateDeviceId } from '../../src/utils/device';
 
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { normalizeError } from '../../src/utils/sentry';
 
 const { width } = Dimensions.get('window');
 
@@ -116,7 +117,7 @@ export default function ProfileScreen() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isSavingNotifs, setIsSavingNotifs] = useState(false);
   const [viewerVisible, setViewerVisible] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ uri: string; type: any; name: string }>({ uri: '', type: 'image', name: '' });
+  const [viewerFile, setViewerFile] = useState<{ uri: string; remoteUrl?: string; type: any; name: string }>({ uri: '', type: 'image', name: '' });
 
   React.useEffect(() => {
     const loadDeviceId = async () => {
@@ -166,7 +167,7 @@ export default function ProfileScreen() {
 
       const { data: profile, error } = await ((supabase as any).from('users').select('*').eq('id', authUser.id).maybeSingle() as any);
 
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       if (!profile) { setIsLoading(false); return; }
 
       // Only update store if the fetched profile is newer than
@@ -380,7 +381,7 @@ export default function ProfileScreen() {
         .eq('user_id', storeProfile.id)
         .eq('is_active', true)
         .order('last_active_at', { ascending: false });
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       setDeviceSessions(data || []);
     } catch (err) {
       console.error('Failed to fetch sessions:', err);
@@ -433,7 +434,7 @@ export default function ProfileScreen() {
         .delete()
         .eq('id', sessionToTerminate.id);
 
-      if (error) throw error;
+      if (error) throw normalizeError(error);
 
       // If it was the current device, force logout
       if (sessionToTerminate.device_id === currentDeviceId) {
@@ -513,7 +514,7 @@ export default function ProfileScreen() {
             .eq('user_id', storeProfile.id)
             .neq('device_id', currentDeviceId);
             
-          if (error) throw error;
+          if (error) throw normalizeError(error);
         }
         
         setShowManageSessions(false);
@@ -533,7 +534,7 @@ export default function ProfileScreen() {
     setIsSendingOtp(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(storeProfile.email);
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       
       setPasswordChangeStep('verify');
     } catch (err: any) {
@@ -559,7 +560,7 @@ export default function ProfileScreen() {
         type: 'recovery'
       });
       
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       
       // OTP verified successfully, unlock password change fields
       setPasswordChangeStep('new_password');
@@ -601,7 +602,7 @@ export default function ProfileScreen() {
 
       const { data, error } = await Promise.race([updatePromise, timeoutPromise]) as any;
 
-      if (error) throw error;
+      if (error) throw normalizeError(error);
 
       setPasswordData({ newPassword: '', confirmPassword: '' });
       setShowChangePassword(false);
@@ -682,16 +683,17 @@ export default function ProfileScreen() {
         <View style={styles.avatarContainer}>
           {/* ACTION 1: Tap Avatar to View Image */}
           {(() => {
-            const avatarUri = getCleanAvatarUrl(localAvatarUrl
-              || confirmedAvatarUrl
-              || storeProfile?.avatar_url)
+            const remoteAvatar = confirmedAvatarUrl
+              || storeProfile?.avatar_url
               || (storeProfile?.id ? `https://api.dicebear.com/9.x/fun-emoji/png?seed=${storeProfile.id}&size=200` : null);
+            const avatarUri = getCleanAvatarUrl(localAvatarUrl) || remoteAvatar;
             return (
               <TouchableOpacity
                 onPress={() => {
                   if (avatarUri) {
                     setViewerFile({
                       uri: avatarUri,
+                      remoteUrl: remoteAvatar || undefined,
                       type: 'image',
                       name: `${storeProfile?.full_name || 'Profile'}'s Avatar`,
                     });
@@ -705,7 +707,7 @@ export default function ProfileScreen() {
                   <CachedImage
                     key={`${avatarUri}-${lastLocalProfileUpdateAt || 0}`}
                     entityId={storeProfile?.id || ''}
-                    remoteUrl={avatarUri}
+                    remoteUrl={remoteAvatar || avatarUri}
                     assetType="user"
                     style={styles.avatar}
                     fallbackName={storeProfile?.full_name}
@@ -1580,6 +1582,7 @@ export default function ProfileScreen() {
         isVisible={viewerVisible}
         onClose={() => setViewerVisible(false)}
         fileUri={viewerFile.uri}
+        remoteUrl={viewerFile.remoteUrl}
         fileType={viewerFile.type}
         fileName={viewerFile.name}
         isHalfScreen={true}

@@ -12,6 +12,7 @@ import { INSTITUTIONAL_EMAIL_REGEX } from '../../src/utils/validation';
 import { AuthGuardian } from '../../src/utils/auth-guardian';
 import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError } from '../../src/utils/sentry';
+import { normalizeError } from '../../src/utils/sentry';
 
 export default function ResetPassword() {
   useSentryScreen('ResetPassword');
@@ -57,7 +58,7 @@ export default function ResetPassword() {
         redirectTo: redirectUrl,
       });
       const { error } = await Promise.race([resetPromise, timeoutPromise]) as any;
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       await AuthGuardian.recordResetAttempt(email.trim().toLowerCase());
       setIsSent(true);
     } catch (err: any) {

@@ -17,6 +17,7 @@ import * as SecureStore from 'expo-secure-store';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/stores/theme.store';
+import { normalizeError } from '../../src/utils/sentry';
 
 export default function DeleteAccountScreen() {
     const router = useRouter();
@@ -58,7 +59,7 @@ export default function DeleteAccountScreen() {
                 user_id_to_delete: userId,
             });
 
-            if (rpcError) throw rpcError;
+            if (rpcError) throw normalizeError(rpcError);
 
             // Step 2: Sign out from Supabase
             await supabase.auth.signOut({ scope: 'global' });

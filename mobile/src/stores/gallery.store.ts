@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { mmkvStorage } from './mmkv.storage';
 import { supabase } from '../api/supabase/client';
 import { useNetworkStore } from './network.store';
+import { normalizeError } from '../utils/sentry';
 
 export type GalleryTopic = {
     id: string;
@@ -84,7 +85,7 @@ export const useGalleryStore = create<GalleryState>()(
             .select('*')
             .order('created_at', { ascending: false });
 
-          if (error) throw error;
+          if (error) throw normalizeError(error);
 
           const items = (data || []) as unknown as GalleryTopic[];
           if (items.length > 0) {
@@ -127,7 +128,7 @@ export const useGalleryStore = create<GalleryState>()(
                 .eq('id' as any, topicId as any)
                 .maybeSingle();
                 
-            if (error) throw error;
+            if (error) throw normalizeError(error);
             if (!data) return existing || null;
             
             const topic = data as unknown as GalleryTopic;
@@ -159,7 +160,7 @@ export const useGalleryStore = create<GalleryState>()(
             .order('sort_order', { ascending: true })
             .order('created_at', { ascending: true });
 
-          if (error) throw error;
+          if (error) throw normalizeError(error);
           const items = (data || []) as unknown as GalleryMedia[];
           
           if (items.length > 0) {

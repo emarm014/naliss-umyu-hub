@@ -17,13 +17,14 @@ export default function ViewerScreen() {
 
   // If no mediaArray is passed, fallback to the old single UniversalViewer
   if (!params.mediaArray) {
-    const { uri, name, type } = params as any;
+    const { uri, name, type, remoteUrl } = params as any;
     if (!uri) return null;
     return (
       <UniversalViewer
         isVisible={true}
         onClose={() => router.back()}
         fileUri={uri}
+        remoteUrl={remoteUrl}
         fileType={(type as any) || 'image'}
         fileName={name || 'File Preview'}
       />

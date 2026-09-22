@@ -14,6 +14,7 @@ import { upsertEntityFromNotification } from '../utils/notifications';
 import { extractFileNameFromUrl } from '../utils/download';
 import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
 import { NotificationRouter } from '../services/notificationRouter';
+import { normalizeError } from '../utils/sentry';
 
 // ── Per-device push token cache ───────────────────────────────────────────────
 // Cached in-memory so the auth store can reference it at sign-out time
@@ -257,7 +258,7 @@ export function usePushNotifications() {
         .order('created_at', { ascending: false })
         .limit(50);
       
-      if (error) throw error;
+      if (error) throw normalizeError(error);
       if (remoteHistory && remoteHistory.length > 0) {
         const localList = remoteHistory.map((h: any) => ({
           id: h.notification_id,
@@ -496,7 +497,7 @@ export async function saveTokenToDatabase(token: string) {
         { onConflict: 'user_id,push_token' }
       );
 
-    if (error) throw error;
+    if (error) throw normalizeError(error);
   } catch {
     // silent
   }

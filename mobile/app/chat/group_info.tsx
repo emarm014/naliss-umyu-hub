@@ -12,6 +12,7 @@ import { getCleanAvatarUrl } from '../../src/utils/avatar';
 import { CachedImage } from '../../src/components/common/CachedImage';
 import { NalissLogo } from '../../src/components/NalissLogo';
 import { UniversalViewer } from '../../src/components/common/UniversalViewer';
+import { normalizeError } from '../../src/utils/sentry';
 
 export default function GroupInfoScreen() {
     const { id } = useLocalSearchParams();
@@ -66,7 +67,7 @@ export default function GroupInfoScreen() {
                     .select('*, user:users(*, department:departments(name))')
                     .eq('group_id', id as string);
 
-                if (error) throw error;
+                if (error) throw normalizeError(error);
                 const fetched = (data as any[])?.map(m => m.user).filter(Boolean) || [];
                 
                 if (mounted) {

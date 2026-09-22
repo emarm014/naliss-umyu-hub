@@ -16,6 +16,7 @@ import {
 } from '../lib/database';
 import * as FileSystem from 'expo-file-system/legacy';
 import { AssetPathResolver } from '../utils/assetResolver';
+import { normalizeError } from '../utils/sentry';
 
 interface MessageCache {
     [groupId: string]: any[];
@@ -283,7 +284,7 @@ export const useMessageStore = create<MessageState>()(
                         .update({ content: newContent, edited_at: editedAt, is_edited: true })
                         .eq('id', messageId);
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                 } catch (err) {
                     Logger.error('message.store', 'Failed to edit message, rolling back optimistic state', err);
                     // Fix: Only rollback if we have the original values
@@ -304,7 +305,7 @@ export const useMessageStore = create<MessageState>()(
                     const { error } = await (supabase as any)
                         .rpc('soft_delete_message', { p_message_id: messageId });
 
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                 } catch (err) {
                     Logger.error('message.store', 'Failed to soft delete message, rolling back optimistic state', err);
                     get().updateMessage(groupId, messageId, { content: prevContent, is_deleted: prevIsDeleted });
@@ -441,7 +442,7 @@ export const useMessageStore = create<MessageState>()(
                     .select()
                     .single();
 
-                if (error) throw error;
+                if (error) throw normalizeError(error);
 
                 const realId = (data as any).id;
                 let localMediaPath = msg.local_media_path || null;

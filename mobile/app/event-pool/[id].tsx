@@ -12,6 +12,7 @@ import { mmkvStorage } from '../../src/stores/mmkv.storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
+import { normalizeError } from '../../src/utils/sentry';
 
 type EventPoolDetail = {
     id: string;
@@ -248,7 +249,7 @@ export default function EventPoolRoom() {
                 throw new Error(`Unsupported pool type: ${pool.type}`);
             }
 
-            if (rpcError) throw rpcError;
+            if (rpcError) throw normalizeError(rpcError);
             
             await mmkvStorage.removeItem(`pool_progress_${user?.id || 'anon'}_${id}`);
             
@@ -306,7 +307,7 @@ export default function EventPoolRoom() {
                     
                     const { data, error } = await query;
                     
-                    if (error) throw error;
+                    if (error) throw normalizeError(error);
                     setLeaderboard((data || []) as LeaderboardEntry[]);
                 } catch (e) {
                     console.error('Failed to fetch leaderboard:', e);
@@ -323,13 +324,13 @@ export default function EventPoolRoom() {
         if (pool.participation_rule === 'open') return true;
 
         if (pool.participation_rule === 'level_based') {
-            const levels = pool.target_constraints?.levels || [];
-            if (user.level && levels.includes(user.level)) return true;
+            const allowed_levels = pool.target_constraints?.allowed_levels || [];
+            if (user.level && allowed_levels.includes(user.level)) return true;
         }
 
         if (pool.participation_rule === 'department_based') {
-            const deptId = pool.target_constraints?.department_id;
-            if (user.department_id && deptId === user.department_id) return true;
+            const allowed_departments = pool.target_constraints?.allowed_departments || [];
+            if (user.department_id && allowed_departments.includes(user.department_id)) return true;
         }
 
         if (pool.participation_rule === 'individual_selection') {

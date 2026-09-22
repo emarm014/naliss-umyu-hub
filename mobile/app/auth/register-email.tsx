@@ -14,6 +14,7 @@ import { useSentryScreen } from '../../src/hooks/useSentryScreen';
 import { captureUIError } from '../../src/utils/sentry';
 import * as Sentry from '@sentry/react-native';
 import { useRegistrationLimiter } from '../../src/stores/registration-limiter.store';
+import { normalizeError } from '../../src/utils/sentry';
 
 function StepBar({ current, total }: { current: number; total: number }) {
   return (
@@ -174,7 +175,7 @@ export default function RegisterEmail() {
         email: trimmedEmail,
         options: { shouldCreateUser: true },
       });
-      if (otpError) throw otpError;
+      if (otpError) throw normalizeError(otpError);
 
       // OTP Sent Successfully -> Track Attempt
       limiter.incrementAttempt();

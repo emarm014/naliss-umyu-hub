@@ -110,6 +110,7 @@ export default function ResourcesScreen() {
 
   const [readerVisible, setReaderVisible] = useState(false);
   const [readerUrl, setReaderUrl] = useState<string>('');
+  const [readerRemoteUrl, setReaderRemoteUrl] = useState<string | undefined>(undefined);
   const [readerFileType, setReaderFileType] = useState<'image' | 'video' | 'pdf' | 'audio' | 'document'>('document');
   const [readerTitle, setReaderTitle] = useState('');
   const [readerId, setReaderId] = useState<string | undefined>(undefined);
@@ -222,6 +223,7 @@ export default function ResourcesScreen() {
       }
 
       setReaderUrl(fileUri);
+      setReaderRemoteUrl(material.file_url);
       setReaderFileType(fileType);
       setReaderTitle(displayName);
       setReaderId(material.id);
@@ -427,6 +429,7 @@ export default function ResourcesScreen() {
         isVisible={readerVisible}
         onClose={() => setReaderVisible(false)}
         fileUri={readerUrl}
+        remoteUrl={readerRemoteUrl}
         fileType={readerFileType}
         fileName={readerTitle}
         fileId={readerId}

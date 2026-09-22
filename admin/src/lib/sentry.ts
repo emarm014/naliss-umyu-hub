@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/react';
-import { normalizeError } from '../../../mobile/src/utils/sentry';
+
 
 export function setSentryUserContext(user: { 
   id: string; 

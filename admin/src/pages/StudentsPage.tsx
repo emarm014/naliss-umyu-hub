@@ -679,15 +679,23 @@ export default function StudentsPage() {
       {/* Tab Switcher */}
       <div className="flex items-center gap-2 mb-2 px-2 mt-4">
         <button
-          onClick={() => setActiveTab('active')}
-          className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === 'active' ? 'bg-primary-950 text-white shadow-md' : 'bg-transparent text-gray-500 hover:bg-gray-100'}`}
+          onClick={() => {
+            if (activeTab === 'active') syncAll();
+            else setActiveTab('active');
+          }}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === 'active' ? 'bg-primary-950 text-white shadow-md' : 'bg-transparent text-gray-500 hover:bg-gray-100'}`}
         >
+          {activeTab === 'active' && isSyncing && <Activity className="w-4 h-4 animate-spin" />}
           Active Students
         </button>
         <button
-          onClick={() => setActiveTab('deleted')}
-          className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === 'deleted' ? 'bg-red-600 text-white shadow-md' : 'bg-transparent text-gray-500 hover:bg-gray-100'}`}
+          onClick={() => {
+            if (activeTab === 'deleted') syncAll();
+            else setActiveTab('deleted');
+          }}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === 'deleted' ? 'bg-red-600 text-white shadow-md' : 'bg-transparent text-gray-500 hover:bg-gray-100'}`}
         >
+          {activeTab === 'deleted' && isSyncing && <Activity className="w-4 h-4 animate-spin" />}
           Deleted Accounts
         </button>
       </div>

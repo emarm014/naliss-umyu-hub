@@ -756,25 +756,39 @@ export default function ModeratorsPage() {
       {/* Moderator Category Navigation Tabs */}
       <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-3xl w-fit border border-slate-200/80 shadow-inner">
         <button
-          onClick={() => setActiveTab('student_moderators')}
+          onClick={() => {
+            if (activeTab === 'student_moderators') syncAll();
+            else setActiveTab('student_moderators');
+          }}
           className={`px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2.5 ${
             activeTab === 'student_moderators'
               ? 'bg-white text-emerald-950 shadow-md shadow-slate-200/60 border border-slate-200'
               : 'text-slate-500 hover:text-slate-900 hover:bg-white/50'
           }`}
         >
-          <GraduationCap className="w-4 h-4 text-emerald-600" />
+          {activeTab === 'student_moderators' && isSyncing ? (
+            <Activity className="w-4 h-4 text-emerald-600 animate-spin" />
+          ) : (
+            <GraduationCap className="w-4 h-4 text-emerald-600" />
+          )}
           Student Moderators ({stats.studentModsCount})
         </button>
         <button
-          onClick={() => setActiveTab('external_moderators')}
+          onClick={() => {
+            if (activeTab === 'external_moderators') syncAll();
+            else setActiveTab('external_moderators');
+          }}
           className={`px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2.5 ${
             activeTab === 'external_moderators'
               ? 'bg-white text-amber-950 shadow-md shadow-slate-200/60 border border-slate-200'
               : 'text-slate-500 hover:text-slate-900 hover:bg-white/50'
           }`}
         >
-          <Shield className="w-4 h-4 text-amber-600" />
+          {activeTab === 'external_moderators' && isSyncing ? (
+            <Activity className="w-4 h-4 text-amber-600 animate-spin" />
+          ) : (
+            <Shield className="w-4 h-4 text-amber-600" />
+          )}
           External Moderators ({stats.externalModsCount})
         </button>
       </div>

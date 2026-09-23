@@ -581,60 +581,75 @@ export default function ResourcesPage() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex p-1.5 bg-gray-100 rounded-2xl w-fit gap-1">
             <button
-              onClick={() => { setActiveTab('all'); setSelectedIds(new Set()); }}
+              onClick={() => {
+                if (activeTab === 'all') syncAll();
+                else { setActiveTab('all'); setSelectedIds(new Set()); }
+              }}
               className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 activeTab === 'all' ? 'bg-primary-950 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              <Cloud className="w-4 h-4" />
+              <Cloud className={`w-4 h-4 ${activeTab === 'all' && loading ? 'animate-spin' : ''}`} />
               All Media
               <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black ${activeTab === 'all' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'}`}>
                 {allResources.length}
               </span>
             </button>
             <button
-              onClick={() => { setActiveTab('vault'); setSelectedIds(new Set()); }}
+              onClick={() => {
+                if (activeTab === 'vault') syncAll();
+                else { setActiveTab('vault'); setSelectedIds(new Set()); }
+              }}
               className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 activeTab === 'vault' ? 'bg-white text-primary-950 shadow-md' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              <Server className="w-4 h-4" />
+              <Server className={`w-4 h-4 ${activeTab === 'vault' && loading ? 'animate-spin' : ''}`} />
               Vault
               <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black ${activeTab === 'vault' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-500'}`}>
                 {stats.vaultCount}
               </span>
             </button>
             <button
-              onClick={() => { setActiveTab('institutional'); setSelectedIds(new Set()); }}
+              onClick={() => {
+                if (activeTab === 'institutional') syncAll();
+                else { setActiveTab('institutional'); setSelectedIds(new Set()); }
+              }}
               className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 activeTab === 'institutional' ? 'bg-white text-primary-950 shadow-md' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              <Layers className="w-4 h-4" />
+              <Layers className={`w-4 h-4 ${activeTab === 'institutional' && loading ? 'animate-spin' : ''}`} />
               Live in App
               <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black ${activeTab === 'institutional' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'}`}>
                 {stats.institutionalCount}
               </span>
             </button>
             <button
-              onClick={() => { setActiveTab('group_chat'); setSelectedIds(new Set()); }}
+              onClick={() => {
+                if (activeTab === 'group_chat') syncAll();
+                else { setActiveTab('group_chat'); setSelectedIds(new Set()); }
+              }}
               className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 activeTab === 'group_chat' ? 'bg-white text-primary-950 shadow-md' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              <MessageSquare className="w-4 h-4" />
+              <MessageSquare className={`w-4 h-4 ${activeTab === 'group_chat' && loading ? 'animate-spin' : ''}`} />
               Group Chats
               <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black ${activeTab === 'group_chat' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'}`}>
                 {stats.groupChatCount}
               </span>
             </button>
             <button
-              onClick={() => { setActiveTab('cloudinary'); setSelectedIds(new Set()); setSelectedCloudIds(new Set()); }}
+              onClick={() => {
+                if (activeTab === 'cloudinary') fetchCloudinaryAssets();
+                else { setActiveTab('cloudinary'); setSelectedIds(new Set()); setSelectedCloudIds(new Set()); }
+              }}
               className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 activeTab === 'cloudinary' ? 'bg-white text-primary-950 shadow-md' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              <Cloud className="w-4 h-4" />
+              <Cloud className={`w-4 h-4 ${activeTab === 'cloudinary' && cloudAssetsLoading ? 'animate-spin' : ''}`} />
               Cloudinary Raw
               {cloudAssets.length > 0 && (
                 <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black ${activeTab === 'cloudinary' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-500'}`}>

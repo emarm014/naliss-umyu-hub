@@ -226,11 +226,21 @@ export default function GraduatesPage() {
           <p className="text-slate-500 mt-2 font-medium">Manage and track NALISS alumni and graduating students.</p>
         </div>
         <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-          <button onClick={() => setActiveTab('graduates')} className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-300 ${activeTab === 'graduates' ? 'bg-white text-primary-950 shadow-sm border border-slate-200/60' : 'text-slate-500 hover:text-slate-700'}`}>
-            <div className="flex items-center gap-2"><Archive className="w-4 h-4" /> Alumni List</div>
+          <button onClick={() => {
+            if (activeTab === 'graduates') syncAll();
+            else setActiveTab('graduates');
+          }} className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-300 ${activeTab === 'graduates' ? 'bg-white text-primary-950 shadow-sm border border-slate-200/60' : 'text-slate-500 hover:text-slate-700'}`}>
+            <div className="flex items-center gap-2">
+              {activeTab === 'graduates' && isSyncing ? <Archive className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+              Alumni List
+            </div>
           </button>
-          <button onClick={() => setActiveTab('graduate')} className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${activeTab === 'graduate' ? 'bg-primary-950 text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}>
-            <GraduationCap className="w-4 h-4" /> Candidate Pool
+          <button onClick={() => {
+            if (activeTab === 'graduate') syncAll();
+            else setActiveTab('graduate');
+          }} className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${activeTab === 'graduate' ? 'bg-primary-950 text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}>
+            {activeTab === 'graduate' && isSyncing ? <GraduationCap className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
+            Candidate Pool
             {level400Students.length > 0 && <span className="bg-amber-500 text-amber-950 text-xs px-2 py-0.5 rounded-full ml-1">{level400Students.length}</span>}
           </button>
         </div>

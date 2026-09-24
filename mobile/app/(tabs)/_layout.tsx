@@ -18,11 +18,10 @@ export default function TabsLayout() {
   const isBadgeCleared = useGroupStore((state) => state.isBadgeCleared);
   const currentTab = useGroupStore((state) => state.currentTab);
 
-  // SAFETY GUARD: If there's no session, redirect to login immediately.
-  // This prevents all tab screens from rendering and making Supabase calls
-  // with an expired/missing token, which causes the app to crash.
+  // SAFETY GUARD: If there's no session, unmount tabs immediately.
+  // ProtectedRoute handles the centralized navigation to /auth/login, avoiding double redirects.
   if (!session) {
-    return <Redirect href="/auth/login" />;
+    return null;
   }
 
   const unreadGroupsCount = groups.filter((g: any) => g.unread_count > 0).length;

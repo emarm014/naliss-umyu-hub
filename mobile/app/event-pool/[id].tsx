@@ -89,6 +89,7 @@ export default function EventPoolRoom() {
 
     // Leaderboard State
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+    const [resultsData, setResultsData] = useState<any[]>([]);
     const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
 
     useEffect(() => {
@@ -290,25 +291,49 @@ export default function EventPoolRoom() {
             const fetchLeaderboard = async () => {
                 setIsLoadingLeaderboard(true);
                 try {
-                    let query = (supabase as any)
-                        .from('pool_participants')
-                        .select('id, user_id, final_score, completed_at, winner_position, users:user_id (full_name, username, avatar_url, level)')
-                        .eq('pool_id', pool.id);
-
-                    if (pool.type === 'quiz') {
-                        query = query.order('final_score', { ascending: false })
-                                     .order('completed_at', { ascending: true })
-                                     .limit(10); // Show top 10 as winners for auto-graded quizzes
+                    if (pool.type === 'voting' || pool.type === 'talent') {
+                        const { data, error } = await (supabase as any)
+                            .from('pool_candidates')
+                            .select('id, user_id, vote_count, is_winner, podium_rank, display_name, photo_url, users:user_id (full_name, username, avatar_url, level)')
+                            .eq('pool_id', pool.id)
+                            .eq('is_winner', true)
+                            .order('vote_count', { ascending: false });
+                        
+                        if (error) throw normalizeError(error);
+                        
+                        // Map to LeaderboardEntry format
+                        const mapped = (data || []).map((cand: any) => ({
+                            id: cand.id,
+                            user_id: cand.user_id,
+                            final_score: cand.vote_count,
+                            winner_position: cand.podium_rank === '1st' ? 1 : (cand.podium_rank === '2nd' ? 2 : 3),
+                            users: cand.users || {
+                                full_name: cand.display_name,
+                                username: 'Candidate',
+                                avatar_url: cand.photo_url
+                            }
+                        }));
+                        setLeaderboard(mapped as any);
                     } else {
-                        query = query.not('winner_position', 'is', null)
-                                     .order('winner_position', { ascending: true })
-                                     .limit(50);
+                        let query = (supabase as any)
+                            .from('pool_participants')
+                            .select('id, user_id, final_score, completed_at, winner_position, users:user_id (full_name, username, avatar_url, level)')
+                            .eq('pool_id', pool.id);
+
+                        if (pool.type === 'quiz') {
+                            query = query.order('final_score', { ascending: false })
+                                         .order('completed_at', { ascending: true })
+                                         .limit(10);
+                        } else {
+                            query = query.not('winner_position', 'is', null)
+                                         .order('winner_position', { ascending: true })
+                                         .limit(50);
+                        }
+                        
+                        const { data, error } = await query;
+                        if (error) throw normalizeError(error);
+                        setLeaderboard((data || []) as LeaderboardEntry[]);
                     }
-                    
-                    const { data, error } = await query;
-                    
-                    if (error) throw normalizeError(error);
-                    setLeaderboard((data || []) as LeaderboardEntry[]);
                 } catch (e) {
                     console.error('Failed to fetch leaderboard:', e);
                 } finally {
@@ -318,6 +343,36 @@ export default function EventPoolRoom() {
             fetchLeaderboard();
         }
     }, [activeTab, pool?.id]);
+
+    useEffect(() => {
+        if (activeTab === 'results' && pool?.id) {
+            const fetchResults = async () => {
+                try {
+                    if (pool.type === 'voting' || pool.type === 'talent') {
+                        const { data } = await (supabase as any)
+                            .from('pool_candidates')
+                            .select('id, user_id, vote_count, podium_rank, display_name, photo_url, position_title, is_winner, users:user_id (full_name, username, avatar_url, level)')
+                            .eq('pool_id', pool.id)
+                            .order('position_title', { ascending: true })
+                            .order('vote_count', { ascending: false });
+                        setResultsData(data || []);
+                    } else {
+                        const { data } = await (supabase as any)
+                            .from('pool_participants')
+                            .select('id, user_id, final_score, completed_at, winner_position, users:user_id (full_name, username, avatar_url, level)')
+                            .eq('pool_id', pool.id)
+                            .order('final_score', { ascending: false })
+                            .limit(100);
+                        setResultsData(data || []);
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch results:', e);
+                }
+            };
+            fetchResults();
+        }
+    }, [activeTab, pool?.id]);
+
 
     const isParticipant = useMemo(() => {
         if (!pool || !user) return false;
@@ -882,14 +937,47 @@ export default function EventPoolRoom() {
     };
 
     const renderResults = () => {
+        if (resultsData.length === 0) {
+            return (
+                <View style={styles.centeredContainer}>
+                    <Ionicons name="medal-outline" size={48} color={subtextColor} style={{ marginBottom: 16, opacity: 0.5 }} />
+                    <Text style={[styles.bannerTitle, { color: textColor }]}>Results Pending</Text>
+                    <Text style={[styles.bannerText, { color: subtextColor, textAlign: 'center' }]}>Results will be published here upon completion.</Text>
+                </View>
+            );
+        }
+
         return (
-            <View style={styles.centeredContainer}>
-                <Ionicons name="medal-outline" size={48} color={subtextColor} style={{ marginBottom: 16, opacity: 0.5 }} />
-                <Text style={[styles.bannerTitle, { color: textColor }]}>Results Gallery</Text>
-                <Text style={[styles.bannerText, { color: subtextColor }]}>Final historical summaries and winners will be published here upon completion.</Text>
-            </View>
+            <ScrollView contentContainerStyle={styles.leaderboardContainer}>
+                {resultsData.map((entry, index) => {
+                    const isVoting = pool?.type === 'voting' || pool?.type === 'talent';
+                    const name = isVoting ? (entry.display_name || entry.users?.full_name) : (entry.users?.full_name || entry.users?.username);
+                    const score = isVoting ? entry.vote_count : entry.final_score;
+                    const label = isVoting ? 'Votes' : 'PTS';
+                    const subtitle = isVoting ? entry.position_title : (entry.users?.level ? `Level ${entry.users.level}` : '');
+                    
+                    return (
+                        <View key={entry.id} style={[styles.leaderboardCard, { backgroundColor: cardBg, borderColor: borderColor }]}>
+                            <View style={styles.leaderboardInfo}>
+                                <Text style={[styles.leaderboardName, { color: textColor }]} numberOfLines={1}>
+                                    {index + 1}. {name} {entry.is_winner && '👑'}
+                                </Text>
+                                {subtitle ? (
+                                    <Text style={[styles.leaderboardTime, { color: subtextColor }]}>
+                                        {subtitle}
+                                    </Text>
+                                ) : null}
+                            </View>
+                            <View style={[styles.scoreBadge, { backgroundColor: isVoting ? '#3b82f6' : '#059669' }]}>
+                                <Text style={styles.scoreText}>{score} {label}</Text>
+                            </View>
+                        </View>
+                    );
+                })}
+            </ScrollView>
         );
     };
+
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

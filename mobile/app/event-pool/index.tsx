@@ -319,6 +319,16 @@ export default function EventPoolDashboard() {
                         </Text>
                     </View>
                 )}
+
+                {item.computedStatus === 'archived' && (
+                    <TouchableOpacity 
+                        style={[styles.joinBtn, { backgroundColor: '#3b82f6', marginTop: 16 }]}
+                        onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: item.id } } as any)}
+                    >
+                        <Ionicons name="albums-outline" size={18} color="#fff" />
+                        <Text style={styles.joinBtnText}>Explore Event Archive</Text>
+                    </TouchableOpacity>
+                )}
             </View>
         );
     };

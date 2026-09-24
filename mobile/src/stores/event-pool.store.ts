@@ -10,6 +10,7 @@ export type EventPool = {
     title: string;
     description: string;
     status: 'draft' | 'scheduled' | 'live' | 'completed' | 'archived';
+    computedStatus?: 'draft' | 'scheduled' | 'live' | 'completed' | 'archived';
     start_time: string;
     end_time: string | null;
     banner_url: string | null;

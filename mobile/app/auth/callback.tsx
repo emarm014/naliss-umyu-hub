@@ -1,20 +1,24 @@
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuthStore } from '../../src/stores/auth.store';
 import { useSignupStore } from '../../src/stores/signup.store';
 
 export default function AuthCallback() {
   const router = useRouter();
 
   useEffect(() => {
-    // Give handleOAuthRedirect time to process session and state
+    // Safety watchdog: only triggers if handleOAuthRedirect fails to navigate within 4s
     const timeout = setTimeout(() => {
-      const state = useSignupStore.getState() as any;
-      const step = state.step ?? state.currentStep ?? 0;
-      if (step >= 2) {
+      const { session, isProfileComplete } = useAuthStore.getState();
+      if (!session) {
+        router.replace('/auth/login');
+      } else if (isProfileComplete === true) {
+        router.replace('/(tabs)');
+      } else {
         router.replace('/auth/identity');
       }
-    }, 500);
+    }, 4000);
 
     return () => clearTimeout(timeout);
   }, [router]);

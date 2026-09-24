@@ -1187,13 +1187,13 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const now = Date.now();
     if (lastNavTarget.current === target) return;
     if (now - lastNavTime.current < 500) return;
-    if (pathname === target) return;
+    if (pathname === target || (target === "/auth/login" && (pathname?.includes("/auth/login") || pathname === "/login"))) return;
     lastNavTime.current = now;
     lastNavTarget.current = target;
     // Sentry: track every auth-driven navigation redirect
     Sentry.addBreadcrumb({
       category: "navigation",
-      message: `Auth redirect: ${pathname} â†’ ${target}`,
+      message: `Auth redirect: ${pathname} → ${target}`,
       data: {
         from: pathname,
         to: target,
@@ -1219,11 +1219,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // (pathname matches what we navigated to). This allows future navigations to the
   // same target if the user navigates away and back.
   useEffect(() => {
-    if (pathname === lastNavTarget.current) {
-      // We've arrived â€” clear the target lock after a short delay
+    if (pathname === lastNavTarget.current || (lastNavTarget.current === "/auth/login" && pathname?.includes("/auth/login"))) {
+      // If we arrived at login without a session, maintain lock longer (2.5s)
+      // to absorb secondary auth state change triggers and prevent flipping
+      const isLoggedOutLogin = lastNavTarget.current === "/auth/login" && !useAuthStore.getState().session;
+      const delay = isLoggedOutLogin ? 2500 : 600;
       const t = setTimeout(() => {
         lastNavTarget.current = "";
-      }, 600);
+      }, delay);
       return () => clearTimeout(t);
     }
   }, [pathname]);
@@ -1265,6 +1268,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       if (isProfileComplete === true) {
         const signupState = useSignupStore.getState();
         if (signupState.isGoogleDelaying) return;
+        // Let level.tsx handle its own celebration animation and transition to tabs cleanly
+        if (currentScreen === "level") return;
         // Fall through to allow completion redirect
       } else {
         const signupState = useSignupStore.getState();

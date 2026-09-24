@@ -877,13 +877,13 @@ export default function EventPoolManagementPage() {
      .eq('user_id', userId);
  }
 
- await supabase.from('event_pools').update({ status: 'completed' }).eq('id', selectedPool.id);
+ await supabase.from('event_pools').update({ status: 'archived' }).eq('id', selectedPool.id);
  
  supabase.functions.invoke('event-pool-broadcaster', {
-   body: { pool_id: selectedPool.id, title: selectedPool.title, new_status: 'completed' }
+   body: { pool_id: selectedPool.id, title: selectedPool.title, new_status: 'archived' }
  }).catch(e => console.error('Broadcast failed:', e));
 
- alert(`Winner successfully recorded and Pool marked as completed! Automated announcement triggered.`);
+ alert(`Winner successfully recorded and Pool marked as archived! Automated announcement triggered.`);
  fetchPools();
  } else {
  alert('Grade saved successfully.');
@@ -954,7 +954,7 @@ export default function EventPoolManagementPage() {
 
  const handleCertifyElection = async () => {
    if (!selectedPool) return;
-   if (!window.confirm("Are you sure you want to certify the election? This will seal the ballot box, crown the top candidate(s), and mark the event as completed.")) return;
+   if (!window.confirm("Are you sure you want to certify the election? This will seal the ballot box, crown the top candidate(s), and mark the event as archived for public exploration.")) return;
    try {
      const { error } = await supabase.rpc('certify_voting_winners', { p_pool_id: selectedPool.id });
      if (error) throw error;
@@ -2190,8 +2190,8 @@ export default function EventPoolManagementPage() {
            <p className="text-sm text-gray-500">Total Verified Ballots Cast: {totalTurnout}</p>
          </div>
          <div className="flex gap-3 items-center">
-           <span className={`px-3 py-1 rounded-full text-xs font-bold ${selectedPool.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-             {selectedPool.status === 'completed' ? 'Sealed & Certified' : (selectedPool.status === 'live' ? 'Live Poll' : 'Scheduled')}
+           <span className={`px-3 py-1 rounded-full text-xs font-bold ${['completed', 'archived'].includes(selectedPool.status) ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+             {['completed', 'archived'].includes(selectedPool.status) ? 'Sealed & Certified' : (selectedPool.status === 'live' ? 'Live Poll' : 'Scheduled')}
            </span>
            {selectedPool.status === 'completed' && (
              <button

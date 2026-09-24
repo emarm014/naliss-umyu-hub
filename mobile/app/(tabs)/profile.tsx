@@ -441,13 +441,12 @@ export default function ProfileScreen() {
         setConfirmPasswordVisible(false);
         setShowDeviceLogs(false);
         
-        // Perform local sign out
+        // Perform local sign out — ProtectedRoute handles single clean redirect to /auth/login
         await supabase.auth.signOut();
         useAuthStore.getState().setSession(null);
         useAuthStore.getState().setUser(null);
         useAuthStore.getState().setIsProfileComplete(null);
         useAuthStore.getState().setProfile(null);
-        router.replace('/auth/login');
         Alert.alert('Logged Out', 'This device session has been terminated.');
       } else {
         Alert.alert('Success', 'Device session terminated successfully.');
@@ -495,7 +494,6 @@ export default function ProfileScreen() {
         useAuthStore.getState().setProfile(null);
         
         setShowManageSessions(false);
-        router.replace('/auth/login');
       } else {
         // Log out of other devices
         await supabase.auth.signOut({ scope: 'others' });

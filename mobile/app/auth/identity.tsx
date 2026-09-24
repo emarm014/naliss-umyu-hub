@@ -30,17 +30,18 @@ function StepBar({ current, total }: { current: number; total: number }) {
 
 export default function RegisterIdentity() {
   useSentryScreen('RegisterIdentity');
-  const [fullName, setFullName] = useState('');
-  const [username, setUsername] = useState('');
-  const [matricNo, setMatricNo] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isHydrating, setIsHydrating] = useState(true);
-  const [focused, setFocused] = useState<string | null>(null);
-  const isMounted = useRef(true);
-
   const router = useRouter();
   const signupStore = useSignupStore();
   const { session } = useAuthStore();
+
+  const [fullName, setFullName] = useState<string>(() => 
+    useAuthStore.getState().session?.user?.user_metadata?.full_name || useSignupStore.getState().full_name || ''
+  );
+  const [username, setUsername] = useState(() => useSignupStore.getState().username || '');
+  const [matricNo, setMatricNo] = useState(() => useSignupStore.getState().reg_number || '');
+  const [isLoading, setIsLoading] = useState(false);
+  const [focused, setFocused] = useState<string | null>(null);
+  const isMounted = useRef(true);
 
   useEffect(() => {
     isMounted.current = true;
@@ -78,7 +79,6 @@ export default function RegisterIdentity() {
       if (isMounted.current && session?.user?.user_metadata?.full_name) {
         setFullName(prev => prev || session.user!.user_metadata.full_name);
       }
-      if (isMounted.current) setIsHydrating(false);
     };
     hydrate();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,14 +179,6 @@ export default function RegisterIdentity() {
   const isGoogle = signupStore.provider === 'google';
   const stepCurrent = isGoogle ? 2 : 4;
   const stepTotal = isGoogle ? 3 : 5;
-
-  if (isHydrating) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.root}>

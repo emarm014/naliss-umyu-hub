@@ -8,6 +8,8 @@ import {
     ScrollView,
     StyleSheet,
     ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../src/api/supabase/client';
@@ -21,7 +23,7 @@ import { normalizeError } from '../../src/utils/sentry';
 
 export default function DeleteAccountScreen() {
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const [confirmationText, setConfirmationText] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
     const user = useAuthStore(state => state.profile);
@@ -123,59 +125,78 @@ export default function DeleteAccountScreen() {
                 <View style={{ width: 32 }} />
             </View>
 
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-                <Text style={styles.title}>Delete Account</Text>
-            <Text style={styles.warning}>
-                This action is permanent and cannot be undone. The following data will be
-                permanently deleted:
-            </Text>
-
-            <View style={styles.dataList}>
-                <DataItem icon="💬" text="All your chat messages" />
-                <DataItem icon="👤" text="Your profile information" />
-                <DataItem icon="📁" text="Downloaded files and cached media" />
-                <DataItem icon="🔑" text="Your account and authentication data" />
-                <DataItem icon="📱" text="All active sessions on other devices" />
-            </View>
-
-            <Text style={styles.confirmLabel}>
-                Type <Text style={styles.confirmEmail}>{userEmail}</Text> to confirm:
-            </Text>
-            <TextInput
-                style={styles.input}
-                value={confirmationText}
-                onChangeText={setConfirmationText}
-                placeholder={userEmail}
-                placeholderTextColor="#888"
-                autoCapitalize="none"
-                autoCorrect={false}
-            />
-
-            <TouchableOpacity
-                style={[
-                    styles.deleteButton,
-                    (isDeleting || confirmationText.toLowerCase().trim() !== userEmail.toLowerCase().trim())
-                        && styles.deleteButtonDisabled,
-                ]}
-                onPress={handleDeleteAccount}
-                disabled={isDeleting || confirmationText.toLowerCase().trim() !== userEmail.toLowerCase().trim()}
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
             >
-                {isDeleting ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <Text style={styles.deleteButtonText}>Delete My Account</Text>
-                )}
-            </TouchableOpacity>
-            </ScrollView>
+                <ScrollView 
+                    style={styles.scrollView} 
+                    contentContainerStyle={[styles.content, { paddingBottom: 60 }]}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                >
+                    <Text style={styles.title}>Delete Account</Text>
+                    <Text style={[styles.warning, { color: colors.textSecondary }]}>
+                        This action is permanent and cannot be undone. The following data will be
+                        permanently deleted:
+                    </Text>
+
+                    <View style={[styles.dataList, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#fff5f5' }]}>
+                        <DataItem icon="💬" text="All your chat messages" textColor={colors.text} />
+                        <DataItem icon="👤" text="Your profile information" textColor={colors.text} />
+                        <DataItem icon="📁" text="Downloaded files and cached media" textColor={colors.text} />
+                        <DataItem icon="🔑" text="Your account and authentication data" textColor={colors.text} />
+                        <DataItem icon="📱" text="All active sessions on other devices" textColor={colors.text} />
+                    </View>
+
+                    <Text style={[styles.confirmLabel, { color: colors.text }]}>
+                        Type <Text style={styles.confirmEmail}>{userEmail}</Text> to confirm:
+                    </Text>
+                    <TextInput
+                        style={[
+                            styles.input,
+                            {
+                                backgroundColor: isDark ? colors.card : '#f8fafc',
+                                color: colors.text,
+                                borderColor: colors.border,
+                            }
+                        ]}
+                        value={confirmationText}
+                        onChangeText={setConfirmationText}
+                        placeholder={userEmail}
+                        placeholderTextColor={isDark ? colors.textMuted : '#94a3b8'}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="email-address"
+                    />
+
+                    <TouchableOpacity
+                        style={[
+                            styles.deleteButton,
+                            (isDeleting || confirmationText.toLowerCase().trim() !== userEmail.toLowerCase().trim())
+                                && styles.deleteButtonDisabled,
+                        ]}
+                        onPress={handleDeleteAccount}
+                        disabled={isDeleting || confirmationText.toLowerCase().trim() !== userEmail.toLowerCase().trim()}
+                    >
+                        {isDeleting ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.deleteButtonText}>Delete My Account</Text>
+                        )}
+                    </TouchableOpacity>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
-function DataItem({ icon, text }: { icon: string; text: string }) {
+function DataItem({ icon, text, textColor }: { icon: string; text: string; textColor?: string }) {
     return (
         <View style={styles.dataItem}>
             <Text style={styles.dataIcon}>{icon}</Text>
-            <Text style={styles.dataText}>{text}</Text>
+            <Text style={[styles.dataText, textColor ? { color: textColor } : null]}>{text}</Text>
         </View>
     );
 }
@@ -211,6 +232,7 @@ const styles = StyleSheet.create({
         borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
         padding: 14, fontSize: 16, marginBottom: 24,
         backgroundColor: '#fafafa',
+        color: '#0f172a',
     },
     deleteButton: {
         backgroundColor: '#d32f2f', borderRadius: 12, padding: 16,

@@ -130,7 +130,6 @@ export default function SecuritySettingsScreen() {
                             useAuthStore.getState().setUser(null);
                             useAuthStore.getState().setIsProfileComplete(null);
                             useAuthStore.getState().setProfile(null);
-                            router.replace('/auth/login' as any);
                         } else {
                             await (supabase.from('user_sessions') as any).update({ is_active: false }).eq('user_id', storeProfile.id).neq('device_id', currentDeviceId as string);
                         }
@@ -195,7 +194,6 @@ export default function SecuritySettingsScreen() {
                 useAuthStore.getState().setUser(null);
                 useAuthStore.getState().setIsProfileComplete(null);
                 useAuthStore.getState().setProfile(null);
-                router.replace('/auth/login');
                 Alert.alert('Logged Out', 'This device session has been terminated.');
             } else {
                 await (supabase.from('user_sessions') as any).update({ is_active: false })

@@ -16,12 +16,28 @@ import { normalizeError } from './sentry';
  * runs the full profile-validation gauntlet before routing to the correct
  * destination screen.
  *
- * Shared between:
- *   - _layout.tsx  (cold-start deep link recovery)
- *   - login.tsx    (warm-start after WebBrowser returns)
  */
+let isHandlingOAuth = false;
+let lastHandledOAuthUrl: string | null = null;
+let lastHandledOAuthTime = 0;
+
 export async function handleOAuthRedirect(url: string): Promise<void> {
   const mmkv = getRawStorage();
+  const now = Date.now();
+
+  // Deduplication guard: ignore duplicate calls from concurrent Linking listener and WebBrowser return
+  if (isHandlingOAuth) {
+    console.log('[Auth] OAuth redirect already in progress, skipping duplicate.');
+    return;
+  }
+  if (lastHandledOAuthUrl === url && now - lastHandledOAuthTime < 5000) {
+    console.log('[Auth] Duplicate OAuth redirect URL within 5s, skipping.');
+    return;
+  }
+
+  isHandlingOAuth = true;
+  lastHandledOAuthUrl = url;
+  lastHandledOAuthTime = now;
 
   // ── 1. Parse code/token from the callback URL ──────────────────────────────
   let code: string | null = null;
@@ -169,6 +185,8 @@ export async function handleOAuthRedirect(url: string): Promise<void> {
     })();
 
     Alert.alert('Sign-In Failed', 'Google sign-in could not be completed. Please try again.');
+  } finally {
+    isHandlingOAuth = false;
   }
 }
 

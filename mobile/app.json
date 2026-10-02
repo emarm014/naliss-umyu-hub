@@ -39,6 +39,7 @@
     },
     "android": {
       "package": "com.naliss.umyuk",
+      "versionCode": 1,
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
@@ -109,7 +110,7 @@
         {
           "android": {
             "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": false,
             "windowSoftInputMode": "adjustPan",
             "enableMinifyInReleaseBuilds": true
           }

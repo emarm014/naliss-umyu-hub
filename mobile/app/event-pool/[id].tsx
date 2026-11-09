@@ -13,6 +13,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadLocalFileToCloudinary } from '../../src/lib/cloudinary';
 import { normalizeError } from '../../src/utils/sentry';
+import { getPodiumLabel } from '../../src/stores/event-pool.store';
 
 type EventPoolDetail = {
     id: string;
@@ -41,6 +42,8 @@ type LeaderboardEntry = {
     final_score: number;
     completed_at: string;
     winner_position?: number | null;
+    /** Display label for declared winners, e.g. "Winner", "1st Runner-Up", "President — Winner" */
+    label?: string;
     users?: {
         full_name: string;
         username: string;
@@ -155,13 +158,13 @@ export default function EventPoolRoom() {
                 if (user) {
                     const { data: subData } = await (supabase as any)
                         .from('pool_submissions')
-                        .select('payload')
+                        .select('answers')
                         .eq('pool_id', id)
                         .eq('user_id', user.id)
                         .maybeSingle();
                     if (subData) {
                         setHasSubmitted(true);
-                        setSubmissionData(subData.payload);
+                        setSubmissionData(subData.answers);
                     } else {
                         // Fallback check for participants table if payload is empty
                         const { data: partData } = await (supabase as any)
@@ -286,15 +289,18 @@ export default function EventPoolRoom() {
     }, [quizAnswers, currentIndex, feedbackMap, essayText, challengeMediaUrl, id, isLoading, pool, isSubmitting, poolStartedAt]);
 
     // Leaderboard Fetching Logic
+    // Also runs on the Live tab once the event is finished, so the declared winners replace the "Event Finished" placeholder.
+    const isFinished = computedStatus === 'completed' || computedStatus === 'archived';
     useEffect(() => {
-        if (activeTab === 'leaderboard' && pool?.id) {
+        if ((activeTab === 'leaderboard' || (activeTab === 'live' && isFinished)) && pool?.id) {
             const fetchLeaderboard = async () => {
                 setIsLoadingLeaderboard(true);
                 try {
                     if (pool.type === 'voting' || pool.type === 'talent') {
+                        // NOTE: pool_candidates links users via candidate_user_id (there is no user_id column)
                         const { data, error } = await (supabase as any)
                             .from('pool_candidates')
-                            .select('id, user_id, vote_count, is_winner, podium_rank, display_name, photo_url, users:user_id (full_name, username, avatar_url, level)')
+                            .select('id, candidate_user_id, vote_count, is_winner, podium_rank, position_title, display_name, photo_url, users:candidate_user_id (full_name, username, avatar_url, level)')
                             .eq('pool_id', pool.id)
                             .eq('is_winner', true)
                             .order('vote_count', { ascending: false });
@@ -302,37 +308,52 @@ export default function EventPoolRoom() {
                         if (error) throw normalizeError(error);
                         
                         // Map to LeaderboardEntry format
-                        const mapped = (data || []).map((cand: any) => ({
-                            id: cand.id,
-                            user_id: cand.user_id,
-                            final_score: cand.vote_count,
-                            winner_position: cand.podium_rank === '1st' ? 1 : (cand.podium_rank === '2nd' ? 2 : 3),
-                            users: cand.users || {
-                                full_name: cand.display_name,
-                                username: 'Candidate',
-                                avatar_url: cand.photo_url
-                            }
-                        }));
+                        const mapped = (data || []).map((cand: any) => {
+                            const rankNum = parseInt(String(cand.podium_rank ?? '').replace(/\D/g, ''), 10);
+                            const position = Number.isFinite(rankNum) && rankNum > 0 ? rankNum : 1;
+                            const post = cand.position_title && cand.position_title !== 'General' ? cand.position_title : null;
+                            return {
+                                id: cand.id,
+                                user_id: cand.candidate_user_id,
+                                final_score: cand.vote_count,
+                                winner_position: position,
+                                label: post ? `${post} — ${getPodiumLabel(position)}` : getPodiumLabel(position),
+                                users: {
+                                    full_name: cand.users?.full_name || cand.display_name,
+                                    username: cand.users?.username || 'Candidate',
+                                    avatar_url: cand.photo_url || cand.users?.avatar_url,
+                                    level: cand.users?.level,
+                                },
+                            };
+                        }).sort((a: any, b: any) => a.winner_position - b.winner_position);
                         setLeaderboard(mapped as any);
                     } else {
-                        let query = (supabase as any)
+                        // 1. Officially declared winners (any number of positions) always take priority
+                        const { data: declared, error: declaredErr } = await (supabase as any)
                             .from('pool_participants')
                             .select('id, user_id, final_score, completed_at, winner_position, users:user_id (full_name, username, avatar_url, level)')
-                            .eq('pool_id', pool.id);
+                            .eq('pool_id', pool.id)
+                            .not('winner_position', 'is', null)
+                            .order('winner_position', { ascending: true })
+                            .limit(50);
+                        if (declaredErr) throw normalizeError(declaredErr);
 
-                        if (pool.type === 'quiz') {
-                            query = query.order('final_score', { ascending: false })
-                                         .order('completed_at', { ascending: true })
-                                         .limit(10);
+                        if ((declared || []).length > 0) {
+                            setLeaderboard((declared || []).map((d: any) => ({ ...d, label: getPodiumLabel(d.winner_position) })) as LeaderboardEntry[]);
+                        } else if (pool.type === 'quiz') {
+                            // 2. Quiz fallback: auto-ranked top scores when no winners were declared manually
+                            const { data, error } = await (supabase as any)
+                                .from('pool_participants')
+                                .select('id, user_id, final_score, completed_at, winner_position, users:user_id (full_name, username, avatar_url, level)')
+                                .eq('pool_id', pool.id)
+                                .order('final_score', { ascending: false })
+                                .order('completed_at', { ascending: true })
+                                .limit(10);
+                            if (error) throw normalizeError(error);
+                            setLeaderboard((data || []) as LeaderboardEntry[]);
                         } else {
-                            query = query.not('winner_position', 'is', null)
-                                         .order('winner_position', { ascending: true })
-                                         .limit(50);
+                            setLeaderboard([]);
                         }
-                        
-                        const { data, error } = await query;
-                        if (error) throw normalizeError(error);
-                        setLeaderboard((data || []) as LeaderboardEntry[]);
                     }
                 } catch (e) {
                     console.error('Failed to fetch leaderboard:', e);
@@ -342,27 +363,29 @@ export default function EventPoolRoom() {
             };
             fetchLeaderboard();
         }
-    }, [activeTab, pool?.id]);
+    }, [activeTab, pool?.id, isFinished]);
 
     useEffect(() => {
         if (activeTab === 'results' && pool?.id) {
             const fetchResults = async () => {
                 try {
                     if (pool.type === 'voting' || pool.type === 'talent') {
-                        const { data } = await (supabase as any)
+                        const { data, error } = await (supabase as any)
                             .from('pool_candidates')
-                            .select('id, user_id, vote_count, podium_rank, display_name, photo_url, position_title, is_winner, users:user_id (full_name, username, avatar_url, level)')
+                            .select('id, candidate_user_id, vote_count, podium_rank, display_name, photo_url, position_title, is_winner, users:candidate_user_id (full_name, username, avatar_url, level)')
                             .eq('pool_id', pool.id)
                             .order('position_title', { ascending: true })
                             .order('vote_count', { ascending: false });
+                        if (error) throw normalizeError(error);
                         setResultsData(data || []);
                     } else {
-                        const { data } = await (supabase as any)
+                        const { data, error } = await (supabase as any)
                             .from('pool_participants')
                             .select('id, user_id, final_score, completed_at, winner_position, users:user_id (full_name, username, avatar_url, level)')
                             .eq('pool_id', pool.id)
                             .order('final_score', { ascending: false })
                             .limit(100);
+                        if (error) throw normalizeError(error);
                         setResultsData(data || []);
                     }
                 } catch (e) {
@@ -738,9 +761,32 @@ export default function EventPoolRoom() {
         }
 
         if (computedStatus === 'completed' || computedStatus === 'archived') {
+            const declaredWinners = leaderboard.filter(e => e.winner_position);
+            if (declaredWinners.length > 0) {
+                return (
+                    <ScrollView contentContainerStyle={styles.leaderboardContainer}>
+                        <View style={{ alignItems: 'center', marginBottom: 8 }}>
+                            <Ionicons name="trophy" size={44} color="#fbbf24" style={{ marginBottom: 12 }} />
+                            <Text style={[styles.bannerTitle, { color: textColor, marginBottom: 4 }]}>Official Winners</Text>
+                            <Text style={[styles.bannerText, { color: subtextColor }]}>Congratulations to the champions of {pool.title}!</Text>
+                        </View>
+                        {declaredWinners.map(renderLeaderboardCard)}
+                        <TouchableOpacity
+                            style={[styles.navBtnPrimary, { backgroundColor: brandColor, alignItems: 'center', marginTop: 8 }]}
+                            onPress={() => setActiveTab('results')}
+                        >
+                            <Text style={styles.navBtnPrimaryText}>View Full Results</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                );
+            }
             return (
                 <View style={styles.centeredContainer}>
-                    <Ionicons name="checkmark-done-circle-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
+                    {isLoadingLeaderboard ? (
+                        <ActivityIndicator size="large" color={brandColor} style={{ marginBottom: 16 }} />
+                    ) : (
+                        <Ionicons name="checkmark-done-circle-outline" size={48} color={subtextColor} style={{ marginBottom: 16 }} />
+                    )}
                     <Text style={[styles.bannerTitle, { color: textColor }]}>Event Finished</Text>
                     <Text style={[styles.bannerText, { color: subtextColor }]}>Waiting for official results soon. Please check the results tab.</Text>
                 </View>
@@ -882,6 +928,41 @@ export default function EventPoolRoom() {
         );
     };
 
+    const renderLeaderboardCard = (entry: LeaderboardEntry, index: number) => {
+        const isMe = user?.id === entry.user_id;
+        const rank = entry.winner_position || index + 1;
+        let rankColor = subtextColor;
+        if (rank === 1) rankColor = '#fbbf24'; // Gold
+        else if (rank === 2) rankColor = '#94a3b8'; // Silver
+        else if (rank === 3) rankColor = '#b45309'; // Bronze
+
+        return (
+            <View key={entry.id} style={[styles.leaderboardCard, { backgroundColor: cardBg, borderColor: isMe ? brandColor : borderColor }, isMe && { borderWidth: 2 }]}>
+                <View style={[styles.rankBadge, { backgroundColor: rank <= 3 ? `${rankColor}15` : 'transparent' }]}>
+                    <Text style={[styles.rankText, { color: rank <= 3 ? rankColor : subtextColor }]}>#{rank}</Text>
+                </View>
+                <View style={styles.leaderboardInfo}>
+                    <Text style={[styles.leaderboardName, { color: isMe ? brandColor : textColor }]} numberOfLines={1}>
+                        {entry.users?.full_name || entry.users?.username || 'Anonymous Participant'}
+                    </Text>
+                    {entry.label ? (
+                        <Text style={[styles.leaderboardTime, { color: rank <= 3 ? rankColor : subtextColor, fontWeight: '700' }]} numberOfLines={1}>
+                            {entry.label}
+                        </Text>
+                    ) : null}
+                    {entry.users?.level ? (
+                        <Text style={[styles.leaderboardTime, { color: subtextColor }]}>
+                            Level {entry.users.level}
+                        </Text>
+                    ) : null}
+                </View>
+                <View style={styles.scoreBadge}>
+                    <Text style={styles.scoreText}>{entry.final_score} {pool?.type === 'voting' || pool?.type === 'talent' ? 'VOTES' : 'PTS'}</Text>
+                </View>
+            </View>
+        );
+    };
+
     const renderLeaderboard = () => {
         if (isLoadingLeaderboard) {
             return (
@@ -903,35 +984,7 @@ export default function EventPoolRoom() {
 
         return (
             <ScrollView contentContainerStyle={styles.leaderboardContainer}>
-                {leaderboard.map((entry, index) => {
-                    const isMe = user?.id === entry.user_id;
-                    const rank = entry.winner_position || index + 1;
-                    let rankColor = subtextColor;
-                    if (rank === 1) rankColor = '#fbbf24'; // Gold
-                    else if (rank === 2) rankColor = '#94a3b8'; // Silver
-                    else if (rank === 3) rankColor = '#b45309'; // Bronze
-
-                    return (
-                        <View key={entry.id} style={[styles.leaderboardCard, { backgroundColor: cardBg, borderColor: isMe ? brandColor : borderColor }, isMe && { borderWidth: 2 }]}>
-                            <View style={[styles.rankBadge, { backgroundColor: rank <= 3 ? `${rankColor}15` : 'transparent' }]}>
-                                <Text style={[styles.rankText, { color: rank <= 3 ? rankColor : subtextColor }]}>#{rank}</Text>
-                            </View>
-                            <View style={styles.leaderboardInfo}>
-                                <Text style={[styles.leaderboardName, { color: isMe ? brandColor : textColor }]} numberOfLines={1}>
-                                    {entry.users?.full_name || entry.users?.username || 'Anonymous Participant'}
-                                </Text>
-                                {entry.users?.level && (
-                                    <Text style={[styles.leaderboardTime, { color: subtextColor }]}>
-                                        Level {entry.users.level}
-                                    </Text>
-                                )}
-                            </View>
-                            <View style={styles.scoreBadge}>
-                                <Text style={styles.scoreText}>{entry.final_score} PTS</Text>
-                            </View>
-                        </View>
-                    );
-                })}
+                {leaderboard.map(renderLeaderboardCard)}
             </ScrollView>
         );
     };
@@ -960,7 +1013,7 @@ export default function EventPoolRoom() {
                         <View key={entry.id} style={[styles.leaderboardCard, { backgroundColor: cardBg, borderColor: borderColor }]}>
                             <View style={styles.leaderboardInfo}>
                                 <Text style={[styles.leaderboardName, { color: textColor }]} numberOfLines={1}>
-                                    {index + 1}. {name} {entry.is_winner && '👑'}
+                                    {index + 1}. {name} {(entry.is_winner || entry.winner_position) ? '👑' : null}
                                 </Text>
                                 {subtitle ? (
                                     <Text style={[styles.leaderboardTime, { color: subtextColor }]}>

@@ -277,7 +277,8 @@ export default function EventPoolDashboard() {
     };
 
     const renderCompletedCard = (item: EventPool) => {
-        const winner = item.featured_students?.[0]?.users;
+        const winners = item.winners || [];
+        const isArchived = item.computedStatus === 'archived';
         return (
             <View key={item.id} style={[styles.card, { backgroundColor: cardBg, borderColor, opacity: 0.95 }]}>
                 <View style={styles.cardHeader}>
@@ -289,28 +290,35 @@ export default function EventPoolDashboard() {
                     </View>
                     <View style={[styles.statusBadge, { backgroundColor: 'rgba(156, 163, 175, 0.15)' }]}>
                         <Ionicons name="checkmark-done" size={12} color="#6b7280" style={{ marginRight: 4 }} />
-                        <Text style={[styles.statusText, { color: '#6b7280' }]}>COMPLETED</Text>
+                        <Text style={[styles.statusText, { color: '#6b7280' }]}>{isArchived ? 'ARCHIVED' : 'COMPLETED'}</Text>
                     </View>
                 </View>
 
-                {winner ? (
-                    <View style={styles.winnerContainer}>
-                        <View style={styles.winnerBadge}>
-                            <Ionicons name="trophy" size={16} color="#d97706" />
-                        </View>
-                        <TouchableOpacity 
-                            onPress={() => {
-                                setViewerFile({ uri: winner.avatar_url || '', type: 'image', name: winner.full_name || '' });
-                                setViewerVisible(true);
-                            }}
-                            activeOpacity={0.8}
-                        >
-                            <CachedImage remoteUrl={winner.avatar_url} style={styles.winnerAvatar} entityId={`winner_${item.featured_students?.[0]?.user_id || 'none'}`} assetType="user" fallbackName={winner.full_name} />
-                        </TouchableOpacity>
-                        <View style={styles.winnerInfo}>
-                            <Text style={[styles.winnerName, { color: textColor }]}>{winner.full_name}</Text>
-                            <Text style={[styles.winnerUsername, { color: subtextColor }]}>Event Winner</Text>
-                        </View>
+                {winners.length > 0 ? (
+                    <View style={{ gap: 8 }}>
+                        {winners.map(winner => {
+                            const medalColor = winner.position === 1 ? '#d97706' : winner.position === 2 ? '#64748b' : winner.position === 3 ? '#b45309' : '#9ca3af';
+                            return (
+                                <View key={winner.key} style={styles.winnerContainer}>
+                                    <View style={styles.winnerBadge}>
+                                        <Ionicons name={winner.position === 1 ? 'trophy' : 'medal'} size={16} color={medalColor} />
+                                    </View>
+                                    <TouchableOpacity 
+                                        onPress={() => {
+                                            setViewerFile({ uri: winner.avatar_url || '', type: 'image', name: winner.name || '' });
+                                            setViewerVisible(true);
+                                        }}
+                                        activeOpacity={0.8}
+                                    >
+                                        <CachedImage remoteUrl={winner.avatar_url} style={styles.winnerAvatar} entityId={`winner_${winner.user_id || winner.key}`} assetType="user" fallbackName={winner.name} />
+                                    </TouchableOpacity>
+                                    <View style={styles.winnerInfo}>
+                                        <Text style={[styles.winnerName, { color: textColor }]} numberOfLines={1}>{winner.name}</Text>
+                                        <Text style={[styles.winnerUsername, { color: subtextColor }]} numberOfLines={1}>{winner.label}</Text>
+                                    </View>
+                                </View>
+                            );
+                        })}
                     </View>
                 ) : (
                     <View style={[styles.countdownContainer, { backgroundColor: 'transparent', paddingHorizontal: 0 }]}>
@@ -320,15 +328,13 @@ export default function EventPoolDashboard() {
                     </View>
                 )}
 
-                {item.computedStatus === 'archived' && (
-                    <TouchableOpacity 
-                        style={[styles.joinBtn, { backgroundColor: '#3b82f6', marginTop: 16 }]}
-                        onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: item.id } } as any)}
-                    >
-                        <Ionicons name="albums-outline" size={18} color="#fff" />
-                        <Text style={styles.joinBtnText}>Explore Event Archive</Text>
-                    </TouchableOpacity>
-                )}
+                <TouchableOpacity 
+                    style={[styles.joinBtn, { backgroundColor: '#3b82f6', marginTop: 16 }]}
+                    onPress={() => router.push({ pathname: "/event-pool/[id]", params: { id: item.id } } as any)}
+                >
+                    <Ionicons name="albums-outline" size={18} color="#fff" />
+                    <Text style={styles.joinBtnText}>{isArchived ? 'Explore Event Archive' : 'View Results & Winners'}</Text>
+                </TouchableOpacity>
             </View>
         );
     };

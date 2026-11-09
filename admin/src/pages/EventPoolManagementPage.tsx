@@ -865,19 +865,28 @@ export default function EventPoolManagementPage() {
  // Update local state
  setSubmissions(submissions.map(s => s.id === subId ? { ...s, ...updates } : s));
 
- // If a podium status was assigned, also write winner_position to pool_participants
- if (podiumInput) {
+ // Mirror the podium onto pool_participants.winner_position — this is the PUBLIC source the app reads winners from
+ // (students cannot read other users' pool_submissions). The DB trigger trg_sync_submission_podium_to_participant
+ // enforces the same rule server-side; this client write creates the row if missing and surfaces any failure.
  const positionMap: Record<string, number> = { 'Winner': 1, '1st Runner-Up': 2, '2nd Runner-Up': 3, '4th Position': 4, '5th Position': 5 };
- const winnerPosition = positionMap[podiumInput] || null;
+ const winnerPosition = podiumInput ? (positionMap[podiumInput] || null) : null;
 
  if (winnerPosition) {
-   await supabase.from('pool_participants')
-     .update({ winner_position: winnerPosition })
+   const { error: winnerErr } = await supabase.from('pool_participants')
+     .upsert({ pool_id: selectedPool.id, user_id: userId, winner_position: winnerPosition }, { onConflict: 'pool_id,user_id' });
+   if (winnerErr) throw winnerErr;
+ } else {
+   // Podium cleared -> remove any previously declared position for this student
+   const { error: clearErr } = await supabase.from('pool_participants')
+     .update({ winner_position: null })
      .eq('pool_id', selectedPool.id)
      .eq('user_id', userId);
+   if (clearErr) throw clearErr;
  }
 
- await supabase.from('event_pools').update({ status: 'archived' }).eq('id', selectedPool.id);
+ if (podiumInput) {
+ const { error: archiveErr } = await supabase.from('event_pools').update({ status: 'archived' }).eq('id', selectedPool.id);
+ if (archiveErr) throw archiveErr;
  
  supabase.functions.invoke('event-pool-broadcaster', {
    body: { pool_id: selectedPool.id, title: selectedPool.title, new_status: 'archived' }

@@ -230,7 +230,7 @@ export default function EssayEngineScreen() {
                 if (next <= 0) {
                     clearInterval(interval);
                     setTimeLeft(0);
-                    handleFinalSubmit(true);
+                    setTimeout(() => handleFinalSubmit(true), Math.floor(Math.random() * 4000));
                     return 0;
                 }
                 return next;

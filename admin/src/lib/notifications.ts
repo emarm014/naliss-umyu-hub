@@ -26,14 +26,17 @@ export async function sendPushNotification(payload: PushPayload): Promise<void> 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return;
 
-    fetch(PUSH_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify(payload),
-    }).catch((err) => console.error('[Admin Notifications] push send failed:', err));
+    for (let i = 0; i < payload.targetUserIds.length; i += 500) {
+      const batchPayload = { ...payload, targetUserIds: payload.targetUserIds.slice(i, i + 500) };
+      fetch(PUSH_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(batchPayload),
+      }).catch((err) => console.error('[Admin Notifications] push send failed:', err));
+    }
   } catch {
     // silent
   }

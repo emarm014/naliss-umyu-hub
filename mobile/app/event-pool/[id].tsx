@@ -188,16 +188,15 @@ export default function EventPoolRoom() {
 
         initRoom();
 
-        const channel = supabase.channel(`pool_live_${id}`)
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` }, (payload) => {
-                if (payload.new) {
-                    setPool(prev => prev ? { ...prev, ...payload.new } as EventPoolDetail : null);
-                }
-            })
-            .subscribe();
+        const { realtimeManager } = require('../../src/lib/realtimeManager');
+        const unsubPool = realtimeManager.registerPoolListener((payload: any) => {
+            if (payload?.eventType === 'UPDATE' && payload?.new?.id === id) {
+                setPool(prev => prev ? { ...prev, ...payload.new } as EventPoolDetail : null);
+            }
+        });
 
         return () => {
-            supabase.removeChannel(channel);
+            unsubPool();
         };
     }, [id]);
 
@@ -448,7 +447,7 @@ export default function EventPoolRoom() {
                 setIsTimeUp(true);
                 setTimeLeftSeconds(0);
                 clearInterval(interval);
-                handleFinalSubmit(true);
+                setTimeout(() => handleFinalSubmit(true), Math.floor(Math.random() * 4000));
             }
         }, 1000);
 

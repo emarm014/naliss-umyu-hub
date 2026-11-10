@@ -221,7 +221,7 @@ export default function QuizEngineScreen() {
                 const next = prev - deltaSecs;
                 if (next <= 0) {
                     clearInterval(interval);
-                    handleFinalSubmit(true);
+                    setTimeout(() => handleFinalSubmit(true), Math.floor(Math.random() * 4000));
                     return 0;
                 }
                 return next;
@@ -245,7 +245,7 @@ export default function QuizEngineScreen() {
                         if (currentIndex < questions.length - 1) {
                             animateTransition(() => setCurrentIndex(i => i + 1));
                         } else {
-                            handleFinalSubmit(true);
+                            setTimeout(() => handleFinalSubmit(true), Math.floor(Math.random() * 4000));
                         }
                     }, 0);
                     return 0;
@@ -363,6 +363,13 @@ export default function QuizEngineScreen() {
     useEffect(() => {
         if (!id) return;
 
+        const { realtimeManager } = require('../../../src/lib/realtimeManager');
+        const unsubPool = realtimeManager.registerPoolListener((payload: any) => {
+            if (payload?.eventType === 'UPDATE' && payload?.new?.id === id) {
+                setPoolInfo((prev: any) => prev ? { ...prev, ...payload.new } : payload.new);
+            }
+        });
+        if (true) return () => { unsubPool(); clearPollingFallback(); };
         const channel = supabase.channel(`quiz_pool_${id}`)
             .on('postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` },

@@ -310,7 +310,7 @@ export const useAdminDataStore = create<AdminDataState>((set, get) => ({
           }),
           async () => ({
             executives: await safeFetch('executives', async () => {
-              const { data, error } = await supabase.from('executives').select('*').order('display_order', { ascending: true });
+              const { data, error } = await supabase.from('executives').select('*, linked_user:users(id, full_name, username, avatar_url, level, registration_number, email, phone, bio, department_id)').order('display_order', { ascending: true });
               if (error) throw error;
               return sortHierarchically(data || [], 'executive');
             }, get().executives, 30 * 60 * 1000)

@@ -410,3 +410,9 @@ verify_jwt = false
 
 [functions.push-notification]
 verify_jwt = false
+
+[functions.notification-worker]
+verify_jwt = false
+
+[functions.push-receipts]
+verify_jwt = false

@@ -19,6 +19,21 @@ class NotificationRouterService {
   private isAuthResolved = false;
   private isAuthGated = false;
   private activeChatGroupId: string | null = null;
+  private shownMessageIds = new Set<string>();
+
+  public hasShownMessageNotification(id?: string | null): boolean {
+    if (!id) return false;
+    return this.shownMessageIds.has(String(id));
+  }
+
+  public markMessageNotificationShown(id?: string | null): void {
+    if (!id) return;
+    if (this.shownMessageIds.size > 500) {
+      const first = this.shownMessageIds.values().next().value;
+      if (first) this.shownMessageIds.delete(first);
+    }
+    this.shownMessageIds.add(String(id));
+  }
 
   public setActiveChatGroupId(groupId: string | null): void {
     this.activeChatGroupId = groupId;

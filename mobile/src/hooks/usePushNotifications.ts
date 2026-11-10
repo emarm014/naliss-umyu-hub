@@ -3,23 +3,42 @@ import { Platform, Linking, AppState, AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as IntentLauncher from 'expo-intent-launcher';
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundTask from 'expo-background-task';
 import { supabase } from '../api/supabase/client';
 import { useAuthStore } from '../stores/auth.store';
 import { useSignupStore } from '../stores/signup.store';
 import { useNotificationStore } from '../stores/notification.store';
+import { registerOnlineCallback } from '../stores/network.store';
 import { upsertEntityFromNotification } from '../utils/notifications';
-import { extractFileNameFromUrl } from '../utils/download';
 import { UnifiedDownloadEngine } from '../utils/unifiedDownload';
 import { NotificationRouter } from '../services/notificationRouter';
 import { normalizeError } from '../utils/sentry';
 
-// ── Per-device push token cache ───────────────────────────────────────────────
-// Cached in-memory so the auth store can reference it at sign-out time
-// to delete only THIS device's token, not all tokens for the user.
+const EXPO_PUSH_TOKEN_REGEX = /^Expo(nent)?PushToken\[.+\]$/;
+
+// ── Per-device push token cache & registration state ──────────────────────────
 let currentPushToken: string | null = null;
+let isTokenSavedToDb = false;
+let registrationRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let registrationRetryAttempt = 0;
+let registrationInFlight = false;
+const MAX_REGISTRATION_RETRIES = 5;
+
+function clearRegistrationRetryTimer() {
+  if (registrationRetryTimer) {
+    clearTimeout(registrationRetryTimer);
+    registrationRetryTimer = null;
+  }
+}
+
+export function getEasProjectId(): string | undefined {
+  return Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+}
+
+export function isValidExpoPushToken(token: unknown): token is string {
+  return typeof token === 'string' && EXPO_PUSH_TOKEN_REGEX.test(token);
+}
 
 /**
  * Returns the push token registered by this device instance, or null if not yet registered.
@@ -70,7 +89,17 @@ Notifications.setNotificationHandler({
       activeGroupId &&
       String(data.group_id) === String(activeGroupId);
 
-    if (isCurrentActiveChat) {
+    const msgId = String(data?.id || data?.notification_id || '');
+    const isDuplicateMessage =
+      (data?.type === 'message' || data?.type === 'chat') &&
+      !data?._localRealtime &&
+      NotificationRouter.hasShownMessageNotification(msgId);
+
+    if ((data?.type === 'message' || data?.type === 'chat') && msgId && !isCurrentActiveChat) {
+      NotificationRouter.markMessageNotificationShown(msgId);
+    }
+
+    if (isCurrentActiveChat || isDuplicateMessage) {
       return {
         shouldShowAlert: false,
         shouldPlaySound: false,
@@ -85,6 +114,7 @@ Notifications.setNotificationHandler({
       shouldPlaySound: true,
       shouldSetBadge: true,
       shouldShowBanner: true,
+      priority: Notifications.AndroidNotificationPriority.MAX,
       shouldShowList: true,
     };
   },
@@ -98,14 +128,14 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const userId = session?.user?.id;
     if (userId) {
-      const { data: remoteHistory } = await supabase
+      const { data: remoteHistory, error } = await supabase
         .from('notification_history')
         .select('*')
         .eq('user_id' as any, userId as any)
         .order('created_at', { ascending: false })
         .limit(50);
-      
-      if (remoteHistory && remoteHistory.length > 0) {
+
+      if (!error && remoteHistory && remoteHistory.length > 0) {
         const localList = remoteHistory.map((h: any) => ({
           id: h.notification_id,
           type: h.type,
@@ -113,7 +143,7 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
           message: h.body,
           date: h.created_at,
           isRead: h.is_read,
-          data: h.data
+          data: h.data,
         }));
         useNotificationStore.getState().addNotifications(localList);
       }
@@ -144,6 +174,116 @@ async function cacheMediaForNotification(data: any): Promise<any> {
   }
 }
 
+async function ensureAndroidNotificationChannels(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+
+  try {
+    await Notifications.deleteNotificationChannelAsync('messages');
+    await Notifications.deleteNotificationChannelAsync('announcements');
+  } catch {
+    // ignore if legacy channels don't exist
+  }
+
+  // Messages — heads-up + lock screen (like WhatsApp)
+  await Notifications.setNotificationChannelAsync('messages_v2', {
+    name: 'Messages & Chat',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#064e3b',
+    sound: 'default',
+    enableVibrate: true,
+    showBadge: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+
+  // Announcements — heads-up + lock screen
+  await Notifications.setNotificationChannelAsync('announcements_v2', {
+    name: 'Announcements',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#064e3b',
+    sound: 'default',
+    enableVibrate: true,
+    showBadge: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+
+  // Events & Competitions — high-importance heads-up + lock screen
+  await Notifications.setNotificationChannelAsync('events_v1', {
+    name: 'Events & Competitions',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#064e3b',
+    sound: 'default',
+    enableVibrate: true,
+    showBadge: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+
+  // Featured Students — heads-up
+  await Notifications.setNotificationChannelAsync('featured', {
+    name: 'Featured Students',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 300, 100, 300],
+    lightColor: '#F59E0B',
+    sound: 'default',
+    showBadge: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+
+  // General — normal tray
+  await Notifications.setNotificationChannelAsync('general', {
+    name: 'General',
+    importance: Notifications.AndroidImportance.DEFAULT,
+    sound: 'default',
+    showBadge: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+  });
+
+  // High Priority (respect DND)
+  await Notifications.setNotificationChannelAsync('urgent_alerts_v1', {
+    name: 'Default Alerts',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#064e3b',
+    bypassDnd: false,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    sound: 'default',
+    showBadge: true,
+  });
+
+  // Critical Security (bypasses DND)
+  await Notifications.setNotificationChannelAsync('critical_security', {
+    name: 'Critical & Security Alerts',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#991b1b',
+    bypassDnd: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    sound: 'default',
+    showBadge: true,
+  });
+
+  // Low Priority / silent
+  await Notifications.setNotificationChannelAsync('low_priority', {
+    name: 'Silent Updates',
+    importance: Notifications.AndroidImportance.LOW,
+    showBadge: false,
+    sound: null,
+    vibrationPattern: null,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
+  });
+
+  try {
+    const legacyChannel = await Notifications.getNotificationChannelAsync('default');
+    if (legacyChannel) {
+      await Notifications.deleteNotificationChannelAsync('default');
+    }
+  } catch {
+    // silent
+  }
+}
+
 export function usePushNotifications() {
   const { user, isProfileComplete } = useAuthStore();
   const notificationListener = useRef<Notifications.Subscription | null>(null);
@@ -151,76 +291,12 @@ export function usePushNotifications() {
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
   const handledNotificationId = useRef<string | null>(null);
 
-  // Register Android notification channels once
+  // Register Android notification channels once on mount
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
-
-    (async () => {
-        try {
-            await Notifications.deleteNotificationChannelAsync('messages');
-            await Notifications.deleteNotificationChannelAsync('announcements');
-        } catch (_) {}
-
-        // Messages — heads-up + lock screen (like WhatsApp)
-        await Notifications.setNotificationChannelAsync('messages_v2', {
-            name: 'Messages & Chat',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#064e3b',
-            sound: 'default',
-            enableVibrate: true,
-            showBadge: true,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        });
-
-        // Announcements — heads-up
-        await Notifications.setNotificationChannelAsync('announcements_v2', {
-            name: 'Announcements',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#064e3b',
-            sound: 'default',
-            enableVibrate: true,
-            showBadge: true,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        });
-
-        // Featured Students — heads-up
-        await Notifications.setNotificationChannelAsync('featured', {
-            name: 'Featured Students',
-            importance: Notifications.AndroidImportance.HIGH,
-            vibrationPattern: [0, 300, 100, 300],
-            lightColor: '#F59E0B',
-            sound: 'default',
-            showBadge: false,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        });
-
-        // General / Events — normal tray only (no heads-up)
-        await Notifications.setNotificationChannelAsync('general', {
-            name: 'General',
-            importance: Notifications.AndroidImportance.DEFAULT,
-            sound: 'default',
-            showBadge: true,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
-        });
-
-        // Low priority / silent
-        await Notifications.setNotificationChannelAsync('low_priority', {
-            name: 'Background',
-            importance: Notifications.AndroidImportance.LOW,
-            sound: null,
-            showBadge: false,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
-        });
-    })().catch(() => {});
+    ensureAndroidNotificationChannels().catch(() => {});
   }, []);
 
-  // Cold-start handler: useLastNotificationResponse covers the case where the
-  // app was killed and the user tapped a notification to launch it. The ref
-  // guard ensures we only handle each notification ONCE — without it, React
-  // enters an infinite re-render loop (useLayoutEffect → setState →
-  // re-render → useLayoutEffect → "Maximum update depth exceeded").
+  // Cold-start handler
   useEffect(() => {
     if (lastNotificationResponse) {
       const id = lastNotificationResponse.notification.request.identifier;
@@ -231,18 +307,27 @@ export function usePushNotifications() {
     }
   }, [lastNotificationResponse]);
 
-  // Telemetry Helper
-  async function logTelemetry(notifId: string, type: string, status: 'delivered' | 'opened' | 'dismissed' | 'failed') {
+  // Telemetry Helper (per-device aware)
+  async function logTelemetry(
+    notifId: string,
+    type: string,
+    status: 'delivered' | 'opened' | 'dismissed' | 'failed'
+  ) {
+    if (!notifId) return;
     try {
       const platform = Platform.OS === 'android' ? 'android' : Platform.OS === 'ios' ? 'ios' : 'unknown';
       const deviceInfo = `${Platform.Version}`;
-      await (supabase as any).rpc('log_notification_telemetry', {
+      const { error } = await (supabase as any).rpc('log_notification_telemetry', {
         p_notification_id: notifId,
         p_type: type || 'general',
         p_status: status,
         p_platform: platform,
         p_device_info: deviceInfo,
+        p_push_token: currentPushToken,
       });
+      if (error) {
+        console.warn('[PushNotifications] log_notification_telemetry error:', error.message);
+      }
     } catch {
       // silent
     }
@@ -257,7 +342,7 @@ export function usePushNotifications() {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
-      
+
       if (error) throw normalizeError(error);
       if (remoteHistory && remoteHistory.length > 0) {
         const localList = remoteHistory.map((h: any) => ({
@@ -267,7 +352,7 @@ export function usePushNotifications() {
           message: h.body,
           date: h.created_at,
           isRead: h.is_read,
-          data: h.data
+          data: h.data,
         }));
         useNotificationStore.getState().addNotifications(localList);
       }
@@ -279,24 +364,78 @@ export function usePushNotifications() {
   useEffect(() => {
     let tokenListener: any = null;
     let appStateSub: any = null;
+    let unregisterOnlineCb: (() => void) | null = null;
+    let isMounted = true;
 
-    // Only register automatically for fully registered users who are NOT in the middle of signup
     const isSigningUp = useSignupStore.getState().hasActiveSession() || isProfileComplete === false;
 
-    if (user && !isSigningUp) {
-      registerForPushNotificationsAsync().then(token => {
-        if (token && !IS_EXPO_GO) {
-          currentPushToken = token;
-          saveTokenToDatabase(token);
-        }
-      });
+    const scheduleRegistrationRetry = () => {
+      if (!isMounted || IS_EXPO_GO) return;
+      if (registrationRetryAttempt >= MAX_REGISTRATION_RETRIES) return;
 
-      // Token Rotation listener
-      tokenListener = Notifications.addPushTokenListener(async (tokenObj) => {
-        const token = tokenObj.data;
-        if (token && !IS_EXPO_GO) {
-          currentPushToken = token;
-          await saveTokenToDatabase(token);
+      clearRegistrationRetryTimer();
+      const delayMs = 2000 * Math.pow(2, registrationRetryAttempt);
+      registrationRetryAttempt += 1;
+
+      registrationRetryTimer = setTimeout(() => {
+        if (!isMounted) return;
+        attemptTokenRegistration(false);
+      }, delayMs);
+    };
+
+    const attemptTokenRegistration = async (allowPrompt: boolean) => {
+      if (!isMounted || !user || isSigningUp || IS_EXPO_GO || registrationInFlight) return;
+      registrationInFlight = true;
+      try {
+        const token = await registerForPushNotificationsAsync({ allowPrompt });
+        if (!token) {
+          // If permission is already granted, token retrieval failed transiently -> backoff retry
+          const perm = await Notifications.getPermissionsAsync().catch(() => null);
+          if (perm?.status === 'granted') {
+            scheduleRegistrationRetry();
+          }
+          return;
+        }
+
+        const saved = await saveTokenToDatabase(token);
+        if (saved) {
+          registrationRetryAttempt = 0;
+          clearRegistrationRetryTimer();
+        } else {
+          scheduleRegistrationRetry();
+        }
+      } catch {
+        scheduleRegistrationRetry();
+      } finally {
+        registrationInFlight = false;
+      }
+    };
+
+    if (user && !isSigningUp) {
+      registrationRetryAttempt = 0;
+      attemptTokenRegistration(true);
+
+      // Token Rotation listener:
+      // addPushTokenListener receives the raw native device token (FCM/APNs).
+      // Always exchange it for a fresh Expo Push Token using the EAS projectId and save ONLY the Expo token.
+      tokenListener = Notifications.addPushTokenListener(async () => {
+        if (IS_EXPO_GO || !isMounted) return;
+        const projectId = getEasProjectId();
+        try {
+          const expoTokenObj = await Notifications.getExpoPushTokenAsync({ projectId });
+          const freshExpoToken = expoTokenObj?.data;
+          if (isValidExpoPushToken(freshExpoToken)) {
+            currentPushToken = freshExpoToken;
+            isTokenSavedToDb = false;
+            const saved = await saveTokenToDatabase(freshExpoToken);
+            if (!saved) {
+              registrationRetryAttempt = 0;
+              scheduleRegistrationRetry();
+            }
+          }
+        } catch {
+          registrationRetryAttempt = 0;
+          scheduleRegistrationRetry();
         }
       });
 
@@ -304,28 +443,56 @@ export function usePushNotifications() {
       syncNotificationHistory();
       syncDeliveredNotifications();
 
-      // AppState listener to re-sync history and badge when app resumes to foreground
+      // AppState listener: when app resumes to foreground, re-check notification permission
+      // without prompting again, retry token registration if needed, and sync history
       appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
         if (nextState === 'active') {
+          if (!currentPushToken || !isTokenSavedToDb) {
+            registrationRetryAttempt = 0;
+            attemptTokenRegistration(false);
+          } else {
+            // Even if previously saved, re-verify permission wasn't toggled in OS Settings
+            Notifications.getPermissionsAsync()
+              .then(({ status }) => {
+                if (status === 'granted' && (!currentPushToken || !isTokenSavedToDb)) {
+                  registrationRetryAttempt = 0;
+                  attemptTokenRegistration(false);
+                }
+              })
+              .catch(() => {});
+          }
+
           try {
             const { useNetworkStore } = require('../stores/network.store');
             if (useNetworkStore.getState().isOnline) {
               syncNotificationHistory();
               syncDeliveredNotifications();
             }
-          } catch (_) {
+          } catch {
             syncNotificationHistory();
             syncDeliveredNotifications();
           }
         }
       });
 
-
+      // Network reconnect listener: retry registration with backoff (without prompting) and sync history
+      unregisterOnlineCb = registerOnlineCallback(() => {
+        if (!isMounted) return;
+        if (!currentPushToken || !isTokenSavedToDb) {
+          registrationRetryAttempt = 0;
+          attemptTokenRegistration(false);
+        }
+        syncNotificationHistory();
+        syncDeliveredNotifications();
+      });
 
       // Register background task
       BackgroundTask.registerTaskAsync(BACKGROUND_FETCH_TASK, {
         minimumInterval: 15 * 60,
       }).catch((err) => console.error('[PushNotifications] background task registration failed:', err));
+    } else if (!user) {
+      isTokenSavedToDb = false;
+      clearRegistrationRetryTimer();
     }
 
     // Fired when a notification is received while the app is foregrounded
@@ -341,12 +508,10 @@ export function usePushNotifications() {
           useAuthStore.getState().fetchProfile(true).catch(e => {
             console.error('[PushNotifications] background profile sync failed:', e);
           });
-        } else if (data?.sync_target === 'messages' && data?.group_id) {
-          // Future expansion: trigger messages reload
         }
         return;
       }
-      
+
       const cachedData = await cacheMediaForNotification(data);
       const effectiveNotifId = notifType === 'fyb_congratulation'
         ? `fyb_congratulations_${data?.featured_student_id || 'active'}`
@@ -366,7 +531,9 @@ export function usePushNotifications() {
         upsertEntityFromNotification(data.type as string, data);
       }
 
-      // Log telemetry
+      if (!data?._localRealtime) {
+        logTelemetry(String(notifId || ''), notifType, 'delivered');
+      }
     });
 
     // Fired when user taps a notification (foreground, background, or killed)
@@ -375,7 +542,7 @@ export function usePushNotifications() {
       const notifType = (data?.type as string) || 'general';
       const fallbackId = `local_${response.notification.date || 0}_${title || 'notitle'}_${notifType}`;
       const notifId = data?.notification_id || data?.id || response.notification.request.identifier || fallbackId;
-      
+
       const cachedData = await cacheMediaForNotification(data);
       const effectiveNotifId = notifType === 'fyb_congratulation'
         ? `fyb_congratulations_${data?.featured_student_id || 'active'}`
@@ -401,19 +568,29 @@ export function usePushNotifications() {
       if (actionId === 'mark_read') {
         useNotificationStore.getState().markAsRead(String(notifId || ''));
         try {
-          await (supabase as any).from('notification_history').update({ is_read: true } as any).eq('notification_id', String(notifId || ''));
+          const { error: readErr } = await (supabase as any)
+            .from('notification_history')
+            .update({ is_read: true } as any)
+            .eq('notification_id', String(notifId || ''));
+          if (readErr) {
+            console.error('[PushNotifications] mark notification read failed:', readErr.message);
+          }
         } catch (err: any) {
           console.error('[PushNotifications] mark notification read failed:', err);
         }
       } else if (actionId === 'reply' && (response as any).userText && (data as any)?.group_id && user) {
         const replyText = (response as any).userText;
-        await (supabase as any).from('messages').insert({
+        // Server trigger tr_enqueue_chat_message_notification + tr_kick_notification_worker
+        // automatically dispatches the push notification upon INSERT into public.messages.
+        const { error: replyErr } = await (supabase as any).from('messages').insert({
           group_id: (data as any).group_id,
           sender_id: user.id,
           content: replyText,
         });
+        if (replyErr) {
+          console.error('[PushNotifications] quick reply insert failed:', replyErr.message);
+        }
       } else if (actionId === 'remind_later') {
-        // Schedule a local reminder for 1 hour later
         await Notifications.scheduleNotificationAsync({
           content: {
             title: `Reminder: ${title}`,
@@ -430,8 +607,9 @@ export function usePushNotifications() {
           // silent
         }
       } else if (actionId === 'dismiss') {
+        logTelemetry(String(notifId || ''), notifType, 'dismissed');
       } else {
-        // Default tap action — delegate to NotificationRouter for deterministic, gated routing
+        logTelemetry(String(notifId || ''), notifType, 'opened');
         NotificationRouter.handleTapResponse(response);
       }
     });
@@ -447,7 +625,7 @@ export function usePushNotifications() {
           const dateStr = notif.date ? new Date(notif.date).toISOString() : new Date().toISOString();
 
           const cachedData = await cacheMediaForNotification(data);
-          
+
           useNotificationStore.getState().addNotification({
             id: String(notifId || ''),
             type: notifType,
@@ -462,7 +640,9 @@ export function usePushNotifications() {
             upsertEntityFromNotification(data.type as string, data);
           }
 
-          // Log telemetry
+          if (!data?._localRealtime) {
+            logTelemetry(String(notifId || ''), notifType, 'delivered');
+          }
         }
       } catch {
         // silent
@@ -470,6 +650,8 @@ export function usePushNotifications() {
     }
 
     return () => {
+      isMounted = false;
+      clearRegistrationRetryTimer();
       if (notificationListener.current) {
         notificationListener.current.remove();
       }
@@ -482,24 +664,54 @@ export function usePushNotifications() {
       if (appStateSub) {
         appStateSub.remove();
       }
+      if (unregisterOnlineCb) {
+        unregisterOnlineCb();
+      }
     };
   }, [user?.id, isProfileComplete]);
 }
 
-export async function saveTokenToDatabase(token: string) {
+/**
+ * Saves a validated Expo push token to the database via register_push_token RPC
+ * (with fallback to user_push_tokens upsert). Rejects raw native FCM/APNs tokens.
+ */
+export async function saveTokenToDatabase(token: string): Promise<boolean> {
+  if (!isValidExpoPushToken(token)) {
+    console.warn('[PushNotifications] Rejected non-Expo push token in saveTokenToDatabase');
+    return false;
+  }
+
   const user = useAuthStore.getState().user || (await supabase.auth.getUser()).data.user;
-  if (!user) return;
+  if (!user) return false;
 
   try {
-    const { error } = await (supabase as any).from('user_push_tokens')
+    const { error: rpcError } = await (supabase as any).rpc('register_push_token', {
+      p_token: token,
+    });
+
+    if (!rpcError) {
+      isTokenSavedToDb = true;
+      return true;
+    }
+
+    // Fallback if migration hasn't been applied yet
+    const { error: upsertError } = await (supabase as any)
+      .from('user_push_tokens')
       .upsert(
         { user_id: user.id, push_token: token, updated_at: new Date().toISOString() },
         { onConflict: 'user_id,push_token' }
       );
 
-    if (error) throw normalizeError(error);
-  } catch {
-    // silent
+    if (upsertError) {
+      throw normalizeError(upsertError);
+    }
+
+    isTokenSavedToDb = true;
+    return true;
+  } catch (err: any) {
+    console.warn('[PushNotifications] saveTokenToDatabase failed:', err?.message || err);
+    isTokenSavedToDb = false;
+    return false;
   }
 }
 
@@ -606,125 +818,47 @@ async function configureNotificationCategories() {
   }
 }
 
-export async function registerForPushNotificationsAsync() {
-  let token;
+export async function registerForPushNotificationsAsync(
+  options?: { allowPrompt?: boolean }
+): Promise<string | null | undefined> {
+  const allowPrompt = options?.allowPrompt !== false;
+  let token: string | null = null;
 
-  // Configure Interactive Categories in parallel — doesn't need to complete before token registration
   const categoriesPromise = configureNotificationCategories();
 
-  if (Platform.OS === 'android') {
-    // Create every channel used by the server before this device saves its push
-    // token. This removes the startup race where a server push could arrive
-    // before the effect above had created its target channel.
-    await Notifications.setNotificationChannelAsync('messages_v2', {
-      name: 'Messages & Chat',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#064e3b',
-      sound: 'default',
-      enableVibrate: true,
-      showBadge: true,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    });
-    await Notifications.setNotificationChannelAsync('announcements_v2', {
-      name: 'Announcements',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#064e3b',
-      sound: 'default',
-      enableVibrate: true,
-      showBadge: true,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    });
-    await Notifications.setNotificationChannelAsync('featured', {
-      name: 'Featured Students',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 300, 100, 300],
-      lightColor: '#F59E0B',
-      sound: 'default',
-      showBadge: false,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    });
-    await Notifications.setNotificationChannelAsync('general', {
-      name: 'General',
-      importance: Notifications.AndroidImportance.DEFAULT,
-      sound: 'default',
-      showBadge: true,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
-    });
-
-    // One-time cleanup of legacy channel — only attempt if it still exists
-    try {
-      const legacyChannel = await Notifications.getNotificationChannelAsync('default');
-      if (legacyChannel) {
-        await Notifications.deleteNotificationChannelAsync('default');
-      }
-    } catch {
-      // silent
-    }
-
-    // High Priority (respect DND)
-    await Notifications.setNotificationChannelAsync('urgent_alerts_v1', {
-      name: 'Default Alerts',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#064e3b',
-      bypassDnd: false, // Obey Do Not Disturb settings
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      sound: 'default',
-      showBadge: true,
-    });
-
-    // Critical Security (bypasses DND)
-    await Notifications.setNotificationChannelAsync('critical_security', {
-      name: 'Critical & Security Alerts',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#991b1b',
-      bypassDnd: true, // Bypasses Do Not Disturb
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      sound: 'default',
-      showBadge: true,
-    });
-
-    // Low Priority Channel
-    await Notifications.setNotificationChannelAsync('low_priority', {
-      name: 'Silent Updates',
-      importance: Notifications.AndroidImportance.LOW,
-      showBadge: false,
-      sound: null,
-      vibrationPattern: null,
-    });
-  }
+  await ensureAndroidNotificationChannels();
 
   const isDevice = Constants.isDevice !== false;
   if (isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-    
-    if (existingStatus !== 'granted') {
+
+    if (existingStatus !== 'granted' && allowPrompt) {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    
+
     if (finalStatus !== 'granted') {
+      await categoriesPromise;
       return null;
     }
 
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-    
+    const projectId = getEasProjectId();
+
     try {
-      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-      if (token && !IS_EXPO_GO) {
-        currentPushToken = token;
-        await saveTokenToDatabase(token);
+      const rawToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      if (isValidExpoPushToken(rawToken)) {
+        token = rawToken;
+        if (!IS_EXPO_GO) {
+          currentPushToken = token;
+          await saveTokenToDatabase(token);
+        }
       }
-    } catch {
-      // silent
+    } catch (err: any) {
+      console.warn('[PushNotifications] getExpoPushTokenAsync error:', err?.message || err);
     }
   }
 
-  // Await categories to ensure they're registered before the function returns
   await categoriesPromise;
 
   return token;

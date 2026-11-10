@@ -128,7 +128,7 @@ export const useDirectoryStore = create<DirectoryState>()(
                 if (get().executives.length === 0) set({ isLoading: true });
                 try {
                     const { data, error } = await (supabase as any).from('executives')
-                        .select(`*, user:users(full_name, avatar_url)`)
+                        .select(`*, user:users(id, full_name, username, avatar_url, level, registration_number, email, phone, bio, biography, hobbies, motivation, role)`)
                         .eq('is_active', true)
                         .order('display_order', { ascending: true, nullsFirst: false });
 

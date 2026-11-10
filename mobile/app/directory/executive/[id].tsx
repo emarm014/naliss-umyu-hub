@@ -12,6 +12,7 @@ import { format } from 'date-fns';
 import { getCleanAvatarUrl } from '../../../src/utils';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UniversalViewer } from '../../../src/components/common/UniversalViewer';
+import { SafeBottomSheet } from '../../../src/components/common/overlays';
 import { CachedImage } from '../../../src/components/common/CachedImage';
 import { useOfflineImage } from '../../../src/hooks/useOfflineImage';
 import { supabase } from '../../../src/api/supabase/client';
@@ -23,6 +24,7 @@ export default function ExecutiveDetailScreen() {
   const [exec, setExec] = useState<any>(null);
   const [photos, setPhotos] = useState<any[]>([]);
   const [viewerVisible, setViewerVisible] = useState(false);
+  const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [activeViewerItem, setActiveViewerItem] = useState<{ uri: string; name: string; remoteUrl?: string } | null>(null);
   const insets = useSafeAreaInsets();
 
@@ -33,6 +35,20 @@ export default function ExecutiveDetailScreen() {
 
   useEffect(() => {
     if (!id || typeof id !== 'string') return;
+
+    // Fetch full executive record with linked student user profile
+    (supabase as any)
+      .from('executives')
+      .select('*, user:users(id, full_name, username, avatar_url, level, registration_number, email, phone, bio, biography, hobbies, motivation, role)')
+      .eq('id', id)
+      .maybeSingle()
+      .then(({ data, error }: any) => {
+        if (data && !error) {
+          setExec((prev: any) => ({ ...(prev || {}), ...data }));
+        }
+      });
+
+    // Fetch executive gallery photos
     (supabase as any)
       .from('photos')
       .select('*')
@@ -64,13 +80,32 @@ export default function ExecutiveDetailScreen() {
   const name = exec.full_name || exec.user?.full_name || 'Executive';
   const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
   const isActive = exec.is_active !== false;
+  const linkedUserId = exec?.user_id || exec?.user?.id || null;
 
   const formatDate = (d: string | null) => {
     if (!d) return null;
     try { return format(new Date(d), 'MMM yyyy'); } catch { return null; }
   };
 
+  const handleAvatarPress = () => {
+    if (linkedUserId) {
+      setActionSheetVisible(true);
+    } else {
+      openMainAvatarViewer();
+    }
+  };
+
+  const openAcademicProfile = () => {
+    setActionSheetVisible(false);
+    if (!linkedUserId) return;
+    router.push({
+      pathname: '/chat/user_profile' as any,
+      params: { id: linkedUserId },
+    });
+  };
+
   const openMainAvatarViewer = () => {
+    setActionSheetVisible(false);
     const fallbackDicebear = `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(name || 'user')}&size=200`;
     setActiveViewerItem({
       uri: cachedAvatarUri || cleanAvatar || fallbackDicebear,
@@ -106,7 +141,9 @@ export default function ExecutiveDetailScreen() {
           avatarUrl={avatarUrl}
           initials={initials}
           isActive={isActive}
-          onPressAvatar={openMainAvatarViewer}
+          onPressAvatar={handleAvatarPress}
+          linkedUserId={linkedUserId}
+          onOpenAcademicProfile={openAcademicProfile}
         />
 
         <Text style={styles.heroName}>{name}</Text>
@@ -274,6 +311,59 @@ export default function ExecutiveDetailScreen() {
         showShare={false}
         isHalfScreen={true}
       />
+
+      {/* Official Profile Options Modal (View Photo vs View Academic Profile) */}
+      <SafeBottomSheet
+        visible={actionSheetVisible}
+        onClose={() => setActionSheetVisible(false)}
+        contentStyle={styles.actionModalContent}
+      >
+        <View style={styles.actionModalHeader}>
+          <View style={styles.actionModalHandle} />
+          <Text style={styles.actionModalTitle}>Executive Profile Options</Text>
+          <Text style={styles.actionModalSubtitle}>{name} • {exec.position}</Text>
+        </View>
+
+        <View style={styles.actionModalBody}>
+          <TouchableOpacity
+            style={styles.actionModalBtn}
+            onPress={openMainAvatarViewer}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.actionModalIconBg, { backgroundColor: '#fef3c7' }]}>
+              <Ionicons name="image-outline" size={20} color="#b45309" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionModalBtnTitle}>View Portrait Photo</Text>
+              <Text style={styles.actionModalBtnSub}>Preview full-size official portrait image</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionModalBtn, styles.actionModalBtnHighlight]}
+            onPress={openAcademicProfile}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.actionModalIconBg, { backgroundColor: '#dcfce7' }]}>
+              <Ionicons name="school-outline" size={20} color="#166534" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.actionModalBtnTitle, { color: '#166534' }]}>View Academic Profile</Text>
+              <Text style={styles.actionModalBtnSub}>View student level, reg number, motivation, and bio</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#166534" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionModalCancelBtn}
+            onPress={() => setActionSheetVisible(false)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionModalCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeBottomSheet>
     </View>
   );
 }
@@ -304,12 +394,14 @@ function GalleryCard({ photo, fallbackName, onPress }: { photo: any; fallbackNam
   );
 }
 
-function ExecutiveHeroAvatar({ entityId, avatarUrl, initials, isActive, onPressAvatar }: {
+function ExecutiveHeroAvatar({ entityId, avatarUrl, initials, isActive, onPressAvatar, linkedUserId, onOpenAcademicProfile }: {
   entityId: string;
   avatarUrl: string | null;
   initials: string;
   isActive: boolean;
   onPressAvatar: () => void;
+  linkedUserId?: string | null;
+  onOpenAcademicProfile?: () => void;
 }) {
   const cleanUrl = getCleanAvatarUrl(avatarUrl);
   const optimizedUrl = cleanUrl ? getOptimizedCloudinaryUrl(cleanUrl, 300, 300) : null;
@@ -321,7 +413,11 @@ function ExecutiveHeroAvatar({ entityId, avatarUrl, initials, isActive, onPressA
         onPress={onPressAvatar}
         activeOpacity={0.8}
       >
-          <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="executive" style={styles.avatar} fallbackInitials={initials} />
+        <CachedImage entityId={entityId} remoteUrl={optimizedUrl} assetType="executive" style={styles.avatar} fallbackInitials={initials} />
+        {/* Tap indicator icon */}
+        <View style={styles.avatarTapBadge}>
+          <Ionicons name="ellipsis-horizontal" size={12} color="#fff" />
+        </View>
       </TouchableOpacity>
 
       {/* Status badge */}
@@ -329,6 +425,19 @@ function ExecutiveHeroAvatar({ entityId, avatarUrl, initials, isActive, onPressA
         <View style={[styles.statusDot, { backgroundColor: isActive ? '#4ade80' : '#94a3b8' }]} />
         <Text style={styles.statusText}>{isActive ? 'CURRENT OFFICIAL' : 'FORMER OFFICIAL'}</Text>
       </View>
+
+      {/* View Academic Profile Button beneath the Avatar Circle */}
+      {linkedUserId && onOpenAcademicProfile ? (
+        <TouchableOpacity
+          style={styles.heroAcademicBtn}
+          onPress={onOpenAcademicProfile}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="school" size={14} color="#78350f" />
+          <Text style={styles.heroAcademicBtnText}>View Academic Profile</Text>
+          <Ionicons name="chevron-forward" size={13} color="#78350f" />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -442,4 +551,127 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#fef3c7', marginVertical: 12 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   infoText: { flex: 1, fontSize: 13, fontFamily: 'Inter-Regular', color: '#334155' },
+
+  avatarTapBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.7)',
+  },
+  heroAcademicBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fffbeb',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    marginTop: 10,
+    borderWidth: 1.5,
+    borderColor: '#fde68a',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  heroAcademicBtnText: {
+    fontSize: 11,
+    fontFamily: 'Inter-Bold',
+    color: '#78350f',
+    letterSpacing: 0.3,
+  },
+
+  // Action Sheet Modal
+  actionModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+  },
+  actionModalHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  actionModalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#cbd5e1',
+    marginBottom: 12,
+  },
+  actionModalTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#0f172a',
+    textAlign: 'center',
+  },
+  actionModalSubtitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  actionModalBody: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 10,
+  },
+  actionModalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 14,
+  },
+  actionModalBtnHighlight: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+  },
+  actionModalIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionModalBtnTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Bold',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  actionModalBtnSub: {
+    fontSize: 11,
+    fontFamily: 'Inter-Regular',
+    color: '#64748b',
+  },
+  actionModalCancelBtn: {
+    marginTop: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
+  },
+  actionModalCancelText: {
+    fontSize: 13,
+    fontFamily: 'Inter-Bold',
+    color: '#64748b',
+  },
 });

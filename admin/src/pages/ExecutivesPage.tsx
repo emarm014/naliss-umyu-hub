@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Executive } from '../types';
 import { useAdminDataStore } from '../store/adminData.store';
 import { deleteFromCloudinary } from '../lib/cloudinaryDelete';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ErrorState from '../components/ui/ErrorState';
-import { Crown, Search, Edit, Trash2, Linkedin, Twitter, Facebook, Plus, Users, Activity, ShieldAlert, FileText, Play, Eye, X, Loader2, User as UserIcon, Instagram, ImageIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Crown, Search, Edit, Trash2, Linkedin, Twitter, Facebook, Plus, Users, Activity, ShieldAlert, FileText, Play, Eye, X, Loader2, User as UserIcon, Instagram, ImageIcon, ChevronLeft, ChevronRight, CheckCircle, AlertTriangle } from 'lucide-react';
 import FileUpload from '../lib/FileUpload';
 import { getValidUrl, getVideoThumbnail } from '../utils/media';
 import { useAuthStore } from '../store/auth.store';
@@ -41,8 +41,9 @@ export default function ExecutivesPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [customPosition, setCustomPosition] = useState('');
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
 
-  const { executives: allExecutives, isSyncing, error: storeError, syncAll, removeExecutive, refreshAnalytics } = useAdminDataStore();
+  const { executives: allExecutives, students, isSyncing, error: storeError, syncAll, removeExecutive, refreshAnalytics } = useAdminDataStore();
 
   useEffect(() => {
     syncAll();
@@ -78,6 +79,7 @@ export default function ExecutivesPage() {
   );
 
   const [formData, setFormData] = useState({
+    user_id: '',
     full_name: '',
     position: 'president',
     email: '',
@@ -94,6 +96,61 @@ export default function ExecutivesPage() {
     instagram: '',
     facebook: '',
   });
+
+  // Selected student resolution (from store or linked record)
+  const selectedStudent = useMemo(() => {
+    if (!formData.user_id) return null;
+    return students.find(s => s.id === formData.user_id) || (selectedExecutive?.user_id === formData.user_id ? (selectedExecutive as any).linked_user || {
+      id: formData.user_id,
+      full_name: formData.full_name,
+      username: '',
+      avatar_url: formData.avatar_url,
+      level: '',
+      email: formData.email,
+    } : null);
+  }, [formData.user_id, students, selectedExecutive, formData.full_name, formData.avatar_url, formData.email]);
+
+  // Filter registered students for the selection dropdown
+  const filteredStudents = useMemo(() => {
+    const q = studentSearchQuery.trim().toLowerCase();
+    if (!q) return students.slice(0, 30);
+    return students.filter(s => {
+      const name = (s.full_name || '').toLowerCase();
+      const username = (s.username || '').toLowerCase();
+      const reg = (s.registration_number || '').toLowerCase();
+      const level = String(s.level || '').toLowerCase();
+      return name.includes(q) || username.includes(q) || reg.includes(q) || level.includes(q);
+    }).slice(0, 30);
+  }, [students, studentSearchQuery]);
+
+  const handleSelectStudent = (student: any) => {
+    setFormData(prev => ({
+      ...prev,
+      user_id: student.id,
+      full_name: student.full_name || prev.full_name,
+      email: student.email || prev.email,
+      phone: student.phone || prev.phone,
+      avatar_url: student.avatar_url || prev.avatar_url,
+      bio: student.bio || student.biography || prev.bio,
+      department_id: student.department_id || prev.department_id,
+    }));
+    setStudentSearchQuery('');
+    setFormError(null);
+  };
+
+  const handleDeselectStudent = () => {
+    setFormData(prev => ({
+      ...prev,
+      user_id: '',
+      full_name: '',
+      email: '',
+      phone: '',
+      avatar_url: '',
+      bio: '',
+      department_id: '',
+    }));
+    setStudentSearchQuery('');
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -159,7 +216,10 @@ export default function ExecutivesPage() {
 
   const openCreateModal = () => {
     setCustomPosition('');
+    setStudentSearchQuery('');
+    setFormError(null);
     setFormData({
+      user_id: '',
       full_name: '', position: 'president', email: '', phone: '', avatar_url: '', bio: '',
       department_id: '', academic_session: '2026/2027', start_date: '', end_date: '',
       is_current: true, linkedin: '', twitter: '', instagram: '', facebook: '',
@@ -170,7 +230,10 @@ export default function ExecutivesPage() {
   const openEditModal = (executive: Executive) => {
     setSelectedExecutive(executive);
     const isStandard = Object.keys(positionLabels).includes(executive.position_code || '');
+    setStudentSearchQuery('');
+    setFormError(null);
     setFormData({
+      user_id: executive.user_id || '',
       full_name: executive.full_name || '',
       position: isStandard ? (executive.position_code || 'president') : 'other',
       email: executive.email || '',
@@ -238,7 +301,15 @@ export default function ExecutivesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Enforce that only registered students can be added as executives
+    if (!formData.user_id) {
+      setFormError('Please select a registered student. Only registered students can be appointed as department executives.');
+      return;
+    }
+
     setIsSubmitting(true);
+    setFormError(null);
     try {
       const social_links: Record<string, string> = {
         linkedin: formData.linkedin || '',
@@ -248,6 +319,7 @@ export default function ExecutivesPage() {
       };
 
       const executiveData = {
+        user_id: formData.user_id,
         full_name: formData.full_name || null,
         position: formData.position === 'other' ? customPosition : positionLabels[formData.position] || formData.position,
         position_code: formData.position === 'other' ? customPosition.toLowerCase().replace(/\s+/g, '_') : formData.position,
@@ -264,11 +336,11 @@ export default function ExecutivesPage() {
       };
 
       if (showModal === 'create') {
-        const { data: inserted, error } = await supabase.from('executives').insert(executiveData).select('*').single();
+        const { data: inserted, error } = await supabase.from('executives').insert(executiveData).select('*, linked_user:users(id, full_name, username, avatar_url, level, registration_number, email, phone, bio, department_id)').single();
         if (error) throw error;
         if (inserted) useAdminDataStore.getState().addExecutive(inserted as any);
       } else if (showModal === 'edit' && selectedExecutive) {
-        const { data: updated, error } = await supabase.from('executives').update(executiveData).eq('id', selectedExecutive.id).select('*').single();
+        const { data: updated, error } = await supabase.from('executives').update(executiveData).eq('id', selectedExecutive.id).select('*, linked_user:users(id, full_name, username, avatar_url, level, registration_number, email, phone, bio, department_id)').single();
         if (error) throw error;
         if (updated) useAdminDataStore.getState().updateExecutive(updated as any);
       }
@@ -410,8 +482,9 @@ export default function ExecutivesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {paginatedExecutives.map((executive) => {
-            const displayName = executive.full_name || executive.linked_user?.full_name || 'NALISS Executive';
-            const displayAvatar = executive.avatar_url || executive.linked_user?.avatar_url;
+            const linkedStudent = students.find(s => s.id === executive.user_id) || executive.linked_user;
+            const displayName = executive.full_name || linkedStudent?.full_name || 'NALISS Executive';
+            const displayAvatar = executive.avatar_url || linkedStudent?.avatar_url;
             return (
               <div key={executive.id} className={`glass-card relative overflow-hidden group transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${!executive.is_current ? 'opacity-70 grayscale-[30%]' : ''}`}>
                 <div className={`absolute top-0 right-0 h-1 w-full ${executive.is_current ? 'bg-primary-500' : 'bg-amber-500'}`} />
@@ -430,6 +503,24 @@ export default function ExecutivesPage() {
                         {executive.position}
                       </div>
                       <p className="text-xs font-bold text-slate-400 mt-2">{executive.academic_session} SESSION</p>
+
+                      {/* Linked Student Indicator */}
+                      {linkedStudent ? (
+                        <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg w-fit border border-emerald-200">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="truncate">@{linkedStudent.username || 'student'} • {linkedStudent.level || '—'} Lvl</span>
+                        </div>
+                      ) : executive.user_id ? (
+                        <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg w-fit border border-emerald-200">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>Linked Student</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg w-fit border border-amber-200">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Unlinked Legacy</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -506,6 +597,114 @@ export default function ExecutivesPage() {
               <button onClick={() => setShowModal(null)} className="p-2 bg-white text-slate-400 hover:text-slate-600 rounded-xl shadow-sm border border-slate-200"><X className="w-5 h-5" /></button>
             </div>
             <form id="exec-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Mandatory Registered Student Selection */}
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-widest">
+                      Select Registered Student <span className="text-rose-500">*</span>
+                    </label>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Only active registered students can be appointed as department executives.
+                    </p>
+                  </div>
+                  {selectedStudent && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-lg uppercase tracking-wider">
+                      <CheckCircle className="w-3 h-3 text-emerald-600" /> Linked
+                    </span>
+                  )}
+                </div>
+
+                {selectedStudent ? (
+                  <div className="flex items-center gap-4 p-4 bg-white rounded-xl border border-emerald-200 shadow-sm">
+                    {selectedStudent.avatar_url ? (
+                      <img src={selectedStudent.avatar_url} alt="" className="w-12 h-12 rounded-xl object-cover border border-slate-100" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 font-black text-lg">
+                        {(selectedStudent.full_name || 'S').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-slate-900 truncate">{selectedStudent.full_name}</p>
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold">
+                          {selectedStudent.level || '—'} Level
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
+                        @{selectedStudent.username || 'student'} {selectedStudent.registration_number ? `• Reg: ${selectedStudent.registration_number}` : ''} {selectedStudent.email ? `• ${selectedStudent.email}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDeselectStudent}
+                      className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-slate-200"
+                    >
+                      Change Student
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={studentSearchQuery}
+                        onChange={(e) => setStudentSearchQuery(e.target.value)}
+                        placeholder="Search student by name, reg number, username, or level..."
+                        className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 font-medium text-slate-800 text-sm shadow-sm"
+                      />
+                    </div>
+
+                    {students.length === 0 ? (
+                      <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 text-xs text-amber-800">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>No registered students found. Students must register on the mobile app before they can be assigned as executives.</span>
+                      </div>
+                    ) : (
+                      <div className="mt-2 max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg divide-y divide-slate-100">
+                        {filteredStudents.length > 0 ? (
+                          filteredStudents.map((student) => (
+                            <button
+                              key={student.id}
+                              type="button"
+                              onClick={() => handleSelectStudent(student)}
+                              className="w-full p-3 flex items-center gap-3 hover:bg-slate-50 transition-colors text-left"
+                            >
+                              {student.avatar_url ? (
+                                <img src={student.avatar_url} alt="" className="w-9 h-9 rounded-lg object-cover border border-slate-100 shrink-0" />
+                              ) : (
+                                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0">
+                                  {(student.full_name || 'S').charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-sm text-slate-900 truncate">{student.full_name}</span>
+                                  <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold shrink-0">
+                                    {student.level || '—'} Lvl
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-400 truncate">
+                                  @{student.username || 'student'} {student.registration_number ? `• ${student.registration_number}` : ''}
+                                </p>
+                              </div>
+                              <span className="px-2.5 py-1 text-xs font-bold text-primary-600 bg-primary-50 rounded-lg shrink-0">
+                                Select
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="p-4 text-center text-xs text-slate-400">
+                            No registered students found matching &quot;{studentSearchQuery}&quot;
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-6">
                 <div className="col-span-2 bg-slate-50/50 p-5 rounded-xl border border-slate-100">
                   <h3 className="text-sm font-bold text-slate-900 mb-4 tracking-wide uppercase text-[10px] tracking-[0.2em] text-primary-900">Profile Photo</h3>
@@ -525,10 +724,25 @@ export default function ExecutivesPage() {
                 </div>
                 <div><label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Session</label><input type="text" value={formData.academic_session} onChange={(e) => setFormData({ ...formData, academic_session: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border rounded-xl" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Email Address</label><input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border rounded-xl" /></div>
+                <div><label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Phone Number</label><input type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g. +234..." className="w-full px-4 py-3 bg-slate-50 border rounded-xl" /></div>
 
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Biography / Introduction</label>
-                  <div><label htmlFor="is_current" className="text-sm font-bold text-slate-900 cursor-pointer">Current Administration</label><p className="text-xs font-medium text-slate-500">Uncheck to archive this executive into legacy records.</p></div>
+                  <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={3} placeholder="Brief bio of the executive..." className="w-full px-4 py-3 bg-slate-50 border rounded-xl font-medium resize-none" />
+                </div>
+
+                <div className="col-span-2 flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <input
+                    type="checkbox"
+                    id="is_current"
+                    checked={formData.is_current}
+                    onChange={(e) => setFormData({ ...formData, is_current: e.target.checked })}
+                    className="w-5 h-5 text-primary-600 rounded border-slate-300 focus:ring-primary-500"
+                  />
+                  <div>
+                    <label htmlFor="is_current" className="text-sm font-bold text-slate-900 cursor-pointer">Current Administration</label>
+                    <p className="text-xs font-medium text-slate-500">Uncheck to archive this executive into legacy records.</p>
+                  </div>
                 </div>
               </div>
             </form>
@@ -544,7 +758,7 @@ export default function ExecutivesPage() {
                 <button
                   type="submit"
                   form="exec-form"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !formData.user_id}
                   className="btn-institutional px-8 py-2.5 min-w-[180px] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (

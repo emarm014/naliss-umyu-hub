@@ -6,10 +6,28 @@ import { supabase } from '../api/supabase/client';
 import { useMutationQueueStore } from './mutationQueue.store';
 import { normalizeError } from '../utils/sentry';
 
-export const updateDeviceBadge = (notifications: any[]) => {
+export const updateDeviceBadge = (notifications?: any[]) => {
   try {
-    const unreadCount = notifications.filter((n) => !n.isRead).length;
-    Notifications.setBadgeCountAsync(unreadCount).catch(() => {});
+    const notifList = Array.isArray(notifications)
+      ? notifications
+      : useNotificationStore.getState().notifications || [];
+    const unreadNotifs = notifList.filter((n) => !n.isRead && n.type !== 'message' && n.type !== 'chat').length;
+
+    let unreadChatMessages = 0;
+    try {
+      const { useGroupStore } = require('./group.store');
+      const groupState = useGroupStore.getState();
+      if (!groupState.isBadgeCleared && Array.isArray(groupState.groups)) {
+        unreadChatMessages = groupState.groups.reduce(
+          (sum: number, g: any) => sum + (Number(g?.unread_count) || 0),
+          0
+        );
+      }
+    } catch {
+      // ignore if groupStore not initialized yet
+    }
+
+    Notifications.setBadgeCountAsync(unreadNotifs + unreadChatMessages).catch(() => {});
   } catch {
     // silent
   }
@@ -86,6 +104,7 @@ export const useNotificationStore = create<NotificationState>()(
       setHasHydrated: (hasHydrated) => set({ _hasHydrated: hasHydrated }),
 
       addNotification: (notif) => {
+        if (notif.type === 'message' || notif.type === 'chat') return;
         set((state) => {
           const exists = state.notifications.some((n) => n.id === notif.id);
           let newNotifs = [];
@@ -108,8 +127,9 @@ export const useNotificationStore = create<NotificationState>()(
 
       addNotifications: (newNotifs) => {
         set((state) => {
-          const current = [...state.notifications];
+          const current = state.notifications.filter((n) => n.type !== 'message' && n.type !== 'chat');
           newNotifs.forEach((notif) => {
+            if (notif.type === 'message' || notif.type === 'chat') return;
             const idx = current.findIndex((n) => n.id === notif.id);
             if (idx >= 0) {
               current[idx] = {

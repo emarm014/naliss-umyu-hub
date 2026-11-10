@@ -1,28 +1,33 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-// @ts-ignore
-import * as Sentry from "https://esm.sh/@sentry/deno";
 
 declare const Deno: any;
-
-const SENTRY_DSN = Deno.env.get("SENTRY_DSN") || Deno.env.get("VITE_SENTRY_DSN") || "";
-if (SENTRY_DSN) {
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    tracesSampleRate: 1.0,
-  });
-}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const INTERNAL_SECRET = Deno.env.get("PUSH_INTERNAL_SECRET") ?? "";
 
+const EXPO_TOKEN_REGEX = /^Expo(nent)?PushToken\[.+\]$/;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-secret, baggage, sentry-trace",
 };
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const enc = new TextEncoder();
+  const aBytes = enc.encode(a);
+  const bBytes = enc.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
+}
 
 async function generateHash(token: string, type: string, entityId: string): Promise<string> {
   const input = `${token}:${type}:${entityId}`;
@@ -43,9 +48,9 @@ Deno.serve(async (req: Request) => {
   }
 
   // Accept either internal secret OR valid Supabase JWT
-  const callerSecret = req.headers.get("x-internal-secret");
+  const callerSecret = req.headers.get("x-internal-secret") ?? "";
   const authHeader = req.headers.get("Authorization") ?? "";
-  const isInternalCall = INTERNAL_SECRET && callerSecret === INTERNAL_SECRET;
+  const isInternalCall = Boolean(INTERNAL_SECRET) && timingSafeEqualStr(callerSecret, INTERNAL_SECRET);
   const hasJwt = authHeader.startsWith("Bearer ");
 
   if (!isInternalCall && !hasJwt) {
@@ -72,7 +77,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { targetUserIds, title, body, data } = await req.json();
+    const bodyJson = await req.json();
+    const { targetUserIds, targetTokens, title, body, data } = bodyJson ?? {};
 
     if (!targetUserIds || !Array.isArray(targetUserIds) || targetUserIds.length === 0) {
       return new Response(JSON.stringify({ success: false, error: "Invalid payload: targetUserIds must be a non-empty array" }), {
@@ -88,89 +94,235 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const normalizedTargetUserIds = Array.from(
+      new Set(targetUserIds.map((id: any) => String(id || "").trim()).filter(Boolean))
+    );
+
+    if (normalizedTargetUserIds.length === 0) {
+      return new Response(JSON.stringify({ success: false, error: "No valid targetUserIds provided" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const notifType = String(data?.type ?? "").trim();
 
     // Authorization & Security Checks for Non-Internal (Authenticated User) Requests
     if (!isInternalCall && senderUser) {
       // 1. Sender Active Status & Role Check
-      const { data: senderProfile } = await supabase
+      const { data: senderProfile, error: profileErr } = await supabase
         .from("users")
         .select("status, role")
         .eq("id", senderUser.id)
         .single();
 
-      if (!senderProfile || senderProfile.status !== "active") {
+      if (profileErr || !senderProfile || senderProfile.status !== "active") {
         return new Response(JSON.stringify({ success: false, error: "Forbidden: Account is inactive or restricted" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const notifType = data?.type ?? "";
+      const isAdminOrMod = ["super_admin", "system_owner", "moderator"].includes(senderProfile.role);
 
-      // 2. Chat Message Authorization: Sender MUST belong to target conversation
-      if (notifType === "message" && data?.group_id) {
-        const { data: member } = await supabase
+      // 2. Strict notification type & recipient authorization
+      const adminOnlyTypes = new Set([
+        "announcement",
+        "event",
+        "material",
+        "resource",
+        "quiz",
+        "assignment",
+        "security",
+        "system",
+        "featured_student",
+        "silent_sync",
+        "application",
+      ]);
+
+      const studentAllowedTypes = new Set([
+        "message",
+        "fyb_congratulation",
+        "fyb_appreciation",
+      ]);
+
+      if (!notifType || (!adminOnlyTypes.has(notifType) && !studentAllowedTypes.has(notifType))) {
+        return new Response(JSON.stringify({ success: false, error: "Forbidden: Unsupported or missing notification type" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (adminOnlyTypes.has(notifType) && !isAdminOrMod) {
+        return new Response(JSON.stringify({ success: false, error: "Forbidden: Elevated privileges required for this notification type" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (notifType === "message") {
+        const groupId = String(data?.group_id || "").trim();
+        if (!groupId) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: group_id is required for message notifications" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: senderMember, error: senderMemberErr } = await supabase
           .from("group_members")
           .select("user_id")
-          .eq("group_id", data.group_id)
+          .eq("group_id", groupId)
           .eq("user_id", senderUser.id)
-          .single();
+          .maybeSingle();
 
-        if (!member) {
+        if (senderMemberErr || !senderMember) {
           return new Response(JSON.stringify({ success: false, error: "Forbidden: Sender is not a member of this conversation" }), {
             status: 403,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-      }
 
-      // 3. Broadcast Authorization: Announcements and events require elevated privileges
-      if (["announcement", "event"].includes(notifType)) {
-        const isAdminOrMod = ["super_admin", "system_owner", "moderator"].includes(senderProfile.role);
-        if (!isAdminOrMod) {
-          return new Response(JSON.stringify({ success: false, error: "Forbidden: Elevated privileges required to broadcast notifications" }), {
+        // Verify all recipients belong to the same conversation
+        const { data: groupRecipients, error: groupRecipErr } = await supabase
+          .from("group_members")
+          .select("user_id")
+          .eq("group_id", groupId)
+          .in("user_id", normalizedTargetUserIds);
+
+        if (groupRecipErr) {
+          return new Response(JSON.stringify({ success: false, error: "Failed to verify conversation recipients" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const validMemberSet = new Set((groupRecipients || []).map((r: any) => String(r.user_id)));
+        const hasUnauthorizedRecipient = normalizedTargetUserIds.some(uid => !validMemberSet.has(uid));
+        if (hasUnauthorizedRecipient) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Target users must belong to the conversation" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } else if (notifType === "fyb_congratulation" && !isAdminOrMod) {
+        const featuredStudentId = String(data?.featured_student_id || "").trim();
+        if (normalizedTargetUserIds.length !== 1 || !featuredStudentId) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Invalid congratulation notification target" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: featuredRow, error: featuredErr } = await supabase
+          .from("featured_students")
+          .select("id, user_id")
+          .eq("id", featuredStudentId)
+          .eq("user_id", normalizedTargetUserIds[0])
+          .maybeSingle();
+
+        if (featuredErr || !featuredRow) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Target user is not the featured student" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } else if (notifType === "fyb_appreciation" && !isAdminOrMod) {
+        if (normalizedTargetUserIds.length !== 1) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Appreciation can only target one user at a time" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: myFeatured, error: myFeatErr } = await supabase
+          .from("featured_students")
+          .select("id")
+          .eq("user_id", senderUser.id);
+
+        const featuredIds = (myFeatured || []).map((f: any) => f.id);
+        if (myFeatErr || featuredIds.length === 0) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Only a featured student can send appreciation" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: congratsRow, error: congratsErr } = await supabase
+          .from("student_congratulations")
+          .select("id")
+          .in("featured_student_id", featuredIds)
+          .eq("user_id", normalizedTargetUserIds[0])
+          .limit(1)
+          .maybeSingle();
+
+        if (congratsErr || !congratsRow) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Target user has not congratulated you" }), {
             status: 403,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
 
-      // 4. Rate Limiting: Max 30 push calls per 60s per sender
+      // 3. Rate Limiting: Max 30 push calls per 60s per sender (tracked via push_send_audit)
       const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
-      const { count: recentCount } = await supabase
-        .from("notification_telemetry")
+      const { count: recentCount, error: rateErr } = await supabase
+        .from("push_send_audit")
         .select("*", { count: "exact", head: true })
-        .eq("user_id", senderUser.id)
+        .eq("sender_id", senderUser.id)
         .gte("created_at", oneMinuteAgo);
 
-      if (recentCount && recentCount > 30) {
+      if (rateErr) {
+        console.error("[Push] Rate limit check error:", rateErr.message);
+      } else if (recentCount !== null && recentCount >= 30) {
         return new Response(JSON.stringify({ success: false, error: "Rate limit exceeded: Please wait before sending more notifications" }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
+      const { error: auditInsertErr } = await supabase
+        .from("push_send_audit")
+        .insert({
+          sender_id: senderUser.id,
+          notif_type: notifType,
+          recipient_count: normalizedTargetUserIds.length,
+        });
+
+      if (auditInsertErr) {
+        console.error("[Push] Audit insert error:", auditInsertErr.message);
+      }
     }
 
-    // Fetch push tokens + ALL notification preferences from user_push_tokens + users (optimized join)
-    const { data: userTokens, error } = await supabase
+    // Fetch push tokens + ALL notification preferences from user_push_tokens + users
+    let tokenQuery = supabase
       .from("user_push_tokens")
       .select("user_id, push_token, users!inner(status, notif_enabled, notif_messages, notif_announcements, notif_events, notif_materials, notif_quizzes, notif_assignments, notif_security, notif_system, privacy_mode, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, muted_groups)")
-      .in("user_id", targetUserIds)
+      .in("user_id", normalizedTargetUserIds)
       .eq("users.status", "active");
 
-    if (error) throw error;
+    // When retrying from notification-worker, restrict to the failed tokens if specified
+    if (isInternalCall && Array.isArray(targetTokens) && targetTokens.length > 0) {
+      tokenQuery = tokenQuery.in("push_token", targetTokens);
+    }
+
+    const { data: userTokens, error: tokenFetchErr } = await tokenQuery;
+
+    if (tokenFetchErr) throw tokenFetchErr;
     if (!userTokens || userTokens.length === 0) {
-      return new Response(JSON.stringify({ success: true, message: "No active push tokens found" }), {
+      return new Response(JSON.stringify({ success: true, sent: 0, message: "No active push tokens found" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Filter by each user's individual notification preferences
-    const notifType = data?.type ?? "";
+    // Filter by valid Expo token format & each user's individual notification preferences
     const targetGroupId = data?.group_id || data?.id || "";
 
     const filteredTokens = userTokens.filter((ut: any) => {
+      if (!ut.push_token || !EXPO_TOKEN_REGEX.test(String(ut.push_token))) {
+        return false;
+      }
       const u = ut.users;
       if (!u) return false;
 
@@ -181,7 +333,7 @@ Deno.serve(async (req: Request) => {
       if (notifType === "message" && u.notif_messages === false) return false;
       if (notifType === "announcement" && u.notif_announcements === false) return false;
       if (notifType === "event" && u.notif_events === false) return false;
-      if (notifType === "material" && u.notif_materials === false) return false;
+      if ((notifType === "material" || notifType === "resource") && u.notif_materials === false) return false;
       if (notifType === "quiz" && u.notif_quizzes === false) return false;
       if (notifType === "assignment" && u.notif_assignments === false) return false;
       if (notifType === "security" && u.notif_security === false) return false;
@@ -198,18 +350,18 @@ Deno.serve(async (req: Request) => {
     });
 
     if (filteredTokens.length === 0) {
-      return new Response(JSON.stringify({ success: true, message: "All users opted out" }), {
+      return new Response(JSON.stringify({ success: true, sent: 0, message: "All users opted out or had no valid Expo tokens" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Duplicate protection using deterministic hash
-    const uniqueTokens = [];
-    const processedHashes = new Set();
+    // Duplicate protection using deterministic hash per device token
+    const uniqueTokens: any[] = [];
+    const processedHashes = new Set<string>();
     const entityId = data?.id || data?.group_id || data?.pool_id || "general";
 
     for (const ut of filteredTokens) {
-      const hash = await generateHash(ut.push_token, notifType, entityId);
+      const hash = await generateHash(ut.push_token, notifType, String(entityId));
       if (!processedHashes.has(hash)) {
         processedHashes.add(hash);
         uniqueTokens.push(ut);
@@ -217,22 +369,28 @@ Deno.serve(async (req: Request) => {
     }
 
     // Keep one ID for the push ticket, history row, and app-side deduplication.
-    // It must be created before constructing the Expo payload below.
-    const notifId = data?.id || data?.notification_id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const notifId = String(
+      data?.notification_id ||
+      data?.id ||
+      `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+    );
 
-    // Map custom priorities to Expo options
+    // Map custom priorities & high-importance Android channels
     const payloadPriority = data?.priority ?? "high";
     let expoPriority: "default" | "normal" | "high" = "high";
     let expoSound: string | null = "default";
-    
-    // Default to general, override based on type
+
     let expoChannelId = "general";
     if (notifType === "message") {
       expoChannelId = "messages_v2";
     } else if (notifType === "announcement") {
       expoChannelId = "announcements_v2";
-    } else if (notifType === "fyb_congratulation" || notifType === "featured_student") {
+    } else if (notifType === "event" || notifType === "quiz" || notifType === "assignment") {
+      expoChannelId = "events_v1";
+    } else if (notifType === "fyb_congratulation" || notifType === "fyb_appreciation" || notifType === "featured_student") {
       expoChannelId = "featured";
+    } else if (notifType === "security") {
+      expoChannelId = "critical_security";
     }
 
     let isSilent = false;
@@ -246,7 +404,7 @@ Deno.serve(async (req: Request) => {
       expoPriority = "normal";
       expoSound = null;
       expoChannelId = "low_priority";
-    } else if (payloadPriority === "normal") {
+    } else if (payloadPriority === "normal" && expoChannelId === "general") {
       expoPriority = "default";
     }
 
@@ -265,7 +423,7 @@ Deno.serve(async (req: Request) => {
     let threadId = data?.threadId ?? null;
     if (!threadId && notifType) {
       if (notifType === "message") {
-        threadId = `chat_${data.group_id || "general"}`;
+        threadId = `chat_${data?.group_id || "general"}`;
       } else {
         threadId = `${notifType}s`;
       }
@@ -277,32 +435,48 @@ Deno.serve(async (req: Request) => {
       collapseKey = `${notifType}_${entityId}`;
     }
 
-    // Rich Media (attachments)
-    const imageUrl = data?.cover_image_url || data?.file_url || data?.image_url || data?.avatar_url || null;
+    // Rich Media (Android BigPicture via richContent.image + iOS via attachments)
+    const isLikelyImageUrl = (url: unknown): url is string => {
+      if (typeof url !== "string" || !url.startsWith("http")) return false;
+      const lower = url.split("?")[0].toLowerCase();
+      if (lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx") || lower.endsWith(".ppt") || lower.endsWith(".pptx") || lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".zip") || lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".mp4") || lower.endsWith(".mov")) {
+        return false;
+      }
+      return true;
+    };
+
+    const rawCandidateUrl =
+      data?.cover_image_url ||
+      data?.image_url ||
+      (isLikelyImageUrl(data?.file_url) ? data?.file_url : null) ||
+      data?.avatar_url ||
+      null;
+    const imageUrl = isLikelyImageUrl(rawCandidateUrl) ? rawCandidateUrl : null;
     const attachments = imageUrl ? [{ url: imageUrl }] : undefined;
     const mutableContent = attachments ? true : undefined;
 
-    // Fetch current unread count per target user from notification_history to calculate dynamic badge
+    // Fetch current unread count per target user via aggregated RPC
     const userUnreadCounts = new Map<string, number>();
+    const uniqueUserIds = Array.from(new Set(uniqueTokens.map((ut) => String(ut.user_id))));
     try {
-      const { data: unreadRows } = await supabase
-        .from("notification_history")
-        .select("user_id")
-        .in("user_id", targetUserIds)
-        .eq("is_read", false);
-
-      if (unreadRows && Array.isArray(unreadRows)) {
+      const { data: unreadRows, error: unreadErr } = await supabase.rpc(
+        "get_unread_notification_counts",
+        { p_user_ids: uniqueUserIds }
+      );
+      if (unreadErr) {
+        console.warn("[Push] get_unread_notification_counts fallback:", unreadErr.message);
+      } else if (Array.isArray(unreadRows)) {
         for (const row of unreadRows) {
           if (row.user_id) {
-            userUnreadCounts.set(row.user_id, (userUnreadCounts.get(row.user_id) || 0) + 1);
+            userUnreadCounts.set(String(row.user_id), Number(row.unread_count) || 0);
           }
         }
       }
-    } catch {
-      // Fallback if query fails
+    } catch (unreadEx: any) {
+      console.warn("[Push] Unread count RPC exception:", unreadEx?.message);
     }
 
-    // Build message objects list (one message per token to support individual Privacy Mode title/body mapping)
+    // Build message objects list (one message per device token)
     const messages = uniqueTokens.map((ut) => {
       const u = ut.users;
       const usePrivacy = u?.privacy_mode === true;
@@ -320,8 +494,7 @@ Deno.serve(async (req: Request) => {
       };
 
       if (!isSilent) {
-        // Dynamic badge calculation: existing unread count + 1 for new notification
-        const currentUnread = userUnreadCounts.get(ut.user_id) || 0;
+        const currentUnread = userUnreadCounts.get(String(ut.user_id)) || 0;
         message.badge = currentUnread + 1;
       }
       if (categoryId) {
@@ -333,14 +506,16 @@ Deno.serve(async (req: Request) => {
       if (collapseKey) {
         message.collapseKey = collapseKey;
       }
-      if (attachments) {
+      if (!usePrivacy && imageUrl) {
+        message.richContent = { image: imageUrl };
+      }
+      if (!usePrivacy && attachments) {
         message.attachments = attachments;
       }
-      if (mutableContent) {
+      if (!usePrivacy && mutableContent) {
         message.mutableContent = mutableContent;
       }
-      
-      // ALWAYS force background wake-up and foreground display
+
       message.contentAvailable = true;
       message._displayInForeground = true;
 
@@ -366,10 +541,24 @@ Deno.serve(async (req: Request) => {
               },
               body: JSON.stringify(batch),
             });
-            const responseJson = await response.json();
-            return { responseJson, batch, batchTokens };
+            const status = response.status;
+            const ok = response.ok;
+            let responseJson: any = null;
+            try {
+              responseJson = await response.json();
+            } catch {
+              responseJson = { error: `Non-JSON response from Expo (HTTP ${status})` };
+            }
+            return { ok, status, responseJson, batch, batchTokens, networkError: false };
           } catch (err: any) {
-            return { responseJson: { error: err.message }, batch, batchTokens };
+            return {
+              ok: false,
+              status: 0,
+              responseJson: { error: err?.message || "Network error" },
+              batch,
+              batchTokens,
+              networkError: true,
+            };
           }
         })()
       );
@@ -377,64 +566,161 @@ Deno.serve(async (req: Request) => {
 
     const batchOutputs = await Promise.all(batchPromises);
     const results = [];
-    const telemetryRecords = [];
-    const historyRecords = [];
+    const telemetryMap = new Map<string, any>();
+    const historyMap = new Map<string, any>();
+    const retryableFailedTokens: string[] = [];
+    const retryableFailedUserIds = new Set<string>();
+    const tokensToRemove = new Set<string>();
+    let sentCount = 0;
+    const nowIso = new Date().toISOString();
 
     for (const output of batchOutputs) {
-      const { responseJson, batch, batchTokens } = output;
-      results.push(responseJson);
+      const { ok, status, responseJson, batch, batchTokens, networkError } = output;
+      results.push({ status, response: responseJson });
 
-      const ticketData = responseJson.data || [];
+      const ticketData = Array.isArray(responseJson?.data) ? responseJson.data : null;
+      const isBatchRetryableHttp = networkError || status === 429 || status >= 500;
+
+      if (!ok || !ticketData) {
+        const batchErrMsg =
+          responseJson?.errors?.[0]?.message ||
+          responseJson?.error ||
+          `Expo HTTP ${status}`;
+
+        for (let k = 0; k < batch.length; k++) {
+          const ut = batchTokens[k];
+          const telKey = `${ut.user_id}:${notifId}:${ut.push_token}`;
+          telemetryMap.set(telKey, {
+            notification_id: notifId,
+            user_id: ut.user_id,
+            type: notifType || "general",
+            status: "failed",
+            platform: "unknown",
+            expo_ticket_id: null,
+            provider_status: "error",
+            provider_error: batchErrMsg,
+            push_token: ut.push_token,
+            failed_at: nowIso,
+            updated_at: nowIso,
+          });
+
+          if (isBatchRetryableHttp) {
+            retryableFailedTokens.push(ut.push_token);
+            retryableFailedUserIds.add(String(ut.user_id));
+          }
+        }
+        continue;
+      }
+
       for (let k = 0; k < batch.length; k++) {
-        const msg = batch[k];
         const ticket = ticketData[k] || {};
         const ut = batchTokens[k];
+        const isTicketOk = ticket.status === "ok";
+        const errCode = ticket.details?.error || ticket.message || null;
 
-        telemetryRecords.push({
+        if (isTicketOk) {
+          sentCount++;
+        } else {
+          if (errCode === "DeviceNotRegistered") {
+            tokensToRemove.add(ut.push_token);
+          } else if (errCode === "InvalidCredentials") {
+            console.error("[Push] CRITICAL: Expo reported InvalidCredentials (FCM/APNs server key issue). Token will NOT be deleted.");
+          } else if (
+            errCode === "MessageRateExceeded" ||
+            errCode === "TooManyRequests" ||
+            !ticket.status
+          ) {
+            retryableFailedTokens.push(ut.push_token);
+            retryableFailedUserIds.add(String(ut.user_id));
+          }
+        }
+
+        const telKey = `${ut.user_id}:${notifId}:${ut.push_token}`;
+        telemetryMap.set(telKey, {
           notification_id: notifId,
           user_id: ut.user_id,
-          type: notifType || 'general',
-          status: ticket.status === 'ok' ? 'sent' : 'failed',
-          platform: 'unknown',
+          type: notifType || "general",
+          status: isTicketOk ? "sent" : "failed",
+          platform: "unknown",
           expo_ticket_id: ticket.id || null,
-          provider_status: ticket.status || null,
-          provider_error: ticket.message || (ticket.details?.error) || null,
-          push_token: ut.push_token
+          provider_status: ticket.status || "error",
+          provider_error: isTicketOk ? null : (errCode || "TicketError"),
+          push_token: ut.push_token,
+          failed_at: isTicketOk ? null : nowIso,
+          updated_at: nowIso,
         });
 
-        // Insert into unified history (skip chats/messages to keep tray clean)
-        if (notifType !== 'message' && notifType !== 'chat') {
-          historyRecords.push({
-            user_id: ut.user_id,
-            notification_id: notifId,
-            title: title || 'New Notification', // Use original title, not privacy-masked
-            body: body || '',
-            type: notifType || 'general',
-            data: data ?? {},
-            is_read: false
-          });
+        // Insert into unified history ONCE per (user_id, notification_id) (skip chats/messages)
+        if (notifType !== "message" && notifType !== "chat") {
+          const histKey = `${ut.user_id}:${notifId}`;
+          if (!historyMap.has(histKey)) {
+            historyMap.set(histKey, {
+              user_id: ut.user_id,
+              notification_id: notifId,
+              title: title || "New Notification",
+              body: body || "",
+              type: notifType || "general",
+              data: data ?? {},
+              is_read: false,
+            });
+          }
         }
       }
     }
 
+    // Remove unregistered device tokens (DeviceNotRegistered only)
+    if (tokensToRemove.size > 0) {
+      for (const badToken of tokensToRemove) {
+        const { error: rmErr } = await supabase.rpc("remove_push_token", { p_token: badToken });
+        if (rmErr) {
+          console.error("[Push] remove_push_token error:", rmErr.message);
+        }
+      }
+    }
+
+    const telemetryRecords = Array.from(telemetryMap.values());
     if (telemetryRecords.length > 0) {
-      await supabase.from('notification_telemetry').upsert(telemetryRecords, { onConflict: 'user_id,notification_id' }).catch(() => {});
+      const { error: telErr } = await supabase
+        .from("notification_telemetry")
+        .upsert(telemetryRecords, { onConflict: "user_id,notification_id,push_token" });
+      if (telErr) {
+        console.error("[Push] notification_telemetry upsert error:", telErr.message);
+      }
     }
+
+    const historyRecords = Array.from(historyMap.values());
     if (historyRecords.length > 0) {
-      await supabase.from('notification_history').upsert(historyRecords, { onConflict: 'user_id,notification_id' }).catch(() => {});
+      const { error: histErr } = await supabase
+        .from("notification_history")
+        .upsert(historyRecords, { onConflict: "user_id,notification_id" });
+      if (histErr) {
+        console.error("[Push] notification_history upsert error:", histErr.message);
+      }
     }
+
+    const hasRetryableFailures = retryableFailedTokens.length > 0;
+    const responseStatus = sentCount === 0 && hasRetryableFailures ? 503 : 200;
 
     return new Response(
-      JSON.stringify({ success: true, sent: uniqueTokens.length, total: userTokens.length, results }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({
+        success: !hasRetryableFailures,
+        partialFailure: sentCount > 0 && hasRetryableFailures,
+        retryable: hasRetryableFailures,
+        sent: sentCount,
+        total: uniqueTokens.length,
+        failedTokens: retryableFailedTokens,
+        failedUserIds: Array.from(retryableFailedUserIds),
+        cleanedTokens: tokensToRemove.size,
+        results,
+      }),
+      {
+        status: responseStatus,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
-
   } catch (err: any) {
     console.error("[Push] Error:", err.message);
-    if (SENTRY_DSN) {
-      Sentry.captureException(err);
-    }
-    return new Response(JSON.stringify({ success: false, error: err.message }), {
+    return new Response(JSON.stringify({ success: false, retryable: true, error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

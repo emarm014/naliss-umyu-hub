@@ -123,7 +123,16 @@ export default function ChatScreen() {
     useFocusEffect(
         React.useCallback(() => {
             if (id) {
+                NotificationRouter.setActiveChatGroupId(id);
                 useGroupStore.getState().markGroupAsRead(id);
+                useNotificationStore.getState().markGroupAsRead(id);
+            }
+            return () => {
+                if (NotificationRouter.getActiveChatGroupId() === id) {
+                    if (NotificationRouter.getActiveChatGroupId() === id) {
+                NotificationRouter.setActiveChatGroupId(null);
+            }
+                }
             }
         }, [id])
     );
@@ -198,7 +207,9 @@ export default function ChatScreen() {
             NotificationRouter.setActiveChatGroupId(id);
         }
         return () => {
-            NotificationRouter.setActiveChatGroupId(null);
+            if (NotificationRouter.getActiveChatGroupId() === id) {
+                NotificationRouter.setActiveChatGroupId(null);
+            }
         };
     }, [id]);
     const [members, setMembers] = useState<any[]>([]);
@@ -248,6 +259,8 @@ export default function ChatScreen() {
     // Stable refs for realtime callbacks to avoid stale closures
     const idRef = useRef(id);
     const currentUserRef = useRef(currentUser);
+    idRef.current = id;
+    currentUserRef.current = currentUser;
     useEffect(() => { idRef.current = id; }, [id]);
     useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
@@ -273,6 +286,17 @@ export default function ChatScreen() {
 
     useEffect(() => {
         // Reset mount flag — required when id changes (navigating between chats)
+        isMounted.current = true;
+        setGroup(useGroupStore.getState().groups.find((g: any) => g.id === id) || null);
+        setMembersWithRef(getGroupMembers(id) || []);
+        setActiveReplyTarget(null);
+        setEditingMessage(null);
+        setShowStickerPicker(false);
+        setShowGroupMenu(false);
+        setShowSearch(false);
+        setIsSearching(false);
+        setHighlightedMessageId(null);
+        setupRealtime();
         isMounted.current = true;
 
         const initChat = async () => {
@@ -301,7 +325,7 @@ export default function ChatScreen() {
 
                 // 3. Fetch members FIRST so membersRef is populated before realtime starts
                 // This prevents unnecessary extra DB fetches for sender info on first messages
-                await fetchMembers();
+                fetchMembers();
                 if (!isMounted.current) return;
 
                 // 4. Set up real-time so no messages are missed during fetch
@@ -324,8 +348,9 @@ export default function ChatScreen() {
 
         initChat();
 
-        // Presence: mark user as active when they enter the chat
+        // Presence is tracked globally via useHeartbeat + Realtime Presence
         const markActive = async () => {
+            return;
             // Use the throttled RPC — only updates if last_active_at is older than 60s
             // This prevents 33 writes/second at 1000 concurrent users
             try {
@@ -372,8 +397,8 @@ export default function ChatScreen() {
             if (clickTimeoutRef.current) {
                 clearTimeout(clickTimeoutRef.current);
             }
-            // Mark user as inactive when they leave the chat
-            (async () => {
+            // Presence cleanup handled globally by Realtime Presence & useHeartbeat
+            if (false) (async () => {
                 try {
                     const { data: { user } } = await supabase.auth.getUser();
                     if (user && supabase && typeof (supabase as any).from === 'function') {
@@ -467,7 +492,7 @@ export default function ChatScreen() {
                 .eq('id', id)
                 .maybeSingle();
             if (error) throw normalizeError(error);
-            if (data) setGroup(data);
+            if (data && isMounted.current && idRef.current === id) setGroup(data);
         } catch {
             // silent — group details cached from store
         }
@@ -654,15 +679,17 @@ export default function ChatScreen() {
 
         try {
             const { data, error } = await ((supabase as any).from('group_members')
-                .select('*, user:users(*, department:departments(name))')
+                .select('user:users(id, username, full_name, avatar_url, level, role, last_active_at, department:departments(name))')
                 .eq('group_id', id) as any);
 
             if (error) throw normalizeError(error);
             const fetched = (data as any[])?.map(m => m.user).filter(Boolean) || [];
             
             // Asynchronously download and map member avatars for offline availability
-            const updated = await cacheUserAvatars(fetched);
-            setMembersWithRef(updated);
+            const updated = fetched;
+            if (isMounted.current && idRef.current === id) {
+                setMembersWithRef(updated);
+            }
             setGroupMembers(id, updated);
         } catch {
             // silent
@@ -678,6 +705,10 @@ export default function ChatScreen() {
             realtimeChannelRef.current = null;
         }
 
+        if (currentUserRef.current?.id) {
+            realtimeManager.init(currentUserRef.current.id);
+        }
+        if (!idRef.current) return;
         const unsubs: (() => void)[] = [];
 
         // 1. Chat Listener
@@ -686,6 +717,7 @@ export default function ChatScreen() {
                 const newMsg = payload.new as any;
                 if (!newMsg?.id || !newMsg?.group_id) return;
 
+                let resolvedReplyLocally = !newMsg.reply_to_id;
                 const findTempMsg = (prev: any[]) => prev.find(m =>
                     (m.status === 'sending' || m.status === 'unsent' || m.status === 'failed' || m.status === 'error') &&
                     m.sender_id === newMsg.sender_id && (
@@ -723,6 +755,17 @@ export default function ChatScreen() {
                                 content: repliedMsg.content?.substring(0, 50),
                                 is_deleted: repliedMsg.is_deleted
                             };
+                            resolvedReplyLocally = true;
+                        } else if (newMsg.reply_from_meta) {
+                            resolvedReplyLocally = true;
+                            replyToData = {
+                                id: newMsg.reply_to_id,
+                                username: newMsg.reply_from_meta.username || 'user',
+                                full_name: newMsg.reply_from_meta.full_name || '',
+                                content_type: newMsg.reply_from_meta.content_type || 'text',
+                                content: newMsg.reply_from_meta.content?.substring(0, 50),
+                                is_deleted: false
+                            };
                         }
                     }
 
@@ -740,13 +783,18 @@ export default function ChatScreen() {
                 const isOurs = newMsg.sender_id === currentUserRef.current?.id;
                 if (!isOurs) {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                    const { data: fullData } = await (supabase as any).from('messages')
+                    if (NotificationRouter.getActiveChatGroupId() === idRef.current) {
+                        useGroupStore.getState().markGroupAsRead(idRef.current).catch(() => {});
+                    }
+                    const hasSenderLocally = membersRef.current.some(m => m.id === newMsg.sender_id);
+                    const { data: fullData } = await ((!hasSenderLocally || !resolvedReplyLocally) ? (supabase as any).from('messages')
                         .select(`
                             *,
                             user:users!messages_sender_id_fkey(id, username, full_name, avatar_url, level, role),
                             reply_to_message:messages!reply_to_id(id, content, message_type, is_deleted, user:users!messages_sender_id_fkey(username, full_name))
                         `)
                         .eq('id', newMsg.id)
+                        : { maybeSingle: async () => ({ data: null }) })
                         .maybeSingle();
                     if (fullData) {
                         const formatted = {
@@ -801,7 +849,9 @@ export default function ChatScreen() {
             if (payload.eventType === 'DELETE') {
                 const removedUserId = (payload.old as any).user_id;
                 const updated = membersRef.current.filter(m => m.id !== removedUserId);
+                if (isMounted.current && idRef.current === id) {
                 setMembersWithRef(updated);
+            }
                 setGroupMembers(idRef.current, updated);
             } else if (payload.eventType === 'INSERT') {
                 const newUserId = (payload.new as any).user_id;
@@ -814,7 +864,9 @@ export default function ChatScreen() {
                         ...membersRef.current.filter(m => m.id !== newUserId),
                         userProfile,
                     ];
-                    setMembersWithRef(updated);
+                    if (isMounted.current && idRef.current === id) {
+                setMembersWithRef(updated);
+            }
                     setGroupMembers(idRef.current, updated);
                 }
             }
@@ -849,7 +901,7 @@ export default function ChatScreen() {
             Alert.alert('Read-Only Mode', 'The application is currently in read-only mode. You cannot send messages at this time.');
             return;
         }
-        if (group && group.chat_enabled === false) {
+        if (activeGroup && activeGroup.chat_enabled === false) {
             Alert.alert('Chat Disabled', 'Messaging has been disabled for this group by an administrator.');
             return;
         }
@@ -2646,7 +2698,7 @@ export default function ChatScreen() {
                 <TouchableOpacity style={styles.headerTitleContainer} onPress={() => router.push(`/chat/group_info?id=${id}`)}>
                     <View style={[styles.headerAvatarPlaceholderLight, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         {(() => {
-                            const cleanUrl = getCleanAvatarUrl(group?.avatar_url);
+                            const cleanUrl = getCleanAvatarUrl(activeGroup?.avatar_url);
                             return cleanUrl ? (
                                 <CachedImage
                                     remoteUrl={cleanUrl}
@@ -2662,7 +2714,7 @@ export default function ChatScreen() {
                     <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                              <Text style={[styles.headerTitleLight, { color: colors.text }]} numberOfLines={1}>
-                                 {group?.name || (initialName as string) || 'Chat'}
+                                 {activeGroup?.name || (initialName as string) || 'Chat'}
                              </Text>
                              <Ionicons name="people-circle-outline" size={18} color={COLORS.primary} />
                         </View>
@@ -2973,7 +3025,7 @@ export default function ChatScreen() {
                     <Ionicons name="lock-closed" size={20} color="#64748b" />
                     <Text style={[styles.readOnlyText, { color: colors.textSecondary }]}>Institutional Read-Only Mode Active</Text>
                 </View>
-            ) : group?.chat_enabled === false ? (
+            ) : activeGroup?.chat_enabled === false ? (
                 <View style={[styles.readOnlyContainer, { paddingBottom: Math.max(insets.bottom, 16), backgroundColor: isDark ? '#1a0a0a' : '#fef2f2' }]}>
                     <Ionicons name="chatbubble-ellipses-outline" size={20} color="#ef4444" />
                     <Text style={[styles.readOnlyText, { color: '#ef4444' }]}>Chat has been disabled for this group</Text>

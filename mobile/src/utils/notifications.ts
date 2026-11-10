@@ -29,14 +29,17 @@ export async function sendPushNotification(payload: PushPayload): Promise<void> 
     if (!session?.access_token) return;
 
     // Fire and forget â€” don't await, don't block the UI
-    fetch(PUSH_FUNCTION_URL, {
+    for (let i = 0; i < payload.targetUserIds.length; i += 500) {
+      const batchPayload = { ...payload, targetUserIds: payload.targetUserIds.slice(i, i + 500) };
+      fetch(PUSH_FUNCTION_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify(payload),
-    }).catch((err) => console.error('[Notifications] push send failed:', err));
+      body: JSON.stringify(batchPayload),
+      }).catch((err) => console.error('[Notifications] push send failed:', err));
+    }
   } catch {
     // silent
   }
@@ -52,7 +55,8 @@ export async function sendChatMessageNotification(
   messagePreview: string,
   senderId: string,
   mediaType?: 'image' | 'video' | 'audio' | 'document' | string,
-  mediaName?: string
+  mediaName?: string,
+  messageId?: string
 ): Promise<void> {
   try {
     // Fetch all group members except the sender
@@ -75,6 +79,8 @@ export async function sendChatMessageNotification(
       formattedPreview = '🎙️ Voice message';
     } else if (mediaType === 'document') {
       formattedPreview = mediaName ? `📄 ${mediaName}` : messagePreview ? `📄 ${messagePreview}` : '📄 Document';
+    } else if (mediaType === 'sticker') {
+      formattedPreview = '😊 Sticker';
     }
 
     await sendPushNotification({
@@ -82,6 +88,7 @@ export async function sendChatMessageNotification(
       title: `${groupName}`,
       body: `${senderName}: ${formattedPreview}`,
       data: {
+        id: messageId || `msg_${Date.now()}`,
         type: 'message',
         group_id: groupId,
       },

@@ -219,6 +219,10 @@ export const useGroupStore = create<GroupState>()(
                         lastFetched: new Date().toISOString(),
                         isBadgeCleared: badgeCleared
                     });
+                    try {
+                        const { updateDeviceBadge } = require('./notification.store');
+                        updateDeviceBadge();
+                    } catch {}
                 } catch (err: unknown) {
                     captureStoreError('group', 'fetchGroups', err);
                     set({ isLoading: false, error: (err as Error)?.message || 'Failed to load groups.' });
@@ -236,16 +240,7 @@ export const useGroupStore = create<GroupState>()(
                 }));
                 try {
                     const { cacheEntityList } = require('../lib/database');
-                    const { preloadAndCacheAvatar } = require('../utils/avatar');
                     cacheEntityList(`group_members_${groupId}`, members, '').catch(() => {});
-                    members.forEach((m: any) => {
-                        if (m?.id) {
-                            cacheEntityList(`user_profile_${m.id}`, [m], '').catch(() => {});
-                            if (m?.avatar_url) {
-                                preloadAndCacheAvatar(m.id, m.avatar_url).catch(() => {});
-                            }
-                        }
-                    });
                 } catch {}
             },
 
@@ -260,6 +255,10 @@ export const useGroupStore = create<GroupState>()(
                         g.id === groupId ? { ...g, unread_count: 0 } : g
                     )
                 }));
+                try {
+                    const { updateDeviceBadge } = require('./notification.store');
+                    updateDeviceBadge();
+                } catch {}
                 try {
                     const { error } = await (supabase as any).rpc('mark_group_as_read', { p_group_id: groupId });
                     if (error) {
@@ -305,6 +304,10 @@ export const useGroupStore = create<GroupState>()(
                         )
                     };
                 });
+                try {
+                    const { updateDeviceBadge } = require('./notification.store');
+                    updateDeviceBadge();
+                } catch {}
             },
 
             updateGroupLastMessage: (groupId: string, lastMessage: string, lastMessageAt?: string, lastMessageObj?: any) => {
@@ -332,10 +335,16 @@ export const useGroupStore = create<GroupState>()(
                 });
             },
 
-            clearBadge: () => set((state) => ({ 
-                isBadgeCleared: true, 
-                groups: state.groups.map(g => ({ ...g, unread_count: 0 })) 
-            })),
+            clearBadge: () => {
+                set((state) => ({ 
+                    isBadgeCleared: true, 
+                    groups: state.groups.map(g => ({ ...g, unread_count: 0 })) 
+                }));
+                try {
+                    const { updateDeviceBadge } = require('./notification.store');
+                    updateDeviceBadge();
+                } catch {}
+            },
         }),
         {
             name: 'group-store',

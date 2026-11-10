@@ -204,6 +204,22 @@ export default function DebateEngineScreen() {
     useEffect(() => {
         if (!id) return;
 
+        const { realtimeManager } = require('../../../src/lib/realtimeManager');
+        const unsubPool = realtimeManager.registerPoolListener((payload: any) => {
+            if (payload?.eventType === 'UPDATE' && payload?.new?.id === id) {
+                const newPool = payload.new as any;
+                setPoolInfo((prev: any) => prev ? { ...prev, ...newPool } : newPool);
+                const ds = newPool.target_constraints?.debate_state as DebateState | undefined;
+                if (ds) {
+                    setDebateState(ds);
+                    setArgumentText('');
+                }
+                if (newPool.status === 'completed') {
+                    Alert.alert('Debate Concluded', 'The debate has been concluded by the moderator.');
+                }
+            }
+        });
+        if (true) return () => { unsubPool(); };
         const channel = supabase.channel(`debate_pool_${id}`)
             .on('postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'event_pools', filter: `id=eq.${id}` },

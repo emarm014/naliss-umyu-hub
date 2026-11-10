@@ -24,7 +24,7 @@ export default function NotificationsScreen() {
   const isOnline = useNetworkStore(s => s.isOnline);
   const { colors, isDark } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'message' | 'announcement' | 'event' | 'resource'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'announcement' | 'event' | 'resource'>('all');
   
   const notifications = useNotificationStore(s => s.notifications);
   const _hasHydrated = useNotificationStore(s => s._hasHydrated);
@@ -216,9 +216,10 @@ export default function NotificationsScreen() {
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const unreadCount = notifications.filter(n => !n.isRead && n.type !== 'message' && n.type !== 'chat').length;
 
   const filteredNotifications = notifications.filter(n => {
+    if (n.type === 'message' || n.type === 'chat') return false;
     if (activeTab === 'all') return true;
     if (activeTab === 'resource') return n.type === 'resource' || n.type === 'material';
     return n.type === activeTab;
@@ -256,13 +257,9 @@ export default function NotificationsScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 10, gap: 8 }}
         >
-          {(['all', 'message', 'announcement', 'event', 'resource'] as const).map((tab) => {
+          {(['all', 'announcement', 'event', 'resource'] as const).map((tab) => {
             const isActive = activeTab === tab;
-            const label = tab === 'all' ? 'All' 
-                        : tab === 'message' ? 'Chats'
-                        : tab === 'announcement' ? 'Announcements'
-                        : tab === 'event' ? 'Events'
-                        : 'Materials';
+            const label = tab === 'all' ? 'All' : tab === 'announcement' ? 'Announcements' : tab === 'event' ? 'Events' : 'Materials';
             return (
               <TouchableOpacity
                 key={tab}

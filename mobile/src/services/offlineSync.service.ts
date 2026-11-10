@@ -129,6 +129,24 @@ export const OfflineSyncService = {
             // ----------------------------------------------------
             Logger.info('offline-sync', 'Stage 2/14: Syncing user profiles');
             await withStageTimeout('Stage 2: User profiles', async () => {
+                // Avoid re-downloading the entire 1,000-user table every 10 minutes on background syncs
+                if (!force && syncState?.bootstrap_completed === 1 && syncState?.last_sync) {
+                    const { data: usersResult, error: usrError } = await ((supabase as any).from('users')
+                        .select('id, username, full_name, avatar_url, level, role')
+                        .gt('last_active_at', syncState.last_sync)
+                        .limit(200) as any);
+                    if (!usrError && usersResult && usersResult.length > 0) {
+                        await batchUpsertContentManifest(usersResult.map((user: any) => ({
+                            content_type: 'user_profile',
+                            content_id: user.id,
+                            user_id: userId,
+                            raw_data: user,
+                            sync_version: 1,
+                            device_id: deviceId
+                        })));
+                    }
+                    return;
+                }
                 const { data: usersResult, error: usrError } = await ((supabase as any).from('users')
                     .select('id, username, full_name, avatar_url, level, role') as any);
 

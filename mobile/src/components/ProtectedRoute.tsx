@@ -578,6 +578,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         if (!syncStore.isInitialized) {
           syncStore.initialize();
         }
+        if (session?.user?.id) {
+          realtimeManager.init(session.user.id);
+        }
       }
     }
     // No cleanup / terminate here — channels must survive navigation
@@ -1002,7 +1005,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         const [userRes, sessionRes] = await Promise.all([
           (supabase as any)
             .from("users")
-            .select("status, banned_reason, suspension_reason, suspended_until")
+            .select("status, level, role, banned_reason, suspension_reason, suspended_until")
             .eq("id", userId)
             .maybeSingle(),
           (supabase as any)
@@ -1015,9 +1018,20 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
         if (!isSubscribed) return;
 
-        // 1. Process Status Restriction
+        // 1. Process Status Restriction & Level Progression Sync
         if (userRes.data) {
           const u = userRes.data;
+          const cachedProfile = useAuthStore.getState().profile;
+
+          if (
+            u.status === "active" &&
+            cachedProfile &&
+            ((u.level && String(u.level) !== String(cachedProfile.level)) ||
+              (u.role && u.role !== cachedProfile.role))
+          ) {
+            await useAuthStore.getState().fetchProfile(true);
+            safeFire(useGlobalSyncStore.getState().syncAll(true), "levelProgressionSync");
+          }
 
           if (u.status === "banned") {
             setRestrictionInfo({
@@ -1092,7 +1106,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
           if (!isSubscribed) return;
           const u = payload.new;
           if (u) {
-            useAuthStore.getState().fetchProfile(true);
+            const prevLevel = useAuthStore.getState().profile?.level;
+            useAuthStore.getState().fetchProfile(true).then(() => {
+              if (u.status === "active" && u.level && String(u.level) !== String(prevLevel)) {
+                safeFire(useGlobalSyncStore.getState().syncAll(true), "realtimeLevelProgressionSync");
+              }
+            });
             if (u.status === "banned") {
               setRestrictionInfo({
                 type: "banned",

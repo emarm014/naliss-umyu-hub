@@ -10,7 +10,9 @@ import {
     ActivityIndicator,
     RefreshControl,
     Dimensions,
+    Alert,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDirectoryStore } from '../../src/stores';
@@ -264,19 +266,48 @@ function StaffCard({ staff, onPressAvatar }: { staff: Lecturer, onPressAvatar: (
 }
 
 function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAvatar: (uri: string, name: string, remoteUrl?: string) => void }) {
+    const router = useRouter();
     const fullName = executive.full_name || executive.user?.full_name || 'NALISS Executive';
     const rawAvatarUrl = executive.avatar_url || executive.user?.avatar_url;
     const cleanAvatar = getCleanAvatarUrl(rawAvatarUrl);
     const effectiveAvatar = cleanAvatar || `https://api.dicebear.com/9.x/fun-emoji/png?seed=${encodeURIComponent(fullName)}&size=200`;
     const cachedUri = useOfflineImage(cleanAvatar);
     const initials = fullName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+    const linkedUserId = executive?.user_id || executive?.user?.id || null;
+
+    const handleAvatarTap = () => {
+        if (linkedUserId) {
+            Alert.alert(
+                fullName,
+                executive.position || 'Department Executive',
+                [
+                    {
+                        text: 'View Portrait Photo',
+                        onPress: () => onPressAvatar(cachedUri || effectiveAvatar, fullName, effectiveAvatar),
+                    },
+                    {
+                        text: 'View Academic Profile',
+                        onPress: () => router.push({ pathname: '/chat/user_profile' as any, params: { id: linkedUserId } }),
+                    },
+                    { text: 'Cancel', style: 'cancel' },
+                ],
+                { cancelable: true }
+            );
+        } else {
+            onPressAvatar(cachedUri || effectiveAvatar, fullName, effectiveAvatar);
+        }
+    };
 
     return (
-        <View style={styles.card}>
+        <TouchableOpacity
+            style={styles.card}
+            activeOpacity={0.9}
+            onPress={() => router.push({ pathname: '/directory/executive/[id]' as any, params: { id: executive.id } })}
+        >
             <View style={styles.cardHeader}>
                 <TouchableOpacity 
                     style={styles.avatarContainer}
-                    onPress={() => onPressAvatar(cachedUri || effectiveAvatar, fullName, effectiveAvatar)}
+                    onPress={handleAvatarTap}
                     activeOpacity={0.8}
                 >
                     <CachedImage
@@ -301,7 +332,7 @@ function ExecutiveCard({ executive, onPressAvatar }: { executive: any, onPressAv
                     </LinearGradient>
                 </View>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 }
 

@@ -132,6 +132,7 @@ interface EventPoolState {
   isLoading: boolean;
   lastFetch: number | null;
   serverTimeOffset: number;
+  lastTimeSync: number | null;
   
   fetchPools: (force?: boolean) => Promise<void>;
   fetchServerTimeOffset: () => Promise<void>;
@@ -147,18 +148,26 @@ export const useEventPoolStore = create<EventPoolState>()(
       isLoading: false,
       lastFetch: null,
       serverTimeOffset: 0,
+      lastTimeSync: null,
 
       clearCache: () => set({ pools: [], lastFetch: null }),
       clearUserData: () => set({}),
       clearContentCache: () => set({ lastFetch: null }),
 
       fetchServerTimeOffset: async () => {
+        const { lastTimeSync } = get();
+        if (lastTimeSync && Date.now() - lastTimeSync < 5 * 60 * 1000) {
+            return;
+        }
         try {
             const startFetch = Date.now();
             const { data, error } = await supabase.rpc('get_server_time');
             if (!error && data) {
                 const latency = (Date.now() - startFetch) / 2;
-                set({ serverTimeOffset: new Date(data).getTime() - Date.now() + latency });
+                set({
+                    serverTimeOffset: new Date(data).getTime() - Date.now() + latency,
+                    lastTimeSync: Date.now(),
+                });
             }
         } catch {}
       },
@@ -185,25 +194,27 @@ export const useEventPoolStore = create<EventPoolState>()(
         if (get().pools.length === 0) set({ isLoading: true });
 
         try {
-          await get().fetchServerTimeOffset();
-          const { data, error } = await (supabase as any)
-            .from('event_pools')
-            .select(`
-                *,
-                featured_students (
-                    id, user_id, title, type,
-                    users!featured_students_user_id_fkey ( full_name, username, avatar_url )
-                )
-            `)
-            .in('status', ['draft', 'scheduled', 'live', 'completed', 'archived'])
-            .order('start_time', { ascending: false });
+          const [, poolsRes, winnersByPool] = await Promise.all([
+            get().fetchServerTimeOffset(),
+            (supabase as any)
+              .from('event_pools')
+              .select(`
+                  *,
+                  featured_students (
+                      id, user_id, title, type,
+                      users!featured_students_user_id_fkey ( full_name, username, avatar_url )
+                  )
+              `)
+              .in('status', ['draft', 'scheduled', 'live', 'completed', 'archived'])
+              .order('start_time', { ascending: false }),
+            fetchDeclaredWinners().catch((e) => {
+              console.warn('[event-pool] Failed to load declared winners:', e?.message || e);
+              return {} as Record<string, PoolWinner[]>;
+            }),
+          ]);
 
+          const { data, error } = poolsRes;
           if (error) throw normalizeError(error);
-
-          const winnersByPool = await fetchDeclaredWinners().catch((e) => {
-            console.warn('[event-pool] Failed to load declared winners:', e?.message || e);
-            return {} as Record<string, PoolWinner[]>;
-          });
 
           const typedData = (data as any[]).map(pool => {
             const featured = pool.featured_students?.filter((fs: any) => fs.type === 'event_winner' || fs.title?.includes('Winner')) || [];

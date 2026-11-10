@@ -28,6 +28,7 @@ export default function UserProfileScreen() {
     } catch {}
 
     const [profile, setProfile] = useState<any>(parsedInitial);
+    const [execPosition, setExecPosition] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(!parsedInitial);
     const [isOnline, setIsOnline] = useState<boolean>(() => {
         if (!parsedInitial?.last_active_at) return false;
@@ -37,6 +38,18 @@ export default function UserProfileScreen() {
 
     useEffect(() => {
         let mounted = true;
+
+        if (id && typeof id === 'string') {
+            (supabase as any)
+                .from('executives')
+                .select('position, position_code, academic_session, is_current')
+                .eq('user_id', id)
+                .eq('is_active', true)
+                .maybeSingle()
+                .then(({ data }: any) => {
+                    if (data && mounted) setExecPosition(data);
+                });
+        }
         
         const fetchProfile = async () => {
             if (!id || typeof id !== 'string') return;
@@ -173,6 +186,16 @@ export default function UserProfileScreen() {
                     </Text>
                     <Text style={styles.profileUsername}>@{profile.username || 'unknown'}</Text>
                     
+                    {/* Executive Position Badge if student is an official executive */}
+                    {execPosition ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(245,158,11,0.15)' : '#fef3c7', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, marginTop: 4, marginBottom: 10, borderWidth: 1, borderColor: isDark ? 'rgba(245,158,11,0.3)' : '#fde68a' }}>
+                            <Ionicons name="ribbon" size={13} color="#d97706" />
+                            <Text style={{ fontFamily: 'Inter-Bold', fontSize: 11, color: isDark ? '#fbbf24' : '#b45309', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                {execPosition.position} • {execPosition.academic_session}
+                            </Text>
+                        </View>
+                    ) : null}
+
                     <View style={styles.onlineStatusRow}>
                         <View style={[styles.onlineDot, { backgroundColor: isOnline ? '#10B981' : '#94a3b8' }]} />
                         <Text style={styles.onlineText}>
@@ -198,6 +221,18 @@ export default function UserProfileScreen() {
                             <Text style={[styles.infoValue, { color: colors.text }]}>{profile.level || 'N/A'}</Text>
                         </View>
                     </View>
+                    {profile.registration_number ? (
+                        <>
+                            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                            <View style={styles.infoRow}>
+                                <Ionicons name="card-outline" size={20} color="#059669" />
+                                <View style={styles.infoTextGroup}>
+                                    <Text style={styles.infoLabel}>Registration No.</Text>
+                                    <Text style={[styles.infoValue, { color: colors.text }]}>{profile.registration_number}</Text>
+                                </View>
+                            </View>
+                        </>
+                    ) : null}
                     <View style={[styles.divider, { backgroundColor: colors.border }]} />
                     <View style={styles.infoRow}>
                         <Ionicons name="library-outline" size={20} color="#059669" />

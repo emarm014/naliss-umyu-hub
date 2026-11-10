@@ -110,6 +110,19 @@ export default function FeaturedStudentsPage() {
   });
 
   const [editingItem, setEditingItem] = useState<FeaturedStudent | null>(null);
+  const [viewingItem, setViewingItem] = useState<FeaturedStudent | null>(null);
+
+  const applyDurationHours = (hours: number | null) => {
+    if (hours === null) {
+      setFormData(prev => ({ ...prev, formExpiresAt: '' }));
+      return;
+    }
+    const target = new Date(Date.now() + hours * 60 * 60 * 1000);
+    const localIso = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    setFormData(prev => ({ ...prev, formExpiresAt: localIso }));
+  };
 
   // User search
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -272,11 +285,17 @@ export default function FeaturedStudentsPage() {
   // ─── Toggle Active ──────────────────────────────────────────
   const toggleActive = async (item: FeaturedStudent) => {
     const newState = !item.is_active;
-    setFeatured(prev => prev.map(f => f.id === item.id ? { ...f, is_active: newState } : f));
+    const isPastExpiry = item.expires_at ? new Date(item.expires_at) <= new Date() : false;
+    const updatePayload: Record<string, any> = { is_active: newState };
+    if (newState && isPastExpiry) {
+      updatePayload.expires_at = null;
+      updatePayload.published_at = new Date().toISOString();
+    }
+    setFeatured(prev => prev.map(f => f.id === item.id ? { ...f, ...updatePayload } : f));
     try {
-      const { error } = await supabase.from('featured_students').update({ is_active: newState }).eq('id', item.id);
+      const { error } = await supabase.from('featured_students').update(updatePayload).eq('id', item.id);
       if (error) throw error;
-      setSuccessMessage(newState ? 'Activated — now visible to students.' : 'Deactivated — hidden from students.');
+      setSuccessMessage(newState ? 'Activated — now visible to students.' : 'Deactivated — moved to FYB History on mobile.');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
       fetchFeatured();
@@ -482,8 +501,23 @@ export default function FeaturedStudentsPage() {
                   <h3 className="text-lg font-black text-gray-900 mb-1">{item.title}</h3>
                   {item.subtitle && <p className="text-sm font-medium text-gray-400 mb-3">{item.subtitle}</p>}
 
+                  {/* Student Note / Motivation Preview */}
+                  {item.description ? (
+                    <div
+                      onClick={() => setViewingItem(item)}
+                      className="mb-4 p-3.5 rounded-2xl bg-gray-50 border border-gray-100 cursor-pointer hover:bg-gray-100/70 transition-colors"
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary-600 mb-1">
+                        Featured Note & Motivation
+                      </p>
+                      <p className="text-xs font-medium text-gray-600 italic line-clamp-2">
+                        "{item.description}"
+                      </p>
+                    </div>
+                  ) : null}
+
                   {/* Metrics Row */}
-                  <div className="flex items-center gap-4 mb-4">
+                  <div className="flex flex-wrap items-center gap-4 mb-4">
                     <div className="flex items-center gap-1.5 text-rose-500">
                       <Heart className="w-4 h-4 fill-rose-500" />
                       <span className="text-sm font-black">{item.total_congratulations}</span>
@@ -492,40 +526,60 @@ export default function FeaturedStudentsPage() {
                       <Calendar className="w-4 h-4" />
                       <span className="text-xs font-bold">{new Date(item.published_at).toLocaleDateString()}</span>
                     </div>
-                    <div className={`flex items-center gap-1.5 ${item.is_active ? 'text-emerald-500' : 'text-gray-300'}`}>
-                      <div className={`w-2 h-2 rounded-full ${item.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
-                      <span className="text-xs font-bold uppercase">{item.is_active ? 'Live' : 'Off'}</span>
+                    {item.expires_at && (
+                      <div className="flex items-center gap-1.5 text-amber-600">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span className="text-xs font-bold">
+                          {new Date(item.expires_at) > new Date()
+                            ? `Until ${new Date(item.expires_at).toLocaleDateString()}`
+                            : `Ended ${new Date(item.expires_at).toLocaleDateString()}`}
+                        </span>
+                      </div>
+                    )}
+                    <div className={`flex items-center gap-1.5 ${item.is_active && (!item.expires_at || new Date(item.expires_at) > new Date()) ? 'text-emerald-500' : 'text-gray-300'}`}>
+                      <div className={`w-2 h-2 rounded-full ${item.is_active && (!item.expires_at || new Date(item.expires_at) > new Date()) ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+                      <span className="text-xs font-bold uppercase">
+                        {item.is_active && (!item.expires_at || new Date(item.expires_at) > new Date()) ? 'Live' : 'History'}
+                      </span>
                     </div>
                   </div>
 
                   {/* Actions */}
-                  {canManageFeatured(item) && (
-                    <div className="flex items-center gap-2 pt-4 border-t border-gray-50">
-                      <button
-                        onClick={() => toggleActive(item)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                          item.is_active
-                            ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
-                            : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                        }`}
-                      >
-                        {item.is_active ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        {item.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                      <button
-                        onClick={() => openEdit(item)}
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-50 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-all"
-                      >
-                        <Edit className="w-3.5 h-3.5" /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item)}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-bold hover:bg-red-100 transition-all ml-auto"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> Delete
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-gray-50">
+                    <button
+                      onClick={() => setViewingItem(item)}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-xl text-xs font-bold hover:bg-primary-100 transition-all"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> View Card
+                    </button>
+                    {canManageFeatured(item) && (
+                      <>
+                        <button
+                          onClick={() => toggleActive(item)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                            item.is_active
+                              ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                              : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {item.is_active ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          {item.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button
+                          onClick={() => openEdit(item)}
+                          className="flex items-center gap-2 px-4 py-2 bg-gray-50 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-all"
+                        >
+                          <Edit className="w-3.5 h-3.5" /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item)}
+                          className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-bold hover:bg-red-100 transition-all ml-auto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -734,16 +788,21 @@ export default function FeaturedStudentsPage() {
                 </div>
               </div>
 
-              {/* Description */}
+              {/* Student Note / Motivation & Description */}
               <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Description (optional)</label>
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                  Student Note / Motivation & Description
+                </label>
                 <textarea
                   value={formData.formDescription}
                   onChange={e => setFormData(prev => ({ ...prev, formDescription: e.target.value }))}
-                  rows={3}
-                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900 resize-none"
-                  placeholder="Short write-up about the student's achievement..."
+                  rows={5}
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900 resize-y"
+                  placeholder="Write the featured student's note, motivational message, or achievement story to display on their Featured Card and in FYB History..."
                 />
+                <p className="text-xs text-slate-400 font-medium ml-1">
+                  This note & motivation is shown on the Featured Student card and stays readable in the Mobile FYB History card even after deactivation.
+                </p>
               </div>
 
               {/* Custom Flyer Image */}
@@ -760,16 +819,39 @@ export default function FeaturedStudentsPage() {
                 />
               </div>
 
-              {/* Expires At */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Auto-Expire (optional)</label>
+              {/* Feature Duration / Auto-Expire */}
+              <div className="space-y-3">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                  Feature Duration Time / Auto-Expire
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: '24 Hours', hours: 24 },
+                    { label: '3 Days', hours: 72 },
+                    { label: '7 Days (1 Week)', hours: 168 },
+                    { label: '14 Days', hours: 336 },
+                    { label: '30 Days (1 Month)', hours: 720 },
+                    { label: 'Until Deactivated', hours: null },
+                  ].map(preset => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => applyDurationHours(preset.hours)}
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-primary-950 hover:text-white text-slate-700 text-[11px] font-black uppercase tracking-wider transition-all"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="datetime-local"
                   value={formData.formExpiresAt}
                   onChange={e => setFormData(prev => ({ ...prev, formExpiresAt: e.target.value }))}
                   className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-primary-950 rounded-2xl transition-all focus:bg-white outline-none font-bold text-slate-900"
                 />
-                <p className="text-xs text-slate-400 font-medium ml-1">Leave blank to keep it active until you manually deactivate it.</p>
+                <p className="text-xs text-slate-400 font-medium ml-1">
+                  Select a duration preset above or pick an exact date/time. Leave blank to keep active until you manually deactivate it.
+                </p>
               </div>
 
               </form>
@@ -804,6 +886,157 @@ export default function FeaturedStudentsPage() {
                   </span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Featured Student Detail Card Preview Modal ── */}
+      {viewingItem && (
+        <div
+          onClick={() => setViewingItem(null)}
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg flex flex-col max-h-[86vh] overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-300"
+          >
+            {/* Top Honor Banner */}
+            <div
+              className="px-6 py-3.5 flex items-center justify-between text-white"
+              style={{ background: `linear-gradient(90deg, ${viewingItem.color || '#059669'}, #022c22)` }}
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                <span className="text-xs font-black uppercase tracking-widest">
+                  {viewingItem.title}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingItem(null)}
+                className="p-1.5 rounded-full bg-black/25 hover:bg-black/40 transition-colors"
+              >
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
+
+            {/* Status & Stats Row */}
+            <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <span
+                className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider text-white"
+                style={{ backgroundColor: viewingItem.color || '#059669' }}
+              >
+                {viewingItem.is_active && (!viewingItem.expires_at || new Date(viewingItem.expires_at) > new Date())
+                  ? '✨ Active Feature'
+                  : '🏛️ FYB History Archive'}
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-slate-400">
+                  {new Date(viewingItem.published_at).toLocaleDateString()}
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 text-xs font-black flex items-center gap-1">
+                  <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+                  {viewingItem.total_congratulations}
+                </span>
+              </div>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="overflow-y-auto flex-1 custom-scrollbar">
+              {/* Image Header */}
+              <div className="relative h-52 bg-slate-900">
+                {viewingItem.custom_image_url || viewingItem.users?.avatar_url ? (
+                  <img
+                    src={viewingItem.custom_image_url || viewingItem.users?.avatar_url || ''}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-slate-800">
+                    <Star className="w-12 h-12 text-white/20" />
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex items-end p-5">
+                  <div className="flex items-center gap-3">
+                    {viewingItem.users?.avatar_url ? (
+                      <img
+                        src={viewingItem.users.avatar_url}
+                        alt=""
+                        className="w-11 h-11 rounded-full object-cover border-2 border-amber-400"
+                      />
+                    ) : null}
+                    <div>
+                      <p className="text-lg font-black text-amber-400 leading-tight">
+                        {viewingItem.users?.full_name || 'Featured Student'}
+                      </p>
+                      <p className="text-xs font-semibold text-white/80">
+                        @{viewingItem.users?.username || 'student'}
+                        {viewingItem.subtitle ? ` • ${viewingItem.subtitle}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Note & Motivation Content */}
+              <div className="p-6 space-y-4">
+                <div className="text-center">
+                  <h3 className="text-xl font-black text-emerald-700">{viewingItem.title}</h3>
+                  {viewingItem.subtitle && (
+                    <p className="text-xs font-bold text-slate-400 mt-1">{viewingItem.subtitle}</p>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                  <p
+                    className="text-[11px] font-black uppercase tracking-widest"
+                    style={{ color: viewingItem.color || '#059669' }}
+                  >
+                    Featured Note & Motivation
+                  </p>
+                  <p className="text-sm font-medium text-slate-700 italic whitespace-pre-line leading-relaxed">
+                    {viewingItem.description
+                      ? `"${viewingItem.description}"`
+                      : 'Recognized for outstanding academic excellence, leadership, and positive contribution in the Department of Library and Information Science (NALISS), UMYU.'}
+                  </p>
+                </div>
+
+                {viewingItem.expires_at && (
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400 pt-2 border-t border-slate-100">
+                    <Clock className="w-4 h-4" />
+                    <span>
+                      {new Date(viewingItem.expires_at) > new Date()
+                        ? `Active until ${new Date(viewingItem.expires_at).toLocaleString()}`
+                        : `Feature period ended ${new Date(viewingItem.expires_at).toLocaleString()}`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-white border-t border-slate-100 flex items-center justify-end gap-3">
+              {canManageFeatured(viewingItem) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const itemToEdit = viewingItem;
+                    setViewingItem(null);
+                    openEdit(itemToEdit);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black uppercase tracking-wider transition-all"
+                >
+                  Edit Note / Duration
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setViewingItem(null)}
+                className="px-6 py-2.5 rounded-xl bg-primary-950 hover:bg-primary-900 text-white text-xs font-black uppercase tracking-wider transition-all"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>

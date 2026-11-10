@@ -9,6 +9,9 @@ export type FeaturedStudentEntry = {
   id: string;
   user_id: string;
   type: string;
+  scope?: string | null;
+  icon?: string | null;
+  color?: string | null;
   title: string;
   subtitle: string | null;
   description: string | null;
@@ -18,10 +21,12 @@ export type FeaturedStudentEntry = {
   expires_at: string | null;
   total_congratulations: number;
   created_at: string;
+  pool_id?: string | null;
   users: {
     full_name: string;
     username: string;
     avatar_url: string | null;
+    level?: string | null;
   };
 };
 
@@ -103,10 +108,10 @@ export const useFYBStore = create<FYBState>()(
           const { data, error } = await supabase
             .from('featured_students')
             .select(`
-              id, user_id, type, title, subtitle, description,
+              id, user_id, type, scope, icon, color, title, subtitle, description,
               custom_image_url, is_active, published_at, expires_at,
               total_congratulations, created_at, pool_id,
-              users!featured_students_user_id_fkey ( full_name, username, avatar_url )
+              users!featured_students_user_id_fkey ( full_name, username, avatar_url, level )
             `)
             .order('published_at', { ascending: false });
 

@@ -303,7 +303,7 @@ export function FeaturedStudentPopup() {
             const { data, error } = await supabase
                 .from('featured_students')
                 .select(`
-                    id, user_id, type, title, subtitle, description, custom_image_url, total_congratulations,
+                    id, user_id, type, icon, color, expires_at, title, subtitle, description, custom_image_url, total_congratulations,
                     users!featured_students_user_id_fkey ( full_name, username, avatar_url, department_id )
                 `)
                 .eq('is_active' as any, true as any)
@@ -325,8 +325,12 @@ export function FeaturedStudentPopup() {
             const dismissedIds = new Set(dismissals?.map((d: any) => d.featured_student_id) || []);
             const congratulatedIds = new Set(congratulations?.map((c: any) => c.featured_student_id) || []);
 
+            const now = new Date();
             let nextFeature = null;
             for (const item of (data as any[])) {
+                if (item.expires_at && new Date(item.expires_at) <= now) {
+                    continue;
+                }
                 const userId = profile.id;
                 const dismissedKey = `dismissed_featured_${userId}_${item.id}`;
                 const isDismissedLocal = await mmkvStorage.getItem(dismissedKey);

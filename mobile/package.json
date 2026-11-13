@@ -24,7 +24,7 @@
     "date-fns": "^4.1.0",
     "expo": "~54.0.37",
     "expo-application": "~7.0.8",
-    "expo-asset": "~12.0.13",
+    "expo-asset": "~12.0.14",
     "expo-av": "~16.0.8",
     "expo-background-task": "~1.0.10",
     "expo-blur": "~15.0.8",
